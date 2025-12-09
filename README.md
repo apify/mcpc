@@ -2,22 +2,46 @@
 
 Wrap any remote or local MCP server as a friendly command-line tool.
 
-`mcpc` is command-line client for the Model Context Protocol (MCP)
+`mcpc` is a command-line client for the Model Context Protocol (MCP)
 over standard transports (Streamable HTTP and stdio).
 It maps MCP concepts to intuitive CLI commands, and uses a bridge process per session,
 so you can keep multiple MCP connections alive simultaneously.
 
-`mcpc` is useful for test and debugging of MCP servers,
+`mcpc` is useful for testing and debugging of MCP servers,
 as well as for AI coding agents to compose MCP tools using code generation
 rather than tool function calling, in order to save tokens and increase accuracy.
 
+## Features
+
+- 🔌 **Universal MCP client** - Works with any MCP server over HTTP or stdio
+- 🔄 **Persistent sessions** - Keep multiple server connections alive simultaneously
+- 🚀 **Zero setup** - Connect to remote servers or run local packages instantly
+- 🔧 **Full protocol support** - Tools, resources, prompts, and async notifications
+- 📊 **JSON output** - Easy integration with jq, scripts, and other CLI tools
+- 🤖 **AI-friendly** - Designed for code generation and automated workflows
+
 ## Install
  
-`npm i -g mcpc`
+```bash
+npm install -g mcpc
+```
 
 ## Quickstart
 
-TODO
+```bash
+# Connect to a remote MCP server
+mcpc https://mcp.example.com tools list
+
+# Run a local MCP server package
+mcpc @modelcontextprotocol/server-filesystem tools list
+
+# Create a persistent session
+mcpc connect myserver https://mcp.example.com
+mcpc @myserver tools call search --arg query="hello"
+
+# Interactive shell
+mcpc @myserver shell
+```
 
 ## Usage
 
@@ -26,7 +50,7 @@ mcpc [--json] [--config <file>] [-H|--header "K: V"] [-v|--verbose] <target> <co
 
 # MCP commands
 mcpc <target> instructions
-mcpc <target> tools list          
+mcpc <target> tools list
 mcpc <target> tools get <tool>
 mcpc <target> tools call <tool> [--arg key=val ...]
 
@@ -59,15 +83,14 @@ where `<target>` can be one of:
 
 Transports are selected automatically: HTTP URLs use the MCP HTTP transport, local packages are spawned and spoken to over stdio.
 
+## Sessions
 
-### Sessions
-
-MCP is stateful protocol: clients and servers negotiate capabilities during
+MCP is a stateful protocol: clients and servers negotiate capabilities during
 initialization and then communicate within a session. On HTTP transports,
 servers can issue an `MCP-Session-Id`, and can send asynchronous messages
 via SSE streams; disconnects are not cancellations and resuming streams uses `Last-Event-ID`.
 
-So instead of forcing every command to reconnect and reinitialize,
+Instead of forcing every command to reconnect and reinitialize,
 `mcpc` can run a lightweight **bridge** that:
 
 - keeps the session warm (incl. session ID and negotiated protocol version),
@@ -75,18 +98,25 @@ So instead of forcing every command to reconnect and reinitialize,
 - multiplexes multiple concurrent requests,
 - lets you run **many servers at once** and pipe outputs between them.
 
-## Long-term sessions
+### Managing sessions
 
-```
+```bash
+# Create a persistent session
 mcpc connect apify https://mcp.apify.com/
+
+# List active sessions
 mcpc sessions
+
+# Use the session
 mcpc @apify instructions
 mcpc @apify tools list
 mcpc @apify shell
+
+# Close the session
 mcpc @apify close
 ```
 
-### Interacting with multiple sessions
+### Piping between sessions
 
 ```bash
 mcpc --json @apify tools call search-actors --arg keywords="web scraper" \
@@ -109,11 +139,40 @@ MCP enables arbitrary tool execution and data access; treat servers like you tre
 * prefer trusted endpoints,
 * audit what tools do before running them.
 
+## Error Handling
+
+`mcpc` provides clear error messages for common issues:
+
+- **Connection failures**: Displays transport-level errors with retry suggestions
+- **Session timeouts**: Automatically attempts to reconnect or prompts for session recreation
+- **Invalid commands**: Shows available commands and correct syntax
+- **Tool execution errors**: Returns server error messages with context
+
+Use `--verbose` flag for detailed debugging information.
+
 ## Status
 
-`mcpc` is under active development. Contributions welcome:
+`mcpc` is under active development. Current focus areas:
 
-* transport compatibility tests (Streamable HTTP \+ stdio),
-* UX polish (completion, help output),
-* session persistence and secure credential storage.
+- ✅ Core MCP protocol support (tools, resources, prompts)
+- ✅ HTTP and stdio transports
+- ✅ Session management and persistence
+- 🚧 Shell completion (bash, zsh, fish)
+- 🚧 Configuration file enhancements
+- 🚧 Secure credential storage
+
+## Contributing
+
+Contributions are welcome! Areas where we'd especially appreciate help:
+
+- Transport compatibility tests (Streamable HTTP + stdio)
+- Shell completion scripts
+- Documentation and examples
+- Bug reports and feature requests
+
+Please open an issue or pull request on [GitHub](https://github.com/jancurn/mcp2cli).
+
+## License
+
+Apache-2.0 - see [LICENSE](LICENSE) for details.
 
