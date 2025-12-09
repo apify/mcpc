@@ -9,7 +9,7 @@ so you can keep multiple MCP connections alive simultaneously.
 
 `mcpc` is useful for test and debugging of MCP servers,
 as well as for AI coding agents to compose MCP tools using code generation
-rather than tool function calling, in order to save tokens in increase accuracy.
+rather than tool function calling, in order to save tokens and increase accuracy.
 
 ## Install
  
@@ -40,16 +40,22 @@ mcpc <target> tasks list
 mcpc <target> tasks watch <id>
 mcpc <target> tasks cancel <id>
 
+# Session management
+mcpc connect <name> <target>
+mcpc sessions
+mcpc @<name> <command...>
+mcpc @<name> close
+
 # Interactive
 mcpc <target> shell
 ```
 
-where `<target>` can be on of:
+where `<target>` can be one of:
 
-- Remote MCP endpoint URL (e.g. `https://example.com/mcp`)
+- Remote MCP endpoint URL (e.g. `https://mcp.apify.com`)
 - Local MCP server package (e.g. `@microsoft/playwright-mcp`)
 - Named entry in a config file, when used with `--config` (e.g. `linear-mcp`)
-- Saved session prefixed with `@` (e.g. `apify`)
+- Saved session prefixed with `@` (e.g. `@apify`)
 
 Transports are selected automatically: HTTP URLs use the MCP HTTP transport, local packages are spawned and spoken to over stdio.
 
@@ -83,8 +89,9 @@ mcpc @apify close
 ### Interacting with multiple sessions
 
 ```bash
-mcpc --json @apify tools search-docs query="what is Actor?" 
- | mcpc --json @playwright
+mcpc --json @apify tools call search-actors --arg keywords="web scraper" \
+  | jq '.results[0]' \
+  | mcpc @playwright tools call run-browser --arg input=-
 ```
 
 ## MCP protocol notes
