@@ -41,6 +41,7 @@ mcpc @myserver tools call search --arg query="hello"
 
 # Interactive shell
 mcpc @myserver shell
+mcpc https://mcp.example.com shell
 ```
 
 ## Usage
@@ -170,7 +171,7 @@ Contributions are welcome! Areas where we'd especially appreciate help:
 - Documentation and examples
 - Bug reports and feature requests
 
-Please open an issue or pull request on [GitHub](https://github.com/jancurn/mcp2cli).
+Please open an issue or pull request on [GitHub](https://github.com/jancurn/mcpc).
 
 ## License
 
