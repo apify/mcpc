@@ -3,7 +3,7 @@
 Wrap any remote or local MCP server as a friendly command-line tool.
 
 `mcpc` is a command-line client for the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)
-over standard transports (HTTP with SSE and stdio).
+over standard transports (Streamable HTTP and stdio).
 It maps MCP concepts to intuitive CLI commands, and uses a bridge process per session,
 so you can keep multiple MCP connections alive simultaneously.
 
@@ -13,13 +13,13 @@ rather than tool function calling, in order to save tokens and increase accuracy
 
 ## Features
 
-- 🔌 **Universal MCP client** - Works with any MCP server over HTTP or stdio
-- 🔄 **Persistent sessions** - Keep multiple server connections alive simultaneously
-- 🚀 **Zero setup** - Connect to remote servers or run local packages instantly
-- 🔧 **Full protocol support** - Tools, resources, prompts, and async notifications
-- 📊 **JSON output** - Easy integration with jq, scripts, and other CLI tools
-- 🤖 **AI-friendly** - Designed for code generation and automated workflows
-- 🔒 **Secure** - OS keychain integration for credentials, encrypted auth storage
+- 🔌 **Universal MCP client** - Works with any MCP server over HTTP or stdio.
+- 🔄 **Persistent sessions** - Keep multiple server connections alive simultaneously.
+- 🚀 **Zero setup** - Connect to remote servers or run local packages instantly.
+- 🔧 **Full protocol support** - Tools, resources, prompts, sampling, dynamic discovery, and async notifications.
+- 📊 **JSON output** - Easy integration with jq, scripts, and other CLI tools.
+- 🤖 **AI-friendly** - Designed for code generation and automated workflows.
+- 🔒 **Secure** - OS keychain integration for credentials, encrypted auth storage.
 
 ## Install
 
@@ -87,7 +87,7 @@ where `<target>` can be one of:
 
 Target types are resolved in the order listed above. Use explicit format to avoid ambiguity.
 
-Transports are selected automatically: HTTP/HTTPS URLs use the MCP HTTP transport, local packages are spawned and spoken to over stdio.
+Transports are selected automatically: HTTP/HTTPS URLs use the MCP Streamable HTTP transport, local packages are spawned and spoken to over stdio.
 
 ### Advanced arguments
 
@@ -137,14 +137,14 @@ MCP is a stateful protocol: clients and servers perform an initialization handsh
 to negotiate protocol version and capabilities, then communicate within a persistent session.
 Each session maintains:
 - Negotiated protocol version and capabilities (which tools/resources/prompts/notifications are supported)
-- For HTTP transport: SSE stream for server-to-client messages, with resumption support via `Last-Event-ID`
+- For Streamable HTTP transport: persistent connection with bidirectional streaming, with automatic reconnection
 - For stdio transport: persistent bidirectional pipe to subprocess
 
 Instead of forcing every command to reconnect and reinitialize (which is slow and loses state),
 `mcpc` uses a lightweight **bridge process** per session that:
 
 - Maintains the MCP session (protocol version, capabilities, connection state)
-- For HTTP: Manages SSE streams with automatic reconnection and resumption
+- For Streamable HTTP: Manages persistent connections with automatic reconnection and resumption
 - Multiplexes multiple concurrent requests (up to 10 concurrent, 100 queued)
 - Enables piping data between multiple MCP servers simultaneously
 
@@ -310,19 +310,19 @@ Config files support environment variable substitution using `${VAR_NAME}` synta
 - Use `--protocol-version` to force a specific version if auto-negotiation fails
 
 **Transport handling:**
-- **HTTP with SSE**: The bridge manages Server-Sent Events (SSE) streams for server-to-client communication with automatic reconnection using exponential backoff (1s → 30s max)
-- SSE reconnection uses `Last-Event-ID` header when server provides event IDs for resumption
+- **Streamable HTTP**: `mcpc` supports only the Streamable HTTP transport (the current standard). The deprecated HTTP with SSE transport is not supported. The bridge manages persistent HTTP connections with bidirectional streaming for server-to-client communication, with automatic reconnection using exponential backoff (1s → 30s max)
 - During reconnection, new requests are queued (fails after 3 minutes of disconnection)
 - **Stdio**: Direct bidirectional JSON-RPC communication over standard input/output
 
 **Protocol features:**
 - Supports all MCP primitives:
-  - **Tools**: Executable functions with JSON Schema-validated arguments
+  - **Tools**: Executable functions with JSON Schema-validated arguments.
   - **Resources**: Data sources identified by URIs (e.g., `file:///path/to/file`, `https://example.com/data`), with optional subscriptions for change notifications
   - **Prompts**: Reusable message templates with customizable arguments
 - Handles server notifications: progress tracking, logging, and change notifications (`notifications/tools/list_changed`, `notifications/resources/list_changed`, `notifications/prompts/list_changed`)
 - Request multiplexing: supports up to 10 concurrent requests, queues up to 100 additional requests
 - Pagination: List operations return `nextCursor` when more results are available; use `--cursor` to fetch next page
+- Sampling is not supported as `mcpc` has no access to an LLM.
 
 ## Package resolution
 
@@ -426,7 +426,7 @@ MCP enables arbitrary tool execution and data access; treat servers like you tre
 - **Tool execution errors**: Returns server error messages with context
 - **Bridge crashes**: Detects and cleans up orphaned processes, offers restart
 
-Use `--verbose` flag for detailed debugging information (shows JSON-RPC messages, SSE events, and protocol negotiation).
+Use `--verbose` flag for detailed debugging information (shows JSON-RPC messages, streaming events, and protocol negotiation).
 
 ### Exit codes
 
@@ -439,7 +439,7 @@ Use `--verbose` flag for detailed debugging information (shows JSON-RPC messages
 ### Retry strategy
 
 - **Network errors**: Automatic retry with exponential backoff (3 attempts)
-- **SSE reconnection**: Starts at 1s, doubles to max 30s
+- **Stream reconnection**: Starts at 1s, doubles to max 30s
 - **Bridge restart**: Automatic on crash detection, manual with `mcpc @name reconnect`
 - **Timeouts**: Configurable per-request timeout (default: 5 minutes)
 
@@ -505,10 +505,10 @@ mcpc (single package)
 Implemented with minimal dependencies to support both Node.js (≥18.0.0) and Bun (≥1.0.0).
 
 **Core responsibilities:**
-- Transport selection and initialization (HTTP vs stdio)
+- Transport selection and initialization (Streamable HTTP vs stdio)
 - MCP protocol implementation and version negotiation
 - Session state machine management
-- SSE stream management (reconnection, Last-Event-ID resumption)
+- Streamable HTTP connection management (reconnection with exponential backoff)
 - Request/response correlation (JSON-RPC style with request IDs)
 - Multiplexing concurrent requests (up to 10 concurrent)
 - Event emitter for async notifications
@@ -586,7 +586,7 @@ Later...
 9. CLI: Reads sessions.json, finds socket path
 10. CLI: Connects to bridge socket
 11. CLI: Sends "tools/list" JSON-RPC request via socket
-12. Bridge: Forwards to MCP server via HTTP/SSE
+12. Bridge: Forwards to MCP server via Streamable HTTP
 13. Bridge: Returns response via socket
 14. CLI: Formats and displays to user
 ```
@@ -623,10 +623,10 @@ Later...
 - Output formatting (human and JSON modes)
 
 **Integration tests:**
-- Mock MCP server (simple HTTP + stdio servers)
+- Mock MCP server (simple Streamable HTTP + stdio servers)
 - Bridge lifecycle (start, connect, restart, cleanup)
 - Session management with file locking
-- SSE reconnection logic
+- Stream reconnection logic
 
 **E2E tests:**
 - Real MCP server implementations
@@ -670,7 +670,7 @@ mcpc --verbose @apify tools list
 This shows:
 - Protocol negotiation details
 - JSON-RPC request/response messages
-- SSE events and reconnection attempts
+- Streaming events and reconnection attempts
 - Bridge communication (socket messages)
 - File locking operations
 
