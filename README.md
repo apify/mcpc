@@ -41,7 +41,7 @@ mcpc --config ~/Library/Application\ Support/Claude/claude_desktop_config.json m
 
 # Create a persistent session
 mcpc connect myserver https://mcp.example.com
-mcpc @myserver tools call search --arg query="hello"
+mcpc @myserver tools call search --args query=hello
 
 # Interactive shell
 mcpc @myserver shell
@@ -59,13 +59,13 @@ mcpc [--json] [--config <file>] [-H|--header "K: V"] [-v|--verbose] [--schema <f
 mcpc <target> instructions
 mcpc <target> tools list
 mcpc <target> tools get <tool>
-mcpc <target> tools call <tool> [--arg key=val] [--arg key:=json] [--args-file <file>]
+mcpc <target> tools call <tool> [--args key=val key2:=json ...] [--args-file <file>]
 
 mcpc <target> resources list
 mcpc <target> resources get <uri> [-o <file>] [--raw] [--max-size <bytes>]
 
 mcpc <target> prompts list
-mcpc <target> prompts get <name> [--arg key=val] [--arg key:=json]
+mcpc <target> prompts get <name> [--args key=val key2:=json ...]
 
 # Session management
 mcpc connect <name> <target>
@@ -92,25 +92,31 @@ Transports are selected automatically: HTTP/HTTPS URLs use the MCP HTTP transpor
 
 **Argument types:**
 
-`mcpc` supports multiple argument formats for passing complex data:
+`mcpc` supports multiple ways to pass arguments to tools and prompts:
 
 ```bash
-# String (default)
---arg name=value
+# String values (default) - use = for strings
+--args name=value query="hello world"
 
-# JSON literals (use := instead of =)
---arg count:=123                    # number
---arg enabled:=true                 # boolean
---arg value:=null                   # null
---arg config:='{"key":"value"}'     # object
---arg items:='[1,2,3]'              # array
+# JSON literals - use := for JSON types
+--args count:=123 enabled:=true value:=null
+--args config:='{"key":"value"}' items:='[1,2,3]'
 
-# Read from stdin
---arg data=-
+# Mixed strings and JSON
+--args query="search term" limit:=10 verbose:=true
 
 # Load all arguments from JSON file
 --args-file tool-arguments.json
+
+# Read from stdin (automatic when piped, no flag needed)
+echo '{"query":"hello","count":10}' | mcpc @server tools call my-tool
 ```
+
+**Rules:**
+- Use only one method: `--args`, `--args-file`, or stdin (piped input)
+- After `--args`, all `key=value` or `key:=json` pairs are consumed until next flag or end
+- `=` assigns as string, `:=` parses as JSON
+- Stdin is automatically detected when input is piped (not interactive terminal)
 
 **Global flags:**
 
@@ -165,9 +171,9 @@ mcpc @apify close
 ### Piping between sessions
 
 ```bash
-mcpc --json @apify tools call search-actors --arg query="tiktok scraper" \
+mcpc --json @apify tools call search-actors --args query="tiktok scraper" \
   | jq '.data.results[0]' \
-  | mcpc @playwright tools call run-browser --arg input=-
+  | mcpc @playwright tools call run-browser
 ```
 
 ### Scripting
@@ -185,7 +191,7 @@ mcpc --json @apify tools get search-actors > tool-schema.json
 mcpc @apify tools call search-actors \
   --schema tool-schema.json \
   --schema-mode strict \
-  --arg query="tiktok scraper"
+  --args query="tiktok scraper"
 ```
 
 **Schema validation modes:**
@@ -454,7 +460,7 @@ Available tools:
   - get-actor
   - run-actor
 
-mcpc(@apify)> tools call search-actors --arg query="tiktok scraper"
+mcpc(@apify)> tools call search-actors --args query="tiktok scraper"
 [results...]
 
 mcpc(@apify)> exit
