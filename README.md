@@ -316,10 +316,13 @@ Config files support environment variable substitution using `${VAR_NAME}` synta
 - **Stdio**: Direct bidirectional JSON-RPC communication over standard input/output
 
 **Protocol features:**
-- Supports all MCP primitives: **tools** (executable functions), **resources** (data sources with URIs), **prompts** (templated messages with arguments)
-- Handles server notifications: progress tracking, logging, and change notifications (`tools/list_changed`, `resources/list_changed`, `prompts/list_changed`)
+- Supports all MCP primitives:
+  - **Tools**: Executable functions with JSON Schema-validated arguments
+  - **Resources**: Data sources identified by URIs (e.g., `file:///path/to/file`, `https://example.com/data`), with optional subscriptions for change notifications
+  - **Prompts**: Reusable message templates with customizable arguments
+- Handles server notifications: progress tracking, logging, and change notifications (`notifications/tools/list_changed`, `notifications/resources/list_changed`, `notifications/prompts/list_changed`)
 - Request multiplexing: supports up to 10 concurrent requests, queues up to 100 additional requests
-- Pagination: List operations that return `nextCursor` can be paginated for large result sets
+- Pagination: List operations return `nextCursor` when more results are available; use `--cursor` to fetch next page
 
 ## Package resolution
 
@@ -570,8 +573,11 @@ The main `mcpc` command provides the user interface.
 2. CLI: Creates session entry in sessions.json
 3. CLI: Spawns bridge process (mcpc-bridge)
 4. Bridge: Creates Unix socket at ~/.mcpc/bridges/apify.sock
-5. Bridge: Connects to MCP server, negotiates protocol
-6. Bridge: Updates session in sessions.json (adds PID, socket path)
+5. Bridge: Performs MCP initialization handshake with server:
+   - Sends initialize request with protocol version and capabilities
+   - Receives server info, version, and capabilities
+   - Sends initialized notification to activate session
+6. Bridge: Updates session in sessions.json (adds PID, socket path, protocol version)
 7. CLI: Confirms session created
 
 Later...
@@ -579,7 +585,7 @@ Later...
 8. User: mcpc @apify tools list
 9. CLI: Reads sessions.json, finds socket path
 10. CLI: Connects to bridge socket
-11. CLI: Sends "tools.list" request via socket
+11. CLI: Sends "tools/list" JSON-RPC request via socket
 12. Bridge: Forwards to MCP server via HTTP/SSE
 13. Bridge: Returns response via socket
 14. CLI: Formats and displays to user
