@@ -21,8 +21,8 @@
   },
   "homepage": "https://github.com/jancurn/mcpc#readme",
   "bin": {
-    "mcpc": "./dist/bin/mcpc.js",
-    "mcpc-bridge": "./dist/bin/mcpc-bridge.js"
+    "mcpc": "./bin/mcpc",
+    "mcpc-bridge": "./bin/mcpc-bridge"
   },
   "engines": {
     "node": ">=18.0.0"
