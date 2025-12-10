@@ -40,10 +40,14 @@
     "prebuild": "npm run clean",
     "prepublishOnly": "npm run build && npm test"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.24.3",
+    "uuid": "^13.0.0"
+  },
   "devDependencies": {
     "@types/jest": "^29.5.12",
     "@types/node": "^18.19.0",
+    "@types/uuid": "^10.0.0",
     "@typescript-eslint/eslint-plugin": "^6.21.0",
     "@typescript-eslint/parser": "^6.21.0",
     "eslint": "^8.56.0",

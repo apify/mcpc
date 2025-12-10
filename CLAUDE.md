@@ -286,4 +286,5 @@ Bridge logs location: `~/.mcpc/logs/bridge-<session>.log`
 
 ## References
 
-- Official [Model Context Protocol documentation](https://modelcontextprotocol.io/llms.txt)
+- [Official MCP documentation](https://modelcontextprotocol.io/llms.txt)
+- [Official TypeScript SDK for MCP servers and clients](https://www.npmjs.com/package/@modelcontextprotocol/sdk)

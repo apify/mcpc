@@ -3,5 +3,14 @@
  * Contains utilities, types, errors, and logging functionality
  */
 
-// This is a placeholder file that will export shared utilities
-export {};
+// Export all types
+export * from './types.js';
+
+// Export all errors
+export * from './errors.js';
+
+// Export logger
+export * from './logger.js';
+
+// Export utilities
+export * from './utils.js';

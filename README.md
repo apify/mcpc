@@ -56,6 +56,8 @@ mcpc [--json] [--config <file>] [-H|--header "K: V"] [-v|--verbose] [--schema <f
      <target> <command...>
 
 # MCP commands
+mcpc <target> instructions
+
 mcpc <target> tools list [--cursor <cursor>]
 mcpc <target> tools get <tool>
 mcpc <target> tools call <tool> [--args key=val key2:=json ...] [--args-file <file>]
@@ -317,7 +319,7 @@ Config files support environment variable substitution using `${VAR_NAME}` synta
 ## MCP protocol notes
 
 **Protocol initialization:**
-- `mcpc` follows the MCP initialization handshake: sends `initialize` request with protocol version and capabilities, receives server capabilities, then sends `initialized` notification
+- `mcpc` follows the MCP initialization handshake: sends `initialize` request with protocol version and capabilities, receives server capabilities and instructions, then sends `initialized` notification
 - Protocol version negotiation: client proposes latest supported version (currently `2025-11-25`), server responds with version to use
 - Use `--protocol-version` to force a specific version if auto-negotiation fails
 
@@ -328,6 +330,7 @@ Config files support environment variable substitution using `${VAR_NAME}` synta
 
 **Protocol features:**
 - Supports all MCP primitives:
+  - **Instructions**: Fetches and stores MCP server-provided `instructions`
   - **Tools**: Executable functions with JSON Schema-validated arguments.
   - **Resources**: Data sources identified by URIs (e.g., `file:///path/to/file`, `https://example.com/data`), with optional subscriptions for change notifications
   - **Prompts**: Reusable message templates with customizable arguments
