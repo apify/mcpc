@@ -283,3 +283,7 @@ Enable verbose mode: `--verbose` flag shows:
 - File locking operations
 
 Bridge logs location: `~/.mcpc/logs/bridge-<session>.log`
+
+## References
+
+- Official [Model Context Protocol documentation](https://modelcontextprotocol.io/llms.txt)

@@ -1,0 +1,9 @@
+#!/usr/bin/env node
+
+// Bridge process executable for mcpc
+// This wrapper imports the compiled TypeScript bridge entry point
+
+import('../dist/bridge/index.js').catch((err) => {
+  console.error('Failed to load mcpc-bridge:', err.message);
+  process.exit(1);
+});

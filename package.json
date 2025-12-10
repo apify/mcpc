@@ -1,0 +1,55 @@
+{
+  "name": "mcpc",
+  "version": "0.1.0",
+  "description": "Command-line client for the Model Context Protocol (MCP)",
+  "type": "module",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "cli",
+    "llm",
+    "ai"
+  ],
+  "license": "Apache-2.0",
+  "author": "Jan Curn",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jancurn/mcpc.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jancurn/mcpc/issues"
+  },
+  "homepage": "https://github.com/jancurn/mcpc#readme",
+  "bin": {
+    "mcpc": "./dist/bin/mcpc.js",
+    "mcpc-bridge": "./dist/bin/mcpc-bridge.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "jest --passWithNoTests",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "lint": "eslint src/**/*.ts",
+    "lint:fix": "eslint src/**/*.ts --fix",
+    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\"",
+    "clean": "rm -rf dist",
+    "prebuild": "npm run clean",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/jest": "^29.5.12",
+    "@types/node": "^18.19.0",
+    "@typescript-eslint/eslint-plugin": "^6.21.0",
+    "@typescript-eslint/parser": "^6.21.0",
+    "eslint": "^8.56.0",
+    "jest": "^29.7.0",
+    "prettier": "^3.2.5",
+    "ts-jest": "^29.1.2",
+    "typescript": "^5.3.3"
+  }
+}

@@ -154,6 +154,18 @@ Instead of forcing every command to reconnect and reinitialize (which is slow an
 - `~/.mcpc/bridges/` - directory containing Unix domain socket files for each bridge process
 - OS keychain - authentication tokens (Keychain on macOS, Credential Manager on Windows, Secret Service on Linux)
 
+### Authentication
+
+`mcpc` supports multiple authentication methods for the MCP servers:
+
+- **No authentication** - for local servers (stdio) or remove servers (streamable HTTP) which do not require credentials.
+- **HTTP token** - for remote servers that require an access token,
+  use the `--header` flag to specify the header name and value (e.g. `--header "Authorization: Bearer YOUR_ACCESS_TOKEN"`).
+- **OAuth** - for remote servers that require OAuth authentication,
+  the CLI asks the user if it can open a browser window to let the user authenticate.
+
+`mcpc` uses OS keychain to securly store authentication tokens.
+
 ### Managing sessions
 
 ```bash

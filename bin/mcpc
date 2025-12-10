@@ -1,0 +1,9 @@
+#!/usr/bin/env node
+
+// Main CLI executable for mcpc
+// This wrapper imports the compiled TypeScript CLI entry point
+
+import('../dist/cli/index.js').catch((err) => {
+  console.error('Failed to load mcpc CLI:', err.message);
+  process.exit(1);
+});
