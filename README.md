@@ -3,7 +3,7 @@
 Wrap any remote or local MCP server as a friendly command-line tool.
 
 `mcpc` is a command-line client for the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)
-over standard transports (streamable HTTP and stdio).
+over standard transports (HTTP with SSE and stdio).
 It maps MCP concepts to intuitive CLI commands, and uses a bridge process per session,
 so you can keep multiple MCP connections alive simultaneously.
 
@@ -56,15 +56,16 @@ mcpc [--json] [--config <file>] [-H|--header "K: V"] [-v|--verbose] [--schema <f
      <target> <command...>
 
 # MCP commands
-mcpc <target> instructions
-mcpc <target> tools list
+mcpc <target> tools list [--cursor <cursor>]
 mcpc <target> tools get <tool>
 mcpc <target> tools call <tool> [--args key=val key2:=json ...] [--args-file <file>]
 
-mcpc <target> resources list
+mcpc <target> resources list [--cursor <cursor>]
 mcpc <target> resources get <uri> [-o <file>] [--raw] [--max-size <bytes>]
+mcpc <target> resources subscribe <uri>
+mcpc <target> resources unsubscribe <uri>
 
-mcpc <target> prompts list
+mcpc <target> prompts list [--cursor <cursor>]
 mcpc <target> prompts get <name> [--args key=val key2:=json ...]
 
 # Session management
@@ -125,24 +126,27 @@ echo '{"query":"hello","count":10}' | mcpc @server tools call my-tool
 - `-H, --header "Key: Value"` - Add HTTP header (can be repeated)
 - `-v, --verbose` - Enable verbose logging (shows protocol details)
 - `--timeout <seconds>` - Request timeout in seconds (default: 300)
-- `--protocol-version <version>` - Force specific MCP protocol version
+- `--protocol-version <version>` - Force specific MCP protocol version (e.g., `2025-11-25`)
 - `--schema <file>` - Validate against expected tool/prompt schema
 - `--schema-mode <mode>` - Schema validation mode: `strict`, `compatible`, or `ignore` (default: `compatible`)
+- `--insecure` - Disable SSL certificate validation (not recommended)
 
 ## Sessions
 
-MCP is a stateful protocol: clients and servers negotiate capabilities during
-initialization and then communicate within a session. On HTTP transports,
-servers can issue an `MCP-Session-Id`, and can send asynchronous messages
-via SSE streams; disconnects are not cancellations and resuming streams uses `Last-Event-ID`.
+MCP is a stateful protocol: clients and servers perform an initialization handshake
+to negotiate protocol version and capabilities, then communicate within a persistent session.
+Each session maintains:
+- Negotiated protocol version and capabilities (which tools/resources/prompts/notifications are supported)
+- For HTTP transport: SSE stream for server-to-client messages, with resumption support via `Last-Event-ID`
+- For stdio transport: persistent bidirectional pipe to subprocess
 
-Instead of forcing every command to reconnect and reinitialize,
-`mcpc` can run a lightweight **bridge** that:
+Instead of forcing every command to reconnect and reinitialize (which is slow and loses state),
+`mcpc` uses a lightweight **bridge process** per session that:
 
-- keeps the session warm (incl. session ID and negotiated protocol version),
-- manages SSE streams and resumption,
-- multiplexes multiple concurrent requests (up to 10 concurrent, 100 queued),
-- lets you run **many servers at once** and pipe outputs between them.
+- Maintains the MCP session (protocol version, capabilities, connection state)
+- For HTTP: Manages SSE streams with automatic reconnection and resumption
+- Multiplexes multiple concurrent requests (up to 10 concurrent, 100 queued)
+- Enables piping data between multiple MCP servers simultaneously
 
 `mcpc` saves its state to `~/.mcpc/` directory, in the following files:
 
@@ -160,7 +164,6 @@ mcpc connect apify https://mcp.apify.com/
 mcpc sessions
 
 # Use the session
-mcpc @apify instructions
 mcpc @apify tools list
 mcpc @apify shell
 
@@ -291,23 +294,32 @@ Config files support environment variable substitution using `${VAR_NAME}` synta
 }
 ```
 
-### Environment Variables
+### Environment variables
 
-- `MCPC_CONFIG` - Path to config file
-- `MCPC_SESSION_DIR` - Directory for session data (default: `~/.mcpc`)
-- `MCPC_VERBOSE` - Enable verbose logging (set to `1` or `true`)
-- `MCPC_TIMEOUT` - Default timeout in seconds
-- `MCPC_JSON` - Enable JSON output (set to `1` or `true`)
+- `MCPC_CONFIG` - Path to the standard MCP server config file (instead of using `--config`)
+- `MCPC_SESSION_DIR` - Directory for session data (default is `~/.mcpc`)
+- `MCPC_VERBOSE` - Enable verbose logging (instead of using `--verbose`, set to `1` or `true`)
+- `MCPC_TIMEOUT` - Default timeout in seconds (instead of using `--timeout`, default is `300`)
+- `MCPC_JSON` - Enable JSON output (instead of using `--json`, set to `1` or `true`)
 
 ## MCP protocol notes
 
-- `mcpc` negotiates protocol version on init; subsequent HTTP requests include the negotiated `MCP-Protocol-Version`
+**Protocol initialization:**
+- `mcpc` follows the MCP initialization handshake: sends `initialize` request with protocol version and capabilities, receives server capabilities, then sends `initialized` notification
+- Protocol version negotiation: client proposes latest supported version (currently `2025-11-25`), server responds with version to use
 - Use `--protocol-version` to force a specific version if auto-negotiation fails
-- For Streamable HTTP, the bridge manages SSE streams with automatic reconnection using exponential backoff (1s → 30s max)
-- SSE reconnection uses `Last-Event-ID` header when server provides event IDs
+
+**Transport handling:**
+- **HTTP with SSE**: The bridge manages Server-Sent Events (SSE) streams for server-to-client communication with automatic reconnection using exponential backoff (1s → 30s max)
+- SSE reconnection uses `Last-Event-ID` header when server provides event IDs for resumption
 - During reconnection, new requests are queued (fails after 3 minutes of disconnection)
-- `mcpc` supports all MCP server features (tools/resources/prompts) and handles server-initiated flows (progress, logging, change notifications)
+- **Stdio**: Direct bidirectional JSON-RPC communication over standard input/output
+
+**Protocol features:**
+- Supports all MCP primitives: **tools** (executable functions), **resources** (data sources with URIs), **prompts** (templated messages with arguments)
+- Handles server notifications: progress tracking, logging, and change notifications (`tools/list_changed`, `resources/list_changed`, `prompts/list_changed`)
 - Request multiplexing: supports up to 10 concurrent requests, queues up to 100 additional requests
+- Pagination: List operations that return `nextCursor` can be paginated for large result sets
 
 ## Package resolution
 
@@ -357,7 +369,7 @@ All output follows a JSON schema consistent with the MCP protocol.
       "name": "example-server",
       "version": "1.0.0"
     },
-    "protocolVersion": "1.0",
+    "protocolVersion": "2025-11-25",
     "timestamp": "2025-12-09T10:30:00Z"
   }
 }
@@ -471,7 +483,7 @@ mcpc(@apify)> exit
 `mcpc` is under active development.
 The library is implemented in TypeScript as a single package with internal modules.
 
-### Architecture Overview
+### Architecture overview
 
 ```
 mcpc (single package)
@@ -485,7 +497,7 @@ mcpc (single package)
 │   └── mcpc-bridge     # Bridge process executable
 ```
 
-### Core Module (Runtime-agnostic)
+### Core module (runtime-agnostic)
 
 Implemented with minimal dependencies to support both Node.js (≥18.0.0) and Bun (≥1.0.0).
 
@@ -503,7 +515,7 @@ Implemented with minimal dependencies to support both Node.js (≥18.0.0) and Bu
 - Native process APIs for stdio transport
 - Minimal: UUID generation, event emitter abstraction
 
-### Bridge Process
+### Bridge process
 
 Implemented as a separate executable (`mcpc-bridge`) that maintains persistent connections.
 
@@ -532,7 +544,7 @@ Implemented as a separate executable (`mcpc-bridge`) that maintains persistent c
 - Atomic writes (write to temp file, then rename)
 - Lock timeout: 5 seconds (fails if can't acquire lock)
 
-### CLI Executable
+### CLI executable
 
 The main `mcpc` command provides the user interface.
 
@@ -551,7 +563,7 @@ The main `mcpc` command provides the user interface.
 - Tab completion using inquirer autocomplete
 - Graceful exit handling (cleanup on Ctrl+C/Ctrl+D)
 
-### Session Lifecycle
+### Session lifecycle
 
 ```
 1. User: mcpc connect apify https://mcp.apify.com
@@ -597,7 +609,7 @@ Later...
 5. If dead: removes socket file and session entry
 6. If alive but unresponsive: kills process, removes entries
 
-## Testing Strategy
+## Testing strategy
 
 **Unit tests:**
 - Core protocol implementation (mocked transports)
