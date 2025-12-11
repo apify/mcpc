@@ -31,17 +31,18 @@ npm install -g mcpc
 
 ```bash
 # Connect to a remote MCP server
-mcpc https://mcp.example.com tools list
+mcpc https://mcp.example.com
+mcpc https://mcp.example.com tools-list
 
 # Run a local MCP server package
-mcpc @modelcontextprotocol/server-filesystem tools list
+mcpc @modelcontextprotocol/server-filesystem tools-list
 
-# Use your Claude Desktop config
-mcpc --config ~/Library/Application\ Support/Claude/claude_desktop_config.json myserver tools list
+# Use your custom MCP config
+mcpc --config ~/.vscode/mcp.json myserver tools-list
 
 # Create a persistent session
-mcpc connect myserver https://mcp.example.com
-mcpc @myserver tools call search --args query=hello
+mcpc @myserver connect https://mcp.example.com
+mcpc @myserver tools-call search --args query=hello
 
 # Interactive shell
 mcpc @myserver shell
@@ -58,21 +59,24 @@ mcpc [--json] [--config <file>] [-H|--header "K: V"] [-v|--verbose] [--schema <f
 # MCP commands
 mcpc <target> instructions
 
-mcpc <target> tools list [--cursor <cursor>]
-mcpc <target> tools get <tool>
-mcpc <target> tools call <tool> [--args key=val key2:=json ...] [--args-file <file>]
+mcpc <target> tools
+mcpc <target> tools-list [--cursor <cursor>]
+mcpc <target> tools-get <tool>
+mcpc <target> tools-call <tool> [--args key=val key2:=json ...] [--args-file <file>]
 
-mcpc <target> resources list [--cursor <cursor>]
-mcpc <target> resources get <uri> [-o <file>] [--raw] [--max-size <bytes>]
-mcpc <target> resources subscribe <uri>
-mcpc <target> resources unsubscribe <uri>
+mcpc <target> resources
+mcpc <target> resources-list [--cursor <cursor>]
+mcpc <target> resources-get <uri> [-o <file>] [--raw] [--max-size <bytes>]
+mcpc <target> resources-subscribe <uri>
+mcpc <target> resources-unsubscribe <uri>
 
-mcpc <target> prompts list [--cursor <cursor>]
-mcpc <target> prompts get <name> [--args key=val key2:=json ...]
+mcpc <target> prompts
+mcpc <target> prompts-list [--cursor <cursor>]
+mcpc <target> prompts-get <name> [--args key=val key2:=json ...]
 
 # Session management
-mcpc connect <name> <target>
-mcpc sessions
+mcpc <target> connect <server>
+mcpc # prints alls sessions
 mcpc @<name> <command...>
 mcpc @<name> close
 
@@ -112,7 +116,7 @@ Transports are selected automatically: HTTP/HTTPS URLs use the MCP Streamable HT
 --args-file tool-arguments.json
 
 # Read from stdin (automatic when piped, no flag needed)
-echo '{"query":"hello","count":10}' | mcpc @server tools call my-tool
+echo '{"query":"hello","count":10}' | mcpc @server tools-call my-tool
 ```
 
 **Rules:**
@@ -172,7 +176,7 @@ Instead of forcing every command to reconnect and reinitialize (which is slow an
 
 ```bash
 # Create a persistent session
-mcpc connect apify https://mcp.apify.com/
+mcpc @apify connect https://mcp.apify.com/
 
 # List active sessions
 mcpc sessions
@@ -597,7 +601,7 @@ The main `mcpc` command provides the user interface.
 
 Later...
 
-8. User: mcpc @apify tools list
+8. User: mcpc @apify tools-list
 9. CLI: Reads sessions.json, finds socket path
 10. CLI: Connects to bridge socket
 11. CLI: Sends "tools/list" JSON-RPC request via socket
