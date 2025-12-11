@@ -121,6 +121,7 @@ function createProgram(): Command {
 Examples:
   $ mcpc                                        # List all sessions
   $ mcpc @apify connect https://mcp.apify.com   # Create a session
+  $ mcpc @apify                                 # Show server info and instructions
   $ mcpc @apify tools-list                      # List tools
   $ mcpc https://example.com tools-call search --args query="hello"
   $ mcpc --json @apify resources-list           # JSON output
@@ -147,13 +148,24 @@ async function handleCommands(target: string, argv: string[]): Promise<void> {
     return { outputMode: (opts.json ? 'json' : 'human') as OutputMode };
   };
 
-  // Instructions command
-  program
-    .command('instructions')
-    .description('Get server instructions')
-    .action(async (_options, command) => {
-      await sessions.getInstructions(target, getOptions(command));
+  // Check if no command provided - show server info and instructions
+  const hasCommand = argv.some((arg, i) => {
+    if (i < 2) return false; // Skip node and script path
+    return !arg.startsWith('-'); // First non-option arg after target
+  });
+
+  if (!hasCommand) {
+    // No command provided, show server info and instructions
+    // Parse options from argv to get flags like --json
+    const hasJsonFlag = argv.includes('--json') || argv.includes('-j');
+    const hasVerboseFlag = argv.includes('--verbose');
+    if (hasVerboseFlag) setVerbose(true);
+
+    await sessions.getInstructions(target, {
+      outputMode: hasJsonFlag ? 'json' : 'human',
     });
+    return;
+  }
 
   // Shell command
   program

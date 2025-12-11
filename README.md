@@ -56,9 +56,9 @@ mcpc [--json] [--config <file>] [-H|--header "K: V"] [-v|--verbose] [--schema <f
      [--schema-mode <mode>] [--timeout <seconds>] [--protocol-version <version>]
      <target> <command...>
 
-# MCP commands
-mcpc <target> instructions
+mcpc <target>      # shows server info and instructions
 
+# MCP commands
 mcpc <target> tools
 mcpc <target> tools-list [--cursor <cursor>]
 mcpc <target> tools-get <tool>
@@ -76,7 +76,7 @@ mcpc <target> prompts-get <name> [--args key=val key2:=json ...]
 
 # Session management
 mcpc <target> connect <server>
-mcpc # prints alls sessions
+mcpc         # prints alls sessions
 mcpc @<name> <command...>
 mcpc @<name> close
 
