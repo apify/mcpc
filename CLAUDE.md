@@ -288,3 +288,4 @@ Bridge logs location: `~/.mcpc/logs/bridge-<session>.log`
 
 - [Official MCP documentation](https://modelcontextprotocol.io/llms.txt)
 - [Official TypeScript SDK for MCP servers and clients](https://www.npmjs.com/package/@modelcontextprotocol/sdk)
+- [MCP Inspector](https://github.com/modelcontextprotocol/inspector) - it has CLI client, so it's good for inspiration.

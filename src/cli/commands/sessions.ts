@@ -60,7 +60,14 @@ export async function listSessions(options: { outputMode: OutputMode }): Promise
   ];
 
   if (options.outputMode === 'json') {
-    console.log(formatOutput(mockSessions, 'json'));
+    // Rename fields for JSON output
+    const sessionsForJson = mockSessions.map((s) => ({
+      sessionName: s.name,
+      server: s.target,
+      transport: s.transport,
+      createdAt: s.createdAt,
+    }));
+    console.log(formatOutput(sessionsForJson, 'json'));
   } else {
     if (mockSessions.length === 0) {
       console.log('No active sessions.');
