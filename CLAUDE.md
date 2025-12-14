@@ -33,6 +33,34 @@ npm run lint
 npm run format
 ```
 
+## Quick Start Examples
+
+```bash
+# Show general help
+mcpc --help
+
+# List all sessions
+mcpc
+
+# Show server info and capabilities (with mock data)
+mcpc https://mcp.example.com
+mcpc @apify
+
+# List tools (mock data)
+mcpc https://mcp.example.com tools-list
+mcpc @apify tools-list --json
+
+# Call a tool with arguments (mock data)
+mcpc @apify tools-call search --args '{"query":"hello"}'
+mcpc @apify tools-call search --args query=hello limit:=10
+
+# Create a session (not yet functional)
+mcpc https://mcp.apify.com connect --name @apify
+
+# Set logging level (mock)
+mcpc @apify logging-set-level debug
+```
+
 ## Architecture
 
 ### High-Level Structure
@@ -79,7 +107,7 @@ mcpc/
 
 **3. CLI Executable (`src/cli/`)**
 - Main `mcpc` command providing user interface
-- Argument parsing (likely using `minimist` or similar)
+- Argument parsing using Commander.js
 - Output formatting: human-readable (default, with colors/tables) vs `--json` mode
 - Bridge lifecycle: start/connect/stop, auto-restart on crash
 - Interactive shell using `@inquirer/prompts` with command history (`~/.mcpc/history`, last 1000 commands)
@@ -87,9 +115,24 @@ mcpc/
 - Credential management via OS keychain (`keytar` package)
 - Tab completion for commands, tool names, and resource URIs
 
+**CLI Command Structure:**
+- All MCP commands use hyphenated format: `tools-list`, `tools-call`, `resources-get`, etc.
+- `mcpc` - List all sessions
+- `mcpc <target>` - Show server info, instructions, capabilities, and available commands
+- `mcpc <target> help` - Alias for above
+- `mcpc <target> <command>` - Execute MCP command
+- Session creation: `mcpc <target> connect --name @<session-name>`
+
+**Output Utilities** (`src/cli/output.ts`):
+- `logTarget(target, outputMode)` - Shows `[Using session: @name]` prefix (human mode only)
+- `formatOutput(data, mode)` - Auto-detects data type and formats appropriately
+- `formatJson(data)` - Clean JSON output without wrappers
+- `formatTools/Resources/Prompts()` - Specialized table formatting
+- `formatSuccess/Error/Warning/Info()` - Styled status messages
+
 ### Session Lifecycle
 
-1. User creates session: `mcpc connect apify https://mcp.apify.com`
+1. User creates session: `mcpc https://mcp.apify.com connect --name @apify`
 2. CLI creates entry in `sessions.json`, spawns bridge process
 3. Bridge creates Unix socket at `~/.mcpc/bridges/apify.sock`
 4. Bridge performs MCP initialization:
@@ -97,7 +140,7 @@ mcpc/
    - Receives server info, version, and capabilities
    - Sends `initialized` notification to activate session
 5. Bridge updates `sessions.json` with PID, socket path, protocol version
-6. For subsequent commands (`mcpc @apify tools list`):
+6. For subsequent commands (`mcpc @apify tools-list`):
    - CLI reads `sessions.json`, connects to bridge socket
    - Sends JSON-RPC request via socket
    - Bridge forwards to MCP server, returns response
@@ -154,6 +197,7 @@ mcpc/
 - **Tools**: Executable functions with JSON Schema-validated arguments
 - **Resources**: Data sources with URIs (e.g., `file:///`, `https://`), optional subscriptions for change notifications
 - **Prompts**: Reusable message templates with customizable arguments
+- **Logging**: Server-side logging level control via `logging/setLevel` request
 
 **Notifications:**
 - `notifications/tools/list_changed`
@@ -164,6 +208,27 @@ mcpc/
 **Pagination:**
 - List operations return `nextCursor` when more results available
 - Use `--cursor` flag to fetch next page
+
+**Argument Passing:**
+
+Tools and prompts accept arguments via `--args` flag in three formats:
+
+1. **Inline JSON** (recommended for complex objects):
+   ```bash
+   mcpc @apify tools-call search --args '{"query":"hello","limit":10}'
+   ```
+
+2. **Key=value pairs** (for simple strings):
+   ```bash
+   mcpc @apify tools-call search --args query=hello limit=world
+   ```
+
+3. **Key:=json pairs** (for typed values):
+   ```bash
+   mcpc @apify tools-call search --args query="hello" limit:=10 enabled:=true
+   ```
+
+Detection logic: If first argument starts with `{` or `[`, it's parsed as inline JSON. Otherwise, key=value/key:=json pairs are parsed.
 
 ## Package Resolution
 
@@ -243,12 +308,13 @@ Environment variable substitution supported: `${VAR_NAME}`
 
 ## Key Dependencies
 
-- `@inquirer/prompts` - Interactive shell
-- `keytar` - OS keychain integration
-- `proper-lockfile` - File locking for concurrent access
-- Argument parsing library (e.g., `minimist`)
-- UUID generation library
-- Event emitter abstraction
+- `@modelcontextprotocol/sdk` - Official MCP SDK for client/server implementation
+- `commander` - Command-line argument parsing and CLI framework
+- `chalk` - Terminal string styling and colors
+- `cli-table3` - ASCII table formatting for human-readable output
+- `@inquirer/prompts` - Interactive shell (planned)
+- `keytar` - OS keychain integration (planned)
+- `proper-lockfile` - File locking for concurrent access (planned)
 
 **Minimal dependencies approach:** Core module uses native APIs (`fetch`, process APIs) to support both Node.js and Bun.
 
@@ -259,6 +325,23 @@ Environment variable substitution supported: `${VAR_NAME}`
 - `2` - Server error (tool execution failed, resource not found)
 - `3` - Network error (connection failed, timeout)
 - `4` - Authentication error (invalid credentials, forbidden)
+
+## MCP Logging Levels
+
+The `logging/setLevel` request supports these standard syslog severity levels (RFC 5424):
+
+- `debug` - Detailed debugging information (most verbose)
+- `info` - General informational messages
+- `notice` - Normal but significant events
+- `warning` - Warning messages
+- `error` - Error messages
+- `critical` - Critical conditions
+- `alert` - Action must be taken immediately
+- `emergency` - System is unusable (least verbose)
+
+Example: `mcpc @apify logging-set-level debug`
+
+**Note:** This sets the server-side logging level. For client-side verbose logging, use the `--verbose` flag.
 
 ## Common Implementation Patterns
 
@@ -272,6 +355,13 @@ When implementing features:
 6. **Output formatting** - Support both human-readable (default) and JSON (`--json`) modes
 7. **Protocol compliance** - Follow MCP specification strictly; handle all notification types
 8. **Session management** - Always clean up resources; handle orphaned processes; provide reconnection
+9. **Hyphenated commands** - All MCP commands use hyphens: `tools-list`, `resources-get`, `prompts-list`
+10. **Target-first syntax** - Commands follow `mcpc <target> <command>` pattern consistently
+11. **JSON field naming** - Use consistent field names in JSON output:
+    - `sessionName` (not `name`) for session identifiers
+    - `server` (not `target`) for server URLs/addresses
+    - No `success` wrapper - indicate errors via exit codes
+    - No debug prefixes like `[Using target: ...]` in JSON mode
 
 ## Debugging
 
@@ -284,8 +374,54 @@ Enable verbose mode: `--verbose` flag shows:
 
 Bridge logs location: `~/.mcpc/logs/bridge-<session>.log`
 
+## Current Implementation Status
+
+### ✅ Completed
+- **CLI Structure**: Complete command parsing and routing with Commander.js
+- **Output Formatting**: Human-readable (tables, colors) and JSON modes
+- **Argument Parsing**: Inline JSON, key=value, and key:=json formats
+- **Core MCP Client**: Wrapper around official SDK with error handling
+- **Transport Layer**: HTTP and stdio transport creation and management
+- **Error Handling**: Typed errors with appropriate exit codes
+- **Logging**: Structured logging with verbose mode support
+- **Command Handlers**: All command stubs with mock data
+  - `tools-list`, `tools-get`, `tools-call`
+  - `resources-list`, `resources-get`, `resources-subscribe`, `resources-unsubscribe`
+  - `prompts-list`, `prompts-get`
+  - `logging-set-level`
+  - `connect`, `close`, `help`, `shell` (stub)
+
+### 🚧 In Progress / TODO
+- **Bridge Process**: Persistent MCP connections (placeholder exists)
+- **Session Management**: `sessions.json` persistence with file locking
+- **IPC Layer**: Unix socket communication between CLI and bridge
+- **Target Resolution**: URL/package/config resolution logic
+- **CLI-to-MCP Integration**: Connect command handlers to actual MCP client
+- **Interactive Shell**: REPL with command history and tab completion
+- **Config File Loading**: Parse and use MCP config files
+- **Keychain Integration**: Store credentials securely
+- **Package Resolution**: Find and run local MCP packages
+- **Notification Handling**: Handle server-sent notifications
+- **Error Recovery**: Bridge crash recovery, automatic reconnection
+
+### 📋 Implementation Approach
+
+Two options for connecting CLI commands to MCP:
+
+**Option 1: Direct Connection (Recommended Start)**
+- CLI command handlers create `McpClient` on-demand
+- Connect → Execute → Close for each command
+- Simpler, works immediately, good for ephemeral usage
+- No persistent sessions yet
+
+**Option 2: Bridge Process (Full Architecture)**
+- Persistent bridge maintains MCP connection
+- CLI communicates via Unix socket IPC
+- Supports persistent sessions, notifications, better performance
+- More complex, implement after Option 1 works
+
 ## References
 
 - [Official MCP documentation](https://modelcontextprotocol.io/llms.txt)
 - [Official TypeScript SDK for MCP servers and clients](https://www.npmjs.com/package/@modelcontextprotocol/sdk)
-- [MCP Inspector](https://github.com/modelcontextprotocol/inspector) - it has CLI client, so it's good for inspiration.
+- [MCP Inspector](https://github.com/modelcontextprotocol/inspector) - CLI client implementation for reference
