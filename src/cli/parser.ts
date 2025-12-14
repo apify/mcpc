@@ -23,7 +23,7 @@ export function createParser(): Command {
     .option('-j, --json', 'Output in JSON format')
     .option('--verbose', 'Enable verbose logging')
     .option('-c, --config <path>', 'Path to MCP server config file')
-    .helpOption('-h, --help', 'Display help for command');
+    .helpOption('-h, --help', 'Display general help');
 
   // Connect command
   program

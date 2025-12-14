@@ -104,6 +104,7 @@ function createProgram(): Command {
     .description('Command-line client for the Model Context Protocol (MCP).')
     .usage('[options] <target> [command]')
     .version(packageJson.version, '-v, --version', 'Output the version number')
+    .helpOption('-h, --help', 'Display general help')
     .option('-j, --json', 'Output in JSON format')
     .option('--verbose', 'Enable verbose logging')
     .option('-c, --config <path>', 'Path to MCP server config file')
@@ -119,17 +120,17 @@ function createProgram(): Command {
     'after',
     `
 Where <target> can be:
-  @<name>           Named session (e.g., @apify)
-  https://...       Remote MCP server URL
-  <config-entry>    Entry from config file (with --config)
-  <package>         Local MCP server package
+  @<name>                       Named session (e.g., @apify)
+  https://mcp.example.com       Remote MCP server URL
+  <config-entry>                Entry from config file (with --config)
+  <package>                     Local MCP server package
 
 Examples:
   $ mcpc                                                # List all sessions
   $ mcpc https://mcp.apify.com connect --name @apify    # Create a session
   $ mcpc @apify                                         # Show server info and capabilities
-  $ mcpc @apify tools-list                              # List tools
-  $ mcpc https://example.com tools-call search --args query="hello"
+  $ mcpc @apify tools-list                              # List server tools
+  $ mcpc @apify tools-call search-actors --args '{query:"hello"}'
   $ mcpc --json @apify resources-list                   # JSON output
 `
   );
