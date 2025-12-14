@@ -3,7 +3,7 @@
  */
 
 import type { OutputMode } from '../../lib/types.js';
-import { formatOutput } from '../output.js';
+import { formatOutput, logTarget } from '../output.js';
 import { ClientError } from '../../lib/errors.js';
 
 /**
@@ -34,7 +34,7 @@ export async function listPrompts(
     },
   ];
 
-  console.log(`[Using target: ${target}]`);
+  logTarget(target, options.outputMode);
   console.log(formatOutput(mockPrompts, options.outputMode));
 }
 
@@ -94,6 +94,6 @@ export async function getPrompt(
     ],
   };
 
-  console.log(`[Using target: ${target}]`);
+  logTarget(target, options.outputMode);
   console.log(formatOutput(mockPrompt, options.outputMode));
 }

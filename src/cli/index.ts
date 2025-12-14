@@ -101,13 +101,13 @@ function createProgram(): Command {
 
   program
     .name('mcpc')
-    .description('Command-line client for the Model Context Protocol (MCP)')
+    .description('Command-line client for the Model Context Protocol (MCP).')
     .usage('[options] <target> [command]')
     .version(packageJson.version, '-v, --version', 'Output the version number')
     .option('-j, --json', 'Output in JSON format')
     .option('--verbose', 'Enable verbose logging')
-    .option('-c, --config <path>', 'Path to configuration file')
-    .option('-H, --header <header>', 'Add HTTP header (can be repeated)', [])
+    .option('-c, --config <path>', 'Path to MCP server config file')
+    .option('-H, --header <header>', 'Add HTTP header (can be repeated)')
     .option('--timeout <seconds>', 'Request timeout in seconds')
     .option('--protocol-version <version>', 'Force specific MCP protocol version')
     .option('--schema <file>', 'Validate against expected tool/prompt schema')
@@ -118,6 +118,12 @@ function createProgram(): Command {
   program.addHelpText(
     'after',
     `
+Where <target> can be:
+  @<name>           Named session (e.g., @apify)
+  https://...       Remote MCP server URL
+  <config-entry>    Entry from config file (with --config)
+  <package>         Local MCP server package
+
 Examples:
   $ mcpc                                        # List all sessions
   $ mcpc @apify connect https://mcp.apify.com   # Create a session
@@ -125,12 +131,6 @@ Examples:
   $ mcpc @apify tools-list                      # List tools
   $ mcpc https://example.com tools-call search --args query="hello"
   $ mcpc --json @apify resources-list           # JSON output
-
-Where <target> can be:
-  @<name>           Named session (e.g., @apify)
-  https://...       Remote MCP server URL
-  <config-entry>    Entry from config file (with --config)
-  <package>         Local MCP server package
 `
   );
 
@@ -139,7 +139,7 @@ Where <target> can be:
 
 async function handleCommands(target: string, argv: string[]): Promise<void> {
   const program = createProgram();
-  program.argument('<target>', 'Target (session @name, URL, config entry, or package)');
+  program.argument('<target>', 'Target (session @name, server URL, config entry, or package)');
 
   // Get options to pass to handlers
   const getOptions = (command: Command) => {

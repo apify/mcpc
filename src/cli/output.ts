@@ -24,14 +24,7 @@ export function formatOutput(data: unknown, mode: OutputMode = 'human'): string 
  * Format data as JSON
  */
 export function formatJson(data: unknown): string {
-  return JSON.stringify(
-    {
-      success: true,
-      data,
-    },
-    null,
-    2
-  );
+  return JSON.stringify(data, null, 2);
 }
 
 /**
@@ -202,16 +195,22 @@ export function formatInfo(message: string): string {
 }
 
 /**
+ * Log target prefix (only in human mode)
+ */
+export function logTarget(target: string, outputMode: OutputMode): void {
+  if (outputMode === 'human') {
+    console.log(`[Using session: ${target}]`);
+  }
+}
+
+/**
  * Format JSON error output
  */
 export function formatJsonError(error: Error, code: number): string {
   return JSON.stringify(
     {
-      success: false,
-      error: {
-        message: error.message,
-        code,
-      },
+      error: error.message,
+      code,
     },
     null,
     2

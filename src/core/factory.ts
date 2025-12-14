@@ -148,10 +148,10 @@ export async function createHttpClient(
     url,
   };
 
-  if (headers !== undefined) {
+  if (headers) {
     transport.headers = headers;
   }
-  if (timeout !== undefined) {
+  if (timeout) {
     transport.timeout = timeout;
   }
 

@@ -128,7 +128,7 @@ echo '{"query":"hello","count":10}' | mcpc @server tools-call my-tool
 **Global flags:**
 
 - `--json` - Input and output in JSON format for scripting
-- `--config <file>` - Use MCP config file (e.g., Claude Desktop config)
+- `--config <file>` - Use MCP config file (e.g., `.vscode/mcp.json`)
 - `-H, --header "Key: Value"` - Add HTTP header (can be repeated)
 - `-v, --verbose` - Enable verbose logging (shows protocol details)
 - `--timeout <seconds>` - Request timeout in seconds (default: 300)
@@ -232,17 +232,19 @@ Configuration can be provided via file, environment variables, or command-line f
 
 ### Config file
 
-`mcpc` uses the standard MCP config file format, compatible with Claude Desktop and other MCP clients. You can point to an existing config file with `--config`:
+`mcpc` supports the [standard](https://gofastmcp.com/integrations/mcp-json-configuration)
+MCP server JSON config file, compatible with Claude Desktop, VS Code, and other MCP clients.
+You can point to an existing config file with `--config`:
 
 ```bash
-# Use Claude Desktop config (macOS)
-mcpc --config ~/Library/Application\ Support/Claude/claude_desktop_config.json apify tools-list
+# One-shot command to an MCP server configured in VS Code
+mcpc --config .vscode/mcp.json apify tools-list
 
-# Use custom config file
-mcpc --config ./mcp-config.json myserver resources-list
+# Open a session to a server specified in the custom config file
+mcpc --config .vscode/mcp.json apify connect
 ```
 
-**Standard MCP config format:**
+**Example MCP server config file:**
 
 ```json
 {
@@ -286,11 +288,10 @@ When `--config` is provided, you can reference servers by name:
 
 ```bash
 # With config file, use server names directly
-mcpc --config mcp-config.json apify tools-list
-mcpc --config mcp-config.json filesystem resources-list
+mcpc --config .vscode/mcp.json filesystem resources-list
 
-# Create a named session from config
-mcpc --config mcp-config.json connect my-apify apify
+# Create a named session from server in config
+mcpc --config .vscode/mcp.json connect @fs
 mcpc @my-apify tools-call search
 ```
 
@@ -314,7 +315,7 @@ Config files support environment variable substitution using `${VAR_NAME}` synta
 
 ### Environment variables
 
-- `MCPC_CONFIG` - Path to the standard MCP server config file (instead of using `--config`)
+- `MCPC_CONFIG_FILE` - Path to the standard MCP server config file (instead of using `--config`)
 - `MCPC_SESSION_DIR` - Directory for session data (default is `~/.mcpc`)
 - `MCPC_VERBOSE` - Enable verbose logging (instead of using `--verbose`, set to `1` or `true`)
 - `MCPC_TIMEOUT` - Default timeout in seconds (instead of using `--timeout`, default is `300`)

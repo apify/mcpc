@@ -3,7 +3,7 @@
  */
 
 import type { OutputMode } from '../../lib/types.js';
-import { formatOutput, formatSuccess } from '../output.js';
+import { formatOutput, formatSuccess, logTarget } from '../output.js';
 
 /**
  * Connect to an MCP server and create a session
@@ -40,41 +40,34 @@ export async function listSessions(options: { outputMode: OutputMode }): Promise
   // TODO: Read from sessions.json
 
   const mockSessions: Array<{
-    name: string;
-    target: string;
+    sessionName: string;
+    server: string;
     transport: string;
-    createdAt: string;
+    createdAt: Date;
   }> = [
     {
-      name: 'apify',
-      target: 'https://mcp.apify.com',
+      sessionName: 'apify',
+      server: 'https://mcp.apify.com',
       transport: 'http',
-      createdAt: new Date().toISOString(),
+      createdAt: new Date(),
     },
     {
-      name: 'local',
-      target: 'node server.js',
+      sessionName: 'local',
+      server: 'node server.js',
       transport: 'stdio',
-      createdAt: new Date().toISOString(),
+      createdAt: new Date(),
     },
   ];
 
   if (options.outputMode === 'json') {
-    // Rename fields for JSON output
-    const sessionsForJson = mockSessions.map((s) => ({
-      sessionName: s.name,
-      server: s.target,
-      transport: s.transport,
-      createdAt: s.createdAt,
-    }));
-    console.log(formatOutput(sessionsForJson, 'json'));
+    console.log(formatOutput(mockSessions, 'json'));
   } else {
     if (mockSessions.length === 0) {
       console.log('No active sessions.');
     } else {
       console.log('Active sessions:');
       for (const session of mockSessions) {
-        console.log(`  @${session.name} → ${session.target} (${session.transport})`);
+        console.log(`  @${session.sessionName} → ${session.server} (${session.transport})`);
       }
     }
   }
@@ -119,7 +112,8 @@ This is a placeholder for server-provided instructions.
 Instructions would typically explain how to use the server's tools and resources.`;
 
   if (options.outputMode === 'human') {
-    console.log(`[Using target: ${target}]\n`);
+    logTarget(target, options.outputMode);
+    console.log('');
     console.log(mockInstructions);
   } else {
     console.log(
@@ -139,11 +133,11 @@ Instructions would typically explain how to use the server's tools and resources
  */
 export async function openShell(
   target: string,
-  _options: { outputMode: OutputMode }
+  options: { outputMode: OutputMode }
 ): Promise<void> {
   // TODO: Implement interactive shell using @inquirer/prompts
 
-  console.log(`[Using target: ${target}]`);
+  logTarget(target, options.outputMode);
   console.log('Interactive shell not implemented yet.');
   console.log('This would provide a REPL interface with:');
   console.log('  - Command history (saved to ~/.mcpc/history)');

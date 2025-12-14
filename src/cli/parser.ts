@@ -22,7 +22,7 @@ export function createParser(): Command {
     .version(packageJson.version, '-v, --version', 'Output the version number')
     .option('-j, --json', 'Output in JSON format')
     .option('--verbose', 'Enable verbose logging')
-    .option('-c, --config <path>', 'Path to configuration file')
+    .option('-c, --config <path>', 'Path to MCP server config file')
     .helpOption('-h, --help', 'Display help for command');
 
   // Connect command

@@ -3,7 +3,7 @@
  */
 
 import type { OutputMode } from '../../lib/types.js';
-import { formatOutput, formatToolDetail, formatSuccess } from '../output.js';
+import { formatOutput, formatToolDetail, formatSuccess, logTarget } from '../output.js';
 import { ClientError } from '../../lib/errors.js';
 
 /**
@@ -21,8 +21,31 @@ export async function listTools(
 
   const mockTools = [
     {
+      "name": "get_weather",
+      "title": "Weather Information Provider",
+      "description": "Get current weather information for a location",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "location": {
+            "type": "string",
+            "description": "City name or zip code"
+          }
+        },
+        "required": ["location"]
+      },
+      "icons": [
+        {
+          "src": "https://example.com/weather-icon.png",
+          "mimeType": "image/png",
+          "sizes": ["48x48"]
+        }
+      ]
+    },
+    {
       name: 'search',
-      description: 'Search for information',
+      description: 'Search for information in database',
+      title: 'Search stuff',
       inputSchema: {
         type: 'object',
         properties: {
@@ -44,7 +67,7 @@ export async function listTools(
     },
   ];
 
-  console.log(`[Using target: ${target}]`);
+  logTarget(target, options.outputMode);
   console.log(formatOutput(mockTools, options.outputMode));
 }
 
@@ -69,11 +92,11 @@ export async function getTool(
     },
   };
 
-  if (options.outputMode === 'json') {
-    console.log(formatOutput(mockTool, 'json'));
-  } else {
-    console.log(`[Using target: ${target}]`);
+  logTarget(target, options.outputMode);
+  if (options.outputMode === 'human') {
     console.log(formatToolDetail(mockTool));
+  } else {
+    console.log(formatOutput(mockTool, 'json'));
   }
 }
 
@@ -135,8 +158,8 @@ export async function callTool(
     ],
   };
 
+  logTarget(target, options.outputMode);
   if (options.outputMode === 'human') {
-    console.log(`[Using target: ${target}]`);
     console.log(formatSuccess(`Tool ${name} executed successfully`));
     console.log(formatOutput(mockResult, 'human'));
   } else {

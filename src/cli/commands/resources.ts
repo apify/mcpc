@@ -3,7 +3,7 @@
  */
 
 import type { OutputMode } from '../../lib/types.js';
-import { formatOutput, formatSuccess } from '../output.js';
+import { formatOutput, formatSuccess, logTarget } from '../output.js';
 
 /**
  * List available resources
@@ -32,7 +32,7 @@ export async function listResources(
     },
   ];
 
-  console.log(`[Using target: ${target}]`);
+  logTarget(target, options.outputMode);
   console.log(formatOutput(mockResources, options.outputMode));
 }
 
@@ -62,7 +62,7 @@ export async function getResource(
     ],
   };
 
-  console.log(`[Using target: ${target}]`);
+  logTarget(target, options.outputMode);
   console.log(formatOutput(mockResource, options.outputMode));
 }
 
@@ -76,8 +76,8 @@ export async function subscribeResource(
 ): Promise<void> {
   // TODO: Connect to MCP client using target and subscribe
 
+  logTarget(target, options.outputMode);
   if (options.outputMode === 'human') {
-    console.log(`[Using target: ${target}]`);
     console.log(formatSuccess(`Subscribed to resource: ${uri}`));
   } else {
     console.log(formatOutput({ subscribed: true, uri }, 'json'));
@@ -94,8 +94,8 @@ export async function unsubscribeResource(
 ): Promise<void> {
   // TODO: Connect to MCP client using target and unsubscribe
 
+  logTarget(target, options.outputMode);
   if (options.outputMode === 'human') {
-    console.log(`[Using target: ${target}]`);
     console.log(formatSuccess(`Unsubscribed from resource: ${uri}`));
   } else {
     console.log(formatOutput({ unsubscribed: true, uri }, 'json'));
