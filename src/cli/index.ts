@@ -127,7 +127,7 @@ Where <target> can be:
   <package>                     Local MCP server package
 
 Examples:
-  $ mcpc https://mcp.apify.com connect --name @apify    # Create a session
+  $ mcpc https://mcp.apify.com connect --session @apify # Create a session
   $ mcpc @apify                                         # Show server info and capabilities
   $ mcpc @apify tools-list                              # List server tools
   $ mcpc @apify tools-call search-actors --args '{query:"hello"}'
@@ -213,13 +213,13 @@ async function handleCommands(target: string, argv: string[]): Promise<void> {
       await sessions.closeSession(target, getOptions(command));
     });
 
-  // Connect command: mcpc <target> connect --name <name>
+  // Connect command: mcpc <target> connect --session @<name>
   program
     .command('connect')
     .description('Connect to an MCP server and create a session')
-    .requiredOption('--name <name>', 'Session name (e.g., @apify)')
+    .requiredOption('--session <name>', 'Session name (e.g., @apify)')
     .action(async (options, command) => {
-      await sessions.connectSession(options.name, target, getOptions(command));
+      await sessions.connectSession(options.session, target, getOptions(command));
     });
 
   // Tools commands (hyphenated)

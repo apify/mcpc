@@ -6,7 +6,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 
 import chalk from 'chalk';
-import Table from 'cli-table3';
 import type { OutputMode } from '../lib/types.js';
 import type { Tool, Resource, Prompt } from '../lib/types.js';
 
@@ -68,20 +67,22 @@ export function formatHuman(data: unknown): string {
 }
 
 /**
- * Format a list of tools as a table
+ * Format a list of tools as Markdown
  */
 export function formatTools(tools: Tool[]): string {
-  const table = new Table({
-    head: [chalk.cyan('Name'), chalk.cyan('Description')],
-    colWidths: [30, 70],
-    wordWrap: true,
-  });
+  const lines: string[] = [];
 
   for (const tool of tools) {
-    table.push([chalk.bold(tool.name), tool.description || chalk.gray('(no description)')]);
+    lines.push(`## \`${tool.name}\``);
+    if (tool.description) {
+      lines.push(tool.description);
+    } else {
+      lines.push(chalk.gray('(no description)'));
+    }
+    lines.push('');
   }
 
-  return table.toString();
+  return lines.join('\n');
 }
 
 /**
@@ -90,65 +91,79 @@ export function formatTools(tools: Tool[]): string {
 export function formatToolDetail(tool: Tool): string {
   const lines: string[] = [];
 
-  lines.push(chalk.bold.cyan(`Tool: ${tool.name}`));
+  lines.push(`# ${tool.name}`);
   lines.push('');
 
   if (tool.description) {
-    lines.push(chalk.bold('Description:'));
+    lines.push('## Description');
     lines.push(tool.description);
     lines.push('');
   }
 
-  lines.push(chalk.bold('Input Schema:'));
+  lines.push('## Input schema');
+  lines.push('```json');
   lines.push(JSON.stringify(tool.inputSchema, null, 2));
+  lines.push('```');
 
   return lines.join('\n');
 }
 
 /**
- * Format a list of resources as a table
+ * Format a list of resources as Markdown
  */
 export function formatResources(resources: Resource[]): string {
-  const table = new Table({
-    head: [chalk.cyan('URI'), chalk.cyan('Name'), chalk.cyan('MIME Type')],
-    colWidths: [40, 30, 20],
-    wordWrap: true,
-  });
+  const lines: string[] = [];
 
   for (const resource of resources) {
-    table.push([
-      chalk.bold(resource.uri),
-      resource.name || chalk.gray('(unnamed)'),
-      resource.mimeType || chalk.gray('(unknown)'),
-    ]);
+    lines.push(`## \`${resource.uri}\``);
+
+    const details: string[] = [];
+    if (resource.name) {
+      details.push(`**Name:** ${resource.name}`);
+    }
+    if (resource.description) {
+      details.push(`**Description:** ${resource.description}`);
+    }
+    if (resource.mimeType) {
+      details.push(`**MIME Type:** ${resource.mimeType}`);
+    }
+
+    if (details.length > 0) {
+      lines.push(details.join('  \n'));
+    }
+    lines.push('');
   }
 
-  return table.toString();
+  return lines.join('\n');
 }
 
 /**
- * Format a list of prompts as a table
+ * Format a list of prompts as Markdown
  */
 export function formatPrompts(prompts: Prompt[]): string {
-  const table = new Table({
-    head: [chalk.cyan('Name'), chalk.cyan('Description'), chalk.cyan('Arguments')],
-    colWidths: [25, 45, 30],
-    wordWrap: true,
-  });
+  const lines: string[] = [];
 
   for (const prompt of prompts) {
-    const argsList = prompt.arguments
-      ? prompt.arguments.map((arg) => arg.name).join(', ')
-      : chalk.gray('(none)');
+    lines.push(`## \`${prompt.name}\``);
 
-    table.push([
-      chalk.bold(prompt.name),
-      prompt.description || chalk.gray('(no description)'),
-      argsList,
-    ]);
+    if (prompt.description) {
+      lines.push(prompt.description);
+    }
+
+    if (prompt.arguments && prompt.arguments.length > 0) {
+      lines.push('');
+      lines.push('**Arguments:**');
+      for (const arg of prompt.arguments) {
+        const required = arg.required ? ' (required)' : '';
+        const description = arg.description ? ` - ${arg.description}` : '';
+        lines.push(`- \`${arg.name}\`${required}${description}`);
+      }
+    }
+
+    lines.push('');
   }
 
-  return table.toString();
+  return lines.join('\n');
 }
 
 /**

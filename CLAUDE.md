@@ -55,7 +55,7 @@ mcpc @apify tools-call search --args '{"query":"hello"}'
 mcpc @apify tools-call search --args query=hello limit:=10
 
 # Create a session (not yet functional)
-mcpc https://mcp.apify.com connect --name @apify
+mcpc https://mcp.apify.com connect --session @apify
 
 # Set logging level (mock)
 mcpc @apify logging-set-level debug
@@ -121,7 +121,7 @@ mcpc/
 - `mcpc <target>` - Show server info, instructions, capabilities, and available commands
 - `mcpc <target> help` - Alias for above
 - `mcpc <target> <command>` - Execute MCP command
-- Session creation: `mcpc <target> connect --name @<session-name>`
+- Session creation: `mcpc <target> connect --session @<session-name>`
 
 **Output Utilities** (`src/cli/output.ts`):
 - `logTarget(target, outputMode)` - Shows `[Using session: @name]` prefix (human mode only)
@@ -132,7 +132,7 @@ mcpc/
 
 ### Session Lifecycle
 
-1. User creates session: `mcpc https://mcp.apify.com connect --name @apify`
+1. User creates session: `mcpc https://mcp.apify.com connect --session @apify`
 2. CLI creates entry in `sessions.json`, spawns bridge process
 3. Bridge creates Unix socket at `~/.mcpc/bridges/apify.sock`
 4. Bridge performs MCP initialization:

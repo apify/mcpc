@@ -41,7 +41,7 @@ mcpc @modelcontextprotocol/server-filesystem tools-list
 mcpc --config ~/.vscode/mcp.json myserver tools-list
 
 # Create a persistent session
-mcpc https://mcp.example.com connect --name @myserver
+mcpc https://mcp.example.com connect --session @myserver
 mcpc @myserver tools-call search --args query=hello
 
 # Interactive shell
@@ -54,6 +54,7 @@ mcpc https://mcp.example.com shell
 ```bash
 mcpc [--json] [--config <file>] [-H|--header "K: V"] [-v|--verbose] [--schema <file>]
      [--schema-mode <mode>] [--timeout <seconds>] [--protocol-version <version>]
+     [--no-cache] [--insecure]
      <target> <command...>
 
 mcpc <target>         # shows server info, instructions, capabilities, and commands
@@ -79,7 +80,7 @@ mcpc <target> prompts-get <name> [--args key=val key2:=json ...]
 mcpc <target> logging-set-level <level>    # Set server log level
 
 # Session management
-mcpc <target> connect --name @<name>
+mcpc <target> connect --session @<name>
 mcpc         # prints alls sessions
 mcpc @<name> <command...>
 mcpc @<name> help
@@ -144,6 +145,7 @@ echo '{"query":"hello","count":10}' | mcpc @server tools-call my-tool
 - `--protocol-version <version>` - Force specific MCP protocol version (e.g., `2025-11-25`)
 - `--schema <file>` - Validate against expected tool/prompt schema
 - `--schema-mode <mode>` - Schema validation mode: `strict`, `compatible`, or `ignore` (default: `compatible`)
+- `--no-cache` - Disable prefetching and caching of server objects. 
 - `--insecure` - Disable SSL certificate validation (not recommended)
 
 ## Logging
@@ -209,7 +211,7 @@ Instead of forcing every command to reconnect and reinitialize (which is slow an
 
 ```bash
 # Create a persistent session
-mcpc https://mcp.apify.com/ connect --name @apify
+mcpc https://mcp.apify.com/ connect --session @apify
 
 
 # List active sessions
@@ -275,7 +277,7 @@ You can point to an existing config file with `--config`:
 mcpc --config .vscode/mcp.json apify tools-list
 
 # Open a session to a server specified in the custom config file
-mcpc --config .vscode/mcp.json apify connect --name @my-apify
+mcpc --config .vscode/mcp.json apify connect --session @my-apify
 ```
 
 **Example MCP server config file:**
@@ -325,7 +327,7 @@ When `--config` is provided, you can reference servers by name:
 mcpc --config .vscode/mcp.json filesystem resources-list
 
 # Create a named session from server in config
-mcpc --config .vscode/mcp.json filesystem connect --name @fs
+mcpc --config .vscode/mcp.json filesystem connect --session @fs
 mcpc @fs tools-call search
 ```
 
@@ -623,7 +625,7 @@ The main `mcpc` command provides the user interface.
 ### Session lifecycle
 
 ```
-1. User: mcpc https://mcp.apify.com connect --name @apify
+1. User: mcpc https://mcp.apify.com connect --session @apify
 2. CLI: Creates session entry in sessions.json
 3. CLI: Spawns bridge process (mcpc-bridge)
 4. Bridge: Creates Unix socket at ~/.mcpc/bridges/apify.sock
@@ -696,12 +698,12 @@ Later...
 ### Common issues
 
 **"Cannot connect to bridge"**
-- Bridge may have crashed. Try: `mcpc <server> connect --name @session`
+- Bridge may have crashed. Try: `mcpc <server> connect --session @session`
 - Check bridge is running: `ps aux | grep mcpc-bridge`
 - Check socket exists: `ls ~/.mcpc/bridges/`
 
 **"Session not found"**
-- Session may have expired. Create new session: `mcpc <target> connect --name @session`
+- Session may have expired. Create new session: `mcpc <target> connect --session @session`
 - List existing sessions: `mcpc`
 
 **"Package not found"**
