@@ -90,7 +90,7 @@ describe('createClient', () => {
 describe('createStdioClient', () => {
   it('should create a stdio client with command and args', async () => {
     const client = await createStdioClient(
-      { name: 'test-client', version: '1.0.0' },
+      { name: 'mcpc', version: '0.0.1' },
       'node',
       ['server.js']
     );
@@ -100,7 +100,7 @@ describe('createStdioClient', () => {
 
   it('should create a stdio client with environment variables', async () => {
     const client = await createStdioClient(
-      { name: 'test-client', version: '1.0.0' },
+      { name: 'mcpc', version: '0.1.0' },
       'node',
       ['server.js'],
       { DEBUG: '1' }
@@ -113,7 +113,7 @@ describe('createStdioClient', () => {
 describe('createHttpClient', () => {
   it('should create an http client with URL', async () => {
     const client = await createHttpClient(
-      { name: 'test-client', version: '1.0.0' },
+      { name: 'mcpc', version: '0.1.0' },
       'https://mcp.example.com'
     );
 
@@ -122,7 +122,7 @@ describe('createHttpClient', () => {
 
   it('should create an http client with headers', async () => {
     const client = await createHttpClient(
-      { name: 'test-client', version: '1.0.0' },
+      { name: 'mcpc', version: '0.1.0' },
       'https://mcp.example.com',
       { Authorization: 'Bearer token' }
     );
@@ -132,7 +132,7 @@ describe('createHttpClient', () => {
 
   it('should create an http client with timeout', async () => {
     const client = await createHttpClient(
-      { name: 'test-client', version: '1.0.0' },
+      { name: 'mcpc', version: '0.1.0' },
       'https://mcp.example.com',
       undefined,
       30000

@@ -98,34 +98,74 @@ export async function closeSession(
 }
 
 /**
- * Get server instructions
+ * Get server instructions and capabilities (also used for help command)
  */
 export async function getInstructions(
   target: string,
   options: { outputMode: OutputMode }
 ): Promise<void> {
-  // TODO: Connect to MCP server using target and get instructions
+  // TODO: Connect to MCP server using target and get capabilities
 
   const mockInstructions = `Instructions for ${target}:
 
 This is a placeholder for server-provided instructions.
 Instructions would typically explain how to use the server's tools and resources.`;
 
+  // Mock capabilities - in real implementation, these would come from server
+  const mockCapabilities = {
+    tools: ['search', 'calculate', 'get_weather'],
+    resources: true,
+    prompts: true,
+  };
+
   if (options.outputMode === 'human') {
     logTarget(target, options.outputMode);
     console.log('');
     console.log(mockInstructions);
+    console.log('');
+    console.log('Available capabilities:');
+    console.log(`  • Tools: ${mockCapabilities.tools.length} available`);
+    console.log(`  • Resources: ${mockCapabilities.resources ? 'supported' : 'not supported'}`);
+    console.log(`  • Prompts: ${mockCapabilities.prompts ? 'supported' : 'not supported'}`);
+    console.log('');
+    console.log('Common commands:');
+    console.log(`  mcpc ${target} tools-list              List all tools`);
+    console.log(`  mcpc ${target} resources-list          List all resources`);
+    console.log(`  mcpc ${target} prompts-list            List all prompts`);
+    console.log(`  mcpc ${target} tools-call <name>       Call a tool`);
+    console.log(`  mcpc ${target} shell                   Open interactive shell`);
   } else {
     console.log(
       formatOutput(
         {
           target,
           instructions: mockInstructions,
+          capabilities: mockCapabilities,
+          availableCommands: [
+            'tools-list',
+            'tools-get',
+            'tools-call',
+            'resources-list',
+            'resources-get',
+            'prompts-list',
+            'prompts-get',
+            'shell',
+          ],
         },
         'json'
       )
     );
   }
+}
+
+/**
+ * Show help for a server (alias for getInstructions)
+ */
+export async function showHelp(
+  target: string,
+  options: { outputMode: OutputMode }
+): Promise<void> {
+  await getInstructions(target, options);
 }
 
 /**

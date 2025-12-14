@@ -51,7 +51,7 @@ export interface CreateClientOptions {
  * @example
  * // Create client with HTTP transport
  * const client = await createClient({
- *   clientInfo: { name: 'my-app', version: '1.0.0' },
+ *   clientInfo: { name: 'mcpc', version: '0.1.0' },
  *   transport: {
  *     type: 'http',
  *     url: 'https://mcp.example.com',
@@ -61,7 +61,7 @@ export interface CreateClientOptions {
  * @example
  * // Create client with stdio transport
  * const client = await createClient({
- *   clientInfo: { name: 'my-app', version: '1.0.0' },
+ *   clientInfo: { name: 'mcpc', version: '0.1.0' },
  *   transport: {
  *     type: 'stdio',
  *     command: 'node',

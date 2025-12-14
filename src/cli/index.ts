@@ -127,7 +127,7 @@ Where <target> can be:
 Examples:
   $ mcpc                                                # List all sessions
   $ mcpc https://mcp.apify.com connect --name @apify    # Create a session
-  $ mcpc @apify                                         # Show server info and instructions
+  $ mcpc @apify                                         # Show server info and capabilities
   $ mcpc @apify tools-list                              # List tools
   $ mcpc https://example.com tools-call search --args query="hello"
   $ mcpc --json @apify resources-list                   # JSON output
@@ -166,6 +166,14 @@ async function handleCommands(target: string, argv: string[]): Promise<void> {
     });
     return;
   }
+
+  // Help command
+  program
+    .command('help')
+    .description('Show server instructions and available capabilities')
+    .action(async (_options, command) => {
+      await sessions.showHelp(target, getOptions(command));
+    });
 
   // Shell command
   program
