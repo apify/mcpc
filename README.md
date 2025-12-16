@@ -259,35 +259,45 @@ mcpc https://mcp.apify.com auth-delete --profile work
 
 #### Automatic OAuth behavior
 
-When calling a server or creating a session without specifying an auth profile,
-`mcpc` looks for the `default` auth profile and behaves as follows:
+`mcpc` automatically handles authentication based on whether you specify a profile:
 
-- If the `default` profile exists:
-    - Try to authenticate with it.
-    - Otherwise, attempt an anonymous connection.
-- On success, run the server command or create a session, and return.
-- On failure (OAuth returns 401 with `WWW-Authenticate` header), prompt user for (re-)authentication:
-    - If it succeeds, update the `default` profile and return.
-    - If re-authentication fails, return an error
+**When `--profile <name>` is specified:**
 
-This flow:
-- Ensures you only authenticate when necessary
-- Avoids unexpected downgrade from authenticated to un-authenticated session
-- Allows using sessions with named auth profiles and anonymous access at the same time
+1. **Profile exists**: Use its stored credentials
+   - If authentication succeeds → Continue with command/session
+   - If authentication fails (expired/invalid) → Prompt to re-authenticate and update the profile
+2. **Profile doesn't exist**: Prompt to authenticate and create new profile with that name
 
-Examples:
+**When no `--profile` is specified (uses `default` profile):**
+
+1. **`default` profile exists**: Use its stored credentials
+   - If authentication succeeds → Continue with command/session
+   - If authentication fails (expired/invalid) → Prompt to re-authenticate and update `default`
+2. **`default` profile doesn't exist**: Attempt unauthenticated connection
+   - If server accepts (no auth required) → Continue without creating profile
+   - If server rejects with 401 + `WWW-Authenticate` → Prompt to authenticate and create `default` profile
+
+**This flow ensures:**
+- You only authenticate when necessary
+- Credentials are never silently downgraded (authenticated → unauthenticated)
+- You can mix authenticated sessions (with named profiles) and public access on the same server
+
+**Examples:**
 
 ```bash
-# Create session with specific profile:
-# - Uses 'personal' profile if it exists and works
-# - Otherwise, prompts the user for login in a web browser, and saves it to `personal` profile on success
+# With specific profile - always authenticated:
+# - Uses 'personal' if it exists
+# - Prompts to create 'personal' if it doesn't exist
 mcpc https://mcp.apify.com connect --session @apify1 --profile personal
 
-# Create session without specifying auth profile:
-# - Uses 'default' profile if it exists
-# - If 'default' doesn't exist, attempts unauthenticated connection
-# - If server requires auth (401 response), prompts to login and saves the `default` profile
+# Without profile - opportunistic authentication:
+# - Uses 'default' if it exists
+# - Tries unauthenticated if 'default' doesn't exist
+# - Prompts to create 'default' only if server requires auth
 mcpc https://mcp.apify.com connect --session @apify2
+
+# Public server - no authentication needed:
+mcpc https://public-mcp.example.com tools-list
 ```
 
 #### Multiple accounts for the same server
