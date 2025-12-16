@@ -69,6 +69,7 @@ export interface SessionData {
   name: string;
   target: string; // URL or package name
   transport: TransportType;
+  authProfile?: string; // Name of auth profile (for OAuth servers)
   pid?: number; // Bridge process PID
   socketPath?: string; // Unix socket path
   protocolVersion?: string; // Negotiated MCP version
@@ -78,6 +79,30 @@ export interface SessionData {
   };
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * Authentication profile data stored in auth-profiles.json
+ */
+export interface AuthProfile {
+  name: string;
+  serverUrl: string;
+  authType: 'oauth' | 'bearer' | 'none';
+  // OAuth-specific fields
+  oauthIssuer?: string;
+  scopes?: string[];
+  authenticatedAt?: string;
+  expiresAt?: string;
+  // Metadata
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Auth profiles storage structure (auth-profiles.json)
+ */
+export interface AuthProfilesStorage {
+  profiles: Record<string, Record<string, AuthProfile>>; // serverUrl -> profileName -> AuthProfile
 }
 
 /**

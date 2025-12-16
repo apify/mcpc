@@ -38,9 +38,15 @@ mcpc @modelcontextprotocol/server-filesystem tools-list
 # Use your custom MCP config
 mcpc --config ~/.vscode/mcp.json myserver tools-list
 
-# Create a persistent session
-mcpc https://mcp.example.com connect --session @myserver
+# Authenticate to OAuth-enabled server and save authentication profile
+mcpc https://mcp.example.com auth --profile personal
+
+# Create a persistent session with auth profile
+mcpc https://mcp.example.com connect --session @myserver --profile personal
 mcpc @myserver tools-call search --args query=hello
+
+# List all sessions and saved auth profiles
+mcpc
 
 # Interactive shell
 mcpc @myserver shell
@@ -55,8 +61,9 @@ mcpc [--json] [--config <file>] [-H|--header "K: V"] [-v|--verbose] [--schema <f
      [--no-cache] [--insecure]
      <target> <command...>
 
-mcpc <target>         # shows server info, instructions, capabilities, and commands
-mcpc <target> help    # same as above
+mcpc                  # lists all active sessions and saved authentication profiles
+mcpc <target>         # shows session, server info, instructions, capabilities, and current session auth
+mcpc <target> help    # alias for "mcpc <target>"
 
 # MCP commands
 mcpc <target> tools
@@ -78,11 +85,17 @@ mcpc <target> prompts-get <name> [--args key=val key2:=json ...]
 mcpc <target> logging-set-level <level>
 
 # Session management
-mcpc <target> connect --session @<session-name>
-mcpc                   # prints alls sessions
+mcpc                   # prints all sessions and authentication profiles
+mcpc <target> connect --session @<session-name> [--profile <name>]
 mcpc @<session-name> <command...>
 mcpc @<session-name> help
 mcpc @<session-name> close
+
+# Authentication management (for remote MCP servers)
+mcpc <server> auth [--profile <name>]
+mcpc <server> auth-list
+mcpc <server> auth-show --profile <name>
+mcpc <server> auth-delete --profile <name>
 
 # Interactive shell
 mcpc <target> shell
@@ -159,35 +172,135 @@ like `tools-list` or `resources-list` to get the lists and handle the
 ## Authentication
 
 `mcpc` supports all standard [authentication methods](https://modelcontextprotocol.io/specification/latest/basic/authorization) for MCP servers,
-including the `WWW-Authenticate` discovery mechanism.
-It uses OS keychain to securely store authentication tokens.
+including the `WWW-Authenticate` discovery mechanism and OAuth 2.1 with PKCE.
+It uses OS keychain to securely store authentication tokens and credentials.
 
 ### No authentication
 
-For local servers (stdio) or remove servers (streamable HTTP) which do not require credentials,
-`mcpc` can be used without authentication tokens or settings.
-
-### HTTP token
-
-For remote servers that require an access token,
-use the `--header` flag to specify the header name and value. For example:
+For local servers (stdio) or remote servers (streamable HTTP) which do not require credentials,
+`mcpc` can be used without authentication:
 
 ```bash
-mcpc --header "Authorization: Bearer ${APIFY_TOKEN}" https://mcp.apify.com tools-list
+# Local stdio server
+mcpc @modelcontextprotocol/server-filesystem /tmp resources-list
+
+# Remote server without auth
+mcpc https://public-mcp.example.com tools-list
 ```
 
-### OAuth
+### Bearer token authentication
 
-TODO: This needs more thought...
-
-For remote servers that require OAuth authentication,
-`mcpc` asks the user if it can open a browser window to let the user authenticate.
-
-To re-authenticate to a remote server with OAuth, use:
+For remote servers that require a bearer token (but not OAuth), use the `--header` flag.
+The token is stored securely in the OS keychain for the session, but **not** saved as a reusable profile:
 
 ```bash
-mcpc <target> login
-mcpc https://apify
+# One-time command with bearer token
+mcpc --header "Authorization: Bearer ${APIFY_TOKEN}" https://mcp.apify.com tools-list
+
+# Create session with bearer token (saved to keychain for this session only)
+mcpc --header "Authorization: Bearer ${APIFY_TOKEN}" https://mcp.apify.com connect --session @apify
+
+# Use the session (token loaded from keychain automatically)
+mcpc @apify tools-list
+```
+
+### OAuth authentication
+
+For OAuth-enabled servers, `mcpc` implements the full OAuth 2.1 flow with PKCE, including:
+- `WWW-Authenticate` header discovery
+- Authorization server metadata discovery (RFC 8414)
+- Client ID metadata documents (SEP-991)
+- Dynamic client registration (RFC 7591)
+- Automatic token refresh
+
+The OAuth authentication is performed via a web browser. `mcpc`
+always prompts the user before opening the browser.
+
+#### Authentication profiles
+
+For OAuth-enabled servers, `mcpc` uses **authentication profiles** - reusable credentials that can be shared across multiple sessions.
+This allows you to:
+- Authenticate once, create multiple sessions
+- Use different accounts (profiles) with the same server
+- Manage credentials independently from sessions
+
+**Key concepts:**
+- **Profile**: Named set of OAuth credentials for a specific server (stored in `~/.mcpc/auth-profiles.json` + OS keychain)
+- **Session**: Active connection to a server that references a profile (stored in `~/.mcpc/sessions.json`)
+- **Default profile**: When `--profile` is not specified, `mcpc` uses the profile named `default`
+
+**Example:**
+
+```bash
+# Authenticate and save as named profile
+mcpc https://mcp.apify.com auth --profile personal
+
+# Authenticate with 'default' profile name
+mcpc https://mcp.apify.com auth
+
+# Re-authenticate existing profile (e.g., to refresh or change scopes)
+mcpc https://mcp.apify.com auth --profile personal
+```
+
+#### Managing authentication profiles
+
+```bash
+# List all profiles for a server
+mcpc https://mcp.apify.com auth-list
+
+# Show detailed info for a profile
+mcpc https://mcp.apify.com auth-show --profile personal
+
+# Delete a profile
+mcpc https://mcp.apify.com auth-delete --profile work
+```
+
+#### Creating sessions with profiles
+
+```bash
+# Create session with specific profile
+mcpc https://mcp.apify.com connect --session @apify1 --profile personal
+
+# Create session with default profile
+# (if exists, otherwise prompts for selection or create new)
+mcpc https://mcp.apify.com connect --session @apify2
+
+# Create new profile during session creation
+mcpc https://mcp.apify.com connect --session @apify4 --profile client-demo
+```
+
+#### Multiple accounts for the same server
+
+Authentication profiles enable using multiple accounts with the same MCP server:
+
+```bash
+# Authenticate with personal account
+mcpc https://mcp.apify.com auth --profile personal
+
+# Authenticate with work account
+mcpc https://mcp.apify.com auth --profile work
+
+# Create sessions using the different accounts
+mcpc https://mcp.apify.com connect --session @apify-personal --profile personal
+mcpc https://mcp.apify.com connect --session @apify-work --profile work
+
+# Both sessions work independently with different credentials
+mcpc @apify-personal tools-list  # Uses personal account
+mcpc @apify-work tools-list      # Uses work account
+```
+
+#### Automatic OAuth flow
+
+When creating a session to an OAuth-enabled server without an existing profile,
+`mcpc` automatically detects the OAuth requirement (via 401 response) and guides you through authentication:
+
+```bash
+mcpc https://mcp.apify.com connect --session @apify
+? This server requires OAuth authentication. Authenticate now? (Y/n) y
+? Enter profile name (default):
+? Opening browser to authenticate...
+✓ Profile 'default' created
+✓ Session '@apify' created
 ```
 
 ## Sessions
@@ -209,25 +322,37 @@ Instead of forcing every command to reconnect and reinitialize (which is slow an
 
 `mcpc` saves its state to `~/.mcpc/` directory, in the following files:
 
-- `~/.mcpc/sessions.json` - a JSON object with all active sessions (file-locked for concurrent access)
-- `~/.mcpc/bridges/` - directory containing Unix domain socket files for each bridge process
-- OS keychain - authentication tokens (Keychain on macOS, Credential Manager on Windows, Secret Service on Linux)
+- `~/.mcpc/sessions.json` - Active sessions with references to auth profiles (file-locked for concurrent access)
+- `~/.mcpc/auth-profiles.json` - Authentication profiles (OAuth metadata, scopes, expiry)
+- `~/.mcpc/bridges/` - Unix domain socket files for each bridge process
+- OS keychain - Sensitive credentials (OAuth tokens, bearer tokens, client secrets)
 
 
 ### Managing sessions
 
 ```bash
-# Create a persistent session
-mcpc https://mcp.apify.com/ connect --session @apify
+# Create a persistent session (with default auth profile, if available)
+mcpc https://mcp.apify.com connect --session @apify
 
-# List active sessions
+# Create session with specific auth profile
+mcpc https://mcp.apify.com connect --session @apify --profile personal
+
+# List all active sessions and saved auth profiles
 mcpc
+
+# Active sessions:
+#   @apify → https://mcp.apify.com (http, profile: personal)
+#
+# Saved authentication profiles:
+#   https://mcp.apify.com
+#     • personal (authenticated: 2 days ago)
+#     • work (authenticated: 1 week ago)
 
 # Use the session
 mcpc @apify tools-list
 mcpc @apify shell
 
-# Close the session (terminates bridge process)
+# Close the session (terminates bridge process, but keeps auth profile)
 mcpc @apify close
 ```
 
@@ -658,11 +783,10 @@ The main `mcpc` command provides the user interface.
 
 ### Session lifecycle
 
-```
-1. User: mcpc https://mcp.apify.com connect --session @apify
-2. CLI: Creates session entry in sessions.json
-3. CLI: Spawns bridge process (mcpc-bridge)
-4. Bridge: Creates Unix socket at ~/.mcpc/bridges/apify.sock
+1. User: `mcpc https://mcp.apify.com connect --session @apify`
+2. CLI: Atomically creates session entry in `~/.mcpc/sessions.json`
+3. CLI: Spawns bridge process (`mcpc-bridge`)
+4. Bridge: Creates Unix socket at `~/.mcpc/bridges/apify.sock`
 5. Bridge: Performs MCP initialization handshake with server:
    - Sends initialize request with protocol version and capabilities
    - Receives server info, version, and capabilities
@@ -675,11 +799,11 @@ Later...
 8. User: mcpc @apify tools-list
 9. CLI: Reads sessions.json, finds socket path
 10. CLI: Connects to bridge socket
-11. CLI: Sends "tools/list" JSON-RPC request via socket
+11. CLI: Sends `tools/list` JSON-RPC request via socket
 12. Bridge: Forwards to MCP server via Streamable HTTP
 13. Bridge: Returns response via socket
 14. CLI: Formats and displays to user
-```
+
 
 ### Error recovery
 

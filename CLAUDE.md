@@ -54,8 +54,14 @@ mcpc @apify tools-list --json
 mcpc @apify tools-call search --args '{"query":"hello"}'
 mcpc @apify tools-call search --args query=hello limit:=10
 
-# Create a session (not yet functional)
-mcpc https://mcp.apify.com connect --session @apify
+# Authenticate and create reusable profile (not yet functional)
+mcpc https://mcp.apify.com auth --profile personal
+
+# Create a session with auth profile (not yet functional)
+mcpc https://mcp.apify.com connect --session @apify --profile personal
+
+# List all sessions and auth profiles
+mcpc
 
 # Set logging level (mock)
 mcpc @apify logging-set-level debug
@@ -74,6 +80,8 @@ mcpc/
 │   ├── bridge/         # Bridge process logic for persistent sessions
 │   ├── cli/            # CLI interface and command parsing
 │   └── lib/            # Shared utilities
+│       ├── auth/       # Authentication management (OAuth, bearer tokens, profiles)
+│       └── ...         # Other utilities
 ├── bin/
 │   ├── mcpc            # Main CLI executable
 │   └── mcpc-bridge     # Bridge process executable
@@ -117,11 +125,13 @@ mcpc/
 
 **CLI Command Structure:**
 - All MCP commands use hyphenated format: `tools-list`, `tools-call`, `resources-read`, etc.
-- `mcpc` - List all sessions
-- `mcpc <target>` - Show server info, instructions, capabilities, and available commands
-- `mcpc <target> help` - Alias for above
+- `mcpc` - List all sessions and authentication profiles
+- `mcpc <target>` - Show server info, instructions, capabilities, and current session auth
+- `mcpc @<session>` - Show session info, server capabilities, and authentication details
+- `mcpc <target> help` - Alias for `mcpc <target>`
 - `mcpc <target> <command>` - Execute MCP command
-- Session creation: `mcpc <target> connect --session @<session-name>`
+- Session creation: `mcpc <target> connect --session @<session-name> [--profile <name>]`
+- Authentication: `mcpc <server> auth [--profile <name>]`, `auth-list`, `auth-show`, `auth-delete`
 
 **Output Utilities** (`src/cli/output.ts`):
 - `logTarget(target, outputMode)` - Shows `[Using session: @name]` prefix (human mode only)
@@ -298,13 +308,104 @@ Environment variable substitution supported: `${VAR_NAME}`
 - **Bun:** ≥1.0.0 (alternative runtime)
 - **OS support:** macOS, Linux, Windows
 
+## Authentication Architecture
+
+`mcpc` implements the full MCP OAuth 2.1 specification with authentication profiles that separate credentials from sessions.
+
+**Authentication Profiles:**
+- Named sets of OAuth credentials for a specific server URL
+- Reusable across multiple sessions (authenticate once, use many times)
+- Support multiple accounts per server (e.g., `personal`, `work` profiles for same server)
+- Default profile name is `default` when `--profile` is not specified
+
+**Storage:**
+- `~/.mcpc/auth-profiles.json` - Profile metadata (serverUrl, authType, scopes, expiry)
+- OS keychain - Sensitive credentials (OAuth tokens, refresh tokens, client secrets, bearer tokens)
+
+**Bearer Token Handling:**
+- Bearer tokens passed via `--header "Authorization: Bearer ${TOKEN}"` are NOT stored as profiles
+- They are stored in OS keychain per-session (key: `mcpc:session:<name>:bearer-token`)
+- Bridge loads them automatically when making requests
+
+**CLI Commands:**
+```bash
+# Authenticate and create reusable profile
+mcpc <server> auth [--profile <name>]
+
+# List profiles for a server
+mcpc <server> auth-list
+
+# Show profile details
+mcpc <server> auth-show --profile <name>
+
+# Delete a profile
+mcpc <server> auth-delete --profile <name>
+
+# Create session with specific profile
+mcpc <server> connect --session @<name> --profile <profile>
+```
+
+**OAuth Flow:**
+1. User runs `mcpc <server> auth --profile personal`
+2. CLI discovers OAuth metadata via `WWW-Authenticate` header or well-known URIs
+3. CLI creates local HTTP callback server on `http://localhost:<random-port>/callback`
+4. CLI opens browser to authorization URL with PKCE challenge
+5. User authenticates, browser redirects to callback with authorization code
+6. CLI exchanges code for tokens using PKCE verifier
+7. Tokens saved to OS keychain, metadata saved to `auth-profiles.json`
+8. Profile can now be used by multiple sessions
+
+**Implementation Modules:**
+- `src/lib/auth/profiles.ts` - Manage auth-profiles.json (CRUD operations)
+- `src/lib/auth/keychain.ts` - OS keychain wrapper (save/load/delete tokens)
+- `src/lib/auth/oauth-provider.ts` - Implements `OAuthClientProvider` from MCP SDK
+- `src/lib/auth/oauth-flow.ts` - Orchestrates interactive OAuth flow
+- `src/lib/auth/bearer.ts` - Bearer token handling (session-scoped storage)
+
+**Session-to-Profile Relationship:**
+```json
+// sessions.json
+{
+  "apify-personal": {
+    "name": "apify-personal",
+    "target": "https://mcp.apify.com",
+    "transport": "http",
+    "authProfile": "personal",  // References profile
+    "pid": 12345,
+    "socketPath": "~/.mcpc/bridges/apify-personal.sock"
+  }
+}
+
+// auth-profiles.json
+{
+  "profiles": {
+    "https://mcp.apify.com": {
+      "personal": {
+        "name": "personal",
+        "serverUrl": "https://mcp.apify.com",
+        "authType": "oauth",
+        "oauthIssuer": "https://auth.apify.com",
+        "scopes": ["tools:read", "tools:write"],
+        "authenticatedAt": "2025-12-14T10:00:00Z",
+        "expiresAt": "2025-12-15T10:00:00Z"
+      }
+    }
+  }
+}
+
+// OS Keychain
+// Key: mcpc:auth:https://mcp.apify.com:personal:tokens
+// Value: {"access_token": "...", "refresh_token": "...", "expires_at": ...}
+```
+
 ## State and Data Storage
 
-- `~/.mcpc/sessions.json` - Active sessions (file-locked for concurrent access)
+- `~/.mcpc/sessions.json` - Active sessions with references to auth profiles (file-locked for concurrent access)
+- `~/.mcpc/auth-profiles.json` - Authentication profiles (OAuth metadata, scopes, expiry)
 - `~/.mcpc/bridges/` - Unix domain socket files for bridge processes
 - `~/.mcpc/history` - Interactive shell command history (last 1000 commands)
 - `~/.mcpc/logs/bridge-<session>.log` - Bridge process logs (max 10MB, 5 files)
-- OS keychain - Authentication tokens (Keychain on macOS, Credential Manager on Windows, Secret Service on Linux)
+- OS keychain - Sensitive credentials (OAuth tokens, bearer tokens, client secrets)
 
 ## Key Dependencies
 
@@ -425,3 +526,7 @@ Two options for connecting CLI commands to MCP:
 - [Official MCP documentation](https://modelcontextprotocol.io/llms.txt)
 - [Official TypeScript SDK for MCP servers and clients](https://www.npmjs.com/package/@modelcontextprotocol/sdk)
 - [MCP Inspector](https://github.com/modelcontextprotocol/inspector) - CLI client implementation for reference
+
+# Misc
+
+When writing titles of sections in README and code, do not capitalize first letters (e.g. "Session management" instead of "Session Management")
