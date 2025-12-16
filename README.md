@@ -6,8 +6,8 @@ It maps MCP concepts to intuitive CLI commands, and uses a bridge process per se
 so you can keep multiple MCP connections alive simultaneously.
 
 `mcpc` is useful for testing and debugging of MCP servers,
-as well as for AI coding agents to compose MCP tools using code generation
-rather than tool function calling, to save tokens and increase accuracy.
+as well as for AI coding agents to compose MCP operations and tool calls using code generation
+rather than direct tool calling, to [save tokens](https://www.anthropic.com/engineering/code-execution-with-mcp) and increase accuracy.
 
 ## Features
 
@@ -62,7 +62,8 @@ mcpc [--json] [--config <file>] [-H|--header "K: V"] [-v|--verbose] [--schema <f
      <target> <command...>
 
 mcpc                  # lists all active sessions and saved authentication profiles
-mcpc <target>         # shows session, server info, instructions, capabilities, and current session auth
+mcpc <target>         # shows server info, instructions, and capabilities
+mcpc @<session>       # shows session details including auth info
 mcpc <target> help    # alias for "mcpc <target>"
 
 # MCP commands
@@ -85,7 +86,6 @@ mcpc <target> prompts-get <name> [--args key=val key2:=json ...]
 mcpc <target> logging-set-level <level>
 
 # Session management
-mcpc                   # prints all sessions and authentication profiles
 mcpc <target> connect --session @<session-name> [--profile <name>]
 mcpc @<session-name> <command...>
 mcpc @<session-name> help
@@ -110,7 +110,9 @@ where `<target>` can be one of:
 
 Target types are resolved in the order listed above. Use explicit format to avoid ambiguity.
 
-Transports are selected automatically: HTTP/HTTPS URLs use the MCP streamable HTTP transport, local packages are spawned and spoken to over stdio.
+**Transport selection:**
+- HTTP/HTTPS URLs use the MCP Streamable HTTP transport (only current standard; HTTP with SSE is not supported)
+- Local packages use stdio transport (spawned as subprocess)
 
 ### MCP command arguments
 
@@ -182,7 +184,7 @@ For local servers (stdio) or remote servers (streamable HTTP) which do not requi
 
 ```bash
 # Local stdio server
-mcpc @modelcontextprotocol/server-filesystem /tmp resources-list
+mcpc @modelcontextprotocol/server-filesystem resources-list
 
 # Remote server without auth
 mcpc https://public-mcp.example.com tools-list
@@ -261,12 +263,16 @@ mcpc https://mcp.apify.com auth-delete --profile work
 # Create session with specific profile
 mcpc https://mcp.apify.com connect --session @apify1 --profile personal
 
-# Create session with default profile
-# (if exists, otherwise prompts for selection or create new)
+# Create session without specifying auth profile:
+# - Uses 'default' profile if it exists
+# - If 'default' doesn't exist but other profiles do, prompts for selection
+# - If no profiles exist, attempts unauthenticated connection
+# - If server requires auth (401 response), prompts to create new profile
 mcpc https://mcp.apify.com connect --session @apify2
 
-# Create new profile during session creation
+# Create session with non-existent auth profile (prompts to create it)
 mcpc https://mcp.apify.com connect --session @apify4 --profile client-demo
+? Profile 'client-demo' not found. Authenticate now? (Y/n) y
 ```
 
 #### Multiple accounts for the same server
@@ -289,19 +295,78 @@ mcpc @apify-personal tools-list  # Uses personal account
 mcpc @apify-work tools-list      # Uses work account
 ```
 
-#### Automatic OAuth flow
+#### Automatic OAuth detection
 
-When creating a session to an OAuth-enabled server without an existing profile,
-`mcpc` automatically detects the OAuth requirement (via 401 response) and guides you through authentication:
+When creating a session without specifying an auth profile, `mcpc` first attempts an unauthenticated connection.
+If the server requires OAuth (returns 401 with `WWW-Authenticate` header), `mcpc` guides you through authentication:
 
 ```bash
 mcpc https://mcp.apify.com connect --session @apify
-? This server requires OAuth authentication. Authenticate now? (Y/n) y
+# Attempts connection...
+? Server requires OAuth authentication. Authenticate now? (Y/n) y
 ? Enter profile name (default):
 ? Opening browser to authenticate...
 ✓ Profile 'default' created
 ✓ Session '@apify' created
 ```
+
+This flow ensures you only authenticate when necessary.
+
+### Authentication precedence
+
+When multiple authentication methods are available, `mcpc` uses this precedence order:
+
+1. **Command-line `--header` flag** (highest priority) - Always used if provided
+2. **Session's stored credentials** - Bearer tokens or OAuth tokens from profile
+3. **Config file headers** - Headers from `--config` file for the server
+4. **No authentication** - Attempts unauthenticated connection
+
+**Example:**
+```bash
+# Config file has: "headers": {"Authorization": "Bearer ${TOKEN1}"}
+# Session uses profile with different OAuth token
+# Command provides: --header "Authorization: Bearer ${TOKEN2}"
+# Result: Uses TOKEN2 (command-line flag wins)
+```
+
+### Authentication storage format
+
+**auth-profiles.json structure:**
+```json
+{
+  "profiles": {
+    "https://mcp.apify.com": {
+      "personal": {
+        "name": "personal",
+        "serverUrl": "https://mcp.apify.com",
+        "authType": "oauth",
+        "oauthIssuer": "https://auth.apify.com",
+        "scopes": ["tools:read", "tools:write", "resources:read"],
+        "authenticatedAt": "2025-12-14T10:00:00Z",
+        "expiresAt": "2025-12-15T10:00:00Z",
+        "createdAt": "2025-12-14T10:00:00Z",
+        "updatedAt": "2025-12-14T10:00:00Z"
+      },
+      "work": {
+        "name": "work",
+        "serverUrl": "https://mcp.apify.com",
+        "authType": "oauth",
+        "oauthIssuer": "https://auth.apify.com",
+        "scopes": ["tools:read"],
+        "authenticatedAt": "2025-12-10T15:30:00Z",
+        "expiresAt": "2025-12-11T15:30:00Z",
+        "createdAt": "2025-12-10T15:30:00Z",
+        "updatedAt": "2025-12-10T15:30:00Z"
+      }
+    }
+  }
+}
+```
+
+**OS Keychain entries:**
+- OAuth tokens: `mcpc:auth:https://mcp.apify.com:personal:tokens`
+- OAuth client info: `mcpc:auth:https://mcp.apify.com:personal:client`
+- Bearer tokens (per-session): `mcpc:session:apify:bearer-token`
 
 ## Sessions
 
@@ -523,6 +588,9 @@ Config files support environment variable substitution using `${VAR_NAME}` synta
 
 **Transport handling:**
 - **Streamable HTTP**: `mcpc` supports only the Streamable HTTP transport (the current standard). The deprecated HTTP with SSE transport is not supported. The bridge manages persistent HTTP connections with bidirectional streaming for server-to-client communication, with automatic reconnection using exponential backoff (1s → 30s max)
+  - Includes `MCP-Protocol-Version` header on all HTTP requests (per MCP spec)
+  - Handles `MCP-Session-Id` for stateful server sessions
+  - Validates Origin headers for security (prevents DNS rebinding attacks)
 - During reconnection, new requests are queued (fails after 3 minutes of disconnection)
 - **Stdio**: Direct bidirectional JSON-RPC communication over standard input/output
 
@@ -629,6 +697,8 @@ MCP enables arbitrary tool execution and data access; treat servers like you tre
 **Network security:**
 - HTTPS enforced for remote servers (HTTP auto-upgraded)
 - Certificate validation enabled (use `--insecure` to disable, not recommended)
+- Origin header validation to prevent DNS rebinding attacks
+- Local servers bind to localhost (127.0.0.1) only
 - No credentials logged even in verbose mode
 
 ## Error handling
@@ -655,7 +725,7 @@ Use `--verbose` flag for detailed debugging information (shows JSON-RPC messages
 
 - **Network errors**: Automatic retry with exponential backoff (3 attempts)
 - **Stream reconnection**: Starts at 1s, doubles to max 30s
-- **Bridge restart**: Automatic on crash detection, manual with `mcpc @name reconnect`
+- **Bridge restart**: Automatic on crash detection (recreates session on next command)
 - **Timeouts**: Configurable per-request timeout (default: 5 minutes)
 
 ## Interactive shell
@@ -869,9 +939,9 @@ Later...
 - Try with full path: `mcpc /path/to/package/bin/server resources-list`
 
 **"Authentication failed"**
-- Check credentials in OS keychain: `mcpc --list-credentials`
-- Use environment variable: `Authorization: Bearer ${TOKEN}` in MCP server config file
-- Re-authenticate: `mcpc <server> login`
+- List saved profiles: `mcpc <server> auth-list`
+- Re-authenticate: `mcpc <server> auth --profile <name>`
+- For bearer tokens: provide `--header "Authorization: Bearer ${TOKEN}"` again
 
 ### Debug mode
 

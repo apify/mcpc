@@ -159,16 +159,45 @@ mcpc/
 ### Transport Implementation
 
 **Streamable HTTP:**
-- Persistent HTTP connection with bidirectional streaming
+- Persistent HTTP connection with bidirectional streaming (protocol version 2025-11-25)
 - Server and client can send messages in both directions over the same connection
 - Automatic reconnection with exponential backoff (1s → 30s max)
 - Queues requests during disconnection (fails after 3 minutes)
-- **Important**: Only the Streamable HTTP transport is supported (current MCP standard). The deprecated HTTP with SSE transport is not implemented.
+- **Important**: Only the Streamable HTTP transport is supported (current MCP standard). The deprecated HTTP with SSE transport (2024-11-05) is not implemented.
+
+**Required HTTP Headers:**
+- `MCP-Protocol-Version: <version>` - MUST be included on ALL HTTP requests after initialization (e.g., `MCP-Protocol-Version: 2025-11-25`)
+- `MCP-Session-Id: <session-id>` - MUST be included if server provides session ID in InitializeResponse
+- `Accept: application/json, text/event-stream` - Required on POST requests to support both response types
+
+**Security Requirements:**
+- **Origin validation** - Server MUST validate Origin header to prevent DNS rebinding attacks. If Origin is invalid, respond with 403 Forbidden.
+- **Local binding** - Servers SHOULD bind to localhost (127.0.0.1) only, not 0.0.0.0
+- **Session ID security** - Session IDs must be cryptographically secure (UUIDs, JWTs, cryptographic hashes)
+
+**SSE Stream Management:**
+- Event IDs and `Last-Event-ID` header for resumability after disconnection
+- `retry` field for client reconnection timing (server sends before closing connection)
+- Per-stream message delivery (no broadcasting across multiple streams)
+- Client resumes via HTTP GET with `Last-Event-ID` header
+
+**Session Management:**
+- Server MAY assign session ID in `MCP-Session-Id` header on InitializeResponse
+- Client MUST include session ID on all subsequent requests
+- HTTP DELETE to MCP endpoint terminates session (server MAY respond with 405 if not supported)
+- Server responds with 404 Not Found for expired sessions (client must re-initialize)
 
 **Stdio:**
 - Direct bidirectional JSON-RPC communication over stdin/stdout
-- Bridge manages subprocess lifecycle for local packages
-- Stdio framing for message boundaries
+- Messages delimited by newlines, MUST NOT contain embedded newlines
+- Server MAY write logs to stderr, client MAY ignore stderr output
+- Server MUST NOT write anything to stdout except valid MCP messages
+- **Clean shutdown sequence:**
+  1. Client closes stdin to server process
+  2. Wait for server to exit (reasonable timeout)
+  3. Send SIGTERM if server hasn't exited
+  4. Send SIGKILL if server doesn't respond to SIGTERM
+- Server MAY initiate shutdown by closing stdout and exiting
 
 ### Error Recovery
 
