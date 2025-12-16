@@ -484,15 +484,12 @@ mcpc @apify logging-set-level error
 
 ## Configuration
 
-TODO
-
 Configuration can be provided via file, environment variables, or command-line flags.
 
 **Precedence** (highest to lowest):
-1. Command-line flags
+1. Command-line flags, including config file when specified with `--config`
 2. Environment variables
-3. Config file (when specified with `--config`)
-4. Built-in defaults
+3. Built-in defaults
 
 ### MCP server config file
 
@@ -501,7 +498,7 @@ MCP server JSON config file, compatible with Claude Desktop, VS Code, and other 
 You can point to an existing config file with `--config`:
 
 ```bash
-# One-shot command to an MCP server configured in VS Code
+# One-shot command to an MCP server configured in Visual Studio Code
 mcpc --config .vscode/mcp.json apify tools-list
 
 # Open a session to a server specified in the custom config file
@@ -577,7 +574,7 @@ Config files support environment variable substitution using `${VAR_NAME}` synta
 }
 ```
 
-### Environment variables
+## Environment variables
 
 - `MCPC_STATE_DIR` - Directory for session and auth profiles data (default is `~/.mcpc`)
 - `MCPC_VERBOSE` - Enable verbose logging (instead of using `--verbose`, set to `1` or `true`)
