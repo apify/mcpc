@@ -69,8 +69,12 @@ mcpc <target> help    # alias for "mcpc <target>"
 # MCP commands
 mcpc <target> tools
 mcpc <target> tools-list [--cursor <cursor>]
-mcpc <target> tools-get <tool-name>
+mcpc <target> tools-schema <tool-name>
 mcpc <target> tools-call <tool-name> [--args key=val key2:=json ...] [--args-file <file>]
+
+mcpc <target> prompts
+mcpc <target> prompts-list [--cursor <cursor>]
+mcpc <target> prompts-get <prompt-name> [--args key=val key2:=json ...] [--args-file <file>]
 
 mcpc <target> resources
 mcpc <target> resources-list [--cursor <cursor>]
@@ -78,10 +82,6 @@ mcpc <target> resources-read <uri> [-o <file>] [--raw] [--max-size <bytes>]
 mcpc <target> resources-subscribe <uri>
 mcpc <target> resources-unsubscribe <uri>
 mcpc <target> resources-templates-list
-
-mcpc <target> prompts
-mcpc <target> prompts-list [--cursor <cursor>]
-mcpc <target> prompts-get <name> [--args key=val key2:=json ...]
 
 mcpc <target> logging-set-level <level>
 
@@ -91,7 +91,7 @@ mcpc @<session-name> <command...>
 mcpc @<session-name> help
 mcpc @<session-name> close
 
-# Authentication management (for remote MCP servers)
+# Authentication profile management (for remote MCP servers)
 mcpc <server> auth [--profile <name>]
 mcpc <server> auth-list
 mcpc <server> auth-show --profile <name>
@@ -110,30 +110,30 @@ where `<target>` can be one of:
 
 Target types are resolved in the order listed above. Use explicit format to avoid ambiguity.
 
-**Transport selection:**
+`mcpc` automatically selects the transport protocol based on the `<target>`:
 - HTTP/HTTPS URLs use the MCP Streamable HTTP transport (only current standard; HTTP with SSE is not supported)
 - Local packages use stdio transport (spawned as subprocess)
 
 ### MCP command arguments
 
-`mcpc` supports multiple ways to pass arguments to tools and prompts:
+`mcpc` supports multiple ways to pass arguments to `tools-call` and `prompts-get` commands:
 
 ```bash
 # Inline JSON object (most convenient)
---args '{"query":"hello","count":10}'
+... --args '{"query":"hello","count":10}'
 
 # String values (default) - use = for strings
---args name=value query="hello world"
+... --args name=value query="hello world"
 
 # JSON literals - use := for JSON types
---args count:=123 enabled:=true value:=null
---args config:='{"key":"value"}' items:='[1,2,3]'
+... --args count:=123 enabled:=true value:=null
+... --args config:='{"key":"value"}' items:='[1,2,3]'
 
 # Mixed strings and JSON
---args query="search term" limit:=10 verbose:=true
+... --args query="search term" limit:=10 verbose:=true
 
 # Load all arguments from JSON file
---args-file tool-arguments.json
+... --args-file tool-arguments.json
 
 # Read from stdin (automatic when piped, no flag needed)
 echo '{"query":"hello","count":10}' | mcpc @server tools-call my-tool
@@ -163,7 +163,7 @@ echo '{"query":"hello","count":10}' | mcpc @server tools-call my-tool
 
 By default, `mcpc` prefetches and caches the full list of server tools, prompts, and resources,
 to reduce the number of requests made to the server and simplify the use of CLI.
-This means that commands such as `tools-list` or `tools-get` use the cached data rather than 
+This means that commands such as `tools-list` or `tools-schema` use the cached data rather than 
 making a request to the server. Also, `mcpc` automatically refreshes the cache when
 the server sends a `notifications/tools/list_changed` or `notifications/resources/list_changed` notification.
 
@@ -193,7 +193,7 @@ mcpc https://public-mcp.example.com tools-list
 ### Bearer token authentication
 
 For remote servers that require a bearer token (but not OAuth), use the `--header` flag.
-The token is stored securely in the OS keychain for the session, but **not** saved as a reusable profile:
+The token is stored securely in the OS keychain for the session, but **not** saved as a reusable auth profile:
 
 ```bash
 # One-time command with bearer token
@@ -216,7 +216,7 @@ For OAuth-enabled servers, `mcpc` implements the full OAuth 2.1 flow with PKCE, 
 - Automatic token refresh
 
 The OAuth authentication is performed via a web browser. `mcpc`
-always prompts the user before opening the browser.
+always prompts the user before opening the browser and requesting the user to login.
 
 #### Authentication profiles
 
@@ -229,7 +229,7 @@ This allows you to:
 **Key concepts:**
 - **Profile**: Named set of OAuth credentials for a specific server (stored in `~/.mcpc/auth-profiles.json` + OS keychain)
 - **Session**: Active connection to a server that references a profile (stored in `~/.mcpc/sessions.json`)
-- **Default profile**: When `--profile` is not specified, `mcpc` uses the profile named `default`
+- **Default profile**: When `--profile` is not specified, `mcpc` uses the auth profile named `default`
 
 **Example:**
 
@@ -260,10 +260,12 @@ mcpc https://mcp.apify.com auth-delete --profile work
 #### Creating sessions with profiles
 
 ```bash
-# Create session with specific profile
+# Create session with specific profile:
+# - Uses 'personal' profile if it exists and works
+# - Otherwise prompts user for authenticaton in a web browser
 mcpc https://mcp.apify.com connect --session @apify1 --profile personal
 
-# Create session without specifying auth profile:
+# Create session without specifying auth profile: TODO
 # - Uses 'default' profile if it exists
 # - If 'default' doesn't exist but other profiles do, prompts for selection
 # - If no profiles exist, attempts unauthenticated connection
@@ -329,9 +331,10 @@ When multiple authentication methods are available, `mcpc` uses this precedence 
 # Result: Uses TOKEN2 (command-line flag wins)
 ```
 
-### Authentication storage format
+### Authentication profiles storage format
 
-**auth-profiles.json structure:**
+By default, the auth profiles are stored in the `~/.mcpc/auth-profiles.json` profile with the following structure:
+
 ```json
 {
   "profiles": {
@@ -370,7 +373,7 @@ When multiple authentication methods are available, `mcpc` uses this precedence 
 
 ## Sessions
 
-MCP is a stateful protocol: clients and servers perform an initialization handshake
+MCP is a [stateful protocol](https://modelcontextprotocol.io/specification/latest/basic/lifecycle): clients and servers perform an initialization handshake
 to negotiate protocol version and capabilities, then communicate within a persistent session.
 Each session maintains:
 - Negotiated protocol version and capabilities (which tools/resources/prompts/notifications are supported)
@@ -385,7 +388,7 @@ Instead of forcing every command to reconnect and reinitialize (which is slow an
 - Multiplexes multiple concurrent requests (up to 10 concurrent, 100 queued)
 - Enables piping data between multiple MCP servers simultaneously
 
-`mcpc` saves its state to `~/.mcpc/` directory, in the following files:
+`mcpc` saves its state to `~/.mcpc/` directory (unless overriden by `MCP_STATE_DIR`), in the following files:
 
 - `~/.mcpc/sessions.json` - Active sessions with references to auth profiles (file-locked for concurrent access)
 - `~/.mcpc/auth-profiles.json` - Authentication profiles (OAuth metadata, scopes, expiry)
@@ -438,16 +441,16 @@ the command returns an error.
 
 ```bash
 # Save tool schema for future validation
-mcpc --json @apify tools-get search-actors > tool-schema.json
+mcpc --json @apify tools-schema search-actors > search-actors-schema.json
 
 # Use schema to ensure compatibility (fails if schema changed)
 mcpc @apify tools-call search-actors \
-  --schema tool-schema.json \
+  --schema search-actors-schema.json \
   --schema-mode strict \
   --args query="tiktok scraper"
 ```
 
-**Schema validation modes:**
+**Schema validation modes using the `--schema-mode` parameter:**
 - `strict` - Exact schema match required (all fields, types must be identical)
 - `compatible` (default) - Backwards compatible (new optional fields OK, required fields and types must match)
 - `ignore` - Skip schema validation
@@ -455,7 +458,8 @@ mcpc @apify tools-call search-actors \
 
 ## Logging
 
-MCP servers can be instructed to adjust their logging level using the `logging/setLevel` request ([see specification](https://modelcontextprotocol.io/specification/latest/server/utilities/logging)):
+MCP servers can be instructed to adjust their [logging level](https://modelcontextprotocol.io/specification/latest/server/utilities/logging)
+using the `logging/setLevel` command:
 
 ```bash
 # Set server log level to debug for detailed output
@@ -480,6 +484,8 @@ mcpc @apify logging-set-level error
 
 ## Configuration
 
+TODO
+
 Configuration can be provided via file, environment variables, or command-line flags.
 
 **Precedence** (highest to lowest):
@@ -488,7 +494,7 @@ Configuration can be provided via file, environment variables, or command-line f
 3. Config file (when specified with `--config`)
 4. Built-in defaults
 
-### Config file
+### MCP server config file
 
 `mcpc` supports the ["standard"](https://gofastmcp.com/integrations/mcp-json-configuration)
 MCP server JSON config file, compatible with Claude Desktop, VS Code, and other MCP clients.
@@ -528,7 +534,7 @@ mcpc --config .vscode/mcp.json apify connect --session @my-apify
 }
 ```
 
-**Server configuration options:**
+**Server configuration properties:**
 
 For **HTTP/HTTPS servers:**
 - `url` (required) - MCP server endpoint URL
@@ -540,7 +546,7 @@ For **stdio servers:**
 - `args` (optional) - Array of command arguments
 - `env` (optional) - Environment variables for the process
 
-**Using servers from config:**
+**Using servers from config file:**
 
 When `--config` is provided, you can reference servers by name:
 
@@ -573,8 +579,7 @@ Config files support environment variable substitution using `${VAR_NAME}` synta
 
 ### Environment variables
 
-- `MCPC_CONFIG_FILE` - Path to the standard MCP server config file (instead of using `--config`)
-- `MCPC_SESSION_DIR` - Directory for session data (default is `~/.mcpc`)
+- `MCPC_STATE_DIR` - Directory for session and auth profiles data (default is `~/.mcpc`)
 - `MCPC_VERBOSE` - Enable verbose logging (instead of using `--verbose`, set to `1` or `true`)
 - `MCPC_TIMEOUT` - Default timeout in seconds (instead of using `--timeout`, default is `300`)
 - `MCPC_JSON` - Enable JSON output (instead of using `--json`, set to `1` or `true`)
@@ -590,7 +595,7 @@ Config files support environment variable substitution using `${VAR_NAME}` synta
 - **Streamable HTTP**: `mcpc` supports only the Streamable HTTP transport (the current standard). The deprecated HTTP with SSE transport is not supported. The bridge manages persistent HTTP connections with bidirectional streaming for server-to-client communication, with automatic reconnection using exponential backoff (1s → 30s max)
   - Includes `MCP-Protocol-Version` header on all HTTP requests (per MCP spec)
   - Handles `MCP-Session-Id` for stateful server sessions
-  - Validates Origin headers for security (prevents DNS rebinding attacks)
+  - Validates `Origin` headers for security (prevents DNS rebinding attacks)
 - During reconnection, new requests are queued (fails after 3 minutes of disconnection)
 - **Stdio**: Direct bidirectional JSON-RPC communication over standard input/output
 
@@ -609,7 +614,7 @@ Config files support environment variable substitution using `${VAR_NAME}` synta
 
 ## Package resolution
 
-When a target is identified as a local package, `mcpc` resolves it as follows:
+When a <target> is identified as a local package, `mcpc` resolves it as follows:
 
 1. Check `./node_modules` (local project dependencies)
 2. Check global npm packages (`npm root -g`)
@@ -636,48 +641,15 @@ mcpc @modelcontextprotocol/server-filesystem resources-list
 
 ### Human-readable (default)
 
-Default output is formatted for human readability with colors, tables, and formatting.
+Default output is formatted for human and AI readability with plain text, colors, and Markdown-like formatting.
 
 ### JSON mode (`--json`)
 
-All output follows a JSON schema consistent with the MCP protocol.
+In JSON mode, `mcpc` always emits only a single JSON object to enable scripting.
+For MCP commands, the object is always consistent with the MCP protocol specification.
+On success, the JSON object is printed to stdout, otherwise to stderr.
 
-**Success response:**
-```json
-{
-  "success": true,
-  "data": {
-    "//": "Command-specific data"
-  },
-  "metadata": {
-    "session": "myserver",
-    "serverInfo": {
-      "name": "example-server",
-      "version": "1.0.0"
-    },
-    "protocolVersion": "2025-11-25",
-    "timestamp": "2025-12-09T10:30:00Z"
-  }
-}
-```
-
-**Error response:**
-```json
-{
-  "success": false,
-  "error": {
-    "code": "TOOL_NOT_FOUND",
-    "message": "Tool 'search' not found",
-    "details": {
-      "tool": "search",
-      "availableTools": ["list", "get"]
-    }
-  },
-  "metadata": {
-    "timestamp": "2025-12-09T10:30:00Z"
-  }
-}
-```
+Note that in JSON mode `--verbose` option has no effect.
 
 ## Security
 
@@ -744,9 +716,8 @@ mcpc @apify shell
 
 **Shell-specific commands:**
 - `help` - Show available commands
-- `exit` or `quit` - Exit shell (or Ctrl+D)
+- `exit` or `quit` or Ctrl+D - Exit shell
 - Ctrl+C - Cancel current operation
-- Ctrl+D - Exit shell
 
 **Example session:**
 ```
@@ -768,7 +739,7 @@ mcpc(@apify)> exit
 
 ## Implementation details
 
-`mcpc` is under active development.
+`mcpc` is under active development. This README contains the final state, but most of the implementation is still missing.
 The library is implemented in TypeScript as a single package with internal modules.
 
 ### Architecture overview

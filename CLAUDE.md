@@ -515,7 +515,7 @@ Bridge logs location: `~/.mcpc/logs/bridge-<session>.log`
 - **Error Handling**: Typed errors with appropriate exit codes
 - **Logging**: Structured logging with verbose mode support
 - **Command Handlers**: All command stubs with mock data
-  - `tools-list`, `tools-get`, `tools-call`
+  - `tools-list`, `tools-schema`, `tools-call`
   - `resources-list`, `resources-read`, `resources-subscribe`, `resources-unsubscribe`
   - `prompts-list`, `prompts-get`
   - `logging-set-level`

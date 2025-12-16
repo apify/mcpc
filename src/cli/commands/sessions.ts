@@ -239,7 +239,7 @@ export async function getInstructions(
       const availableCommands: string[] = [];
 
       if (capabilities?.tools) {
-        availableCommands.push('tools-list', 'tools-get', 'tools-call');
+        availableCommands.push('tools-list', 'tools-schema', 'tools-call');
       }
 
       if (capabilities?.resources) {
