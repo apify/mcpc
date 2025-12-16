@@ -34,6 +34,33 @@ export async function listResources(
 }
 
 /**
+ * List available resource templates
+ */
+export async function listResourceTemplates(
+  target: string,
+  options: {
+    cursor?: string;
+    outputMode: OutputMode;
+    config?: string;
+    headers?: string[];
+    timeout?: number;
+    verbose?: boolean;
+  }
+): Promise<void> {
+  await withMcpClient(target, options, async (client) => {
+    const result = await client.listResourceTemplates(options.cursor);
+
+    logTarget(target, options.outputMode);
+    console.log(formatOutput(result.resourceTemplates, options.outputMode));
+
+    // Show pagination info if there's a next cursor
+    if (result.nextCursor && options.outputMode === 'human') {
+      console.log(`\nMore resource templates available. Use --cursor ${result.nextCursor} to see more.`);
+    }
+  });
+}
+
+/**
  * Get a resource by URI
  */
 export async function getResource(

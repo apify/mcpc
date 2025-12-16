@@ -323,6 +323,17 @@ async function handleCommands(target: string, argv: string[]): Promise<void> {
       await resources.unsubscribeResource(target, uri, getOptions(command));
     });
 
+  program
+    .command('resources-templates-list')
+    .description('List available resource templates')
+    .option('--cursor <cursor>', 'Pagination cursor')
+    .action(async (options, command) => {
+      await resources.listResourceTemplates(target, {
+        cursor: options.cursor,
+        ...getOptions(command),
+      });
+    });
+
   // Prompts commands (hyphenated)
   program
     .command('prompts')
