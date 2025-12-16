@@ -10,6 +10,7 @@ import type {
   ListToolsResult,
   CallToolResult,
   ListResourcesResult,
+  ListResourceTemplatesResult,
   ReadResourceResult,
   ListPromptsResult,
   GetPromptResult,
@@ -192,6 +193,24 @@ export class McpClient {
       this.logger.error('Failed to list resources:', error);
       throw new ServerError(
         `Failed to list resources: ${(error as Error).message}`,
+        { originalError: error }
+      );
+    }
+  }
+
+  /**
+   * List available resource templates
+   */
+  async listResourceTemplates(cursor?: string): Promise<ListResourceTemplatesResult> {
+    try {
+      this.logger.debug('Listing resource templates...', cursor ? { cursor } : {});
+      const result = await this.client.listResourceTemplates({ cursor });
+      this.logger.debug(`Found ${result.resourceTemplates.length} resource templates`);
+      return result;
+    } catch (error) {
+      this.logger.error('Failed to list resource templates:', error);
+      throw new ServerError(
+        `Failed to list resource templates: ${(error as Error).message}`,
         { originalError: error }
       );
     }
