@@ -29,7 +29,7 @@ export async function listTools(
 
     // Show pagination info if there's a next cursor
     if (result.nextCursor && options.outputMode === 'human') {
-      console.log(`\nMore tools available. Use --cursor ${result.nextCursor} to see more.`);
+      console.log(`\nMore tools available. Use --cursor "${result.nextCursor}" to see more.`);
     }
   });
 }

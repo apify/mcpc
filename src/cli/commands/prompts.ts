@@ -29,7 +29,7 @@ export async function listPrompts(
 
     // Show pagination info if there's a next cursor
     if (result.nextCursor && options.outputMode === 'human') {
-      console.log(`\nMore prompts available. Use --cursor ${result.nextCursor} to see more.`);
+      console.log(`\nMore prompts available. Use --cursor "${result.nextCursor}" to see more.`);
     }
   });
 }
