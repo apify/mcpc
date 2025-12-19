@@ -40,13 +40,18 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
   // Check for help or version flags first
-  if (args.includes('--help') || args.includes('-h') || args.includes('--version') || args.includes('-v')) {
+  if (
+    args.includes('--help') ||
+    args.includes('-h') ||
+    args.includes('--version') ||
+    args.includes('-v')
+  ) {
     const program = createProgram();
     await program.parseAsync(process.argv);
     return;
   }
 
-  // Find first non-option argument (the target)
+  // Find first non-option argument (the <target>)
   let target: string | undefined;
   let targetIndex = -1;
   let hasJsonFlag = false;
@@ -77,7 +82,7 @@ async function main(): Promise<void> {
     break;
   }
 
-  // If no target found, list sessions (special case: no positional arguments)
+  // If no <target> found, list sessions (special case: no positional arguments)
   if (!target) {
     await sessions.listSessions({ outputMode: hasJsonFlag ? 'json' : 'human' });
     if (!hasJsonFlag) {
@@ -86,7 +91,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  // Build modified argv without the target
+  // Build modified argv without the <target>
   const modifiedArgv = [
     ...process.argv.slice(0, 2),
     ...args.slice(0, targetIndex),

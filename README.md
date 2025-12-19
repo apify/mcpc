@@ -28,11 +28,11 @@ npm install -g mcpc
 ## Quickstart
 
 ```bash
-# Connect to a remote MCP server
+# Show information about a remote MCP server and list its tools
 mcpc https://mcp.example.com
 mcpc https://mcp.example.com tools-list
 
-# Run a local MCP server package
+# List tools of a local MCP server package
 mcpc @modelcontextprotocol/server-filesystem tools-list
 
 # Use your custom MCP config
@@ -41,11 +41,11 @@ mcpc --config ~/.vscode/mcp.json myserver tools-list
 # Authenticate to OAuth-enabled server and save authentication profile
 mcpc https://mcp.example.com auth --profile personal
 
-# Create a persistent session with auth profile
-mcpc https://mcp.example.com connect --session @myserver --profile personal
-mcpc @myserver tools-call search --args query=hello
+# Create a persistent session with authentication profile
+mcpc https://mcp.example.com connect --session @example --profile personal
+mcpc @example tools-call search --args query=hello
 
-# List all sessions and saved auth profiles
+# List all active sessions and saved authentication profiles
 mcpc
 
 # Interactive shell
@@ -61,12 +61,12 @@ mcpc [--json] [--config <file>] [-H|--header "K: V"] [-v|--verbose] [--schema <f
      [--no-cache] [--insecure]
      <target> <command...>
 
+# Show information
 mcpc                  # lists all active sessions and saved authentication profiles
 mcpc <target>         # shows server info, instructions, and capabilities
-mcpc @<session>       # shows session details including auth info
 mcpc <target> help    # alias for "mcpc <target>"
 
-# MCP commands
+# Execute MCP commands
 mcpc <target> tools
 mcpc <target> tools-list [--cursor <cursor>]
 mcpc <target> tools-schema <tool-name>
@@ -88,17 +88,18 @@ mcpc <target> logging-set-level <level>
 # Session management
 mcpc <target> connect --session @<session-name> [--profile <name>]
 mcpc @<session-name> <command...>
-mcpc @<session-name> help
+mcpc @<session-name>       # shows session info, server instructions, and capabilities
+mcpc @<session-name> help  # alias for "mcpc @<session-name>"
 mcpc @<session-name> close
 
-# Authentication profile management (for remote MCP servers)
+# Interactive shell
+mcpc <target> shell
+
+# Authentication profile management (for OAuth to remote MCP servers)
 mcpc <server> auth [--profile <name>]
 mcpc <server> auth-list
 mcpc <server> auth-show --profile <name>
 mcpc <server> auth-delete --profile <name>
-
-# Interactive shell
-mcpc <target> shell
 ```
 
 where `<target>` can be one of:
@@ -193,7 +194,7 @@ mcpc https://public-mcp.example.com tools-list
 ### Bearer token authentication
 
 For remote servers that require a bearer token (but not OAuth), use the `--header` flag.
-The token is stored securely in the OS keychain for the session, but **not** saved as a reusable auth profile:
+The token is stored securely in the OS keychain for the session, but **not** saved as a reusable authentication profile:
 
 ```bash
 # One-time command with bearer token
@@ -234,7 +235,7 @@ This allows you to:
 **Example:**
 
 ```bash
-# Authenticate to server and save as named auth profile
+# Authenticate to server and save as named authentication profile
 mcpc https://mcp.apify.com auth --profile personal
 
 # Authenticate with 'default' profile name
@@ -311,11 +312,11 @@ mcpc https://mcp.apify.com auth --profile personal
 # Authenticate with work account
 mcpc https://mcp.apify.com auth --profile work
 
-# Create sessions using the different accounts
+# Create sessions using the two different credentials
 mcpc https://mcp.apify.com connect --session @apify-personal --profile personal
 mcpc https://mcp.apify.com connect --session @apify-work --profile work
 
-# Both sessions work independently with different credentials
+# Both sessions work independently
 mcpc @apify-personal tools-list  # Uses personal account
 mcpc @apify-work tools-list      # Uses work account
 ```
@@ -398,9 +399,9 @@ Instead of forcing every command to reconnect and reinitialize (which is slow an
 - Multiplexes multiple concurrent requests (up to 10 concurrent, 100 queued)
 - Enables piping data between multiple MCP servers simultaneously
 
-`mcpc` saves its state to `~/.mcpc/` directory (unless overridden by `MCPC_STATE_DIR`), in the following files:
+`mcpc` saves its state to `~/.mcpc/` directory (unless overridden by `MCPC_HOME_DIR`), in the following files:
 
-- `~/.mcpc/sessions.json` - Active sessions with references to auth profiles (file-locked for concurrent access)
+- `~/.mcpc/sessions.json` - Active sessions with references to authentication profiles (file-locked for concurrent access)
 - `~/.mcpc/auth-profiles.json` - Authentication profiles (OAuth metadata, scopes, expiry)
 - `~/.mcpc/bridges/` - Unix domain socket files for each bridge process
 - OS keychain - Sensitive credentials (OAuth tokens, bearer tokens, client secrets)
@@ -409,13 +410,13 @@ Instead of forcing every command to reconnect and reinitialize (which is slow an
 ### Managing sessions
 
 ```bash
-# Create a persistent session (with default auth profile, if available)
+# Create a persistent session (with default authentication profile, if available)
 mcpc https://mcp.apify.com connect --session @apify
 
-# Create session with specific auth profile
+# Create session with specific authentication profile
 mcpc https://mcp.apify.com connect --session @apify --profile personal
 
-# List all active sessions and saved auth profiles
+# List all active sessions and saved authentication profiles
 mcpc
 
 # Active sessions:
@@ -430,7 +431,7 @@ mcpc
 mcpc @apify tools-list
 mcpc @apify shell
 
-# Close the session (terminates bridge process, but keeps auth profile)
+# Close the session (terminates bridge process, but keeps authentication profile)
 mcpc @apify close
 ```
 
@@ -586,7 +587,7 @@ Config files support environment variable substitution using `${VAR_NAME}` synta
 
 ### Environment variables
 
-- `MCPC_STATE_DIR` - Directory for session and auth profiles data (default is `~/.mcpc`)
+- `MCPC_HOME_DIR` - Directory for session and authentication profiles data (default is `~/.mcpc`)
 - `MCPC_VERBOSE` - Enable verbose logging (instead of using `--verbose`, set to `1` or `true`)
 - `MCPC_TIMEOUT` - Default timeout in seconds (instead of using `--timeout`, default is `300`)
 - `MCPC_JSON` - Enable JSON output (instead of using `--json`, set to `1` or `true`)
@@ -656,8 +657,6 @@ Default output is formatted for human and AI readability with plain text, colors
 In JSON mode, `mcpc` always emits only a single JSON object to enable scripting.
 For MCP commands, the object is always consistent with the MCP protocol specification.
 On success, the JSON object is printed to stdout, otherwise to stderr.
-
-Note that in JSON mode `--verbose` option has no effect.
 
 ## Security
 
@@ -823,20 +822,20 @@ Implemented as a separate executable (`mcpc-bridge`) that maintains persistent c
 - Heartbeat mechanism for health monitoring
 - Orphaned process cleanup on startup
 
-**IPC Protocol:**
+**IPC protocol:**
 - Unix domain sockets (located in `~/.mcpc/bridges/<session-name>.sock`)
 - Named pipes on Windows
 - JSON-RPC style messages over socket
 - Control messages: init, request, cancel, close, health-check
 
-**Bridge Discovery:**
+**Bridge discovery:**
 - CLI reads `~/.mcpc/sessions.json` to find socket path and PID
 - Validates bridge is alive (connect to socket + health-check)
 - Auto-restarts crashed bridges (detected via socket connection failure)
 - Cleanup: removes stale socket files for dead processes
 
-**Concurrency Safety:**
-- `sessions.json` protected with file locking (`proper-lockfile` package)
+**Concurrency safety:**
+- `~/.mcpc/sessions.json` protected with file locking (`proper-lockfile` package)
 - Atomic writes (write to temp file, then rename)
 - Lock timeout: 5 seconds (fails if can't acquire lock)
 
@@ -869,13 +868,13 @@ The main `mcpc` command provides the user interface.
    - Sends initialize request with protocol version and capabilities
    - Receives server info, version, and capabilities
    - Sends initialized notification to activate session
-6. Bridge: Updates session in sessions.json (adds PID, socket path, protocol version)
+6. Bridge: Updates session in `~/.mcpc/sessions.json` (adds PID, socket path, protocol version)
 7. CLI: Confirms session created
 
 Later...
 
 8. User: mcpc @apify tools-list
-9. CLI: Reads sessions.json, finds socket path
+9. CLI: Reads `~/.mcpc/sessions.json`, finds socket path
 10. CLI: Connects to bridge socket
 11. CLI: Sends `tools/list` JSON-RPC request via socket
 12. Bridge: Forwards to MCP server via Streamable HTTP
@@ -887,7 +886,7 @@ Later...
 
 **Bridge crashes:**
 1. CLI detects socket connection failure
-2. Reads sessions.json for last known config
+2. Reads `~/.mcpc/sessions.json` for last known config
 3. Spawns new bridge process
 4. Bridge re-initializes connection to MCP server
 5. Continues request

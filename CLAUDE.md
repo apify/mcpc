@@ -435,7 +435,7 @@ mcpc <server> connect --session @<name> --profile <profile>
 
 ## State and Data Storage
 
-All state files are stored in `~/.mcpc/` directory (unless overridden by `MCPC_STATE_DIR` environment variable):
+All state files are stored in `~/.mcpc/` directory (unless overridden by `MCPC_HOME_DIR` environment variable):
 
 - `~/.mcpc/sessions.json` - Active sessions with references to auth profiles (file-locked for concurrent access)
 - `~/.mcpc/auth-profiles.json` - Authentication profiles (OAuth metadata, scopes, expiry)
@@ -514,7 +514,7 @@ Bridge logs location: `~/.mcpc/logs/bridge-<session>.log`
 
 ## Environment Variables
 
-- `MCPC_STATE_DIR` - Directory for session and auth profiles data (default: `~/.mcpc`)
+- `MCPC_HOME_DIR` - Directory for session and auth profiles data (default: `~/.mcpc`)
 - `MCPC_VERBOSE` - Enable verbose logging (set to `1` or `true`)
 - `MCPC_TIMEOUT` - Default timeout in seconds (default: `300`)
 - `MCPC_JSON` - Enable JSON output (set to `1` or `true`)
@@ -577,3 +577,5 @@ Two options for connecting CLI commands to MCP:
 # Misc
 
 When writing titles of sections in README and code, do not capitalize first letters (e.g. "Session management" instead of "Session Management")
+
+Never add files to git or commit yourself.

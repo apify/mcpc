@@ -32,6 +32,7 @@ export function resolvePath(filepath: string, basePath?: string): string {
  * Get the mcpc home directory (~/.mcpc)
  */
 export function getMcpcHome(): string {
+  // TODO: Add support for the env var MCPC_HOME_DIR
   return expandHome('~/.mcpc');
 }
 
@@ -61,6 +62,13 @@ export function getLogsDir(): string {
  */
 export function getHistoryFilePath(): string {
   return join(getMcpcHome(), 'history');
+}
+
+/**
+ * Get the auth profiles file path (~/.mcpc/auth-profiles.json)
+ */
+export function getAuthProfilesFilePath(): string {
+  return join(getMcpcHome(), 'auth-profiles.json');
 }
 
 /**

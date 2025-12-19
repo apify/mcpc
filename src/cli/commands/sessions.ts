@@ -4,6 +4,7 @@
 
 import type { OutputMode } from '../../lib/types.js';
 import { formatOutput, formatSuccess, logTarget } from '../output.js';
+import { listAuthProfiles } from '../../lib/auth-profiles.js';
 
 /**
  * Connect to an MCP server and create a session
@@ -34,7 +35,7 @@ export async function connectSession(
 }
 
 /**
- * List active sessions
+ * List active sessions and authentication profiles
  */
 export async function listSessions(options: { outputMode: OutputMode }): Promise<void> {
   // TODO: Read from sessions.json
@@ -59,15 +60,44 @@ export async function listSessions(options: { outputMode: OutputMode }): Promise
     },
   ];
 
+  // Load auth profiles
+  const authProfiles = await listAuthProfiles();
+
   if (options.outputMode === 'json') {
-    console.log(formatOutput(mockSessions, 'json'));
+    console.log(
+      formatOutput(
+        {
+          sessions: mockSessions,
+          authProfiles,
+        },
+        'json'
+      )
+    );
   } else {
+    // Display sessions
     if (mockSessions.length === 0) {
       console.log('No active sessions.');
     } else {
       console.log('Active sessions:');
       for (const session of mockSessions) {
         console.log(`  @${session.sessionName} → ${session.server} (${session.transport})`);
+      }
+    }
+
+    // Display auth profiles
+    console.log('');
+    if (authProfiles.length === 0) {
+      console.log('No authentication profiles.');
+    } else {
+      console.log('Authentication profiles:');
+      for (const profile of authProfiles) {
+        const expiryInfo =
+          profile.expiresAt && new Date(profile.expiresAt) > new Date()
+            ? ` (expires ${new Date(profile.expiresAt).toLocaleDateString()})`
+            : profile.expiresAt
+              ? ' (expired)'
+              : '';
+        console.log(`  ${profile.name} → ${profile.serverUrl} (OAuth${expiryInfo})`);
       }
     }
   }

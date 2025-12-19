@@ -83,13 +83,14 @@ export interface SessionData {
 
 /**
  * Authentication profile data stored in auth-profiles.json
+ * Only OAuth authentication is supported for profiles
  */
 export interface AuthProfile {
   name: string;
   serverUrl: string;
-  authType: 'oauth' | 'bearer' | 'none';
-  // OAuth-specific fields
-  oauthIssuer?: string;
+  authType: 'oauth';
+  // OAuth fields
+  oauthIssuer: string;
   scopes?: string[];
   authenticatedAt?: string;
   expiresAt?: string;
