@@ -21,6 +21,13 @@ import { createNoOpLogger, type Logger } from '../lib/logger.js';
 import { ServerError, NetworkError } from '../lib/errors.js';
 
 /**
+ * Transport with protocol version information (e.g., StreamableHTTPClientTransport)
+ */
+interface TransportWithProtocolVersion extends Transport {
+  protocolVersion?: string;
+}
+
+/**
  * Options for creating an MCP client
  */
 export interface McpClientOptions extends ClientOptions {
@@ -37,6 +44,7 @@ export interface McpClientOptions extends ClientOptions {
 export class McpClient {
   private client: SDKClient;
   private logger: Logger;
+  private negotiatedProtocolVersion?: string;
 
   constructor(clientInfo: Implementation, options: McpClientOptions = {}) {
     this.logger = options.logger || createNoOpLogger();
@@ -72,6 +80,14 @@ export class McpClient {
 
       const serverVersion = this.client.getServerVersion();
       const serverCapabilities = this.client.getServerCapabilities();
+
+      // Capture negotiated protocol version from transport if available
+      // StreamableHTTPClientTransport exposes protocolVersion after initialization
+      const transportWithVersion = transport as TransportWithProtocolVersion;
+      if (transportWithVersion.protocolVersion) {
+        this.negotiatedProtocolVersion = transportWithVersion.protocolVersion;
+        this.logger.debug(`Negotiated protocol version: ${this.negotiatedProtocolVersion}`);
+      }
 
       this.logger.info(
         `Connected to ${serverVersion?.name || 'unknown'} v${serverVersion?.version || 'unknown'}`
@@ -122,6 +138,14 @@ export class McpClient {
    */
   getInstructions(): string | undefined {
     return this.client.getInstructions();
+  }
+
+  /**
+   * Get the negotiated protocol version
+   * Returns the protocol version agreed upon during initialization
+   */
+  getProtocolVersion(): string | undefined {
+    return this.negotiatedProtocolVersion;
   }
 
   /**

@@ -3,7 +3,6 @@
  */
 
 import type { OutputMode } from '../../lib/types.js';
-import { LATEST_PROTOCOL_VERSION } from '../../lib/types.js';
 import { formatOutput, formatSuccess, logTarget } from '../output.js';
 import { listAuthProfiles } from '../../lib/auth-profiles.js';
 import { listSessions } from '../../lib/sessions.js';
@@ -129,6 +128,7 @@ export async function showServerInfo(
     const serverInfo = client.getServerVersion();
     const capabilities = client.getServerCapabilities();
     const instructions = client.getInstructions();
+    const protocolVersion = client.getProtocolVersion();
 
     // Get tool count if tools are supported
     let toolCount = 0;
@@ -143,14 +143,13 @@ export async function showServerInfo(
 
       // Server info
       if (serverInfo) {
-        console.log(
-          `MCP server: ${serverInfo.name} v${serverInfo.version} (protocol: ${LATEST_PROTOCOL_VERSION})`
-        );
+        const versionInfo = protocolVersion ? ` (MCP version: ${protocolVersion})` : '';
+        console.log(`Server: ${serverInfo.name} v${serverInfo.version}${versionInfo}`);
         console.log('');
       }
 
       // Capabilities - only show what the server actually exposes
-      console.log('# Available capabilities:');
+      console.log('Capabilities:');
 
       const capabilityList: string[] = [];
 
@@ -191,7 +190,7 @@ export async function showServerInfo(
       console.log('');
 
       // Commands
-      console.log('# Available commands:');
+      console.log('Available commands:');
       const commands: string[] = [];
 
       if (capabilities?.tools) {
