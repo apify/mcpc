@@ -231,7 +231,7 @@ export function formatInfo(message: string): string {
  */
 export function logTarget(target: string, outputMode: OutputMode): void {
   if (outputMode === 'human') {
-    console.log(`[Using session: ${target}]`);
+    console.log(chalk.blue(`[Using session: ${target}]`));
   }
 }
 

@@ -61,12 +61,13 @@ mcpc [--json] [--config <file>] [-H|--header "K: V"] [-v|--verbose] [--schema <f
      [--no-cache] [--insecure]
      <target> <command...>
 
-# Show information
-mcpc                  # lists all active sessions and saved authentication profiles
-mcpc <target>         # shows server info, instructions, and capabilities
-mcpc <target> help    # alias for "mcpc <target>"
+# Lists all active sessions and saved authentication profiles
+mcpc         
 
-# Execute MCP commands
+# Shows server/session info, instructions, and capabilities         
+mcpc <target>
+
+# MCP commands
 mcpc <target> tools
 mcpc <target> tools-list [--cursor <cursor>]
 mcpc <target> tools-schema <tool-name>
@@ -85,15 +86,13 @@ mcpc <target> resources-templates-list
 
 mcpc <target> logging-set-level <level>
 
-# Session management
-mcpc <target> connect --session @<session-name> [--profile <name>]
-mcpc @<session-name> <command...>
-mcpc @<session-name>       # shows session info, server instructions, and capabilities
-mcpc @<session-name> help  # alias for "mcpc @<session-name>"
-mcpc @<session-name> close
-
 # Interactive shell
 mcpc <target> shell
+
+# Persistent sessions
+mcpc <server> connect --session @<session-name> [--profile <name>]
+mcpc @<session-name> <command...>  # same as above
+mcpc @<session-name> close
 
 # Authentication profile management (for OAuth to remote MCP servers)
 mcpc <server> auth [--profile <name>]

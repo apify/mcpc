@@ -3,9 +3,13 @@
  */
 
 import type { OutputMode } from '../../lib/types.js';
-import { formatOutput, formatSuccess, logTarget } from '../output.js';
+import { formatOutput, formatSuccess, formatError, logTarget } from '../output.js';
 import { listAuthProfiles } from '../../lib/auth-profiles.js';
-import { listSessions } from '../../lib/sessions.js';
+import { listSessions, sessionExists } from '../../lib/sessions.js';
+import { startBridge, stopBridge } from '../../lib/bridge-manager.js';
+import { resolveTarget } from '../helpers.js';
+import { isValidSessionName } from '../../lib/utils.js';
+import { ClientError } from '../../lib/errors.js';
 
 /**
  * Connect to an MCP server and create a session
@@ -13,25 +17,72 @@ import { listSessions } from '../../lib/sessions.js';
 export async function connectSession(
   name: string,
   target: string,
-  options: { outputMode: OutputMode }
+  options: { outputMode: OutputMode; verbose?: boolean; config?: string; headers?: string[]; timeout?: number }
 ): Promise<void> {
-  // TODO: Create bridge process and session
+  try {
+    // Validate session name
+    if (!isValidSessionName(name)) {
+      throw new ClientError(
+        `Invalid session name: ${name}\n` +
+        `Session names must be 1-64 characters, alphanumeric with hyphens or underscores only.`
+      );
+    }
 
-  if (options.outputMode === 'human') {
-    console.log(formatSuccess(`Session '${name}' created successfully`));
-    console.log(`  MCP server: ${target}`);
-    console.log(`\nUse "mcpc ${name} tools-list" to list available tools.`);
-  } else {
-    console.log(
-      formatOutput(
-        {
-          sessionName: name,
-          server: target,
-          created: true,
-        },
-        'json'
-      )
-    );
+    // Check if session already exists
+    if (await sessionExists(name)) {
+      throw new ClientError(
+        `Session already exists: ${name}\n` +
+        `Use "mcpc @${name} close" to close it first, or choose a different name.`
+      );
+    }
+
+    // Resolve target to transport config
+    const transportConfig = resolveTarget(target, options);
+
+    // Start bridge process
+    await startBridge({
+      sessionName: name,
+      target: transportConfig,
+      verbose: options.verbose || false,
+    });
+
+    // Success!
+    if (options.outputMode === 'human') {
+      console.log(formatSuccess(`Session '@${name}' created successfully`));
+      console.log(`  Target: ${target}`);
+      console.log(`  Transport: ${transportConfig.type}`);
+      console.log(`\nUse "mcpc @${name} tools-list" to list available tools.`);
+      console.log(`Use "mcpc @${name} close" to terminate the session.`);
+    } else {
+      console.log(
+        formatOutput(
+          {
+            sessionName: name,
+            target,
+            transport: transportConfig.type,
+            created: true,
+          },
+          'json'
+        )
+      );
+    }
+  } catch (error) {
+    if (options.outputMode === 'human') {
+      console.error(formatError((error as Error).message));
+    } else {
+      console.log(
+        formatOutput(
+          {
+            sessionName: name,
+            target,
+            created: false,
+            error: (error as Error).message,
+          },
+          'json'
+        )
+      );
+    }
+    throw error;
   }
 }
 
@@ -92,20 +143,45 @@ export async function closeSession(
   name: string,
   options: { outputMode: OutputMode }
 ): Promise<void> {
-  // TODO: Terminate bridge process and clean up
+  try {
+    // Check if session exists
+    if (!(await sessionExists(name))) {
+      throw new ClientError(`Session not found: ${name}`);
+    }
 
-  if (options.outputMode === 'human') {
-    console.log(formatSuccess(`Session '${name}' closed`));
-  } else {
-    console.log(
-      formatOutput(
-        {
-          session: name,
-          closed: true,
-        },
-        'json'
-      )
-    );
+    // Stop the bridge process
+    await stopBridge(name);
+
+    // Success!
+    if (options.outputMode === 'human') {
+      console.log(formatSuccess(`Session '@${name}' closed successfully`));
+    } else {
+      console.log(
+        formatOutput(
+          {
+            sessionName: name,
+            closed: true,
+          },
+          'json'
+        )
+      );
+    }
+  } catch (error) {
+    if (options.outputMode === 'human') {
+      console.error(formatError((error as Error).message));
+    } else {
+      console.log(
+        formatOutput(
+          {
+            sessionName: name,
+            closed: false,
+            error: (error as Error).message,
+          },
+          'json'
+        )
+      );
+    }
+    throw error;
   }
 }
 
