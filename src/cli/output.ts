@@ -73,6 +73,7 @@ export function formatTools(tools: Tool[]): string {
   const lines: string[] = [];
 
   lines.push(`# Tools`);
+  lines.push('');
   for (const tool of tools) {
     lines.push(`## \`${tool.name}\``);
     if (tool.description) {
@@ -124,6 +125,9 @@ export function formatToolDetail(tool: Tool): string {
 export function formatResources(resources: Resource[]): string {
   const lines: string[] = [];
 
+  lines.push(`# Resources`);
+  lines.push('');
+
   for (const resource of resources) {
     lines.push(`## \`${resource.uri}\``);
 
@@ -152,6 +156,9 @@ export function formatResources(resources: Resource[]): string {
  */
 export function formatPrompts(prompts: Prompt[]): string {
   const lines: string[] = [];
+
+  lines.push(`# Prompts`);
+  lines.push('');
 
   for (const prompt of prompts) {
     lines.push(`## \`${prompt.name}\``);
