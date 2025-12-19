@@ -215,10 +215,11 @@ export async function showServerInfo(
       commands.push(`  mcpc ${target} shell`);
 
       console.log(commands.join('\n'));
+      console.log('');
 
       // Instructions
       if (instructions) {
-        console.log('# MCP server instructions');
+        console.log('Server instructions');
         console.log(instructions);
         console.log('');
       }
