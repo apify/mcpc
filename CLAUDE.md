@@ -42,23 +42,23 @@ mcpc --help
 # List all sessions
 mcpc
 
-# Show server info and capabilities (with mock data)
-mcpc https://mcp.example.com
+# Show server info and capabilities
+mcpc mcp.example.com
 mcpc @apify
 
-# List tools (mock data)
-mcpc https://mcp.example.com tools-list
+# List tools
+mcpc mcp.example.com tools-list
 mcpc @apify tools-list --json
 
-# Call a tool with arguments (mock data)
+# Call a tool with arguments
 mcpc @apify tools-call search --args '{"query":"hello"}'
 mcpc @apify tools-call search --args query=hello limit:=10
 
 # Authenticate and create reusable profile (not yet functional)
-mcpc https://mcp.apify.com auth --profile personal
+mcpc mcp.apify.com auth --profile personal
 
 # Create a session with auth profile (not yet functional)
-mcpc https://mcp.apify.com connect --session @apify --profile personal
+mcpc mcp.apify.com connect --session @apify --profile personal
 
 # List all sessions and auth profiles
 mcpc
@@ -133,6 +133,11 @@ mcpc/
 - Session creation: `mcpc <target> connect --session @<session-name> [--profile <name>]`
 - Authentication: `mcpc <server> auth [--profile <name>]`, `auth-list`, `auth-show`, `auth-delete`
 
+**Target Types:**
+- `@<name>` - Named session (e.g., `@apify`) - persistent connection via bridge
+- `<url>` - Server URL (e.g., `mcp.example.com` or `https://mcp.example.com`) - URL scheme optional, defaults to `https://`
+- `<config-entry>` - Config file entry (requires `--config` flag) - local or remote server
+
 **Output Utilities** (`src/cli/output.ts`):
 - `logTarget(target, outputMode)` - Shows `[Using session: @name]` prefix (human mode only)
 - `formatOutput(data, mode)` - Auto-detects data type and formats appropriately
@@ -142,7 +147,7 @@ mcpc/
 
 ### Session Lifecycle
 
-1. User creates session: `mcpc https://mcp.apify.com connect --session @apify`
+1. User creates session: `mcpc mcp.apify.com connect --session @apify`
 2. CLI creates entry in `sessions.json`, spawns bridge process
 3. Bridge creates Unix socket at `~/.mcpc/bridges/apify.sock`
 4. Bridge performs MCP initialization:

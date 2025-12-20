@@ -7,7 +7,7 @@ import { createClient } from '../core/factory.js';
 import type { McpClient } from '../core/client.js';
 import type { OutputMode, TransportConfig } from '../lib/types.js';
 import { ClientError, NetworkError } from '../lib/errors.js';
-import { isValidUrl, isValidSessionName } from '../lib/utils.js';
+import { normalizeServerUrl, isValidSessionName } from '../lib/utils.js';
 import { setVerbose, createLogger } from '../lib/logger.js';
 import { loadConfig, getServerConfig, validateServerConfig } from '../lib/config.js';
 
@@ -18,7 +18,7 @@ const logger = createLogger('cli');
  *
  * Target types:
  * - @<name> - Named session (looks up in sessions.json)
- * - https://... - Remote HTTP server
+ * - <url> - Remote HTTP server (defaults to https:// if no scheme provided)
  * - <config-entry> - Entry from config file (when --config is used)
  */
 export function resolveTarget(
@@ -39,38 +39,7 @@ export function resolveTarget(
     throw new ClientError(`Session target should be handled by withMcpClient: ${target}`);
   }
 
-  // HTTP/HTTPS URL
-  if (isValidUrl(target)) {
-    const headers: Record<string, string> = {};
-
-    // Parse --header flags
-    if (options.headers) {
-      for (const header of options.headers) {
-        const colonIndex = header.indexOf(':');
-        if (colonIndex < 1) {
-          throw new ClientError(`Invalid header format: ${header}. Use "Key: Value"`);
-        }
-        const key = header.substring(0, colonIndex).trim();
-        const value = header.substring(colonIndex + 1).trim();
-        headers[key] = value;
-      }
-    }
-
-    const config: TransportConfig = {
-      type: 'http',
-      url: target,
-      headers,
-    };
-
-    // Only include timeout if it's provided
-    if (options.timeout) {
-      config.timeout = options.timeout * 1000;
-    }
-
-    return config;
-  }
-
-  // Config file entry
+  // Config file entry - check this first to avoid treating config names as URLs
   if (options.config) {
     logger.debug(`Loading config file: ${options.config}`);
 
@@ -142,15 +111,48 @@ export function resolveTarget(
     throw new ClientError(`Invalid server configuration for: ${target}`);
   }
 
-  // Target not recognized
-  throw new ClientError(
-    `Failed to resolve target: ${target}\n` +
-      `Target must be one of:\n` +
-      `  - Named session (@name)\n` +
-      `  - HTTP/HTTPS URL (https://...)\n` +
-      `  - Config file entry (with --config flag)\n\n` +
-      `For local MCP servers, use a config file with the --config flag.`
-  );
+  // Try to parse as URL (will default to https:// if no scheme provided)
+  try {
+    const url = normalizeServerUrl(target);
+    const headers: Record<string, string> = {};
+
+    // Parse --header flags
+    if (options.headers) {
+      for (const header of options.headers) {
+        const colonIndex = header.indexOf(':');
+        if (colonIndex < 1) {
+          throw new ClientError(`Invalid header format: ${header}. Use "Key: Value"`);
+        }
+        const key = header.substring(0, colonIndex).trim();
+        const value = header.substring(colonIndex + 1).trim();
+        headers[key] = value;
+      }
+    }
+
+    const config: TransportConfig = {
+      type: 'http',
+      url,
+      headers,
+    };
+
+    // Only include timeout if it's provided
+    if (options.timeout) {
+      config.timeout = options.timeout * 1000;
+    }
+
+    return config;
+  } catch (urlError) {
+    // Not a valid URL, throw error with helpful message
+    throw new ClientError(
+      `Failed to resolve target: ${target}\n` +
+        `Target must be one of:\n` +
+        `  - Named session (@name)\n` +
+        `  - Server URL (e.g., mcp.example.com or https://mcp.example.com)\n` +
+        `  - Config file entry (with --config flag)\n\n` +
+        `For local MCP servers, use a config file with the --config flag.\n\n` +
+        `Error: ${(urlError as Error).message}`
+    );
+  }
 }
 
 /**

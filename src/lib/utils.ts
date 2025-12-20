@@ -134,6 +134,28 @@ export function isValidUrl(str: string): boolean {
 }
 
 /**
+ * Normalize a server URL by adding https:// if no scheme is present
+ * Returns the normalized URL or throws an error if invalid
+ */
+export function normalizeServerUrl(str: string): string {
+  // If it already has a scheme, validate and return as-is
+  if (str.includes('://')) {
+    if (isValidUrl(str)) {
+      return str;
+    }
+    throw new Error(`Invalid URL: ${str} (must be http:// or https://)`);
+  }
+
+  // No scheme - add https:// and validate
+  const normalized = `https://${str}`;
+  if (isValidUrl(normalized)) {
+    return normalized;
+  }
+
+  throw new Error(`Invalid URL: ${str}`);
+}
+
+/**
  * Validate if a string is a valid session name
  * Session names must start with @ followed be alphanumeric string with hyphens/underscores, 1-64 chars
  */

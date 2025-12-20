@@ -13,6 +13,7 @@ import {
   getLogsDir,
   getHistoryFilePath,
   isValidUrl,
+  normalizeServerUrl,
   isValidSessionName,
   isValidResourceUri,
   sleep,
@@ -110,6 +111,40 @@ describe('isValidUrl', () => {
     expect(isValidUrl('file:///path')).toBe(false);
     expect(isValidUrl('ftp://example.com')).toBe(false);
     expect(isValidUrl('')).toBe(false);
+  });
+});
+
+describe('normalizeServerUrl', () => {
+  it('should accept URLs with https:// scheme', () => {
+    expect(normalizeServerUrl('https://example.com')).toBe('https://example.com');
+    expect(normalizeServerUrl('https://mcp.apify.com')).toBe('https://mcp.apify.com');
+    expect(normalizeServerUrl('https://example.com:443')).toBe('https://example.com:443');
+    expect(normalizeServerUrl('https://example.com/path')).toBe('https://example.com/path');
+  });
+
+  it('should accept URLs with http:// scheme', () => {
+    expect(normalizeServerUrl('http://localhost')).toBe('http://localhost');
+    expect(normalizeServerUrl('http://localhost:8080')).toBe('http://localhost:8080');
+    expect(normalizeServerUrl('http://example.com')).toBe('http://example.com');
+  });
+
+  it('should add https:// to URLs without scheme', () => {
+    expect(normalizeServerUrl('example.com')).toBe('https://example.com');
+    expect(normalizeServerUrl('mcp.apify.com')).toBe('https://mcp.apify.com');
+    expect(normalizeServerUrl('api.example.com:443')).toBe('https://api.example.com:443');
+    expect(normalizeServerUrl('example.com/path')).toBe('https://example.com/path');
+  });
+
+  it('should throw error for URLs with invalid scheme', () => {
+    expect(() => normalizeServerUrl('ftp://example.com')).toThrow('Invalid URL');
+    expect(() => normalizeServerUrl('file:///path')).toThrow('Invalid URL');
+    expect(() => normalizeServerUrl('ws://example.com')).toThrow('Invalid URL');
+  });
+
+  it('should throw error for invalid URLs', () => {
+    expect(() => normalizeServerUrl('')).toThrow('Invalid URL');
+    expect(() => normalizeServerUrl('not a url at all')).toThrow('Invalid URL');
+    expect(() => normalizeServerUrl('://')).toThrow('Invalid URL');
   });
 });
 

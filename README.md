@@ -29,8 +29,8 @@ npm install -g mcpc
 
 ```bash
 # Show information about a remote MCP server and list its tools
-mcpc https://mcp.example.com
-mcpc https://mcp.example.com tools-list
+mcpc mcp.example.com
+mcpc mcp.example.com tools-list
 
 # List tools of a local MCP server package
 mcpc @modelcontextprotocol/server-filesystem tools-list
@@ -39,10 +39,10 @@ mcpc @modelcontextprotocol/server-filesystem tools-list
 mcpc --config ~/.vscode/mcp.json myserver tools-list
 
 # Authenticate to OAuth-enabled server and save authentication profile
-mcpc https://mcp.example.com auth --profile personal
+mcpc mcp.example.com auth --profile personal
 
 # Create a persistent session with authentication profile
-mcpc https://mcp.example.com connect --session @example --profile personal
+mcpc mcp.example.com connect --session @example --profile personal
 mcpc @example tools-call search --args query=hello
 
 # List all active sessions and saved authentication profiles
@@ -50,7 +50,7 @@ mcpc
 
 # Interactive shell
 mcpc @myserver shell
-mcpc https://mcp.example.com shell
+mcpc mcp.example.com shell
 ```
 
 ## Usage
@@ -101,11 +101,11 @@ mcpc <server> auth-show --profile <name>
 mcpc <server> auth-delete --profile <name>
 ```
 
-where `<target>` can be one of:
+where `<target>` can be one of (in this order of precedence):
 
-- **Named session** prefixed with `@` (e.g. `@apify`) - persistent connection via bridge process
-- **Remote MCP endpoint** URL (e.g. `https://mcp.apify.com`) - direct HTTP connection
+- **Named session** prefixed with `@` (e.g. `@apify`) - persisted connection via bridge process
 - **Named entry** in a config file, when used with `--config` (e.g. `linear-mcp`) - local or remote server
+- **Remote MCP endpoint** URL (e.g. `mcp.apify.com` or `https://mcp.apify.com`) - direct HTTP connection
 
 For local MCP servers (stdio transport), use a config file to specify the command, arguments, and environment variables. See [Configuration](#configuration) below.
 
