@@ -1,17 +1,29 @@
 
 
-- nit: If tool response has `structuredContent` and `content:` [ type: 'text', 'text': ... }], print the latter as Markdown in text mode
 - on server/session info, print also auth info
-- validate new session name
-- nit: Colorize output, e.g. JSONs in one color. MCP provided data like descriptions and instructions in orange.
-- Check if we show tool annotations
-
 - [Using session: apify-docs] => change to show server + transport + version?
+- 
+- Ensure we show tool annotations and tasks in text mode too
 
 - add "mcpc --close-all" command to clean up old sessions
 
+
+E2E tests
 - add end-to-end tests e.g. under `test/e2e` - one bash script per test suite , organized in directories, and one master script that runs them all or selected ones (per directory) in parallel
+- Invariants:
+  - --verbose only adds extra info to stderr, never to stdout
+  - --json always returns single JSON object to stdout on success (exit code = 0), or nothing at all on error (exit code != 0)
+- Things to test:
+  - handling of errors, invalid params, names, etc. 
   - pagination
+  - env vars...
   - stdio + filesystem operations,
   - sessions
   - for all commands, tests --verbose doesn't print anything extra to stdout, --json returns json
+- Can we track test coverage also this way?
+
+
+
+Later
+- nit: Colorize output, e.g. JSONs in one color. MCP provided data like descriptions and instructions in orange.
+- nit: If tool response has `structuredContent` and `content:` [ type: 'text', 'text': ... }], print the latter as Markdown in text mode

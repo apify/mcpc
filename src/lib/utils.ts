@@ -30,9 +30,13 @@ export function resolvePath(filepath: string, basePath?: string): string {
 
 /**
  * Get the mcpc home directory (~/.mcpc)
+ * Can be overridden with MCPC_HOME_DIR environment variable
  */
 export function getMcpcHome(): string {
-  // TODO: Add support for the env var MCPC_HOME_DIR
+  const envHome = process.env.MCPC_HOME_DIR;
+  if (envHome) {
+    return resolvePath(envHome);
+  }
   return expandHome('~/.mcpc');
 }
 

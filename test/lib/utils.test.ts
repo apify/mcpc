@@ -3,7 +3,7 @@
  */
 
 import { homedir } from 'os';
-import { join } from 'path';
+import { join, isAbsolute } from 'path';
 import {
   expandHome,
   resolvePath,
@@ -60,9 +60,40 @@ describe('resolvePath', () => {
 });
 
 describe('getMcpcHome', () => {
-  it('should return ~/.mcpc', () => {
+  const originalEnv = process.env.MCPC_HOME_DIR;
+
+  afterEach(() => {
+    // Restore original environment variable
+    if (originalEnv === undefined) {
+      delete process.env.MCPC_HOME_DIR;
+    } else {
+      process.env.MCPC_HOME_DIR = originalEnv;
+    }
+  });
+
+  it('should return ~/.mcpc by default', () => {
+    delete process.env.MCPC_HOME_DIR;
     const home = getMcpcHome();
     expect(home).toBe(join(homedir(), '.mcpc'));
+  });
+
+  it('should use MCPC_HOME_DIR environment variable when set', () => {
+    process.env.MCPC_HOME_DIR = '/custom/mcpc/dir';
+    const home = getMcpcHome();
+    expect(home).toBe('/custom/mcpc/dir');
+  });
+
+  it('should expand tilde in MCPC_HOME_DIR', () => {
+    process.env.MCPC_HOME_DIR = '~/custom-mcpc';
+    const home = getMcpcHome();
+    expect(home).toBe(join(homedir(), 'custom-mcpc'));
+  });
+
+  it('should resolve relative paths in MCPC_HOME_DIR', () => {
+    process.env.MCPC_HOME_DIR = 'relative/path';
+    const home = getMcpcHome();
+    expect(home).toContain('relative/path');
+    expect(isAbsolute(home)).toBe(true);
   });
 });
 
