@@ -12,7 +12,7 @@ import {
   getBridgesDir,
   getLogsDir,
   getHistoryFilePath,
-  isValidUrl,
+  isValidHttpUrl,
   normalizeServerUrl,
   getAuthServerKey,
   isValidSessionName,
@@ -94,24 +94,24 @@ describe('getHistoryFilePath', () => {
   });
 });
 
-describe('isValidUrl', () => {
+describe('isValidHttpUrl', () => {
   it('should return true for valid HTTP URLs', () => {
-    expect(isValidUrl('http://example.com')).toBe(true);
-    expect(isValidUrl('http://example.com:8080')).toBe(true);
-    expect(isValidUrl('http://example.com/path')).toBe(true);
+    expect(isValidHttpUrl('http://example.com')).toBe(true);
+    expect(isValidHttpUrl('http://example.com:8080')).toBe(true);
+    expect(isValidHttpUrl('http://example.com/path')).toBe(true);
   });
 
   it('should return true for valid HTTPS URLs', () => {
-    expect(isValidUrl('https://example.com')).toBe(true);
-    expect(isValidUrl('https://example.com:443')).toBe(true);
-    expect(isValidUrl('https://example.com/path?query=1')).toBe(true);
+    expect(isValidHttpUrl('https://example.com')).toBe(true);
+    expect(isValidHttpUrl('https://example.com:443')).toBe(true);
+    expect(isValidHttpUrl('https://example.com/path?query=1')).toBe(true);
   });
 
   it('should return false for invalid URLs', () => {
-    expect(isValidUrl('not a url')).toBe(false);
-    expect(isValidUrl('file:///path')).toBe(false);
-    expect(isValidUrl('ftp://example.com')).toBe(false);
-    expect(isValidUrl('')).toBe(false);
+    expect(isValidHttpUrl('not a url')).toBe(false);
+    expect(isValidHttpUrl('file:///path')).toBe(false);
+    expect(isValidHttpUrl('ftp://example.com')).toBe(false);
+    expect(isValidHttpUrl('')).toBe(false);
   });
 });
 
@@ -144,15 +144,15 @@ describe('normalizeServerUrl', () => {
   });
 
   it('should throw error for URLs with invalid scheme', () => {
-    expect(() => normalizeServerUrl('ftp://example.com')).toThrow('Invalid URL');
-    expect(() => normalizeServerUrl('file:///path')).toThrow('Invalid URL');
-    expect(() => normalizeServerUrl('ws://example.com')).toThrow('Invalid URL');
+    expect(() => normalizeServerUrl('ftp://example.com')).toThrow('Invalid MCP server URL');
+    expect(() => normalizeServerUrl('file:///path')).toThrow('Invalid MCP server URL');
+    expect(() => normalizeServerUrl('ws://example.com')).toThrow('Invalid MCP server URL');
   });
 
   it('should throw error for invalid URLs', () => {
-    expect(() => normalizeServerUrl('')).toThrow('Invalid URL');
-    expect(() => normalizeServerUrl('not a url at all')).toThrow('Invalid URL');
-    expect(() => normalizeServerUrl('://')).toThrow('Invalid URL');
+    expect(() => normalizeServerUrl('')).toThrow('Invalid MCP server URL');
+    expect(() => normalizeServerUrl('not a url at all')).toThrow('Invalid MCP server URL');
+    expect(() => normalizeServerUrl('://')).toThrow('Invalid MCP server URL');
   });
 
   it('should remove hash fragments', () => {

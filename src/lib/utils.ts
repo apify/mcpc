@@ -122,9 +122,9 @@ export async function isDirectory(filepath: string): Promise<boolean> {
 }
 
 /**
- * Validate if a string is a valid URL
+ * Validate if a string is a valid URL with http:// or https:// scheme
  */
-export function isValidUrl(str: string): boolean {
+export function isValidHttpUrl(str: string): boolean {
   try {
     const url = new URL(str);
     return url.protocol === 'http:' || url.protocol === 'https:';
@@ -147,8 +147,8 @@ export function normalizeServerUrl(str: string): string {
   }
 
   // Validate URL
-  if (!isValidUrl(urlString)) {
-    throw new Error(`Invalid URL: ${str} (must be http:// or https://)`);
+  if (!isValidHttpUrl(urlString)) {
+    throw new Error(`Invalid MCP server URL: ${str}`);
   }
 
   const url = new URL(urlString);
