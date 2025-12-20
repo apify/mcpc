@@ -8,11 +8,11 @@ import { withMcpClient } from '../helpers.js';
 
 /**
  * List available resources
+ * Automatically fetches all pages if pagination is present
  */
 export async function listResources(
   target: string,
   options: {
-    cursor?: string;
     outputMode: OutputMode;
     config?: string;
     headers?: string[];
@@ -21,25 +21,28 @@ export async function listResources(
   }
 ): Promise<void> {
   await withMcpClient(target, options, async (client) => {
-    const result = await client.listResources(options.cursor);
+    // Fetch all resources across all pages
+    const allResources = [];
+    let cursor: string | undefined = undefined;
+
+    do {
+      const result = await client.listResources(cursor);
+      allResources.push(...result.resources);
+      cursor = result.nextCursor;
+    } while (cursor);
 
     logTarget(target, options.outputMode);
-    console.log(formatOutput(result.resources, options.outputMode));
-
-    // Show pagination info if there's a next cursor
-    if (result.nextCursor && options.outputMode === 'human') {
-      console.log(`\nMore resources available. Use --cursor "${result.nextCursor}" to see more.`);
-    }
+    console.log(formatOutput(allResources, options.outputMode));
   });
 }
 
 /**
  * List available resource templates
+ * Automatically fetches all pages if pagination is present
  */
 export async function listResourceTemplates(
   target: string,
   options: {
-    cursor?: string;
     outputMode: OutputMode;
     config?: string;
     headers?: string[];
@@ -48,15 +51,18 @@ export async function listResourceTemplates(
   }
 ): Promise<void> {
   await withMcpClient(target, options, async (client) => {
-    const result = await client.listResourceTemplates(options.cursor);
+    // Fetch all resource templates across all pages
+    const allTemplates = [];
+    let cursor: string | undefined = undefined;
+
+    do {
+      const result = await client.listResourceTemplates(cursor);
+      allTemplates.push(...result.resourceTemplates);
+      cursor = result.nextCursor;
+    } while (cursor);
 
     logTarget(target, options.outputMode);
-    console.log(formatOutput(result.resourceTemplates, options.outputMode));
-
-    // Show pagination info if there's a next cursor
-    if (result.nextCursor && options.outputMode === 'human') {
-      console.log(`\nMore resource templates available. Use --cursor "${result.nextCursor}" to see more.`);
-    }
+    console.log(formatOutput(allTemplates, options.outputMode));
   });
 }
 

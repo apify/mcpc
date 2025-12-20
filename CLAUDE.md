@@ -252,8 +252,8 @@ mcpc/
 - Progress tracking and logging
 
 **Pagination:**
-- List operations return `nextCursor` when more results available
-- Use `--cursor` flag to fetch next page
+- List operations automatically fetch all pages when the server returns paginated results
+- The CLI transparently handles `nextCursor` and fetches all pages in sequence
 
 **Other Protocol Features:**
 - **Pings**: Client periodically issues MCP `ping` request to keep connection alive

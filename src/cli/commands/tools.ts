@@ -9,11 +9,11 @@ import { withMcpClient } from '../helpers.js';
 
 /**
  * List available tools
+ * Automatically fetches all pages if pagination is present
  */
 export async function listTools(
   target: string,
   options: {
-    cursor?: string;
     outputMode: OutputMode;
     config?: string;
     headers?: string[];
@@ -22,15 +22,18 @@ export async function listTools(
   }
 ): Promise<void> {
   await withMcpClient(target, options, async (client) => {
-    const result = await client.listTools(options.cursor);
+    // Fetch all tools across all pages
+    const allTools = [];
+    let cursor: string | undefined = undefined;
+
+    do {
+      const result = await client.listTools(cursor);
+      allTools.push(...result.tools);
+      cursor = result.nextCursor;
+    } while (cursor);
 
     logTarget(target, options.outputMode);
-    console.log(formatOutput(result.tools, options.outputMode));
-
-    // Show pagination info if there's a next cursor
-    if (result.nextCursor && options.outputMode === 'human') {
-      console.log(`\nMore tools available. Use --cursor "${result.nextCursor}" to see more.`);
-    }
+    console.log(formatOutput(allTools, options.outputMode));
   });
 }
 

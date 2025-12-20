@@ -196,23 +196,15 @@ async function handleCommands(target: string, args: string[]): Promise<void> {
   program
     .command('tools')
     .description('List available tools (shorthand for tools-list)')
-    .option('--cursor <cursor>', 'Pagination cursor')
-    .action(async (options, command) => {
-      await tools.listTools(target, {
-        cursor: options.cursor,
-        ...getOptionsFromCommand(command),
-      });
+    .action(async (_options, command) => {
+      await tools.listTools(target, getOptionsFromCommand(command));
     });
 
   program
     .command('tools-list')
     .description('List available tools')
-    .option('--cursor <cursor>', 'Pagination cursor')
-    .action(async (options, command) => {
-      await tools.listTools(target, {
-        cursor: options.cursor,
-        ...getOptionsFromCommand(command),
-      });
+    .action(async (_options, command) => {
+      await tools.listTools(target, getOptionsFromCommand(command));
     });
 
   program
@@ -239,23 +231,15 @@ async function handleCommands(target: string, args: string[]): Promise<void> {
   program
     .command('resources')
     .description('List available resources (shorthand for resources-list)')
-    .option('--cursor <cursor>', 'Pagination cursor')
-    .action(async (options, command) => {
-      await resources.listResources(target, {
-        cursor: options.cursor,
-        ...getOptionsFromCommand(command),
-      });
+    .action(async (_options, command) => {
+      await resources.listResources(target, getOptionsFromCommand(command));
     });
 
   program
     .command('resources-list')
     .description('List available resources')
-    .option('--cursor <cursor>', 'Pagination cursor')
-    .action(async (options, command) => {
-      await resources.listResources(target, {
-        cursor: options.cursor,
-        ...getOptionsFromCommand(command),
-      });
+    .action(async (_options, command) => {
+      await resources.listResources(target, getOptionsFromCommand(command));
     });
 
   program
@@ -290,35 +274,23 @@ async function handleCommands(target: string, args: string[]): Promise<void> {
   program
     .command('resources-templates-list')
     .description('List available resource templates')
-    .option('--cursor <cursor>', 'Pagination cursor')
-    .action(async (options, command) => {
-      await resources.listResourceTemplates(target, {
-        cursor: options.cursor,
-        ...getOptionsFromCommand(command),
-      });
+    .action(async (_options, command) => {
+      await resources.listResourceTemplates(target, getOptionsFromCommand(command));
     });
 
   // Prompts commands (hyphenated)
   program
     .command('prompts')
     .description('List available prompts (shorthand for prompts-list)')
-    .option('--cursor <cursor>', 'Pagination cursor')
-    .action(async (options, command) => {
-      await prompts.listPrompts(target, {
-        cursor: options.cursor,
-        ...getOptionsFromCommand(command),
-      });
+    .action(async (_options, command) => {
+      await prompts.listPrompts(target, getOptionsFromCommand(command));
     });
 
   program
     .command('prompts-list')
     .description('List available prompts')
-    .option('--cursor <cursor>', 'Pagination cursor')
-    .action(async (options, command) => {
-      await prompts.listPrompts(target, {
-        cursor: options.cursor,
-        ...getOptionsFromCommand(command),
-      });
+    .action(async (_options, command) => {
+      await prompts.listPrompts(target, getOptionsFromCommand(command));
     });
 
   program

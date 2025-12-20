@@ -9,11 +9,11 @@ import { withMcpClient } from '../helpers.js';
 
 /**
  * List available prompts
+ * Automatically fetches all pages if pagination is present
  */
 export async function listPrompts(
   target: string,
   options: {
-    cursor?: string;
     outputMode: OutputMode;
     config?: string;
     headers?: string[];
@@ -22,15 +22,18 @@ export async function listPrompts(
   }
 ): Promise<void> {
   await withMcpClient(target, options, async (client) => {
-    const result = await client.listPrompts(options.cursor);
+    // Fetch all prompts across all pages
+    const allPrompts = [];
+    let cursor: string | undefined = undefined;
+
+    do {
+      const result = await client.listPrompts(cursor);
+      allPrompts.push(...result.prompts);
+      cursor = result.nextCursor;
+    } while (cursor);
 
     logTarget(target, options.outputMode);
-    console.log(formatOutput(result.prompts, options.outputMode));
-
-    // Show pagination info if there's a next cursor
-    if (result.nextCursor && options.outputMode === 'human') {
-      console.log(`\nMore prompts available. Use --cursor "${result.nextCursor}" to see more.`);
-    }
+    console.log(formatOutput(allPrompts, options.outputMode));
   });
 }
 

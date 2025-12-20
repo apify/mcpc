@@ -69,16 +69,16 @@ mcpc <target>
 
 # MCP commands
 mcpc <target> tools
-mcpc <target> tools-list [--cursor <cursor>]
+mcpc <target> tools-list
 mcpc <target> tools-schema <tool-name>
 mcpc <target> tools-call <tool-name> [--args key=val key2:=json ...] [--args-file <file>]
 
 mcpc <target> prompts
-mcpc <target> prompts-list [--cursor <cursor>]
+mcpc <target> prompts-list
 mcpc <target> prompts-get <prompt-name> [--args key=val key2:=json ...] [--args-file <file>]
 
 mcpc <target> resources
-mcpc <target> resources-list [--cursor <cursor>]
+mcpc <target> resources-list
 mcpc <target> resources-read <uri> [-o <file>] [--raw] [--max-size <bytes>]
 mcpc <target> resources-subscribe <uri>
 mcpc <target> resources-unsubscribe <uri>
@@ -167,8 +167,8 @@ making a request to the server. Also, `mcpc` automatically refreshes the cache w
 the server sends a `notifications/tools/list_changed` or `notifications/resources/list_changed` notification.
 
 To disable caching, use the `--no-cache` flag. In that case, you'll need to explicitly run commands
-like `tools-list` or `resources-list` to get the lists and handle the
-[pagination](https://modelcontextprotocol.io/specification/latest/server/utilities/pagination) using `--cursor`.
+like `tools-list` or `resources-list` to get the lists. When list operations return paginated results,
+`mcpc` automatically fetches all pages transparently.
 
 ## Authentication
 
@@ -615,7 +615,7 @@ Config files support environment variable substitution using `${VAR_NAME}` synta
 - Supports server logging settings (`logging/setLevel`) and messages (`notifications/message`), and prints them to stderr or stdout based on verbosity level.
 - Handles server notifications: progress tracking, logging, and change notifications (`notifications/tools/list_changed`, `notifications/resources/list_changed`, `notifications/prompts/list_changed`)
 - Request multiplexing: supports up to 10 concurrent requests, queues up to 100 additional requests
-- Pagination: List operations return `nextCursor` when more results are available; use `--cursor` to fetch next page
+- Pagination: List operations automatically fetch all pages when the server returns paginated results
 - Pings: `mcpc` periodically issues the MCP `ping` request to keep the connection alive
 - Sampling is not supported as `mcpc` has no access to an LLM
 
