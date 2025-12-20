@@ -9,7 +9,7 @@ import { createServer, type Server as NetServer, type Socket } from 'net';
 import { unlink } from 'fs/promises';
 import { createMcpClient } from '../core/index.js';
 import type { McpClient } from '../core/index.js';
-import type { TransportConfig, IpcMessage } from '../lib/index.js';
+import type { TransportConfig, IpcMessage, LoggingLevel } from '../lib/index.js';
 import { createLogger, setVerbose } from '../lib/index.js';
 import { fileExists, getBridgesDir, ensureDir } from '../lib/index.js';
 import { ClientError, NetworkError } from '../lib/index.js';
@@ -104,16 +104,17 @@ class BridgeProcess {
     }
 
     // Create server
-    this.server = createServer((socket) => this.handleConnection(socket));
+    const server = createServer((socket) => this.handleConnection(socket));
+    this.server = server;
 
     // Listen on Unix socket
     await new Promise<void>((resolve, reject) => {
-      this.server!.listen(socketPath, () => {
+      server.listen(socketPath, () => {
         logger.info(`Socket server listening: ${socketPath}`);
         resolve();
       });
 
-      this.server!.on('error', (error) => {
+      server.on('error', (error) => {
         logger.error('Socket server error:', error);
         reject(error);
       });
@@ -261,8 +262,8 @@ class BridgeProcess {
         }
 
         case 'setLoggingLevel': {
-          const params = message.params as string;
-          result = await this.client.setLoggingLevel(params as any);
+          const params = message.params as LoggingLevel;
+          result = await this.client.setLoggingLevel(params);
           break;
         }
 
@@ -329,7 +330,7 @@ class BridgeProcess {
    * Set up signal handlers for graceful shutdown
    */
   private setupSignalHandlers(): void {
-    const handleSignal = (signal: string) => {
+    const handleSignal = (signal: string): void => {
       logger.info(`Received ${signal}, shutting down...`);
       this.shutdown().catch((error) => {
         logger.error('Error during shutdown:', error);
@@ -369,8 +370,9 @@ class BridgeProcess {
 
     // Close socket server
     if (this.server) {
+      const server = this.server;
       await new Promise<void>((resolve) => {
-        this.server!.close(() => {
+        server.close(() => {
           logger.debug('Socket server closed');
           resolve();
         });
@@ -402,7 +404,7 @@ class BridgeProcess {
 /**
  * Main entry point
  */
-async function main() {
+async function main(): Promise<void> {
   // Parse command line arguments
   const args = process.argv.slice(2);
 
@@ -411,9 +413,9 @@ async function main() {
     process.exit(1);
   }
 
-  const sessionName = args[0]!;
-  const socketPath = args[1]!;
-  const transportConfigJson = args[2]!;
+  const sessionName = args[0] as string;
+  const socketPath = args[1] as string;
+  const transportConfigJson = args[2] as string;
   const verbose = args.includes('--verbose');
 
   try {

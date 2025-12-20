@@ -106,8 +106,8 @@ export class BridgeClient {
         this.pendingRequests.delete(message.id);
 
         if (message.error) {
-          const error = new Error(message.error.message);
-          (error as any).code = message.error.code;
+          const error = new Error(message.error.message) as Error & { code: number };
+          error.code = message.error.code;
           pending.reject(error);
         } else {
           pending.resolve(message.result);
@@ -162,27 +162,33 @@ export class BridgeClient {
         await this.connect();
       }
 
+      // After connect(), socket should be set
+      const socket = this.socket;
+      if (!socket) {
+        return false;
+      }
+
       const message: IpcMessage = {
         type: 'health-check',
       };
 
       const data = JSON.stringify(message) + '\n';
-      this.socket!.write(data);
+      socket.write(data);
 
       // Wait for health-ok response with timeout
       return new Promise<boolean>((resolve) => {
         const timeout = setTimeout(() => resolve(false), 1000);
 
-        const handler = (data: Buffer) => {
+        const handler = (data: Buffer): void => {
           const response = JSON.parse(data.toString()) as IpcMessage;
           if (response.type === 'health-ok') {
             clearTimeout(timeout);
-            this.socket!.off('data', handler);
+            socket.off('data', handler);
             resolve(true);
           }
         };
 
-        this.socket!.on('data', handler);
+        socket.on('data', handler);
       });
     } catch {
       return false;
@@ -203,9 +209,12 @@ export class BridgeClient {
     }
 
     if (this.socket) {
+      // Do not wait for socket to close
       this.socket.end();
       this.socket = null;
     }
+
+    return Promise.resolve();
   }
 
   /**
@@ -234,8 +243,7 @@ export async function withBridgeClient<T>(
 
   try {
     await client.connect();
-    const result = await callback(client);
-    return result;
+    return await callback(client);
   } finally {
     await client.close();
   }
