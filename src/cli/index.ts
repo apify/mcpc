@@ -11,8 +11,8 @@
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
 
 import { Command } from 'commander';
-import { setVerbose } from '../lib/logger.js';
-import { isMcpError, formatError } from '../lib/errors.js';
+import { setVerbose } from '../lib';
+import { isMcpError, formatError } from '../lib';
 import { formatJsonError } from './output.js';
 import * as tools from './commands/tools.js';
 import * as resources from './commands/resources.js';

@@ -2,14 +2,14 @@
  * Sessions command handlers
  */
 
-import type { OutputMode } from '../../lib/types.js';
+import type { OutputMode } from '../../lib';
 import { formatOutput, formatSuccess, formatError, logTarget } from '../output.js';
 import { listAuthProfiles } from '../../lib/auth-profiles.js';
 import { listSessions, sessionExists } from '../../lib/sessions.js';
 import { startBridge, stopBridge } from '../../lib/bridge-manager.js';
 import { resolveTarget } from '../helpers.js';
-import { isValidSessionName } from '../../lib/utils.js';
-import { ClientError } from '../../lib/errors.js';
+import { isValidSessionName } from '../../lib';
+import { ClientError } from '../../lib';
 
 /**
  * Connect to an MCP server and create a session

@@ -141,7 +141,7 @@ function substituteEnvVars(config: McpServerConfig): McpServerConfig {
  * @returns String with substituted variables
  */
 function substituteString(str: string): string {
-  return str.replace(/\$\{([^}]+)\}/g, (_match, varName: string) => {
+  return str.replace(/\$\{([^}]+)}/g, (_match, varName: string) => {
     const value = process.env[varName];
     if (value === undefined) {
       logger.warn(`Environment variable not found: ${varName}, using empty string`);
