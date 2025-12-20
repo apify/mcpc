@@ -6,7 +6,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 
 import chalk from 'chalk';
-import type { OutputMode } from '../lib';
+import type { OutputMode } from '../lib/index.js';
 import type { Tool, Resource, Prompt } from '../lib/types.js';
 
 /**

@@ -11,15 +11,15 @@
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
 
 import { Command } from 'commander';
-import { setVerbose } from '../lib';
-import { isMcpError, formatError } from '../lib';
+import { setVerbose } from '../lib/index.js';
+import { isMcpError, formatError } from '../lib/index.js';
 import { formatJsonError } from './output.js';
 import * as tools from './commands/tools.js';
 import * as resources from './commands/resources.js';
 import * as prompts from './commands/prompts.js';
 import * as sessions from './commands/sessions.js';
 import * as logging from './commands/logging.js';
-import type { OutputMode } from '../lib';
+import type { OutputMode } from '../lib/index.js';
 import { findTarget, extractOptions, hasCommandAfterTarget } from './parser.js';
 
 // Get version from package.json
