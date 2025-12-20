@@ -11,7 +11,7 @@ import { createMcpClient } from '../core/index.js';
 import type { McpClient } from '../core/index.js';
 import type { TransportConfig, IpcMessage } from '../lib/index.js';
 import { createLogger, setVerbose } from '../lib/index.js';
-import { exists, getBridgesDir, ensureDir } from '../lib/index.js';
+import { fileExists, getBridgesDir, ensureDir } from '../lib/index.js';
 import { ClientError, NetworkError } from '../lib/index.js';
 
 const logger = createLogger('bridge');
@@ -98,7 +98,7 @@ class BridgeProcess {
     await ensureDir(getBridgesDir());
 
     // Remove existing socket file if it exists
-    if (await exists(socketPath)) {
+    if (await fileExists(socketPath)) {
       logger.debug(`Removing existing socket: ${socketPath}`);
       await unlink(socketPath);
     }
@@ -267,19 +267,19 @@ class BridgeProcess {
         }
 
         case 'getServerCapabilities':
-          result = this.client.getServerCapabilities();
+          result = await this.client.getServerCapabilities();
           break;
 
         case 'getServerVersion':
-          result = this.client.getServerVersion();
+          result = await this.client.getServerVersion();
           break;
 
         case 'getInstructions':
-          result = this.client.getInstructions();
+          result = await this.client.getInstructions();
           break;
 
         case 'getProtocolVersion':
-          result = this.client.getProtocolVersion();
+          result = await this.client.getProtocolVersion();
           break;
 
         default:
@@ -378,7 +378,7 @@ class BridgeProcess {
 
       // Remove socket file
       try {
-        if (await exists(this.options.socketPath)) {
+        if (await fileExists(this.options.socketPath)) {
           await unlink(this.options.socketPath);
           logger.debug('Socket file removed');
         }

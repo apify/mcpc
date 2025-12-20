@@ -5,7 +5,7 @@
 
 import { readFileSync } from 'fs';
 import type { AuthProfile, AuthProfilesStorage } from './types.js';
-import { getAuthProfilesFilePath, exists } from './utils.js';
+import { getAuthProfilesFilePath, fileExists } from './utils.js';
 import { createLogger } from './logger.js';
 
 const logger = createLogger('auth-profiles');
@@ -17,7 +17,7 @@ const logger = createLogger('auth-profiles');
 export async function loadAuthProfiles(): Promise<AuthProfilesStorage> {
   const filePath = getAuthProfilesFilePath();
 
-  if (!(await exists(filePath))) {
+  if (!(await fileExists(filePath))) {
     logger.debug('Auth profiles file does not exist, returning empty profiles');
     return { profiles: {} };
   }

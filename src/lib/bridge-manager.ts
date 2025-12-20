@@ -8,7 +8,7 @@ import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import type { TransportConfig } from './types.js';
-import { getBridgesDir, waitForFile, isProcessAlive } from './utils.js';
+import { getBridgesDir, waitForFile, isProcessAlive, fileExists } from './utils.js';
 import { saveSession, deleteSession } from './sessions.js';
 import { createLogger } from './logger.js';
 import { ClientError } from './errors.js';
@@ -172,8 +172,7 @@ export async function isBridgeHealthy(sessionName: string): Promise<boolean> {
   }
 
   // Check if socket exists
-  const { exists } = await import('./utils.js');
-  if (session.socketPath && !(await exists(session.socketPath))) {
+  if (session.socketPath && !(await fileExists(session.socketPath))) {
     logger.warn(`Bridge socket ${session.socketPath} does not exist`);
     return false;
   }

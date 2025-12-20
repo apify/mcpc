@@ -9,7 +9,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import * as lockfile from 'proper-lockfile';
 import type { SessionData, SessionsStorage } from './types.js';
-import { getSessionsFilePath, exists, ensureDir, getMcpcHome } from './utils.js';
+import { getSessionsFilePath, fileExists, ensureDir, getMcpcHome } from './utils.js';
 import { createLogger } from './logger.js';
 import { ClientError } from './errors.js';
 
@@ -25,7 +25,7 @@ const LOCK_TIMEOUT = 5000;
 async function loadSessionsInternal(): Promise<SessionsStorage> {
   const filePath = getSessionsFilePath();
 
-  if (!(await exists(filePath))) {
+  if (!(await fileExists(filePath))) {
     logger.debug('Sessions file does not exist, returning empty sessions');
     return { sessions: {} };
   }
@@ -89,7 +89,7 @@ async function withLock<T>(
 
   // Ensure the directory and file exist before locking
   await ensureDir(getMcpcHome());
-  if (!(await exists(filePath))) {
+  if (!(await fileExists(filePath))) {
     await writeFile(filePath, JSON.stringify({ sessions: {} }, null, 2), 'utf-8');
   }
 

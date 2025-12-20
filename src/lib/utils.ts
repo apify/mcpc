@@ -88,7 +88,7 @@ export async function ensureDir(dirPath: string): Promise<void> {
 /**
  * Check if a file or directory exists
  */
-export async function exists(filepath: string): Promise<boolean> {
+export async function fileExists(filepath: string): Promise<boolean> {
   try {
     await access(filepath, constants.F_OK);
     return true;
@@ -217,7 +217,7 @@ export async function waitForFile(
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    if (await exists(filepath)) {
+    if (await fileExists(filepath)) {
       return;
     }
 

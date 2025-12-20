@@ -8,3 +8,5 @@
 - Check if we show tool annotations
 
 - [Using session: apify-docs] => change to show server + transport + version?
+
+- add "mcpc --close-all" command to clean up old sessions
