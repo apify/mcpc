@@ -14,3 +14,6 @@ export * from './logger.js';
 
 // Export utilities
 export * from './utils.js';
+
+// Export argument parser
+export * from './args-parser.js';

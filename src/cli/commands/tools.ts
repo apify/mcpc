@@ -6,6 +6,7 @@ import type { OutputMode } from '../../lib/types.js';
 import { formatOutput, formatToolDetail, formatSuccess, logTarget } from '../output.js';
 import { ClientError } from '../../lib/errors.js';
 import { withMcpClient } from '../helpers.js';
+import { parseCommandArgs } from '../../lib/args-parser.js';
 
 /**
  * List available tools
@@ -86,56 +87,12 @@ export async function callTool(
   }
 ): Promise<void> {
   // Parse args from inline JSON, key=value pairs, or key:=json pairs
-  let parsedArgs: Record<string, unknown> = {};
-
   if (options.argsFile) {
     // TODO: Load args from file
     throw new ClientError('--args-file is not implemented yet');
-  } else if (options.args && options.args.length > 0) {
-    // Check if first arg is inline JSON object/array
-    const firstArg = options.args[0];
-    if (firstArg && (firstArg.startsWith('{') || firstArg.startsWith('['))) {
-      // Parse as inline JSON
-      if (options.args.length > 1) {
-        throw new ClientError('When using inline JSON, only one argument is allowed');
-      }
-      try {
-        parsedArgs = JSON.parse(firstArg);
-        if (typeof parsedArgs !== 'object' || parsedArgs === null) {
-          throw new ClientError('Inline JSON must be an object or array');
-        }
-      } catch (error) {
-        throw new ClientError(`Invalid JSON: ${(error as Error).message}`);
-      }
-    } else {
-      // Parse key=value or key:=json pairs
-      for (const pair of options.args) {
-        if (pair.includes(':=')) {
-          const parts = pair.split(':=', 2);
-          const key = parts[0];
-          const jsonValue = parts[1];
-          if (!key || jsonValue === undefined) {
-            throw new ClientError(`Invalid argument format: ${pair}. Use key=value or key:=json`);
-          }
-          try {
-            parsedArgs[key] = JSON.parse(jsonValue);
-          } catch (error) {
-            throw new ClientError(`Invalid JSON value for ${key}: ${(error as Error).message}`);
-          }
-        } else if (pair.includes('=')) {
-          const parts = pair.split('=', 2);
-          const key = parts[0];
-          const value = parts[1];
-          if (!key || value === undefined) {
-            throw new ClientError(`Invalid argument format: ${pair}. Use key=value or key:=json`);
-          }
-          parsedArgs[key] = value;
-        } else {
-          throw new ClientError(`Invalid argument format: ${pair}. Use key=value, key:=json, or inline JSON`);
-        }
-      }
-    }
   }
+
+  const parsedArgs = parseCommandArgs(options.args);
 
   await withMcpClient(target, options, async (client) => {
     const result = await client.callTool(name, parsedArgs);
