@@ -35,7 +35,7 @@ mcpc mcp.example.com tools-list
 # List tools of a local MCP server package
 mcpc @modelcontextprotocol/server-filesystem tools-list
 
-# Use your custom MCP config
+# Use your custom MCP config JSON file
 mcpc --config ~/.vscode/mcp.json myserver tools-list
 
 # Authenticate to OAuth-enabled server and save authentication profile
@@ -148,7 +148,7 @@ echo '{"query":"hello","count":10}' | mcpc @server tools-call my-tool
 ## Global flags
 
 - `--json` - Input and output in JSON format for scripting
-- `--config <file>` - Use MCP config file (e.g., `.vscode/mcp.json`)
+- `--config <file>` - Use MCP config JSON file (e.g., `.vscode/mcp.json`)
 - `-H, --header "Key: Value"` - Add HTTP header (can be repeated)
 - `-v, --verbose` - Enable verbose logging (shows protocol details)
 - `--timeout <seconds>` - Request timeout in seconds (default: 300)
@@ -500,7 +500,7 @@ Configuration can be provided via file, environment variables, or command-line f
 2. Environment variables
 3. Built-in defaults
 
-### MCP server config file
+### MCP config JSON file
 
 `mcpc` supports the ["standard"](https://gofastmcp.com/integrations/mcp-json-configuration)
 MCP server JSON config file, compatible with Claude Desktop, VS Code, and other MCP clients.
@@ -514,7 +514,7 @@ mcpc --config .vscode/mcp.json apify tools-list
 mcpc --config .vscode/mcp.json apify connect --session @my-apify
 ```
 
-**Example MCP server config file:**
+**Example MCP config JSON file:**
 
 ```json
 {
@@ -738,7 +738,7 @@ mcpc(@apify)> exit
 - **Authentication**: OAuth profiles, keychain storage, `auth-*` commands
 - **Caching**: `--no-cache` flag and list caching
 - **Interactive shell**: REPL features (history, tab completion)
-- **Config file loading**: MCP server config file parsing (stdio transport support)
+- **Config file loading**: MCP config JSON file parsing (stdio transport support)
 - **Environment variables**: `MCPC_*` environment variables
 - **Notification handling**: Server-sent notifications
 - **Error recovery**: Bridge restart, reconnection

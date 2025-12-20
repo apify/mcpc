@@ -113,7 +113,7 @@ function createProgram(): Command {
     .helpOption('-h, --help', 'Display general help')
     .option('-j, --json', 'Output in JSON format')
     .option('--verbose', 'Enable verbose logging')
-    .option('-c, --config <path>', 'Path to MCP server config file')
+    .option('-c, --config <path>', 'Path to MCP config JSON file')
     .option('-H, --header <header>', 'Add HTTP header (can be repeated)')
     .option('--timeout <seconds>', 'Request timeout in seconds (default: 300)')
     .option('--protocol-version <version>', 'Force specific MCP protocol version')
@@ -126,17 +126,16 @@ function createProgram(): Command {
     'after',
     `
 Where <target> can be:
-  @<name>                       Named session (e.g., @apify)
-  https://...                   Remote MCP server URL
-  <config-entry>                Entry from --config file
-  <package>                     Local MCP server package
+  @<name>                             Named session (e.g., @apify)
+  <config-entry>                      Entry from MCP config file specified in --config
+  <url>                               Remote MCP server URL (e.g., mcp.apify.com)
 
 Examples:
-  $ mcpc https://mcp.apify.com connect --session @apify # Create a session
-  $ mcpc @apify                                         # Show server info and capabilities
-  $ mcpc @apify tools-list                              # List server tools
-  $ mcpc @apify tools-call search-actors --args '{query:"hello"}'
-  $ mcpc --json @apify resources-list                   # JSON output
+  $ mcpc mcp.apify.com connect --session @apify                    # Create a session
+  $ mcpc @apify                                                    # Show server info and capabilities
+  $ mcpc @apify tools-list                                         # List server tools
+  $ mcpc @apify tools-call search-actors --args '{query:"hello"}'  # Call tool
+  $ mcpc --json @apify resources-list                              # JSON output
 `
   );
 
@@ -145,7 +144,7 @@ Examples:
 
 async function handleCommands(target: string, argv: string[]): Promise<void> {
   const program = createProgram();
-  program.argument('<target>', 'Target (session @name, server URL, config entry, or package)');
+  program.argument('<target>', 'Target (session @name, config entry, or server URL)');
 
   // Get options to pass to handlers
   const getOptions = (command: Command): {

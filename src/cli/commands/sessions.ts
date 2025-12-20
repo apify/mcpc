@@ -49,7 +49,8 @@ export async function connectSession(
     // Success!
     if (options.outputMode === 'human') {
       console.log(formatSuccess(`Session ${name} created successfully`));
-      console.log(`  Target: ${target}`);
+      // TODO: print MCP protocol version if available
+      console.log(`  Server: ${transportConfig.url || target}`);
       console.log(`  Transport: ${transportConfig.type}`);
       console.log(`\nUse "mcpc ${name} tools-list" to list available tools.`);
       console.log(`Use "mcpc ${name} close" to terminate the session.`);

@@ -134,6 +134,13 @@ describe('normalizeServerUrl', () => {
     expect(normalizeServerUrl('http://EXAMPLE.COM')).toBe('http://example.com');
   });
 
+  it('should handle URL paths well', () => {
+    expect(normalizeServerUrl('http://example.com?test=1')).toBe('http://example.com/?test=1');
+    expect(normalizeServerUrl('http://example.com/?test=1')).toBe('http://example.com/?test=1');
+    expect(normalizeServerUrl('http://example.com/?test=1#aaa')).toBe('http://example.com/?test=1');
+    expect(normalizeServerUrl('https://example.com/?test=1')).toBe('https://example.com/?test=1');
+  });
+
   it('should add https:// to URLs without scheme', () => {
     expect(normalizeServerUrl('example.com')).toBe('https://example.com');
     expect(normalizeServerUrl('mcp.apify.com')).toBe('https://mcp.apify.com');
