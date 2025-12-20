@@ -6,7 +6,7 @@ import type { OutputMode } from '../../lib/types.js';
 import { formatOutput, formatToolDetail, formatSuccess, logTarget } from '../output.js';
 import { ClientError } from '../../lib/errors.js';
 import { withMcpClient } from '../helpers.js';
-import { parseCommandArgs } from '../parser.js';
+import { parseCommandArgs, loadArgsFromFile } from '../parser.js';
 
 /**
  * List available tools
@@ -86,13 +86,18 @@ export async function callTool(
     verbose?: boolean;
   }
 ): Promise<void> {
-  // Parse args from inline JSON, key=value pairs, or key:=json pairs
-  if (options.argsFile) {
-    // TODO: Load args from file
-    throw new ClientError('--args-file is not implemented yet');
+  // Parse args from inline JSON, key=value pairs, key:=json pairs, or load from file
+  let parsedArgs: Record<string, unknown>;
+
+  if (options.argsFile && options.args && options.args.length > 0) {
+    throw new ClientError('Cannot use both --args and --args-file');
   }
 
-  const parsedArgs = parseCommandArgs(options.args);
+  if (options.argsFile) {
+    parsedArgs = loadArgsFromFile(options.argsFile);
+  } else {
+    parsedArgs = parseCommandArgs(options.args);
+  }
 
   await withMcpClient(target, options, async (client) => {
     const result = await client.callTool(name, parsedArgs);

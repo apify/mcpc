@@ -2,8 +2,9 @@
  * Tests for argument parsing utilities
  */
 
-import { parseCommandArgs } from '../../src/cli/parser.js';
+import { parseCommandArgs, loadArgsFromFile } from '../../src/cli/parser.js';
 import { ClientError } from '../../src/lib/errors.js';
+import { join } from 'path';
 
 describe('parseCommandArgs', () => {
   describe('empty or undefined input', () => {
@@ -225,5 +226,80 @@ describe('parseCommandArgs', () => {
       const result = parseCommandArgs(['expr=x:=5']);
       expect(result).toEqual({ 'expr=x': 5 });
     });
+  });
+});
+
+describe('loadArgsFromFile', () => {
+  const testDataDir = join(__dirname, '..', 'data');
+
+  it('should load arguments from valid JSON file', () => {
+    const filePath = join(testDataDir, 'tool-args.json');
+    const result = loadArgsFromFile(filePath);
+    expect(result).toEqual({
+      query: 'hello world',
+      limit: 10,
+      enabled: true,
+      config: {
+        timeout: 30,
+      },
+    });
+  });
+
+  it('should resolve relative paths', () => {
+    const filePath = 'test/data/tool-args.json';
+    const result = loadArgsFromFile(filePath);
+    expect(result).toEqual({
+      query: 'hello world',
+      limit: 10,
+      enabled: true,
+      config: {
+        timeout: 30,
+      },
+    });
+  });
+
+  it('should throw error for non-existent file', () => {
+    const filePath = join(testDataDir, 'non-existent.json');
+    expect(() => {
+      loadArgsFromFile(filePath);
+    }).toThrow(ClientError);
+    expect(() => {
+      loadArgsFromFile(filePath);
+    }).toThrow('Arguments file not found');
+  });
+
+  it('should throw error for array JSON', () => {
+    const filePath = join(testDataDir, 'tool-args-invalid.json');
+    expect(() => {
+      loadArgsFromFile(filePath);
+    }).toThrow(ClientError);
+    expect(() => {
+      loadArgsFromFile(filePath);
+    }).toThrow('Arguments file must contain a JSON object');
+  });
+
+  it('should throw error for malformed JSON', () => {
+    const filePath = join(testDataDir, 'tool-args-malformed.json');
+    expect(() => {
+      loadArgsFromFile(filePath);
+    }).toThrow(ClientError);
+    expect(() => {
+      loadArgsFromFile(filePath);
+    }).toThrow('Invalid JSON in arguments file');
+  });
+
+  it('should expand tilde in file path', () => {
+    // Create a file in home directory for testing
+    const homeFile = join(process.env.HOME || '~', '.mcpc-test-args.json');
+    const fs = require('fs');
+    fs.writeFileSync(homeFile, JSON.stringify({ test: 'value' }));
+
+    try {
+      const result = loadArgsFromFile('~/.mcpc-test-args.json');
+      expect(result).toEqual({ test: 'value' });
+    } finally {
+      // Clean up
+      fs.unlinkSync(homeFile);
+    }
   });
 });

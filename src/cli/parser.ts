@@ -2,7 +2,8 @@
  * Command-line argument parsing utilities
  * Pure functions with no external dependencies for easy testing
  */
-import { ClientError } from '../lib/index.js';
+import { readFileSync } from 'fs';
+import { ClientError, resolvePath } from '../lib/index.js';
 
 // Options that take a value (not boolean flags)
 const OPTIONS_WITH_VALUES = [
@@ -182,4 +183,39 @@ export function parseCommandArgs(args: string[] | undefined): Record<string, unk
   }
 
   return parsedArgs;
+}
+
+/**
+ * Load arguments from a JSON file
+ *
+ * @param filePath - Path to JSON file containing arguments
+ * @returns Parsed arguments as key-value object
+ * @throws ClientError if file cannot be read or contains invalid JSON
+ */
+export function loadArgsFromFile(filePath: string): Record<string, unknown> {
+  const resolvedPath = resolvePath(filePath);
+
+  let fileContent: string;
+  try {
+    fileContent = readFileSync(resolvedPath, 'utf-8');
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (err.code === 'ENOENT') {
+      throw new ClientError(`Arguments file not found: ${filePath}`);
+    }
+    throw new ClientError(`Failed to read arguments file: ${err.message}`);
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(fileContent);
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      throw new ClientError('Arguments file must contain a JSON object');
+    }
+    return parsed as Record<string, unknown>;
+  } catch (error) {
+    if (error instanceof ClientError) {
+      throw error;
+    }
+    throw new ClientError(`Invalid JSON in arguments file: ${(error as Error).message}`);
+  }
 }

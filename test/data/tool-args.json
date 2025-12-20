@@ -1,0 +1,8 @@
+{
+  "query": "hello world",
+  "limit": 10,
+  "enabled": true,
+  "config": {
+    "timeout": 30
+  }
+}
