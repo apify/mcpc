@@ -14,6 +14,7 @@ import {
   getHistoryFilePath,
   isValidUrl,
   normalizeServerUrl,
+  getAuthServerKey,
   isValidSessionName,
   isValidResourceUri,
   sleep,
@@ -117,22 +118,29 @@ describe('isValidUrl', () => {
 describe('normalizeServerUrl', () => {
   it('should accept URLs with https:// scheme', () => {
     expect(normalizeServerUrl('https://example.com')).toBe('https://example.com');
+    expect(normalizeServerUrl('https://example.com/')).toBe('https://example.com'); // remove trailing slash
     expect(normalizeServerUrl('https://mcp.apify.com')).toBe('https://mcp.apify.com');
-    expect(normalizeServerUrl('https://example.com:443')).toBe('https://example.com:443');
+    expect(normalizeServerUrl('https://example.com:443')).toBe('https://example.com'); // Default port stripped
+    expect(normalizeServerUrl('https://example.com:8443')).toBe('https://example.com:8443'); // Non-default preserved
     expect(normalizeServerUrl('https://example.com/path')).toBe('https://example.com/path');
+    expect(normalizeServerUrl('https://EXAMPLE.COM/path')).toBe('https://example.com/path');
   });
 
   it('should accept URLs with http:// scheme', () => {
     expect(normalizeServerUrl('http://localhost')).toBe('http://localhost');
+    expect(normalizeServerUrl('http://localhost/')).toBe('http://localhost'); // remove trailing slash
     expect(normalizeServerUrl('http://localhost:8080')).toBe('http://localhost:8080');
     expect(normalizeServerUrl('http://example.com')).toBe('http://example.com');
+    expect(normalizeServerUrl('http://EXAMPLE.COM')).toBe('http://example.com');
   });
 
   it('should add https:// to URLs without scheme', () => {
     expect(normalizeServerUrl('example.com')).toBe('https://example.com');
     expect(normalizeServerUrl('mcp.apify.com')).toBe('https://mcp.apify.com');
-    expect(normalizeServerUrl('api.example.com:443')).toBe('https://api.example.com:443');
+    expect(normalizeServerUrl('api.example.com:443')).toBe('https://api.example.com'); // Default port stripped
+    expect(normalizeServerUrl('api.example.com:8443')).toBe('https://api.example.com:8443'); // Non-default preserved
     expect(normalizeServerUrl('example.com/path')).toBe('https://example.com/path');
+    expect(normalizeServerUrl('EXAMPLE.COM/path')).toBe('https://example.com/path');
   });
 
   it('should throw error for URLs with invalid scheme', () => {
@@ -145,6 +153,54 @@ describe('normalizeServerUrl', () => {
     expect(() => normalizeServerUrl('')).toThrow('Invalid URL');
     expect(() => normalizeServerUrl('not a url at all')).toThrow('Invalid URL');
     expect(() => normalizeServerUrl('://')).toThrow('Invalid URL');
+  });
+
+  it('should remove hash fragments', () => {
+    expect(normalizeServerUrl('https://example.com#hash')).toBe('https://example.com');
+    expect(normalizeServerUrl('https://example.com/#hash')).toBe('https://example.com');
+    expect(normalizeServerUrl('https://example.com/path#section')).toBe('https://example.com/path');
+    expect(normalizeServerUrl('example.com#hash')).toBe('https://example.com');
+    expect(normalizeServerUrl('http://localhost:8080#anchor')).toBe('http://localhost:8080');
+  });
+
+  it('should remove username and password', () => {
+    expect(normalizeServerUrl('https://user:pass@example.com')).toBe('https://example.com');
+    expect(normalizeServerUrl('https://admin@example.com')).toBe('https://example.com');
+    expect(normalizeServerUrl('http://user:pass@localhost:8080')).toBe('http://localhost:8080');
+    expect(normalizeServerUrl('https://user:pass@example.com/path')).toBe('https://example.com/path');
+    expect(normalizeServerUrl('https://user:pass@example.com#hash')).toBe('https://example.com');
+  });
+});
+
+describe('getAuthServerKey', () => {
+  it('should extract hostname from URL', () => {
+    expect(getAuthServerKey('https://example.com')).toBe('example.com');
+    expect(getAuthServerKey('https://mcp.apify.com')).toBe('mcp.apify.com');
+    expect(getAuthServerKey('http://example.com')).toBe('example.com');
+    expect(getAuthServerKey('example.com')).toBe('example.com');
+  });
+
+  it('should ignore port numbers', () => {
+    expect(getAuthServerKey('https://example.com:8443')).toBe('example.com');
+    expect(getAuthServerKey('http://localhost:8080')).toBe('localhost');
+    expect(getAuthServerKey('example.com:3000')).toBe('example.com');
+    expect(getAuthServerKey('https://example.com:443')).toBe('example.com');
+    expect(getAuthServerKey('http://example.com:80')).toBe('example.com');
+  });
+
+  it('should normalize hostname to lowercase', () => {
+    expect(getAuthServerKey('https://EXAMPLE.COM')).toBe('example.com');
+    expect(getAuthServerKey('HTTPS://Example.COM')).toBe('example.com');
+    expect(getAuthServerKey('MCP.APIFY.COM')).toBe('mcp.apify.com');
+    expect(getAuthServerKey('Localhost:8080')).toBe('localhost');
+  });
+
+  it('should strip path, query, and hash from URL', () => {
+    expect(getAuthServerKey('https://example.com/path')).toBe('example.com');
+    expect(getAuthServerKey('https://example.com/path?query=1')).toBe('example.com');
+    expect(getAuthServerKey('https://example.com:8443/path')).toBe('example.com');
+    expect(getAuthServerKey('https://example.com#hash')).toBe('example.com');
+    expect(getAuthServerKey('https://user:pass@example.com/path')).toBe('example.com');
   });
 });
 

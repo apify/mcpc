@@ -134,25 +134,48 @@ export function isValidUrl(str: string): boolean {
 }
 
 /**
- * Normalize a server URL by adding https:// if no scheme is present
+ * Normalize an MCP server URL by adding https:// if no scheme is present
+ * Also converts hostname to lowercase and removes username, password, and hash
  * Returns the normalized URL or throws an error if invalid
  */
 export function normalizeServerUrl(str: string): string {
-  // If it already has a scheme, validate and return as-is
-  if (str.includes('://')) {
-    if (isValidUrl(str)) {
-      return str;
-    }
+  let urlString = str;
+
+  // Add https:// if no scheme is present
+  if (!str.includes('://')) {
+    urlString = `https://${str}`;
+  }
+
+  // Validate URL
+  if (!isValidUrl(urlString)) {
     throw new Error(`Invalid URL: ${str} (must be http:// or https://)`);
   }
 
-  // No scheme - add https:// and validate
-  const normalized = `https://${str}`;
-  if (isValidUrl(normalized)) {
-    return normalized;
+  const url = new URL(urlString);
+
+  // Normalize URL components
+  url.hostname = url.hostname.toLowerCase();
+  url.username = '';
+  url.password = '';
+  url.hash = '';
+
+  let result = url.toString();
+
+  // Remove trailing slash if no path (only scheme://host or scheme://host:port)
+  if (url.pathname === '/' && !url.search) {
+    result = result.slice(0, -1);
   }
 
-  throw new Error(`Invalid URL: ${str}`);
+  return result;
+}
+
+/**
+ * Extract hostname from a URL for authentication key
+ * Returns only the hostname in lowercase (port is not relevant for auth)
+ */
+export function getAuthServerKey(urlString: string): string {
+  const url = new URL(normalizeServerUrl(urlString));
+  return url.hostname.toLowerCase();
 }
 
 /**
