@@ -10,7 +10,7 @@ import { unlink } from 'fs/promises';
 import { createMcpClient } from '../core/index.js';
 import type { McpClient } from '../core/index.js';
 import type { TransportConfig, IpcMessage, LoggingLevel } from '../lib/index.js';
-import { createLogger, setVerbose } from '../lib/index.js';
+import { createLogger, setVerbose, initFileLogger, closeFileLogger } from '../lib/index.js';
 import { fileExists, getBridgesDir, ensureDir } from '../lib/index.js';
 import { ClientError, NetworkError } from '../lib/index.js';
 
@@ -44,18 +44,23 @@ class BridgeProcess {
 
   /**
    * Start the bridge process
+   * Initializes file logging, connects to MCP server, creates Unix socket server for IPC,
+   * and sets up signal handlers for graceful shutdown
    */
   async start(): Promise<void> {
+    // 1. Initialize file logger
+    await initFileLogger('bridge.log', this.options.sessionName);
+
     logger.info(`Starting bridge for session: ${this.options.sessionName}`);
 
     try {
-      // 1. Connect to MCP server
+      // 2. Connect to MCP server
       await this.connectToMcp();
 
-      // 2. Create Unix socket server
+      // 3. Create Unix socket server
       await this.createSocketServer();
 
-      // 3. Set up signal handlers
+      // 4. Set up signal handlers
       this.setupSignalHandlers();
 
       logger.info('Bridge process started successfully');
@@ -397,6 +402,14 @@ class BridgeProcess {
       } catch (error) {
         logger.warn('Failed to close MCP client:', error);
       }
+    }
+
+    // Close file logger
+    try {
+      await closeFileLogger();
+      logger.debug('File logger closed');
+    } catch (error) {
+      logger.warn('Failed to close file logger:', error);
     }
   }
 }

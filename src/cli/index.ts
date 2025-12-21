@@ -11,7 +11,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
 
 import { Command } from 'commander';
-import { setVerbose } from '../lib/index.js';
+import { setVerbose, initFileLogger, closeFileLogger } from '../lib/index.js';
 import { isMcpError, formatError } from '../lib/index.js';
 import { formatJsonError } from './output.js';
 import * as tools from './commands/tools.js';
@@ -69,6 +69,20 @@ function getOptionsFromCommand(command: Command): HandlerOptions {
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
+  // Set up cleanup handlers for graceful shutdown
+  const handleExit = (): void => {
+    void closeFileLogger().then(() => {
+      process.exit(0);
+    });
+  };
+
+  process.on('SIGTERM', handleExit);
+  process.on('SIGINT', handleExit);
+  process.on('exit', () => {
+    // Synchronous cleanup on exit (file logger handles this gracefully)
+    void closeFileLogger();
+  });
+
   // Check for help or version flags first
   if (
     args.includes('--help') ||
@@ -86,15 +100,23 @@ async function main(): Promise<void> {
 
   // If no target found, list sessions
   if (!targetInfo) {
+    // Initialize file logger with "list" as prefix
+    await initFileLogger('cli.log', 'list');
+
     const { json } = extractOptions(args);
     await sessions.listSessionsAndAuthProfiles({ outputMode: json ? 'json' : 'human' });
     if (!json) {
       console.log('\nRun "mcpc --help" for usage information.');
     }
+
+    await closeFileLogger();
     return;
   }
 
   const { target, targetIndex } = targetInfo;
+
+  // Initialize file logger with target as prefix
+  await initFileLogger('cli.log', target);
 
   // Build modified argv without the target
   const modifiedArgs = [
@@ -104,7 +126,11 @@ async function main(): Promise<void> {
   ];
 
   // Handle commands
-  await handleCommands(target, modifiedArgs);
+  try {
+    await handleCommands(target, modifiedArgs);
+  } finally {
+    await closeFileLogger();
+  }
 }
 
 function createProgram(): Command {
@@ -346,7 +372,8 @@ async function handleCommands(target: string, args: string[]): Promise<void> {
 }
 
 // Run main function
-main().catch((error) => {
+main().catch(async (error) => {
   console.error('Fatal error:', error);
+  await closeFileLogger();
   process.exit(1);
 });

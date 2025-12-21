@@ -4,11 +4,19 @@
  */
 
 import type { LogLevel } from './types.js';
+import { FileLogger } from './file-logger.js';
+import { getLogsDir } from './utils.js';
+import { join } from 'path';
 
 /**
  * Global verbose flag (set by CLI --verbose flag)
  */
 let isVerbose = false;
+
+/**
+ * Global file logger instance (optional)
+ */
+let fileLogger: FileLogger | null = null;
 
 /**
  * Set verbose mode
@@ -26,6 +34,38 @@ export function setVerbose(verbose: boolean): void {
  */
 export function getVerbose(): boolean {
   return isVerbose;
+}
+
+/**
+ * Initialize file logger
+ * @param logFileName - Name of the log file (e.g., 'cli.log', 'bridge.log')
+ * @param prefix - Prefix for log messages (e.g., session name, target name)
+ */
+export async function initFileLogger(logFileName: string, prefix: string): Promise<void> {
+  // Close existing logger if any
+  if (fileLogger) {
+    await fileLogger.close();
+  }
+
+  const logFilePath = join(getLogsDir(), logFileName);
+  fileLogger = new FileLogger({
+    filePath: logFilePath,
+    maxSize: 10 * 1024 * 1024, // 10MB
+    maxFiles: 5,
+    prefix,
+  });
+
+  await fileLogger.init();
+}
+
+/**
+ * Close the file logger
+ */
+export async function closeFileLogger(): Promise<void> {
+  if (fileLogger) {
+    await fileLogger.close();
+    fileLogger = null;
+  }
 }
 
 /**
@@ -63,14 +103,37 @@ function shouldLog(level: LogLevel): boolean {
 }
 
 /**
- * Format a log message with timestamp (if verbose)
+ * Format a log message with timestamp and level
+ * @param level - Log level
+ * @param message - Log message
+ * @param forFile - Whether formatting for file (always includes timestamp) or console (only in verbose)
  */
-function formatMessage(level: LogLevel, message: string): string {
-  if (isVerbose) {
+function formatMessage(level: LogLevel, message: string, forFile = false): string {
+  const includeTimestamp = forFile || isVerbose;
+
+  if (includeTimestamp) {
     const timestamp = new Date().toISOString();
     return `[${timestamp}] [${level.toUpperCase()}] ${message}`;
   }
   return message;
+}
+
+/**
+ * Write a log message to file logger if configured
+ */
+function writeToFile(level: LogLevel, message: string, args: unknown[]): void {
+  if (!fileLogger) return;
+
+  // Format message for file with timestamp and level
+  let fullMessage = formatMessage(level, message, true);
+
+  // Append stringified args if any
+  if (args.length > 0) {
+    const argsStr = args.map((arg) => (typeof arg === 'string' ? arg : JSON.stringify(arg))).join(' ');
+    fullMessage = `${fullMessage} ${argsStr}`;
+  }
+
+  fileLogger.write(fullMessage);
 }
 
 /**
@@ -80,6 +143,8 @@ export function debug(message: string, ...args: unknown[]): void {
   if (shouldLog('debug')) {
     console.error(formatMessage('debug', message), ...args);
   }
+  // Always write to file logger if configured, even if not shown to console
+  writeToFile('debug', message, args);
 }
 
 /**
@@ -90,6 +155,7 @@ export function info(message: string, ...args: unknown[]): void {
   if (shouldLog('info')) {
     console.error(formatMessage('info', message), ...args);
   }
+  writeToFile('info', message, args);
 }
 
 /**
@@ -99,6 +165,7 @@ export function warn(message: string, ...args: unknown[]): void {
   if (shouldLog('warn')) {
     console.error(formatMessage('warn', message), ...args);
   }
+  writeToFile('warn', message, args);
 }
 
 /**
@@ -108,6 +175,7 @@ export function error(message: string, ...args: unknown[]): void {
   if (shouldLog('error')) {
     console.error(formatMessage('error', message), ...args);
   }
+  writeToFile('error', message, args);
 }
 
 /**
