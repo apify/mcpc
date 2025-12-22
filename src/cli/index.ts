@@ -19,7 +19,7 @@ import * as resources from './commands/resources.js';
 import * as prompts from './commands/prompts.js';
 import * as sessions from './commands/sessions.js';
 import * as logging from './commands/logging.js';
-import * as server from './commands/server.js';
+import * as utilities from './commands/utilities.js';
 import type { OutputMode } from '../lib/index.js';
 import { findTarget, extractOptions, hasCommandAfterTarget, getVerboseFromEnv, getJsonFromEnv } from './parser.js';
 import packageJson from '../../package.json' with { type: 'json' };
@@ -345,7 +345,7 @@ async function handleCommands(target: string, args: string[]): Promise<void> {
     .command('ping')
     .description('Ping the MCP server to check if it is alive')
     .action(async (_options, command) => {
-      await server.ping(target, getOptionsFromCommand(command));
+      await utilities.ping(target, getOptionsFromCommand(command));
     });
 
   // Parse and execute
