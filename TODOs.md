@@ -2,8 +2,6 @@
 - Ensure we show tool annotations and tasks in text mode too
 - Handle MCP errors by failing the command tool, e.g. invalid tool name..
 
-saveAuthProfiles - the auth profiles should use the file lock
-
 authProfiles - prints secrets to JSON now
 
 
@@ -12,8 +10,6 @@ authProfiles - prints secrets to JSON now
   - [Using session: apify-docs] => change to show server + transport + version? + auth info!!!
     Active MCP sessions:
     @fs → npx (stdio) --- show also args instead of just "npx"
-
-- nit: If tool response has `structuredContent` and a single `content: [ type: 'text', 'text': ... }]` record, then in text output mode (not --json) print the latter as Markdown and skip the structuredContent
 
 - add "mcpc --reset-all" commands to clean up everyting 
 

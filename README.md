@@ -413,8 +413,11 @@ Instead of forcing every command to reconnect and reinitialize (which is slow an
 
 **Note:** `mcpc` does not automatically close sessions.
 As long as the bridge process is running, it periodically pings to MCP server to keep the session alive.
-If the MCP server loses the `MCP-Session-Id`, the bridge process might keep running,
-and the session will be listed as **inactive** in `mcpc` output.
+If the MCP server drops the session (indentified by `MCP-Session-Id`), the bridge process might keep running,
+but the session will be listed as **inactive** in `mcpc` output
+and attempts to use it will fail.
+You need to explicitly `close` the session to remove it from the list,
+or reconnect it using `connect` command.
 
 ### Managing sessions
 

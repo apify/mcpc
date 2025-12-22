@@ -8,6 +8,10 @@
 import chalk from 'chalk';
 import type { OutputMode } from '../lib/index.js';
 import type { Tool, Resource, Prompt } from '../lib/types.js';
+import { extractSingleTextContent } from './tool-result.js';
+
+// Re-export for external use
+export { extractSingleTextContent } from './tool-result.js';
 
 /**
  * Format output based on the specified mode
@@ -32,6 +36,13 @@ export function formatJson(data: unknown): string {
 export function formatHuman(data: unknown): string {
   if (data === null || data === undefined) {
     return chalk.gray('(no data)');
+  }
+
+  // Check if this is a tool call result with a single text content
+  // If so, just output the text directly (as Markdown)
+  const singleText = extractSingleTextContent(data);
+  if (singleText !== undefined) {
+    return singleText;
   }
 
   // Handle different data types
