@@ -9,7 +9,9 @@ and keep a long-term sessions alive to receive notifications.
 
 `mcpc` is handy for manual testing of MCP servers, scripting,
 and AI coding agents to MCP in the ["code mode"](https://www.anthropic.com/engineering/code-execution-with-mcp),
-for better accuracy and token use. After all, shell script is the ultimate language.
+for better accuracy and token use.
+
+After all, UNIX-compatible shell script is THE most universal coding language.
 
 ## Features
 
@@ -185,11 +187,8 @@ For local servers (stdio) or remote servers (Streamable HTTP) which do not requi
 `mcpc` can be used without authentication:
 
 ```bash
-# Local stdio server
-mcpc @modelcontextprotocol/server-filesystem resources-list
-
 # Remote server without auth
-mcpc https://public-mcp.example.com tools-list
+mcpc https://mcp.apify.com\?tools=docs tools-list
 ```
 
 ### Bearer token authentication
@@ -769,11 +768,14 @@ mcpc (single package)
 │   └── mcpc-bridge     # Bridge process executable
 ```
 
-### Design goals
+### Design principles
 
 - Make `mcpc` easy to use for AI agents: avoid unnecessary interaction roundtrips, save tokens, be extremely clear about what's happening
-- Make `mcpc` delightful for human users: clear messaging, colors, concise
+- Make it delightful also for human users: good copy, colors, clear error messages
+- Options are as independent to reduce decision fatique, users always know what to do next
+- Strict consistency with MCP specification and object schemas
 - Minimal dependencies, cross-platform
+- No slop
 
 ### Core module (runtime-agnostic)
 
