@@ -5,14 +5,66 @@
 
 import { createMcpClient } from '../core/factory.js';
 import type { IMcpClient, OutputMode, TransportConfig } from '../lib/types.js';
-import { ClientError, NetworkError } from '../lib/errors.js';
+import { ClientError, NetworkError, AuthError } from '../lib/errors.js';
 import { normalizeServerUrl, isValidSessionName } from '../lib/utils.js';
 import { setVerbose, createLogger } from '../lib/logger.js';
 import { loadConfig, getServerConfig, validateServerConfig } from '../lib/config.js';
+import { getAuthProfile } from '../lib/auth-profiles.js';
 import { logTarget } from './output.js';
 import packageJson from '../../package.json' with { type: 'json' };
 
 const logger = createLogger('cli');
+
+/**
+ * Load auth profile and add Authorization header if available
+ * Returns the updated headers object
+ */
+async function addAuthHeader(
+  url: string,
+  headers: Record<string, string>,
+  profileName: string = 'default'
+): Promise<Record<string, string>> {
+  try {
+    const profile = await getAuthProfile(url, profileName);
+
+    if (!profile) {
+      logger.debug(`No auth profile found for ${url} (profile: ${profileName})`);
+      return headers;
+    }
+
+    // Check if token is expired
+    if (profile.expiresAt) {
+      const expiresDate = new Date(profile.expiresAt);
+      if (expiresDate < new Date()) {
+        throw new AuthError(
+          `Authentication token expired at ${expiresDate.toISOString()}. ` +
+            `Please re-authenticate with: mcpc ${url} auth --profile ${profileName}`
+        );
+      }
+    }
+
+    if (!profile.tokens?.access_token) {
+      logger.warn(`Auth profile exists but has no access token: ${profileName}`);
+      return headers;
+    }
+
+    logger.debug(`Using auth profile: ${profileName}`);
+
+    // Add Authorization header with Bearer token
+    return {
+      ...headers,
+      Authorization: `Bearer ${profile.tokens.access_token}`,
+    };
+  } catch (error) {
+    // Re-throw AuthError
+    if (error instanceof AuthError) {
+      throw error;
+    }
+    // Log other errors but don't fail the connection
+    logger.warn(`Failed to load auth profile: ${(error as Error).message}`);
+    return headers;
+  }
+}
 
 /**
  * Resolve a target string to transport configuration
@@ -22,15 +74,16 @@ const logger = createLogger('cli');
  * - <url> - Remote HTTP server (defaults to https:// if no scheme provided)
  * - <config-entry> - Entry from config file (when --config is used)
  */
-export function resolveTarget(
+export async function resolveTarget(
   target: string,
   options: {
     config?: string;
     headers?: string[];
     timeout?: number;
     verbose?: boolean;
+    profile?: string;
   } = {}
-): TransportConfig {
+): Promise<TransportConfig> {
   if (options.verbose) {
     setVerbose(true);
   }
@@ -76,10 +129,17 @@ export function resolveTarget(
         }
       }
 
+      // Add auth header if profile exists
+      const headersWithAuth = await addAuthHeader(
+        serverConfig.url,
+        headers,
+        options.profile
+      );
+
       const transportConfig: TransportConfig = {
         type: 'http',
         url: serverConfig.url,
-        headers,
+        headers: headersWithAuth,
       };
 
       // Timeout: CLI flag > config file > default
@@ -130,10 +190,13 @@ export function resolveTarget(
       }
     }
 
+    // Add auth header if profile exists
+    const headersWithAuth = await addAuthHeader(url, headers, options.profile);
+
     const config: TransportConfig = {
       type: 'http',
       url,
-      headers,
+      headers: headersWithAuth,
     };
 
     // Only include timeout if it's provided
@@ -175,6 +238,7 @@ export async function withMcpClient<T>(
     timeout?: number;
     verbose?: boolean;
     hideTarget?: boolean;
+    profile?: string;
   },
   callback: (client: IMcpClient) => Promise<T>
 ): Promise<T> {
@@ -194,7 +258,7 @@ export async function withMcpClient<T>(
   }
 
   // Regular direct connection
-  const transportConfig = resolveTarget(target, options);
+  const transportConfig = await resolveTarget(target, options);
 
   logger.debug('Resolved target:', { target, transportConfig });
 

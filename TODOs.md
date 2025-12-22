@@ -5,16 +5,18 @@
 - Ensure we show tool annotations and tasks in text mode too
 - Handle MCP errors by failing the command tool, e.g. invalid tool name..
 
-
+saveAuthProfiles - the auth profiles should use the file lock
 
 - nit: on server/session info, print also auth info
-  - [Using session: apify-docs] => change to show server + transport + version?
+  - [Using session: apify-docs] => change to show server + transport + version? + auth info!!!
     Active MCP sessions:
     @fs → npx (stdio) --- show also args instead of just "npx"
-  - 
+
 - nit: If tool response has `structuredContent` and `content:` [ type: 'text', 'text': ... }], print the latter as Markdown in text mode and skip the structuredContent
 
 - add "mcpc --close-all" command to clean up old sessions
+
+- docs: add the OAuth command to --help, otherwise people will not find it when they need it
 
 E2E tests
 - add end-to-end tests e.g. under `test/e2e` - one bash script per test suite , organized in directories, and one master script that runs them all or selected ones (per directory) in parallel

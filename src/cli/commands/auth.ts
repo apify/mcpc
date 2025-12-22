@@ -99,15 +99,15 @@ export async function authList(
 
         if (profile.authenticatedAt) {
           const authDate = new Date(profile.authenticatedAt);
-          console.log(`    Authenticated: ${authDate.toLocaleString()}`);
+          console.log(`    Authenticated: ${authDate.toISOString()}`);
         }
 
         if (profile.expiresAt) {
           const expiresDate = new Date(profile.expiresAt);
           const isExpired = expiresDate < new Date();
           const expiryStr = isExpired
-            ? chalk.red(`${expiresDate.toLocaleString()} (expired)`)
-            : chalk.green(expiresDate.toLocaleString());
+            ? chalk.red(`${expiresDate.toISOString()} (expired)`)
+            : chalk.green(expiresDate.toISOString());
           console.log(`    Expires: ${expiryStr}`);
         }
 
@@ -179,20 +179,20 @@ export async function authShow(
 
       if (profile.authenticatedAt) {
         const authDate = new Date(profile.authenticatedAt);
-        console.log(`Authenticated: ${authDate.toLocaleString()}`);
+        console.log(`Authenticated: ${authDate.toISOString()}`);
       }
 
       if (profile.expiresAt) {
         const expiresDate = new Date(profile.expiresAt);
         const isExpired = expiresDate < new Date();
         const expiryStr = isExpired
-          ? chalk.red(`${expiresDate.toLocaleString()} (expired)`)
-          : chalk.green(expiresDate.toLocaleString());
+          ? chalk.red(`${expiresDate.toISOString()} (expired)`)
+          : chalk.green(expiresDate.toISOString());
         console.log(`Expires: ${expiryStr}`);
       }
 
-      console.log(`Created: ${new Date(profile.createdAt).toLocaleString()}`);
-      console.log(`Updated: ${new Date(profile.updatedAt).toLocaleString()}`);
+      console.log(`Created: ${new Date(profile.createdAt).toISOString()}`);
+      console.log(`Updated: ${new Date(profile.updatedAt).toISOString()}`);
       console.log('');
     } else {
       console.log(

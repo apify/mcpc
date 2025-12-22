@@ -36,6 +36,7 @@ const OPTIONS_WITH_VALUES = [
   '-H',
   '--header',
   '--timeout',
+  '--profile',
   '--protocol-version',
   '--schema',
   '--schema-mode',
@@ -82,6 +83,7 @@ export function extractOptions(args: string[]): {
   config?: string;
   headers?: string[];
   timeout?: number;
+  profile?: string;
   verbose: boolean;
   json: boolean;
 } {
@@ -109,11 +111,16 @@ export function extractOptions(args: string[]): {
   const timeoutValue = timeoutIndex >= 0 && timeoutIndex + 1 < args.length ? args[timeoutIndex + 1] : undefined;
   const timeout = timeoutValue ? parseInt(timeoutValue, 10) : undefined;
 
+  // Extract --profile
+  const profileIndex = args.findIndex((arg) => arg === '--profile');
+  const profile = profileIndex >= 0 && profileIndex + 1 < args.length ? args[profileIndex + 1] : undefined;
+
   return {
     ...options,
     ...(config && { config }),
     ...(headers.length > 0 && { headers }),
     ...(timeout !== undefined && { timeout }),
+    ...(profile && { profile }),
   };
 }
 

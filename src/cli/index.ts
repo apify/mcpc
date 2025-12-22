@@ -34,6 +34,7 @@ interface HandlerOptions {
   headers?: string[];
   timeout?: number;
   verbose?: boolean;
+  profile?: string;
 }
 
 /**
@@ -63,6 +64,7 @@ function getOptionsFromCommand(command: Command): HandlerOptions {
     options.headers = Array.isArray(opts.header) ? opts.header : [opts.header];
   }
   if (opts.timeout) options.timeout = parseInt(opts.timeout, 10);
+  if (opts.profile) options.profile = opts.profile;
   if (verbose) options.verbose = verbose;
 
   return options;
@@ -143,6 +145,7 @@ function createProgram(): Command {
     .option('-c, --config <file>', 'Path to MCP config JSON file')
     .option('-H, --header <header>', 'Add HTTP header (can be repeated)')
     .option('--timeout <seconds>', 'Request timeout in seconds (default: 300)')
+    .option('--profile <name>', 'Auth profile to use (default: default)')
     .option('--protocol-version <version>', 'Force specific MCP protocol version')
     .option('--schema <file>', 'Validate against expected tool/prompt schema')
     .option('--schema-mode <mode>', 'Schema validation mode: strict, compatible (default), or ignore')

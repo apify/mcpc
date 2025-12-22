@@ -37,7 +37,7 @@ export async function connectSession(
     }
 
     // Resolve target to transport config
-    const transportConfig = resolveTarget(target, options);
+    const transportConfig = await resolveTarget(target, options);
 
     // Start bridge process
     await startBridge({
@@ -127,11 +127,11 @@ export async function listSessionsAndAuthProfiles(options: { outputMode: OutputM
       for (const profile of authProfiles) {
         const expiryInfo =
           profile.expiresAt && new Date(profile.expiresAt) > new Date()
-            ? ` (expires ${new Date(profile.expiresAt).toLocaleDateString()})`
+            ? `expires ${new Date(profile.expiresAt).toISOString()}`
             : profile.expiresAt
-              ? ' (expired)'
+              ? 'expired'
               : '';
-        console.log(`  ${profile.name} → ${profile.serverUrl} (OAuth${expiryInfo})`);
+        console.log(`  ${profile.name} → ${profile.serverUrl} (OAuth, ${expiryInfo})`);
       }
     }
   }
