@@ -1,15 +1,16 @@
 # mcpc: MCP CLI client
 
 `mcpc` is a command-line client for the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/),
-which maps MCP to intuitive CLI commands, for human shell access, scripts, or AI coding agents.
+which maps MCP to intuitive CLI commands for shell access, scripts, and AI coding agents.
 
 `mcpc` can connect to any MCP server over Streamable HTTP transport or stdio,
 securely store OAuth credentials,
-and keep a long-term sessions alive to receive notifications.
+and keep long-term sessions to multiple MCP servers in parallel.
+It supports ALL major protocol features including tools/resources/prompts, asynchronous tasks, and notifications.
 
 `mcpc` is handy for manual testing of MCP servers, scripting,
-and AI coding agents to MCP in the ["code mode"](https://www.anthropic.com/engineering/code-execution-with-mcp),
-for better accuracy and token use.
+and AI coding agents to instrument MCP workflows in ["code mode"](https://www.anthropic.com/engineering/code-execution-with-mcp),
+for better accuracy and lower token compared to traditional tool function calling.
 
 After all, UNIX-compatible shell script is THE most universal coding language.
 
@@ -33,8 +34,8 @@ npm install -g mcpc
 
 ```bash
 # Show information about a remote MCP server and list its tools
-mcpc mcp.example.com
-mcpc mcp.example.com tools-list
+mcpc mcp.apify.com
+mcpc mcp.apify.com tools-list
 
 # List tools of a local MCP server package
 mcpc @modelcontextprotocol/server-filesystem tools-list
@@ -43,18 +44,18 @@ mcpc @modelcontextprotocol/server-filesystem tools-list
 mcpc --config ~/.vscode/mcp.json myserver tools-list
 
 # Authenticate to OAuth-enabled server and save authentication profile
-mcpc mcp.example.com auth --profile personal
+mcpc mcp.apify.com auth --profile personal
 
 # Create a persistent session with authentication profile
-mcpc mcp.example.com connect --session @example --profile personal
-mcpc @example tools-call search --args query=hello
+mcpc mcp.apify.com connect --session @test --profile personal
+mcpc @test tools-call search-actors --args query="web crawler"
 
 # List all active sessions and saved authentication profiles
 mcpc
 
 # Interactive shell
 mcpc @myserver shell
-mcpc mcp.example.com shell
+mcpc mcp.apify.com shell
 ```
 
 ## Usage
@@ -84,7 +85,7 @@ mcpc <target> prompts-get <prompt-name> [--args key=val key2:=json ...] [--args-
 mcpc <target> resources
 mcpc <target> resources-list
 mcpc <target> resources-read <uri> [-o <file>] [--max-size <bytes>]
-mcpc <target> resources-subscribe <uri>
+mcpc <target> resources-subscribe <uri>     # TODO: automatically update the -o file on changes
 mcpc <target> resources-unsubscribe <uri>
 mcpc <target> resources-templates-list
 
@@ -298,7 +299,7 @@ mcpc https://mcp.apify.com connect --session @apify1 --profile personal
 mcpc https://mcp.apify.com connect --session @apify2
 
 # Public server - no authentication needed:
-mcpc https://public-mcp.example.com tools-list
+mcpc https://mcp.apify.com\?tools=docs tools-list
 ```
 
 #### Multiple accounts for the same server
@@ -578,7 +579,7 @@ Config files support environment variable substitution using `${VAR_NAME}` synta
 {
   "mcpServers": {
     "secure-server": {
-      "url": "https://api.example.com",
+      "url": "https://mcp.example.com",
       "headers": {
         "Authorization": "Bearer ${API_TOKEN}",
         "X-User-ID": "${USER_ID}"
@@ -605,7 +606,6 @@ Config files support environment variable substitution using `${VAR_NAME}` synta
 - **Streamable HTTP**: `mcpc` supports only the Streamable HTTP transport (the current standard). The deprecated HTTP with SSE transport is not supported. The bridge manages persistent HTTP connections with bidirectional streaming for server-to-client communication, with automatic reconnection using exponential backoff (1s → 30s max)
   - Includes `MCP-Protocol-Version` header on all HTTP requests (per MCP spec)
   - Handles `MCP-Session-Id` for stateful server sessions
-  - Validates `Origin` headers for security (prevents DNS rebinding attacks)
 - During reconnection, new requests are queued (fails after 3 minutes of disconnection)
 - **Stdio**: Direct bidirectional JSON-RPC communication over standard input/output
 
@@ -650,10 +650,10 @@ MCP enables arbitrary tool execution and data access; treat servers like you tre
 - File permissions: `~/.mcpc/sessions.json` is set to `0600` (user-only)
 - Bridge sockets in `~/.mcpc/bridges/` are created with `0700` permissions
 
-**Network security:**
+**TODO: Network security:**
 - HTTPS enforced for remote servers (HTTP auto-upgraded)
 - Certificate validation enabled (use `--insecure` to disable, not recommended)
-- Origin header validation to prevent DNS rebinding attacks
+- `Origin` header validation to prevent DNS rebinding attacks
 - Local servers bind to localhost (127.0.0.1) only
 - No credentials logged even in verbose mode
 
@@ -667,7 +667,7 @@ MCP enables arbitrary tool execution and data access; treat servers like you tre
 - **Tool execution errors**: Returns server error messages with context
 - **Bridge crashes**: Detects and cleans up orphaned processes, offers restart
 
-Use `--verbose` flag for detailed debugging information (shows JSON-RPC messages, streaming events, and protocol negotiation).
+Use `--verbose` to print detailed debugging information to stderr (includes JSON-RPC messages, streaming events, and protocol negotiation).
 
 ### Exit codes
 
@@ -742,22 +742,22 @@ mcpc(@apify)> exit
 - Caching with TTL and notification-based invalidation
 - Server notification handling (`list_changed` events)
 - Per-session bridge logs with rotation
+- Interactive shell: REPL features (history, tab completion)
+- Config file: Full stdio transport support for local packages
 
 ### What's not yet implemented
 
 **📋 Major features pending:**
 - **Authentication**: OAuth profiles, keychain storage (structure exists, flow not complete)
-- **Interactive shell**: REPL features (history, tab completion)
-- **Config file**: Full stdio transport support for local packages
-- **Package resolution**: Find and run local MCP packages
 - **Error recovery**: Bridge crash recovery, automatic reconnection
+- **Package resolution**: Find and run local MCP packages (later)
 
 ## Implementation details
 
 ### Architecture overview
 
 ```
-TODO: improve diagram
+TODO: improve interaction diagram
 mcpc ──> cli ├──> bridge (UNIX socket) ──> MCP server (stdio/HTTP)
              ├──> MCP server (stdio/HTTP)
 
