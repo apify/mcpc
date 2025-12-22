@@ -83,7 +83,7 @@ mcpc <target> prompts-get <prompt-name> [--args key=val key2:=json ...] [--args-
 
 mcpc <target> resources
 mcpc <target> resources-list
-mcpc <target> resources-read <uri> [-o <file>] [--raw] [--max-size <bytes>]
+mcpc <target> resources-read <uri> [-o <file>] [--max-size <bytes>]
 mcpc <target> resources-subscribe <uri>
 mcpc <target> resources-unsubscribe <uri>
 mcpc <target> resources-templates-list

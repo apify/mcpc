@@ -88,7 +88,7 @@ async function loadHistory(): Promise<string[]> {
   try {
     const content = await readFile(historyPath, 'utf-8');
     return content.split('\n').filter((line) => line.trim().length > 0);
-  } catch (error) {
+  } catch {
     // Ignore errors reading history
     return [];
   }
@@ -108,7 +108,7 @@ async function saveHistory(history: string[]): Promise<void> {
 
   try {
     await writeFile(historyPath, toSave.join('\n') + '\n', 'utf-8');
-  } catch (error) {
+  } catch {
     // Ignore errors saving history
   }
 }
@@ -151,7 +151,7 @@ function displayNotification(notification: NotificationData): void {
       message = chalk.gray(`[${timestamp}] Server log: ${JSON.stringify(notification.params)}`);
       break;
     default:
-      message = chalk.dim(`[${timestamp}] Notification: ${notification.method}`);
+      message = chalk.dim(`[${timestamp}] Notification: ${String(notification.method)}`);
   }
 
   console.log(message);
@@ -175,7 +175,7 @@ async function setupNotificationListener(ctx: ShellContext): Promise<void> {
     ctx.notificationClient.on('notification', (notification: NotificationData) => {
       displayNotification(notification);
     });
-  } catch (error) {
+  } catch {
     // Silently ignore errors setting up notifications
     // The shell will still work for commands
   }

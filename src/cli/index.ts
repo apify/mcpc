@@ -274,7 +274,6 @@ async function handleCommands(target: string, args: string[]): Promise<void> {
     .command('resources-read <uri>')
     .description('Get a resource by URI')
     .option('-o, --output <file>', 'Write resource to file')
-    .option('--raw', 'Output raw resource content')
     .option('--max-size <bytes>', 'Maximum resource size in bytes')
     .action(async (uri, options, command) => {
       await resources.getResource(target, uri, {
