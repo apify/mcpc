@@ -101,6 +101,7 @@ export function formatToolDetail(tool: Tool): string {
   lines.push(`# Tool \`${tool.name}\``);
   lines.push('');
 
+  // TODO: show annotations and other metadata
   if (tool.description) {
     lines.push('## Description');
     lines.push(tool.description);

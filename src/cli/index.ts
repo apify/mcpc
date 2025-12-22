@@ -19,6 +19,7 @@ import * as resources from './commands/resources.js';
 import * as prompts from './commands/prompts.js';
 import * as sessions from './commands/sessions.js';
 import * as logging from './commands/logging.js';
+import * as server from './commands/server.js';
 import type { OutputMode } from '../lib/index.js';
 import { findTarget, extractOptions, hasCommandAfterTarget, getVerboseFromEnv, getJsonFromEnv } from './parser.js';
 import packageJson from '../../package.json' with { type: 'json' };
@@ -337,6 +338,14 @@ async function handleCommands(target: string, args: string[]): Promise<void> {
     .description('Set server logging level (debug, info, notice, warning, error, critical, alert, emergency)')
     .action(async (level, _options, command) => {
       await logging.setLogLevel(target, level, getOptionsFromCommand(command));
+    });
+
+  // Server commands
+  program
+    .command('ping')
+    .description('Ping the MCP server to check if it is alive')
+    .action(async (_options, command) => {
+      await server.ping(target, getOptionsFromCommand(command));
     });
 
   // Parse and execute
