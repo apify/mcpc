@@ -11,7 +11,9 @@
 
 - nit: on server/session info, print also auth info
   - [Using session: apify-docs] => change to show server + transport + version?
-
+    Active MCP sessions:
+    @fs → npx (stdio) --- show also args instead of just "npx"
+  - 
 - nit: If tool response has `structuredContent` and `content:` [ type: 'text', 'text': ... }], print the latter as Markdown in text mode and skip the structuredContent
 
 E2E tests

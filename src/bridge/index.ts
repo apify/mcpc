@@ -6,7 +6,7 @@
  */
 
 import { createServer, type Server as NetServer, type Socket } from 'net';
-import { unlink, readdir } from 'fs/promises';
+import { unlink, readdir, stat } from 'fs/promises';
 import { createMcpClient } from '../core/index.js';
 import type { McpClient } from '../core/index.js';
 import type { TransportConfig, IpcMessage, LoggingLevel } from '../lib/index.js';
@@ -47,12 +47,15 @@ class BridgeProcess {
   /**
    * Clean up log files for sessions that no longer exist
    * This prevents unlimited growth of log files over time
+   * Only deletes files older than 7 days
    * Runs asynchronously without blocking bridge startup
    */
   private cleanupOrphanedLogFiles(): void {
     // Run cleanup asynchronously without blocking startup
     void (async () => {
       try {
+        logger.debug('Starting cleanup of orphaned log files');
+
         // Load active sessions using existing function (with lock)
         const sessionsStorage = await loadSessions();
         const activeSessions = sessionsStorage.sessions;
@@ -67,24 +70,54 @@ class BridgeProcess {
         // Matches: bridge-<session>.log, bridge-<session>.log.1, bridge-<session>.log.2, etc.
         const bridgeLogPattern = /^bridge-(@.+?)\.log(?:\.\d+)?$/;
 
+        // Calculate the cutoff date (7 days ago)
+        const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+
+        logger.debug(`Found ${files.length} files in logs directory, cutoff date: ${new Date(sevenDaysAgo).toISOString()}`);
+
         for (const file of files) {
           const match = file.match(bridgeLogPattern);
           if (!match || !match[1]) continue;
 
           const sessionName = match[1];
 
+          logger.debug(`Checking log file: ${file} (session: ${sessionName})`);
+
           // Skip the current session's log files
           if (sessionName === this.options.sessionName) {
+            logger.debug(`Skipping current session's log file: ${file}`);
             continue;
           }
 
-          // Delete log files for non-existent sessions
+          // Check if session still exists
           if (!activeSessions[sessionName]) {
             const filePath = join(logsDir, file);
-            await unlink(filePath);
-            logger.debug(`Cleaned up orphaned log file: ${file}`);
+
+            // Check file modification time
+            try {
+              const fileStats = await stat(filePath);
+              const fileAge = fileStats.mtime.getTime();
+              const ageInDays = Math.floor((Date.now() - fileAge) / (24 * 60 * 60 * 1000));
+
+              logger.debug(`File ${file} age: ${ageInDays} days (mtime: ${new Date(fileAge).toISOString()})`);
+
+              // Only delete if older than 7 days
+              if (fileAge < sevenDaysAgo) {
+                await unlink(filePath);
+                logger.debug(`Cleaned up orphaned log file: ${file} (age: ${ageInDays} days)`);
+              } else {
+                logger.debug(`Keeping recent orphaned log file: ${file} (age: ${ageInDays} days)`);
+              }
+            } catch (error) {
+              // If stat fails, skip this file
+              logger.debug(`Failed to stat log file ${file}:`, error);
+            }
+          } else {
+            logger.debug(`Session ${sessionName} still exists, keeping log file: ${file}`);
           }
         }
+
+        logger.debug('Finished cleanup of orphaned log files');
       } catch (error) {
         // Don't fail startup if cleanup fails
         logger.warn('Failed to clean up orphaned log files:', error);
@@ -102,7 +135,7 @@ class BridgeProcess {
     this.cleanupOrphanedLogFiles();
 
     // 2. Initialize file logger
-    await initFileLogger(`bridge-${this.options.sessionName}.log`);
+    await initFileLogger(`bridge-${this.options.sessionName}.log`, this.options.sessionName);
 
     try {
       // 3. Connect to MCP server
