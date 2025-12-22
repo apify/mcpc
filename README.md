@@ -487,7 +487,7 @@ and establish the keep-alive pings.
 the bridge process will flag the session as **expired** in `~/.mcpc/sessions.json` and terminate.
 - If the bridge process crashes, `mcpc` attempts to restart it next time you use the specific session.
 
-Note that `mcpc` never automatically remove sessions from the list, but rather flags the session as **expired**,
+Note that `mcpc` never automatically removes sessions from the list, but rather flags the session as **expired**,
 and any attempts to use it will fail.
 To remove the session from the list, you need to explicitly close it:
 
@@ -495,7 +495,7 @@ To remove the session from the list, you need to explicitly close it:
 mcpc @apify close
 ```
 
-Or restart it afresh using the `connect` command as follows (losing previous session state):
+or restart it afresh using the `connect` command as follows (the previous session state is lost!):
 
 ```bash
 mcpc @apify connect
@@ -503,7 +503,7 @@ mcpc @apify connect
 
 ## Logging
 
-The background bridge process logs to `~/.mcpc/bridges/mcpc-<session-name>.log`.
+The background bridge process logs to `~/.mcpc/bridges/mcpc-@<session-name>.log`.
 The main `mcpc` process doesn't save log files, but you can use `--verbose` flag to print all logs to stderr.
 
 MCP servers can be instructed to adjust their [logging level](https://modelcontextprotocol.io/specification/latest/server/utilities/logging)
@@ -612,7 +612,7 @@ Config files support environment variable substitution using `${VAR_NAME}` synta
 {
   "mcpServers": {
     "secure-server": {
-      "url": "https://mcp.example.com",
+      "url": "https://mcp.apify.com",
       "headers": {
         "Authorization": "Bearer ${API_TOKEN}",
         "X-User-ID": "${USER_ID}"

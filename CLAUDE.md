@@ -56,11 +56,11 @@ mcpc --help
 mcpc
 
 # Show server info and capabilities
-mcpc mcp.example.com
+mcpc mcp.apify.com
 mcpc @apify
 
 # List tools
-mcpc mcp.example.com tools-list
+mcpc mcp.apify.com tools-list
 mcpc @apify tools-list --json
 
 # Call a tool with arguments
@@ -160,7 +160,7 @@ mcpc/
 
 **Target Types:**
 - `@<name>` - Named session (e.g., `@apify`) - persistent connection via bridge
-- `<url>` - Server URL (e.g., `mcp.example.com` or `https://mcp.example.com`) - URL scheme optional, defaults to `https://`
+- `<url>` - Server URL (e.g., `mcp.apify.com` or `https://mcp.apify.com`) - URL scheme optional, defaults to `https://`
 - `<config-entry>` - Config file entry (requires `--config` flag) - local or remote server
 
 **Output Utilities** (`src/cli/output.ts`):
@@ -313,7 +313,7 @@ Uses standard MCP config format (compatible with Claude Desktop):
 {
   "mcpServers": {
     "http-server": {
-      "url": "https://mcp.example.com",
+      "url": "https://mcp.apify.com",
       "headers": {
         "Authorization": "Bearer ${API_TOKEN}"
       },
