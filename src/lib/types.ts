@@ -88,7 +88,7 @@ export interface TransportConfig {
   args?: string[]; // For stdio transport
   env?: Record<string, string>; // Environment variables for stdio
   headers?: Record<string, string>; // HTTP headers
-  timeout?: number; // Timeout in milliseconds
+  timeoutMs?: number; // Timeout in milliseconds
 }
 
 /**

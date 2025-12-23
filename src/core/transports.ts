@@ -110,10 +110,10 @@ export function createTransportFromConfig(config: TransportConfig): Transport {
         };
       }
 
-      if (config.timeout !== undefined) {
+      if (config.timeoutMs !== undefined) {
         options.requestInit = {
           ...options.requestInit,
-          signal: AbortSignal.timeout(config.timeout),
+          signal: AbortSignal.timeout(config.timeoutMs),
         };
       }
 

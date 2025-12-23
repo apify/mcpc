@@ -144,9 +144,9 @@ export async function resolveTarget(
 
       // Timeout: CLI flag > config file > default
       if (options.timeout) {
-        transportConfig.timeout = options.timeout * 1000;
+        transportConfig.timeoutMs = options.timeout * 1000;
       } else if (serverConfig.timeout) {
-        transportConfig.timeout = serverConfig.timeout * 1000;
+        transportConfig.timeoutMs = serverConfig.timeout * 1000;
       }
 
       return transportConfig;
@@ -173,50 +173,51 @@ export async function resolveTarget(
   }
 
   // Try to parse as URL (will default to https:// if no scheme provided)
+  let url;
   try {
-    const url = normalizeServerUrl(target);
-    const headers: Record<string, string> = {};
-
-    // Parse --header flags
-    if (options.headers) {
-      for (const header of options.headers) {
-        const colonIndex = header.indexOf(':');
-        if (colonIndex < 1) {
-          throw new ClientError(`Invalid header format: ${header}. Use "Key: Value"`);
-        }
-        const key = header.substring(0, colonIndex).trim();
-        const value = header.substring(colonIndex + 1).trim();
-        headers[key] = value;
-      }
-    }
-
-    // Add auth header if profile exists
-    const headersWithAuth = await addAuthHeader(url, headers, options.profile);
-
-    const config: TransportConfig = {
-      type: 'http',
-      url,
-      headers: headersWithAuth,
-    };
-
-    // Only include timeout if it's provided
-    if (options.timeout) {
-      config.timeout = options.timeout * 1000;
-    }
-
-    return config;
-  } catch (urlError) {
+    url = normalizeServerUrl(target);
+  } catch (error) {
     // Not a valid URL, throw error with helpful message
     throw new ClientError(
       `Failed to resolve target: ${target}\n` +
         `Target must be one of:\n` +
         `  - Named session (@name)\n` +
         `  - Server URL (e.g., mcp.apify.com or https://mcp.apify.com)\n` +
-        `  - Config file entry (with --config flag)\n\n` +
-        `For local MCP servers, use a config file with the --config flag.\n\n` +
-        `Error: ${(urlError as Error).message}`
+        `  - Entry in JSON config file specified by --config flag\n\n` +
+        `Error: ${(error as Error).message}`
     );
   }
+
+  const headers: Record<string, string> = {};
+
+  // Parse --header flags
+  if (options.headers) {
+    for (const header of options.headers) {
+      const colonIndex = header.indexOf(':');
+      if (colonIndex < 1) {
+        throw new ClientError(`Invalid header format: ${header}. Use "Key: Value"`);
+      }
+      const key = header.substring(0, colonIndex).trim();
+      const value = header.substring(colonIndex + 1).trim();
+      headers[key] = value;
+    }
+  }
+
+  // Add auth header if profile exists
+  const headersWithAuth = await addAuthHeader(url, headers, options.profile);
+
+  const config: TransportConfig = {
+    type: 'http',
+    url,
+    headers: headersWithAuth,
+  };
+
+  // Only include timeout if it's provided
+  if (options.timeout) {
+    config.timeoutMs = options.timeout * 1000;
+  }
+
+  return config;
 }
 
 /**

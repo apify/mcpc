@@ -3,11 +3,10 @@
 - Handle MCP errors by failing the command tool, e.g. invalid tool name..
 
 authProfiles - prints secrets to JSON now
-- docs: add the OAuth command to --help, otherwise people will not find it when they need it
+- docs: add the OKiAuth command to --help, otherwise people will not find it when they need it
 
 
-- add "mcpc --reset-all" commands to clean up everyting, kill bridges, etc. It should keep shell-history and logs though.
-
+- add "mcpc --reset-all" command to clean up sessions, kill bridges, etc. It should keep shell-history and logs though.
 
 
 # Cosmetic
@@ -15,6 +14,7 @@ authProfiles - prints secrets to JSON now
   - [Using session: apify-docs] => change to show server + transport + version? + auth info!!!
     Active MCP sessions:
     @fs → npx (stdio) --- show also args instead of just "npx"
+  - print PID of bridge process
 
 
 # E2E tests

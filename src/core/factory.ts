@@ -150,14 +150,14 @@ export async function createStdioClient(
  * @param clientInfo - Client identification
  * @param url - Server URL
  * @param headers - Optional HTTP headers
- * @param timeout - Optional request timeout in milliseconds
+ * @param timeoutMs - Optional request timeoutMs in milliseconds
  * @returns Connected MCP client
  */
 export async function createHttpClient(
   clientInfo: ClientInfo,
   url: string,
   headers?: Record<string, string>,
-  timeout?: number
+  timeoutMs?: number
 ): Promise<McpClient> {
   const transport: TransportConfig = {
     type: 'http',
@@ -167,8 +167,8 @@ export async function createHttpClient(
   if (headers) {
     transport.headers = headers;
   }
-  if (timeout) {
-    transport.timeout = timeout;
+  if (timeoutMs) {
+    transport.timeoutMs = timeoutMs;
   }
 
   return createMcpClient({
