@@ -7,6 +7,7 @@ import type { LogLevel } from './types.js';
 import { FileLogger } from './file-logger.js';
 import { getLogsDir } from './utils.js';
 import { join } from 'path';
+import { inspect } from 'util';
 
 /**
  * Global verbose flag (set by CLI --verbose flag)
@@ -121,6 +122,70 @@ function formatMessage(level: LogLevel, message: string, forFile = false): strin
 }
 
 /**
+ * Format an Error object for logging
+ * Recursively handles cause chain
+ */
+function formatExceptionChain(error: Error, indent = ''): string {
+  const lines: string[] = [];
+
+  // Error name and message
+  lines.push(`${indent}${error.name || 'Error'}: ${error.message}`);
+
+  // Stack trace (indent each line)
+  if (error.stack) {
+    // Extract just the stack frames (skip the first line which is the error message)
+    const stackLines = error.stack.split('\n').slice(1);
+    for (const line of stackLines) {
+      lines.push(`${indent}${line}`);
+    }
+  }
+
+  // Additional properties (code, errno, syscall, hostname, etc.)
+  const extraProps = Object.getOwnPropertyNames(error).filter(
+    (p) => !['name', 'message', 'stack', 'cause'].includes(p)
+  );
+  if (extraProps.length > 0) {
+    for (const prop of extraProps) {
+      const value = (error as unknown as Record<string, unknown>)[prop];
+      lines.push(`${indent}  ${prop}: ${inspect(value, { depth: 2, colors: false, compact: true })}`);
+    }
+  }
+
+  // Handle cause (recursive)
+  if ('cause' in error && error.cause) {
+    lines.push(`${indent}[cause]:`);
+    if (error.cause instanceof Error) {
+      lines.push(formatExceptionChain(error.cause, indent + '  '));
+    } else {
+      lines.push(`${indent}  ${inspect(error.cause, { depth: 4, colors: false, compact: true })}`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Format an argument for logging
+ * Handles Error objects specially since JSON.stringify returns {} for them
+ */
+function formatArg(arg: unknown): string {
+  if (typeof arg === 'string') {
+    return arg;
+  }
+
+  if (arg instanceof Error) {
+    return formatExceptionChain(arg);
+  }
+
+  // Use util.inspect for objects to get better output than JSON.stringify
+  if (typeof arg === 'object' && arg !== null) {
+    return inspect(arg, { depth: 4, colors: false, compact: true });
+  }
+
+  return JSON.stringify(arg);
+}
+
+/**
  * Write a log message to file logger if configured
  */
 function writeToFile(level: LogLevel, message: string, args: unknown[]): void {
@@ -131,7 +196,7 @@ function writeToFile(level: LogLevel, message: string, args: unknown[]): void {
 
   // Append stringified args if any
   if (args.length > 0) {
-    const argsStr = args.map((arg) => (typeof arg === 'string' ? arg : JSON.stringify(arg))).join(' ');
+    const argsStr = args.map(formatArg).join(' ');
     fullMessage = `${fullMessage} ${argsStr}`;
   }
 
