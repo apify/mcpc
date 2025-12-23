@@ -60,8 +60,7 @@ mcpc @test shell
 
 ```bash
 mcpc [--json] [--config <file>] [-H|--header "K: V"] [-v|--verbose] [--schema <file>]
-     [--schema-mode <mode>] [--timeout <seconds>] [--protocol-version <version>]
-     [--no-cache] [--insecure]
+     [--schema-mode <mode>] [--timeout <seconds>] [--no-cache] [--insecure]
      <target> <command...>
 
 # Lists all active sessions and saved authentication profiles
@@ -153,7 +152,6 @@ echo '{"query":"hello","count":10}' | mcpc @server tools-call my-tool
 - `-H, --header "Key: Value"` - Add HTTP header (can be repeated)
 - `-v, --verbose` - Enable verbose logging (shows protocol details)
 - `--timeout <seconds>` - Request timeout in seconds (default: 300)
-- `--protocol-version <version>` - Force specific MCP protocol version (e.g., `2025-11-25`)
 - `--schema <file>` - Validate against expected tool/prompt schema
 - `--schema-mode <mode>` - Schema validation mode: `strict`, `compatible`, or `ignore` (default: `compatible`)
 - `--no-cache` - Disable prefetching and caching of server objects
@@ -615,7 +613,6 @@ Config files support environment variable substitution using `${VAR_NAME}` synta
 **Protocol initialization:**
 - `mcpc` follows the MCP initialization handshake: sends `initialize` request with protocol version and capabilities, receives server capabilities and instructions, then sends `initialized` notification
 - Protocol version negotiation: client proposes latest supported version (currently `2025-11-25`), server responds with version to use
-- Use `--protocol-version` to force a specific version if auto-negotiation fails
 
 **Transport handling:**
 - **Streamable HTTP**: `mcpc` supports only the Streamable HTTP transport (the current standard). The deprecated HTTP with SSE transport is not supported. The bridge manages persistent HTTP connections with bidirectional streaming for server-to-client communication, with automatic reconnection using exponential backoff (1s → 30s max)

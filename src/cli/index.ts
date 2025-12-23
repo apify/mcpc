@@ -145,8 +145,7 @@ function createProgram(): Command {
     .option('-c, --config <file>', 'Path to MCP config JSON file')
     .option('-H, --header <header>', 'Add HTTP header (can be repeated)')
     .option('--timeout <seconds>', 'Request timeout in seconds (default: 300)')
-    .option('--profile <name>', 'Auth profile to use (default: default)')
-    .option('--protocol-version <version>', 'Force specific MCP protocol version')
+    .option('--profile <name>', 'Authentication profile to use (default: "default")')
     .option('--schema <file>', 'Validate against expected tool/prompt schema')
     .option('--schema-mode <mode>', 'Schema validation mode: strict, compatible (default), or ignore')
     .option('--insecure', 'Disable SSL certificate validation');

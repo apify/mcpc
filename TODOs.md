@@ -44,7 +44,7 @@
 
 ## Later
 
-- nit: Colorize output, e.g. JSONs in one color. MCP provided data like descriptions and instructions in orange.
+- nit: Colorize outpOkayut, e.g. JSONs in one color. MCP provided data like descriptions and instructions in orange.
 - nit: in README, explain the MCP commands better in a standlone section, with details how they work
 - Add support for MCP elicitations, and potentially for sampling (e.g. via shell interface?)
 - docs: add Claude Skills file to /docs, maybe also man page?

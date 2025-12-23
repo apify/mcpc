@@ -37,7 +37,6 @@ const OPTIONS_WITH_VALUES = [
   '--header',
   '--timeout',
   '--profile',
-  '--protocol-version',
   '--schema',
   '--schema-mode',
 ];
