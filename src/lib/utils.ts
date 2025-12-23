@@ -207,9 +207,9 @@ export function sleep(ms: number): Promise<void> {
  */
 export async function waitForFile(
   filepath: string,
-  options: { timeout?: number; interval?: number } = {}
+  options: { timeoutMs?: number; interval?: number } = {}
 ): Promise<void> {
-  const { timeout = 10000, interval = 100 } = options;
+  const { timeoutMs = 10000, interval = 100 } = options;
   const startTime = Date.now();
 
   // eslint-disable-next-line no-constant-condition
@@ -218,7 +218,7 @@ export async function waitForFile(
       return;
     }
 
-    if (Date.now() - startTime >= timeout) {
+    if (Date.now() - startTime >= timeoutMs) {
       throw new Error(`Timeout waiting for file: ${filepath}`);
     }
 

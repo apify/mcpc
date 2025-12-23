@@ -21,7 +21,7 @@ export class BridgeClient extends EventEmitter {
   private pendingRequests = new Map<string, {
     resolve: (result: unknown) => void;
     reject: (error: Error) => void;
-    timeout: NodeJS.Timeout;
+    timeoutId: NodeJS.Timeout;
   }>();
 
   constructor(socketPath: string) {
@@ -104,7 +104,7 @@ export class BridgeClient extends EventEmitter {
       const pending = this.pendingRequests.get(message.id);
 
       if (pending) {
-        clearTimeout(pending.timeout);
+        clearTimeout(pending.timeoutId);
         this.pendingRequests.delete(message.id);
 
         if (message.error) {
@@ -145,12 +145,12 @@ export class BridgeClient extends EventEmitter {
     // Create promise for response
     const promise = new Promise<unknown>((resolve, reject) => {
       // Set up timeout
-      const timeout = setTimeout(() => {
+      const timeoutId = setTimeout(() => {
         this.pendingRequests.delete(id);
         reject(new NetworkError(`Request timeout: ${method}`));
       }, REQUEST_TIMEOUT);
 
-      this.pendingRequests.set(id, { resolve, reject, timeout });
+      this.pendingRequests.set(id, { resolve, reject, timeoutId });
     });
 
     // Send message
@@ -184,12 +184,12 @@ export class BridgeClient extends EventEmitter {
 
       // Wait for health-ok response with timeout
       return new Promise<boolean>((resolve) => {
-        const timeout = setTimeout(() => resolve(false), 1000);
+        const timeoutId = setTimeout(() => resolve(false), 1000);
 
         const handler = (data: Buffer): void => {
           const response = JSON.parse(data.toString()) as IpcMessage;
           if (response.type === 'health-ok') {
-            clearTimeout(timeout);
+            clearTimeout(timeoutId);
             socket.off('data', handler);
             resolve(true);
           }
@@ -210,7 +210,7 @@ export class BridgeClient extends EventEmitter {
 
     // Reject all pending requests
     for (const [id, pending] of this.pendingRequests.entries()) {
-      clearTimeout(pending.timeout);
+      clearTimeout(pending.timeoutId);
       pending.reject(new NetworkError('Connection closed'));
       this.pendingRequests.delete(id);
     }
@@ -232,7 +232,7 @@ export class BridgeClient extends EventEmitter {
 
     // Reject all pending requests
     for (const [id, pending] of this.pendingRequests.entries()) {
-      clearTimeout(pending.timeout);
+      clearTimeout(pending.timeoutId);
       pending.reject(new NetworkError('Connection lost'));
       this.pendingRequests.delete(id);
     }
