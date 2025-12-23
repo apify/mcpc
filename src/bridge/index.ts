@@ -12,9 +12,10 @@ import type { McpClient } from '../core/index.js';
 import type { TransportConfig, IpcMessage, LoggingLevel } from '../lib/index.js';
 import { createLogger, setVerbose, initFileLogger, closeFileLogger } from '../lib/index.js';
 import { fileExists, getBridgesDir, ensureDir, getLogsDir } from '../lib/index.js';
-import { ClientError, NetworkError, AuthError } from '../lib/index.js';
+import { ClientError, NetworkError } from '../lib/index.js';
 import { loadSessions, updateSession } from '../lib/sessions.js';
 import type { AuthCredentials } from '../lib/types.js';
+import { OAuthTokenManager } from '../lib/auth/oauth-token-manager.js';
 import { CacheManager } from './cache.js';
 import { join } from 'path';
 import packageJson from '../../package.json' with { type: 'json' };
@@ -45,10 +46,8 @@ class BridgeProcess {
   private cache: CacheManager;
   private keepaliveInterval: NodeJS.Timeout | null = null;
 
-  // In-memory auth credentials (received from CLI via IPC)
-  private authCredentials: AuthCredentials | null = null;
-  private currentAccessToken: string | null = null;
-  private accessTokenExpiresAt: number | null = null; // Unix timestamp
+  // OAuth token manager (created when CLI sends auth credentials via IPC)
+  private tokenManager: OAuthTokenManager | null = null;
 
   constructor(options: BridgeOptions) {
     this.options = options;
@@ -61,183 +60,41 @@ class BridgeProcess {
 
   /**
    * Set auth credentials received from CLI via IPC
-   * Stores refresh token in memory for token refresh
+   * Creates an OAuthTokenManager for handling token refresh
    */
   setAuthCredentials(credentials: AuthCredentials): void {
     logger.info(`Received auth credentials for profile: ${credentials.profileName}`);
-    this.authCredentials = credentials;
-    // Clear cached access token to force refresh on next request
-    this.currentAccessToken = null;
-    this.accessTokenExpiresAt = null;
-  }
-
-  /**
-   * Check if the current access token is expired or about to expire
-   */
-  private isAccessTokenExpired(): boolean {
-    if (!this.currentAccessToken || !this.accessTokenExpiresAt) {
-      return true;
-    }
-    // Consider expired if within 60 seconds of expiry
-    const bufferSeconds = 60;
-    return Date.now() / 1000 > this.accessTokenExpiresAt - bufferSeconds;
-  }
-
-  /**
-   * Refresh the access token using the in-memory refresh token
-   */
-  private async refreshAccessToken(): Promise<void> {
-    if (!this.authCredentials) {
-      throw new AuthError('No auth credentials available for token refresh');
-    }
-
-    logger.info('Refreshing access token...');
-
-    // Discover token endpoint
-    const tokenEndpoint = await this.discoverTokenEndpoint(this.authCredentials.serverUrl);
-    if (!tokenEndpoint) {
-      throw new AuthError(
-        `Could not find OAuth token endpoint for ${this.authCredentials.serverUrl}. ` +
-          `Please re-authenticate with: mcpc ${this.authCredentials.serverUrl} auth --profile ${this.authCredentials.profileName}`
-      );
-    }
-
-    // Prepare refresh request
-    const params = new URLSearchParams({
-      grant_type: 'refresh_token',
-      refresh_token: this.authCredentials.refreshToken,
+    this.tokenManager = new OAuthTokenManager({
+      serverUrl: credentials.serverUrl,
+      profileName: credentials.profileName,
+      refreshToken: credentials.refreshToken,
+      // TODO: Should we notify CLI when tokens are rotated?
+      // onTokenRefresh: (tokens) => { ... }
     });
-
-    try {
-      const response = await fetch(tokenEndpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          Accept: 'application/json',
-        },
-        body: params.toString(),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        logger.error(`Token refresh failed: ${response.status} ${errorText}`);
-
-        if (response.status === 400 || response.status === 401) {
-          throw new AuthError(
-            `Refresh token is invalid or expired. ` +
-              `Please re-authenticate with: mcpc ${this.authCredentials.serverUrl} auth --profile ${this.authCredentials.profileName}`
-          );
-        }
-
-        throw new AuthError(`Failed to refresh token: ${response.status} ${response.statusText}`);
-      }
-
-      const tokenResponse = await response.json() as {
-        access_token: string;
-        token_type?: string;
-        expires_in?: number;
-        refresh_token?: string;
-      };
-
-      // Store new access token in memory
-      this.currentAccessToken = tokenResponse.access_token;
-
-      // Calculate expiry time
-      if (tokenResponse.expires_in) {
-        this.accessTokenExpiresAt = Math.floor(Date.now() / 1000) + tokenResponse.expires_in;
-      } else {
-        // Default to 1 hour if not specified
-        this.accessTokenExpiresAt = Math.floor(Date.now() / 1000) + 3600;
-      }
-
-      // Update refresh token if a new one was provided (token rotation)
-      // TODO: Shall we update it also in keychain?
-      if (tokenResponse.refresh_token) {
-        this.authCredentials.refreshToken = tokenResponse.refresh_token;
-        logger.debug('Received new refresh token (token rotation)');
-      }
-
-      logger.info('Access token refreshed successfully');
-    } catch (error) {
-      if (error instanceof AuthError) {
-        throw error;
-      }
-      logger.error(`Token refresh error: ${(error as Error).message}`);
-      throw new AuthError(`Failed to refresh token: ${(error as Error).message}`);
-    }
   }
 
   /**
-   * Discover OAuth token endpoint from server
-   */
-  private async discoverTokenEndpoint(serverUrl: string): Promise<string | undefined> {
-    const discoveryUrls = [
-      `${serverUrl}/.well-known/oauth-authorization-server`,
-      `${serverUrl}/.well-known/openid-configuration`,
-    ];
-
-    for (const url of discoveryUrls) {
-      try {
-        logger.debug(`Trying OAuth discovery at: ${url}`);
-        const response = await fetch(url, {
-          headers: { Accept: 'application/json' },
-        });
-
-        if (response.ok) {
-          const metadata = await response.json() as { token_endpoint?: string };
-          if (metadata.token_endpoint) {
-            logger.debug(`Found token endpoint: ${metadata.token_endpoint}`);
-            return metadata.token_endpoint;
-          }
-        }
-      } catch {
-        // Continue to next URL
-      }
-    }
-
-    return undefined;
-  }
-
-  /**
-   * Get a valid access token, refreshing if necessary
-   * Returns undefined if no auth credentials are available
-   */
-  private async getValidAccessToken(): Promise<string | undefined> {
-    if (!this.authCredentials) {
-      return undefined;
-    }
-
-    // Check if we need to refresh
-    if (this.isAccessTokenExpired()) {
-      try {
-        await this.refreshAccessToken();
-      } catch (error) {
-        logger.error('Failed to refresh access token:', error);
-        // Mark session as expired if refresh fails
-        await this.markSessionExpiredAndExit();
-        throw error;
-      }
-    }
-
-    return this.currentAccessToken ?? undefined;
-  }
-
-  /**
-   * Update transport config with fresh Authorization header
+   * Get a valid access token, refreshing if necessary,
+   * and update transport config with a fresh Authorization header
    */
   private async updateTransportAuth(): Promise<TransportConfig> {
     const config = { ...this.options.target };
 
-    // Only update auth for HTTP transport with auth credentials
-    if (config.type === 'http' && this.authCredentials) {
-      const token = await this.getValidAccessToken();
-      if (token) {
+    try {
+      // Only update auth for HTTP transport with token manager
+      if (config.type === 'http' && this.tokenManager) {
+        const token = await this.tokenManager.getValidAccessToken();
         config.headers = {
           ...config.headers,
           Authorization: `Bearer ${token}`,
         };
         logger.debug('Updated transport config with fresh access token');
       }
+    } catch (error) {
+      logger.error('Failed to refresh access token:', error);
+      // Mark session as expired if refresh fails
+      await this.markSessionExpiredAndExit();
+      throw error;
     }
 
     return config;
@@ -272,7 +129,9 @@ class BridgeProcess {
         // Calculate the cutoff date (7 days ago)
         const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
 
-        logger.debug(`Found ${files.length} files in logs directory, cutoff date: ${new Date(sevenDaysAgo).toISOString()}`);
+        logger.debug(
+          `Found ${files.length} files in logs directory, cutoff date: ${new Date(sevenDaysAgo).toISOString()}`
+        );
 
         for (const file of files) {
           const match = file.match(bridgeLogPattern);
@@ -298,7 +157,9 @@ class BridgeProcess {
               const fileAge = fileStats.mtime.getTime();
               const ageInDays = Math.floor((Date.now() - fileAge) / (24 * 60 * 60 * 1000));
 
-              logger.debug(`File ${file} age: ${ageInDays} days (mtime: ${new Date(fileAge).toISOString()})`);
+              logger.debug(
+                `File ${file} age: ${ageInDays} days (mtime: ${new Date(fileAge).toISOString()})`
+              );
 
               // Only delete if older than 7 days
               if (fileAge < sevenDaysAgo) {
@@ -398,6 +259,8 @@ class BridgeProcess {
       },
       listChanged: {
         tools: {
+          // TODO: why not leverage SDK's autoRefresh, to avoid managing it ourselves? it has debounce to avoid DoS,
+          //  and also fetches the first page of resources/tools/prompts like we do
           autoRefresh: false, // We manage caching ourselves
           onChanged: () => {
             logger.debug('Tools list changed, invalidating cache');
@@ -472,10 +335,12 @@ class BridgeProcess {
     // Check for session expiration indicators:
     // - HTTP 404 (session not found)
     // - Specific error messages indicating session is no longer valid
+    // TODO: we could use a more robust check for expiration error, this seems flakey - ideally check the real HTTP status code
     const errorMessage = error.message.toLowerCase();
     const isExpired =
       errorMessage.includes('404') ||
-      errorMessage.includes('session not found') ||
+      errorMessage.includes('-32000') ||
+      errorMessage.includes('not found') ||
       errorMessage.includes('session expired') ||
       errorMessage.includes('invalid session');
 
@@ -608,7 +473,11 @@ class BridgeProcess {
           if (message.authCredentials) {
             this.setAuthCredentials(message.authCredentials);
             if (message.id) {
-              this.sendResponse(socket, { type: 'response', id: message.id, result: { success: true } });
+              this.sendResponse(socket, {
+                type: 'response',
+                id: message.id,
+                result: { success: true },
+              });
             }
           } else {
             throw new ClientError('Missing authCredentials in set-auth-credentials message');
