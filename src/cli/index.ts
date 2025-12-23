@@ -156,16 +156,17 @@ function createProgram(): Command {
     'after',
     `
 Where <target> can be:
-  @<name>                             Named session (e.g., @apify)
-  <config-entry>                      Entry from MCP config file specified in --config
-  <url>                               Remote MCP server URL (e.g., mcp.apify.com)
+  @<name>                       Named session (e.g., @apify)
+  <config-entry>                Entry from MCP config file specified in --config
+  <url>                         Remote MCP server URL (e.g., mcp.apify.com)
 
 Examples:
-  $ mcpc mcp.apify.com connect --session @apify                    # Create a session
-  $ mcpc @apify                                                    # Show server info and capabilities
-  $ mcpc @apify tools-list                                         # List server tools
-  $ mcpc @apify tools-call search-actors --args '{query:"hello"}'  # Call tool
-  $ mcpc --json @apify resources-list                              # JSON output
+  $ mcpc                                                           # List sessions and auth profiles
+  $ mcpc mcp.apify.com login                                       # Login via OAuth
+  $ mcpc mcp.apify.com                                             # Show server info
+  $ mcpc --json mcp.apify.com tools-list                           # List tools in JSON mode
+  $ mcpc mcp.apify.com connect --session @apify                    # Create persistent session
+  $ mcpc @apify tools-call search-actors --args query="crawler"    # Call tool
 `
   );
 

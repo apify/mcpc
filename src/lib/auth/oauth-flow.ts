@@ -4,6 +4,7 @@
  */
 
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'http';
+import type { Socket } from 'net';
 import { URL } from 'url';
 import { auth as sdkAuth } from '@modelcontextprotocol/sdk/client/auth.js';
 import { McpcOAuthProvider } from './oauth-provider.js';
@@ -13,6 +14,47 @@ import { createLogger } from '../logger.js';
 import type { AuthProfile } from '../types.js';
 
 const logger = createLogger('oauth-flow');
+
+// Escape key code
+const ESCAPE_KEY = '\x1b';
+
+/**
+ * Wait for user to press Escape key
+ * Returns a promise that rejects when Escape is pressed
+ */
+function waitForEscapeKey(): { promise: Promise<never>; cleanup: () => void } {
+  let cleanup = () => {};
+  let cleaned = false;
+
+  const promise = new Promise<never>((_resolve, reject) => {
+    // Only set up key listener if stdin is a TTY
+    if (!process.stdin.isTTY) {
+      return; // Promise will never resolve/reject, which is fine
+    }
+
+    const onData = (key: Buffer) => {
+      if (key.toString() === ESCAPE_KEY) {
+        reject(new ClientError('Authentication cancelled by user'));
+      }
+    };
+
+    // Enable raw mode to capture individual keypresses
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    process.stdin.on('data', onData);
+
+    cleanup = () => {
+      if (cleaned) return;
+      cleaned = true;
+
+      process.stdin.off('data', onData);
+      process.stdin.setRawMode(false);
+      process.stdin.pause();
+    };
+  });
+
+  return { promise, cleanup };
+}
 
 /**
  * Result of OAuth flow
@@ -24,11 +66,12 @@ export interface OAuthFlowResult {
 
 /**
  * Start a local HTTP server for OAuth callback
- * Returns the server and a promise that resolves with the authorization code
+ * Returns the server, a promise that resolves with the authorization code, and a destroy function
  */
 function startCallbackServer(port: number): {
   server: Server;
   codePromise: Promise<{ code: string; state?: string }>;
+  destroyConnections: () => void;
 } {
   let resolveCode: (value: { code: string; state?: string }) => void;
   let rejectCode: (error: Error) => void;
@@ -37,6 +80,9 @@ function startCallbackServer(port: number): {
     resolveCode = resolve;
     rejectCode = reject;
   });
+
+  // Track active connections so we can forcibly close them
+  const sockets = new Set<Socket>();
 
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url || '/', `http://localhost:${port}`);
@@ -52,9 +98,9 @@ function startCallbackServer(port: number): {
         res.writeHead(400, { 'Content-Type': 'text/html' });
         res.end(`
           <html>
-            <head><title>Authentication Failed</title></head>
+            <head><title>Authentication failed</title></head>
             <body>
-              <h1>Authentication Failed</h1>
+              <h1>Authentication failed</h1>
               <p>Error: ${message}</p>
               <p>You can close this window.</p>
             </body>
@@ -68,9 +114,9 @@ function startCallbackServer(port: number): {
         res.writeHead(400, { 'Content-Type': 'text/html' });
         res.end(`
           <html>
-            <head><title>Authentication Failed</title></head>
+            <head><title>Authentication failed</title></head>
             <body>
-              <h1>Authentication Failed</h1>
+              <h1>Authentication failed</h1>
               <p>No authorization code received</p>
               <p>You can close this window.</p>
             </body>
@@ -83,9 +129,9 @@ function startCallbackServer(port: number): {
       res.writeHead(200, { 'Content-Type': 'text/html' });
       res.end(`
         <html>
-          <head><title>Authentication Successful</title></head>
+          <head><title>Authentication successful</title></head>
           <body>
-            <h1>Authentication Successful!</h1>
+            <h1>Authentication successful!</h1>
             <p>You can close this window and return to the terminal.</p>
           </body>
         </html>
@@ -101,7 +147,23 @@ function startCallbackServer(port: number): {
     }
   });
 
-  return { server, codePromise };
+  // Track connections for cleanup
+  server.on('connection', (socket: Socket) => {
+    sockets.add(socket);
+    socket.on('close', () => {
+      sockets.delete(socket);
+    });
+  });
+
+  // Function to forcibly close all connections
+  const destroyConnections = () => {
+    for (const socket of sockets) {
+      socket.destroy();
+    }
+    sockets.clear();
+  };
+
+  return { server, codePromise, destroyConnections };
 }
 
 /**
@@ -179,7 +241,7 @@ export async function performOAuthFlow(
   const provider = new McpcOAuthProvider(normalizedServerUrl, profileName, redirectUrl);
 
   // Start callback server
-  const { server, codePromise } = startCallbackServer(port);
+  const { server, codePromise, destroyConnections } = startCallbackServer(port);
 
   try {
     // Start server
@@ -195,7 +257,8 @@ export async function performOAuthFlow(
     provider.redirectToAuthorization = async (authorizationUrl: URL) => {
       logger.info('Opening browser for authorization...');
       console.log(`\nOpening browser to: ${authorizationUrl.toString()}`);
-      console.log('If the browser does not open automatically, please visit the URL above.\n');
+      console.log('If the browser does not open automatically, please visit the URL above.');
+      console.log('Press Esc to cancel.\n');
 
       try {
         await openBrowser(authorizationUrl.toString());
@@ -204,34 +267,46 @@ export async function performOAuthFlow(
       }
     };
 
-    // Start OAuth flow
-    logger.debug('Calling SDK auth()...');
-    const authOptions: { serverUrl: string; scope?: string } = {
-      serverUrl: normalizedServerUrl,
-    };
-    if (scope !== undefined) {
-      authOptions.scope = scope;
-    }
-    const result = await sdkAuth(provider, authOptions);
+    // Set up escape key handler
+    const escapeHandler = waitForEscapeKey();
 
-    if (result === 'REDIRECT') {
-      // Wait for callback with authorization code
-      logger.debug('Waiting for authorization code...');
-      const { code } = await codePromise;
-
-      // Exchange code for tokens
-      logger.debug('Exchanging authorization code for tokens...');
-      const tokenOptions: { serverUrl: string; authorizationCode: string; scope?: string } = {
+    try {
+      // Start OAuth flow
+      logger.debug('Calling SDK auth()...');
+      const authOptions: { serverUrl: string; scope?: string } = {
         serverUrl: normalizedServerUrl,
-        authorizationCode: code,
       };
       if (scope !== undefined) {
-        tokenOptions.scope = scope;
+        authOptions.scope = scope;
       }
-      await sdkAuth(provider, tokenOptions);
+      const result = await sdkAuth(provider, authOptions);
+
+      if (result === 'REDIRECT') {
+        // Wait for callback with authorization code, or user pressing Escape
+        logger.debug('Waiting for authorization code...');
+        const { code } = await Promise.race([
+          codePromise,
+          escapeHandler.promise,
+        ]);
+
+        // Exchange code for tokens
+        logger.debug('Exchanging authorization code for tokens...');
+        const tokenOptions: { serverUrl: string; authorizationCode: string; scope?: string } = {
+          serverUrl: normalizedServerUrl,
+          authorizationCode: code,
+        };
+        if (scope !== undefined) {
+          tokenOptions.scope = scope;
+        }
+        await sdkAuth(provider, tokenOptions);
+      }
+    } finally {
+      // Clean up escape key handler
+      escapeHandler.cleanup();
     }
 
     // Get the saved profile
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     const profile = (provider as any)._authProfile as AuthProfile;
     if (!profile) {
       throw new ClientError('Failed to save authentication profile');
@@ -246,7 +321,8 @@ export async function performOAuthFlow(
     logger.error(`OAuth flow failed: ${(error as Error).message}`);
     throw error;
   } finally {
-    // Close callback server
+    // Close callback server and destroy all connections
+    destroyConnections();
     server.close();
   }
 }

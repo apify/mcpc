@@ -47,6 +47,9 @@ mcpc mcp.apify.com login
 mcpc mcp.apify.com
 mcpc mcp.apify.com shell
 
+# Use JSON mode for scripting
+mcpc --json mcp.apify.com tools-list
+
 # Create a persistent session
 mcpc mcp.apify.com connect --session @test
 mcpc @test tools-call search-actors --args query="web crawler"

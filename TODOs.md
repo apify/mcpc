@@ -16,6 +16,8 @@
 -  "mcpc @apify-docs connect --session @apify-docs" should auto restart the session
 
 
+- Add `docs/skills.md` with instructions how to use mcpc
+
 ## Cosmetic
 - nit: on server/session info, print also auth info
   - [Using session: apify-docs] => change to show server + transport + version? + auth info!!!
