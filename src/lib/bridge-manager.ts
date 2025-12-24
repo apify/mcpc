@@ -59,7 +59,7 @@ export async function startBridge(options: StartBridgeOptions): Promise<void> {
 
   // Pass auth profile if specified
   if (profileName) {
-    args.push('--auth-profile', profileName);
+    args.push('--profile', profileName);
   }
 
   logger.debug('Bridge executable:', bridgeExecutable);

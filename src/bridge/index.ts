@@ -792,7 +792,7 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
   if (args.length < 3) {
-    console.error('Usage: mcpc-bridge <sessionName> <socketPath> <transportConfigJson> [--verbose] [--auth-profile <name>]');
+    console.error('Usage: mcpc-bridge <sessionName> <socketPath> <transportConfigJson> [--verbose] [--profile <name>]');
     process.exit(1);
   }
 
@@ -801,9 +801,9 @@ async function main(): Promise<void> {
   const transportConfigJson = args[2] as string;
   const verbose = args.includes('--verbose');
 
-  // Parse --auth-profile argument
+  // Parse --profile argument
   let profileName: string | undefined;
-  const authProfileIndex = args.indexOf('--auth-profile');
+  const authProfileIndex = args.indexOf('--profile');
   if (authProfileIndex !== -1 && args[authProfileIndex + 1]) {
     profileName = args[authProfileIndex + 1];
   }
