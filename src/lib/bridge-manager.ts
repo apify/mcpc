@@ -13,7 +13,7 @@ import { updateSession } from './sessions.js';
 import { createLogger } from './logger.js';
 import { ClientError } from './errors.js';
 import { BridgeClient } from './bridge-client.js';
-import { getKeychainOAuthTokens, getKeychainSessionHeaders } from './auth/keychain.js';
+import { getKeychainOAuthTokenInfo, getKeychainSessionHeaders } from './auth/keychain.js';
 import { getAuthProfile } from './auth/auth-profiles.js';
 
 const logger = createLogger('bridge-manager');
@@ -309,7 +309,7 @@ async function sendAuthCredentialsToBridge(
 
     const profile = await getAuthProfile(serverUrl, profileName);
     if (profile) {
-      const tokens = await getKeychainOAuthTokens(profile.serverUrl, profileName);
+      const tokens = await getKeychainOAuthTokenInfo(profile.serverUrl, profileName);
       if (tokens?.refreshToken) {
         credentials.refreshToken = tokens.refreshToken;
         credentials.serverUrl = profile.serverUrl;

@@ -13,10 +13,10 @@ import type {
 import type { AuthProfile } from '../types.js';
 import { getAuthProfile, saveAuthProfile } from '../auth/auth-profiles.js';
 import {
-  getKeychainOAuthTokens,
-  saveKeychainOAuthTokens,
+  getKeychainOAuthTokenInfo,
+  saveKeychainOAuthTokenInfo,
   getKeychainOAuthClient,
-  saveKeychainOAuthClient,
+  saveKeychainOAuthClientInfo,
   type OAuthTokenInfo,
 } from './keychain.js';
 import { createLogger } from '../logger.js';
@@ -86,13 +86,13 @@ export class McpcOAuthProvider implements OAuthClientProvider {
     this._clientInformation = clientInformation;
 
     // Store in keychain - only include clientSecret if defined
-    const clientInfo: Parameters<typeof saveKeychainOAuthClient>[2] = {
+    const clientInfo: Parameters<typeof saveKeychainOAuthClientInfo>[2] = {
       clientId: clientInformation.client_id,
     };
     if (clientInformation.client_secret) {
       clientInfo.clientSecret = clientInformation.client_secret;
     }
-    await saveKeychainOAuthClient(this.serverUrl, this.profileName, clientInfo);
+    await saveKeychainOAuthClientInfo(this.serverUrl, this.profileName, clientInfo);
 
     logger.debug('Saved client information to keychain');
   }
@@ -105,7 +105,7 @@ export class McpcOAuthProvider implements OAuthClientProvider {
     }
 
     // Load tokens from keychain
-    const storedTokens = await getKeychainOAuthTokens(this.serverUrl, this.profileName);
+    const storedTokens = await getKeychainOAuthTokenInfo(this.serverUrl, this.profileName);
     if (!storedTokens) {
       return undefined;
     }
@@ -149,7 +149,7 @@ export class McpcOAuthProvider implements OAuthClientProvider {
       tokenInfo.scope = tokens.scope;
     }
 
-    await saveKeychainOAuthTokens(this.serverUrl, this.profileName, tokenInfo);
+    await saveKeychainOAuthTokenInfo(this.serverUrl, this.profileName, tokenInfo);
 
     // Update profile metadata (without tokens)
     const now = new Date().toISOString(); // TODO: keep Date not string?

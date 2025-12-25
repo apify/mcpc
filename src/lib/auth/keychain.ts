@@ -12,11 +12,36 @@ const logger = createLogger('keychain');
 const SERVICE_NAME = 'mcpc';
 
 /**
+ * OAuth client information (from dynamic registration)
+ */
+export interface OAuthClientInfo {
+  clientId: string;
+  clientSecret?: string;
+}
+
+/**
+ * OAuth tokens
+ */
+export interface OAuthTokenInfo {
+  accessToken: string;
+  refreshToken?: string;
+  tokenType: string;
+  expiresIn?: number;
+  expiresAt?: number; // Unix timestamp
+  scope?: string;
+}
+
+/**
+ * OAuth credentials stored in keychain (client info + tokens)
+ */
+export type KeychainOAuthInfo = OAuthClientInfo & OAuthTokenInfo;
+
+/**
  * Build a keychain account name for OAuth credentials
  * Format: auth:<serverUrl>:<profileName>
  */
 function buildOAuthAccountName(serverUrl: string, profileName: string): string {
-  return `auth:${serverUrl}:${profileName}`;
+  return `auth-profile:${serverUrl}:${profileName}`;
 }
 
 /**
@@ -28,28 +53,12 @@ function buildSessionAccountName(sessionName: string): string {
 }
 
 /**
- * OAuth credentials stored in keychain (client info + tokens)
- */
-export interface KeychainOAuthCredentials {
-  // Client info (from dynamic registration)
-  clientId: string;
-  clientSecret?: string;
-  // Tokens
-  accessToken: string;
-  refreshToken?: string;
-  tokenType: string;
-  expiresIn?: number;
-  expiresAt?: number; // Unix timestamp
-  scope?: string;
-}
-
-/**
  * Store OAuth credentials in keychain
  */
-export async function storeKeychainOAuthCredentials(
+async function storeKeychainOAuthInfo(
   serverUrl: string,
   profileName: string,
-  credentials: KeychainOAuthCredentials
+  credentials: KeychainOAuthInfo
 ): Promise<void> {
   const account = buildOAuthAccountName(serverUrl, profileName);
   const value = JSON.stringify(credentials);
@@ -61,10 +70,10 @@ export async function storeKeychainOAuthCredentials(
 /**
  * Retrieve OAuth credentials from keychain
  */
-export async function getKeychainOAuthCredentials(
+async function getKeychainOAuthInfo(
   serverUrl: string,
   profileName: string
-): Promise<KeychainOAuthCredentials | undefined> {
+): Promise<KeychainOAuthInfo | undefined> {
   const account = buildOAuthAccountName(serverUrl, profileName);
 
   logger.debug(`Retrieving OAuth credentials for ${profileName} @ ${serverUrl}`);
@@ -75,7 +84,7 @@ export async function getKeychainOAuthCredentials(
   }
 
   try {
-    return JSON.parse(value) as KeychainOAuthCredentials;
+    return JSON.parse(value) as KeychainOAuthInfo;
   } catch (error) {
     logger.error(`Failed to parse OAuth credentials from keychain: ${(error as Error).message}`);
     return undefined;
@@ -85,7 +94,7 @@ export async function getKeychainOAuthCredentials(
 /**
  * Delete OAuth credentials from keychain
  */
-export async function deleteKeychainOAuthCredentials(
+export async function deleteKeychainOAuthInfo(
   serverUrl: string,
   profileName: string
 ): Promise<boolean> {
@@ -96,38 +105,18 @@ export async function deleteKeychainOAuthCredentials(
 }
 
 /**
- * OAuth client information (subset of credentials for partial updates)
- */
-export interface OAuthClientInfo {
-  clientId: string;
-  clientSecret?: string;
-}
-
-/**
- * OAuth tokens (subset of credentials for partial updates)
- */
-export interface OAuthTokenInfo {
-  accessToken: string;
-  refreshToken?: string;
-  tokenType: string;
-  expiresIn?: number;
-  expiresAt?: number;
-  scope?: string;
-}
-
-/**
  * Store OAuth client info, preserving existing tokens
  * Used after dynamic client registration (before tokens exist)
  */
-export async function saveKeychainOAuthClient(
+export async function saveKeychainOAuthClientInfo(
   serverUrl: string,
   profileName: string,
   client: OAuthClientInfo
 ): Promise<void> {
-  const existing = await getKeychainOAuthCredentials(serverUrl, profileName);
+  const existing = await getKeychainOAuthInfo(serverUrl, profileName);
 
   // Build credentials, only including defined values
-  const credentials: KeychainOAuthCredentials = {
+  const credentials: KeychainOAuthInfo = {
     accessToken: existing?.accessToken ?? '',
     tokenType: existing?.tokenType ?? 'Bearer',
     clientId: client.clientId,
@@ -142,7 +131,7 @@ export async function saveKeychainOAuthClient(
   // Add client secret if provided
   if (client.clientSecret) credentials.clientSecret = client.clientSecret;
 
-  await storeKeychainOAuthCredentials(serverUrl, profileName, credentials);
+  await storeKeychainOAuthInfo(serverUrl, profileName, credentials);
 }
 
 /**
@@ -152,15 +141,15 @@ export async function getKeychainOAuthClient(
   serverUrl: string,
   profileName: string
 ): Promise<OAuthClientInfo | undefined> {
-  const credentials = await getKeychainOAuthCredentials(serverUrl, profileName);
-  if (!credentials?.clientId) {
+  const info = await getKeychainOAuthInfo(serverUrl, profileName);
+  if (!info?.clientId) {
     return undefined;
   }
   const result: OAuthClientInfo = {
-    clientId: credentials.clientId,
+    clientId: info.clientId,
   };
-  if (credentials.clientSecret) {
-    result.clientSecret = credentials.clientSecret;
+  if (info.clientSecret) {
+    result.clientSecret = info.clientSecret;
   }
   return result;
 }
@@ -169,19 +158,19 @@ export async function getKeychainOAuthClient(
  * Store OAuth tokens, preserving existing client info
  * Used after OAuth flow completes
  */
-export async function saveKeychainOAuthTokens(
+export async function saveKeychainOAuthTokenInfo(
   serverUrl: string,
   profileName: string,
   tokens: OAuthTokenInfo
 ): Promise<void> {
-  const existing = await getKeychainOAuthCredentials(serverUrl, profileName);
+  const existing = await getKeychainOAuthInfo(serverUrl, profileName);
 
   if (!existing?.clientId) {
     throw new Error(`Cannot save tokens without client info for ${profileName} @ ${serverUrl}`);
   }
 
   // Build credentials, only including defined values
-  const credentials: KeychainOAuthCredentials = {
+  const credentials: KeychainOAuthInfo = {
     clientId: existing.clientId,
     accessToken: tokens.accessToken,
     tokenType: tokens.tokenType,
@@ -196,28 +185,28 @@ export async function saveKeychainOAuthTokens(
   if (tokens.expiresAt !== undefined) credentials.expiresAt = tokens.expiresAt;
   if (tokens.scope) credentials.scope = tokens.scope;
 
-  await storeKeychainOAuthCredentials(serverUrl, profileName, credentials);
+  await storeKeychainOAuthInfo(serverUrl, profileName, credentials);
 }
 
 /**
  * Get OAuth tokens from keychain
  */
-export async function getKeychainOAuthTokens(
+export async function getKeychainOAuthTokenInfo(
   serverUrl: string,
   profileName: string
 ): Promise<OAuthTokenInfo | undefined> {
-  const credentials = await getKeychainOAuthCredentials(serverUrl, profileName);
-  if (!credentials?.accessToken) {
+  const info = await getKeychainOAuthInfo(serverUrl, profileName);
+  if (!info?.accessToken) {
     return undefined;
   }
   const result: OAuthTokenInfo = {
-    accessToken: credentials.accessToken,
-    tokenType: credentials.tokenType,
+    accessToken: info.accessToken,
+    tokenType: info.tokenType,
   };
-  if (credentials.refreshToken) result.refreshToken = credentials.refreshToken;
-  if (credentials.expiresIn !== undefined) result.expiresIn = credentials.expiresIn;
-  if (credentials.expiresAt !== undefined) result.expiresAt = credentials.expiresAt;
-  if (credentials.scope) result.scope = credentials.scope;
+  if (info.refreshToken) result.refreshToken = info.refreshToken;
+  if (info.expiresIn !== undefined) result.expiresIn = info.expiresIn;
+  if (info.expiresAt !== undefined) result.expiresAt = info.expiresAt;
+  if (info.scope) result.scope = info.scope;
   return result;
 }
 
