@@ -17,6 +17,26 @@ import { DEFAULT_AUTH_PROFILE } from '../lib/auth/oauth-utils.js';
 const logger = createLogger('cli');
 
 /**
+ * Parse --header CLI flags into a headers object
+ * Format: "Key: Value" (colon-separated)
+ */
+function parseHeaderFlags(headerFlags: string[] | undefined): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (headerFlags) {
+    for (const header of headerFlags) {
+      const colonIndex = header.indexOf(':');
+      if (colonIndex < 1) {
+        throw new ClientError(`Invalid header format: ${header}. Use "Key: Value"`);
+      }
+      const key = header.substring(0, colonIndex).trim();
+      const value = header.substring(colonIndex + 1).trim();
+      headers[key] = value;
+    }
+  }
+  return headers;
+}
+
+/**
  * Load auth profile and add Authorization header if available
  * Automatically refreshes expired tokens if a refresh token is available
  * Tokens are read from and saved to OS keychain for security
@@ -88,26 +108,11 @@ export async function resolveTarget(
 
     // Convert to TransportConfig
     if (serverConfig.url) {
-      // HTTP/HTTPS server
-      const headers: Record<string, string> = {};
-
-      // Merge headers from config file
-      if (serverConfig.headers) {
-        Object.assign(headers, serverConfig.headers);
-      }
-
-      // Override with CLI --header flags (CLI flags take precedence)
-      if (options.headers) {
-        for (const header of options.headers) {
-          const colonIndex = header.indexOf(':');
-          if (colonIndex < 1) {
-            throw new ClientError(`Invalid header format: ${header}. Use "Key: Value"`);
-          }
-          const key = header.substring(0, colonIndex).trim();
-          const value = header.substring(colonIndex + 1).trim();
-          headers[key] = value;
-        }
-      }
+      // HTTP/HTTPS server - merge config headers with CLI --header flags (CLI takes precedence)
+      const headers: Record<string, string> = {
+        ...serverConfig.headers,
+        ...parseHeaderFlags(options.headers),
+      };
 
       // Add auth header if profile exists
       const headersWithAuth = await addAuthHeader(
@@ -168,22 +173,8 @@ export async function resolveTarget(
     );
   }
 
-  const headers: Record<string, string> = {};
-
-  // Parse --header flags
-  if (options.headers) {
-    for (const header of options.headers) {
-      const colonIndex = header.indexOf(':');
-      if (colonIndex < 1) {
-        throw new ClientError(`Invalid header format: ${header}. Use "Key: Value"`);
-      }
-      const key = header.substring(0, colonIndex).trim();
-      const value = header.substring(colonIndex + 1).trim();
-      headers[key] = value;
-    }
-  }
-
-  // Add auth header if profile exists
+  // Parse --header flags and add auth header if profile exists
+  const headers = parseHeaderFlags(options.headers);
   const headersWithAuth = await addAuthHeader(url, headers, options.profile);
 
   const config: TransportConfig = {
