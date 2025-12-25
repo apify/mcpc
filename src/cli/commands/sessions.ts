@@ -62,6 +62,7 @@ export async function connectSession(
       transport: transportConfig.type,
       createdAt: now,
       updatedAt: now,
+      headerCount: Object.keys(headers || {}).length,
     };
     if (options.profile) {
       sessionData.profileName = options.profile;

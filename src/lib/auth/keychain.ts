@@ -191,7 +191,6 @@ export async function getSessionHeaders(
     return JSON.parse(value) as Record<string, string>;
   } catch (error) {
     logger.error(`Failed to parse headers from keychain: ${(error as Error).message}`);
-    // TODO: we should throw and fail rather than silently ignore the error
     return undefined;
   }
 }

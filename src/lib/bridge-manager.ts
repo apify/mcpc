@@ -239,17 +239,18 @@ export async function ensureBridgeHealthy(sessionName: string): Promise<void> {
       url: session.target,
     };
 
-    // Retrieve headers from keychain for failover
+    // Retrieve transport headers from keychain for failover, and check their number
     let headers: Record<string, string> | undefined;
-    if (session.transport === 'http') {
-      try {
-        headers = await getSessionHeaders(sessionName);
-        if (headers) {
-          logger.debug(`Retrieved ${Object.keys(headers).length} headers from keychain for failover`);
-        }
-      } catch {
-        // Ignore errors - headers may not exist
+    if (session.transport === 'http' && session.headerCount && session.headerCount > 0) {
+      headers = await getSessionHeaders(sessionName);
+      const retrievedCount = Object.keys(headers || {}).length;
+      if (retrievedCount !== session.headerCount) {
+        throw new ClientError(
+          `Failed to retrieve ${session.headerCount} HTTP header(s) from keychain for session ${sessionName}. ` +
+            `The session may need to be recreated with "mcpc ${sessionName} close" followed by a new connect.`
+        );
       }
+      logger.debug(`Retrieved ${retrievedCount} headers from keychain for failover`);
     }
 
     // Start a new bridge, preserving auth profile

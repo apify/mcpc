@@ -106,6 +106,7 @@ export interface SessionData {
   target: string; // URL or package name
   transport: TransportType;
   profileName?: string; // Name of auth profile (for OAuth servers)
+  headerCount?: number; // Number of headers stored in keychain (for validation on retrieval)
   pid?: number; // Bridge process PID
   socketPath?: string; // Unix socket path
   protocolVersion?: string; // Negotiated MCP version
