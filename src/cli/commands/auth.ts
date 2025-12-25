@@ -6,7 +6,7 @@ import { formatSuccess, formatError, formatOutput, formatInfo } from '../output.
 import type { CommandOptions } from '../../lib/types.js';
 import { deleteAuthProfile } from '../../lib/auth/auth-profiles.js';
 import { performOAuthFlow } from '../../lib/auth/oauth-flow.js';
-import { normalizeServerUrl } from '../../lib/utils.js';
+import { normalizeServerUrl, validateProfileName } from '../../lib/utils.js';
 import chalk from 'chalk';
 import { DEFAULT_AUTH_PROFILE } from '../../lib/auth/oauth-utils.js';
 
@@ -20,6 +20,8 @@ export async function login(
   try {
     const normalizedUrl = normalizeServerUrl(serverUrl);
     const profileName = options.profile || DEFAULT_AUTH_PROFILE;
+
+    validateProfileName(profileName);
 
     if (options.outputMode === 'human') {
       console.log(formatInfo(`Starting OAuth authentication for ${chalk.cyan(normalizedUrl)}`));
@@ -69,6 +71,8 @@ export async function logout(
   try {
     const normalizedUrl = normalizeServerUrl(serverUrl);
     const profileName = options.profile || DEFAULT_AUTH_PROFILE;
+
+    validateProfileName(profileName);
 
     const deleted = await deleteAuthProfile(normalizedUrl, profileName);
 

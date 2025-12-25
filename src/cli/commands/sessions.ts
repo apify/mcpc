@@ -2,13 +2,12 @@
  * Sessions command handlers
  */
 
-import type { OutputMode } from '../../lib/index.js';
+import { OutputMode, isValidSessionName, validateProfileName } from '../../lib/index.js';
 import { formatOutput, formatSuccess, formatError } from '../output.js';
 import { listAuthProfiles } from '../../lib/auth/auth-profiles.js';
 import { listSessions, sessionExists } from '../../lib/sessions.js';
 import { startBridge, stopBridge } from '../../lib/bridge-manager.js';
 import { resolveTarget } from '../helpers.js';
-import { isValidSessionName } from '../../lib/index.js';
 import { ClientError } from '../../lib/index.js';
 
 /**
@@ -26,6 +25,11 @@ export async function connectSession(
         `Invalid session name: ${name}\n` +
         `Session names must start with @ and be followed by 1-64 characters, alphanumeric with hyphens or underscores only (e.g., @my-session).`
       );
+    }
+
+    // Validate profile name (if provided)
+    if (options.profile) {
+      validateProfileName(options.profile);
     }
 
     // Check if session already exists

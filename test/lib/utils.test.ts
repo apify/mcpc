@@ -15,6 +15,7 @@ import {
   normalizeServerUrl,
   getAuthServerKey,
   isValidSessionName,
+  isValidProfileName,
   isValidResourceUri,
   sleep,
   parseJson,
@@ -23,6 +24,7 @@ import {
   isProcessAlive,
   generateRequestId,
 } from '../../src/lib/utils.js';
+import { DEFAULT_AUTH_PROFILE } from '../../src/lib/auth/oauth-utils.js';
 
 describe('expandHome', () => {
   it('should expand ~ to home directory', () => {
@@ -244,17 +246,45 @@ describe('isValidSessionName', () => {
 
   it('should return false for invalid session names', () => {
     expect(isValidSessionName('')).toBe(false);
-    expect(isValidSessionName('test')).toBe(false); // space
+    expect(isValidSessionName('test')).toBe(false); // missing @
     expect(isValidSessionName('test session')).toBe(false); // space
     expect(isValidSessionName('test.session')).toBe(false); // dot
-    expect(isValidSessionName('test@session')).toBe(false); // @
+    expect(isValidSessionName('test@session')).toBe(false); // @ in wrong place
     expect(isValidSessionName('test/session')).toBe(false); // /
     expect(isValidSessionName('@test/session')).toBe(false); // /
     expect(isValidSessionName('@test.session')).toBe(false); // .
     expect(isValidSessionName('@test session')).toBe(false); // space
     expect(isValidSessionName('@test ')).toBe(false); // space
     expect(isValidSessionName(' @test')).toBe(false); // space
-    expect(isValidSessionName('a'.repeat(65))).toBe(false); // too long
+    expect(isValidSessionName('@')).toBe(false); // @ alone
+    expect(isValidSessionName('@' + 'a'.repeat(65))).toBe(false); // too long
+  });
+});
+
+describe('isValidProfileName', () => {
+  it('should return true for valid profile names', () => {
+    expect(isValidProfileName(DEFAULT_AUTH_PROFILE)).toBe(true);
+    expect(isValidProfileName('default')).toBe(true);
+    expect(isValidProfileName('personal')).toBe(true);
+    expect(isValidProfileName('work')).toBe(true);
+    expect(isValidProfileName('test-123')).toBe(true);
+    expect(isValidProfileName('test_profile')).toBe(true);
+    expect(isValidProfileName('abc123XYZ')).toBe(true);
+    expect(isValidProfileName('a')).toBe(true); // single char
+    expect(isValidProfileName('a'.repeat(64))).toBe(true); // max length
+  });
+
+  it('should return false for invalid profile names', () => {
+    expect(isValidProfileName('')).toBe(false); // empty
+    expect(isValidProfileName('@test')).toBe(false); // starts with @
+    expect(isValidProfileName('test profile')).toBe(false); // space
+    expect(isValidProfileName('test.profile')).toBe(false); // dot
+    expect(isValidProfileName('test@profile')).toBe(false); // @
+    expect(isValidProfileName('test/profile')).toBe(false); // /
+    expect(isValidProfileName('test profile')).toBe(false); // space
+    expect(isValidProfileName('test ')).toBe(false); // trailing space
+    expect(isValidProfileName(' test')).toBe(false); // leading space
+    expect(isValidProfileName('a'.repeat(65))).toBe(false); // too long
   });
 });
 

@@ -6,6 +6,7 @@
 import { homedir } from 'os';
 import { join, resolve, isAbsolute } from 'path';
 import { mkdir, access, constants, stat } from 'fs/promises';
+import { ClientError } from './errors.js';
 
 /**
  * Expand tilde (~) to home directory in paths
@@ -176,11 +177,32 @@ export function getAuthServerKey(urlString: string): string {
 }
 
 /**
- * Validate if a string is a valid session name
- * Session names must start with @ followed be alphanumeric string with hyphens/underscores, 1-64 chars
+ * Validate if a string is a valid session name.
+ * Session names must start with @ followed by alphanumeric string with hyphens/underscores, 1-64 chars
  */
 export function isValidSessionName(name: string): boolean {
   return /^@[a-zA-Z0-9_-]{1,64}$/.test(name);
+}
+
+/**
+ * Validate if a string is a valid profile name.
+ * Profile names must be alphanumeric with hyphens/underscores, 1-64 chars (no @ prefix)
+ */
+export function isValidProfileName(name: string): boolean {
+  return /^[a-zA-Z0-9_-]{1,64}$/.test(name);
+}
+
+/**
+ * Validates the given profile name to ensure it adheres to the specified format.
+ * Profile names must be alphanumeric with hyphens/underscores, 1-64 chars (no @ prefix)
+ */
+export function validateProfileName(profileName: string): void {
+  if (!isValidProfileName(profileName)) {
+    throw new ClientError(
+      `Invalid profile name: ${profileName}\n` +
+        `Profile names must be 1-64 alphanumeric characters with hyphens or underscores only (e.g., personal, work-account).`
+    );
+  }
 }
 
 /**
