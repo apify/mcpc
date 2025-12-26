@@ -60,19 +60,23 @@ export async function discoverTokenEndpoint(serverUrl: string): Promise<string |
  *
  * @param tokenEndpoint - The OAuth token endpoint URL
  * @param refreshToken - The refresh token to use
+ * @param clientId - The OAuth client ID (required for public clients)
  * @returns The token response from the server
  * @throws AuthError if the refresh fails
  */
 export async function refreshAccessToken(
   tokenEndpoint: string,
-  refreshToken: string
+  refreshToken: string,
+  clientId: string
 ): Promise<OAuthTokenResponse> {
   logger.debug(`Refreshing token at: ${tokenEndpoint}`);
 
   // Prepare refresh request (OAuth spec uses snake_case)
+  // Public clients (token_endpoint_auth_method: 'none') must include client_id
   const params = new URLSearchParams({
     grant_type: 'refresh_token',
     refresh_token: refreshToken,
+    client_id: clientId,
   });
 
   const response = await fetch(tokenEndpoint, {
@@ -83,8 +87,6 @@ export async function refreshAccessToken(
     },
     body: params.toString(),
   });
-
-  logger.info(util.inspect({ params, response }));
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -107,19 +109,21 @@ export async function refreshAccessToken(
  *
  * @param serverUrl - The MCP server URL
  * @param refreshToken - The refresh token to use
+ * @param clientId - The OAuth client ID
  * @returns The token response from the server
  * @throws AuthError if discovery or refresh fails
  */
 export async function discoverAndRefreshToken(
   serverUrl: string,
-  refreshToken: string
+  refreshToken: string,
+  clientId: string
 ): Promise<OAuthTokenResponse> {
   const tokenEndpoint = await discoverTokenEndpoint(serverUrl);
   if (!tokenEndpoint) {
     throw new AuthError(`Could not find OAuth token endpoint for ${serverUrl}`);
   }
 
-  return refreshAccessToken(tokenEndpoint, refreshToken);
+  return refreshAccessToken(tokenEndpoint, refreshToken, clientId);
 }
 
 

@@ -72,16 +72,19 @@ class BridgeProcess {
   setAuthCredentials(credentials: AuthCredentials): void {
     logger.info(`Received auth credentials for profile: ${credentials.profileName}`);
 
-    // Set up OAuth token manager if refresh token is provided
-    if (credentials.refreshToken) {
+    // Set up OAuth token manager if refresh token and client ID are provided
+    if (credentials.refreshToken && credentials.clientId) {
       this.tokenManager = new OAuthTokenManager({
         serverUrl: credentials.serverUrl,
         profileName: credentials.profileName,
+        clientId: credentials.clientId,
         refreshToken: credentials.refreshToken,
         // TODO: Should we notify CLI when tokens are rotated?
         // onTokenRefresh: (tokens) => { ... }
       });
       logger.debug('OAuth token manager initialized');
+    } else if (credentials.refreshToken && !credentials.clientId) {
+      logger.warn('Refresh token provided but client ID is missing - token refresh will not work');
     }
 
     // Store headers if provided (used when no OAuth refresh token available)

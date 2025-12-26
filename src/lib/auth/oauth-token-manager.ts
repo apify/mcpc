@@ -28,6 +28,8 @@ export type OnTokenRefreshCallback = (tokens: OAuthTokenResponse) => void | Prom
 export interface OAuthTokenManagerOptions {
   serverUrl: string;
   profileName: string;
+  /** OAuth client ID (required for public clients) */
+  clientId: string;
   /** Initial refresh token */
   refreshToken: string;
   /** Initial access token (optional - will be refreshed if not provided or expired) */
@@ -44,6 +46,7 @@ export interface OAuthTokenManagerOptions {
 export class OAuthTokenManager {
   private serverUrl: string;
   private profileName: string;
+  private clientId: string;
   private refreshToken: string;
   private accessToken: string | null = null;
   private accessTokenExpiresAt: number | null = null; // unix timestamp
@@ -52,6 +55,7 @@ export class OAuthTokenManager {
   constructor(options: OAuthTokenManagerOptions) {
     this.serverUrl = options.serverUrl;
     this.profileName = options.profileName;
+    this.clientId = options.clientId;
     this.refreshToken = options.refreshToken;
     this.accessToken = options.accessToken ?? null;
     this.accessTokenExpiresAt = options.accessTokenExpiresAt ?? null;
@@ -84,10 +88,10 @@ export class OAuthTokenManager {
       );
     }
 
-    logger.info(`Refreshing access token for profile: ${this.profileName}`);
+    logger.debug(`Refreshing access token for profile: ${this.profileName}`);
 
     try {
-      const tokenResponse = await discoverAndRefreshToken(this.serverUrl, this.refreshToken);
+      const tokenResponse = await discoverAndRefreshToken(this.serverUrl, this.refreshToken, this.clientId);
 
       // Store new access token
       this.accessToken = tokenResponse.access_token;
@@ -102,7 +106,7 @@ export class OAuthTokenManager {
         logger.debug('Received new refresh token (token rotation)');
       }
 
-      logger.info(`Access token refreshed successfully for profile: ${this.profileName}`);
+      logger.debug(`Access token refreshed successfully for profile: ${this.profileName}`);
 
       // Notify callback for persistence
       if (this.onTokenRefresh) {

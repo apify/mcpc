@@ -154,6 +154,7 @@ export interface AuthCredentials {
   serverUrl: string;
   profileName: string;
   // OAuth credentials (for refresh flow)
+  clientId?: string;
   refreshToken?: string;
   // HTTP headers (from --header flags, stored in keychain)
   headers?: Record<string, string>;

@@ -13,7 +13,7 @@ import { updateSession } from './sessions.js';
 import { createLogger } from './logger.js';
 import { ClientError } from './errors.js';
 import { BridgeClient } from './bridge-client.js';
-import { readKeychainOAuthTokenInfo, readKeychainSessionHeaders } from './auth/keychain.js';
+import { readKeychainOAuthTokenInfo, readKeychainOAuthClientInfo, readKeychainSessionHeaders } from './auth/keychain.js';
 import { getAuthProfile } from './auth/auth-profiles.js';
 
 const logger = createLogger('bridge-manager');
@@ -300,6 +300,7 @@ async function sendAuthCredentialsToBridge(
   const credentials: {
     serverUrl: string;
     profileName: string;
+    clientId?: string;
     refreshToken?: string;
     headers?: Record<string, string>;
   } = {
@@ -307,17 +308,25 @@ async function sendAuthCredentialsToBridge(
     profileName: profileName || 'headers', // Use 'headers' as placeholder for headers-only auth
   };
 
-  // Try to get OAuth refresh token if profile is specified
+  // Try to get OAuth tokens and client info if profile is specified
   if (profileName) {
     logger.debug(`Looking up auth profile ${profileName} for ${serverUrl}`);
 
     const profile = await getAuthProfile(serverUrl, profileName);
     if (profile) {
+      // Load tokens from keychain
       const tokens = await readKeychainOAuthTokenInfo(profile.serverUrl, profileName);
       if (tokens?.refreshToken) {
         credentials.refreshToken = tokens.refreshToken;
         credentials.serverUrl = profile.serverUrl;
         logger.debug(`Found OAuth refresh token for profile ${profileName}`);
+      }
+
+      // Load client info from keychain (needed for token refresh)
+      const clientInfo = await readKeychainOAuthClientInfo(profile.serverUrl, profileName);
+      if (clientInfo?.clientId) {
+        credentials.clientId = clientInfo.clientId;
+        logger.debug(`Found OAuth client ID for profile ${profileName}`);
       }
     }
   }

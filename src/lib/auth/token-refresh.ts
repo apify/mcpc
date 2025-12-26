@@ -8,7 +8,7 @@ import type { AuthProfile } from '../types.js';
 import { getAuthProfile, saveAuthProfile } from '../auth/auth-profiles.js';
 import { createLogger } from '../logger.js';
 import { createReauthError, DEFAULT_AUTH_PROFILE } from './oauth-utils.js';
-import { readKeychainOAuthTokenInfo, storeKeychainOAuthTokenInfo, type OAuthTokenInfo } from './keychain.js';
+import { readKeychainOAuthTokenInfo, storeKeychainOAuthTokenInfo, readKeychainOAuthClientInfo, type OAuthTokenInfo } from './keychain.js';
 import { OAuthTokenManager, type OnTokenRefreshCallback } from './oauth-token-manager.js';
 
 const logger = createLogger('token-refresh');
@@ -94,10 +94,21 @@ export async function getValidAccessTokenFromKeychain(
     return tokens.accessToken;
   }
 
+  // Load client info from keychain (needed for token refresh)
+  const clientInfo = await readKeychainOAuthClientInfo(serverUrl, profileName);
+  if (!clientInfo?.clientId) {
+    throw createReauthError(
+      serverUrl,
+      profileName,
+      'OAuth client ID not found in keychain (required for token refresh)'
+    );
+  }
+
   // Create token manager with persistence callback
   const tokenManager = new OAuthTokenManager({
     serverUrl,
     profileName,
+    clientId: clientInfo.clientId,
     refreshToken: tokens.refreshToken,
     accessToken: tokens.accessToken,
     ...(tokens.expiresAt !== undefined && { accessTokenExpiresAt: tokens.expiresAt }),
