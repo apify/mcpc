@@ -453,14 +453,25 @@ export async function ensureBridgeReady(sessionName: string): Promise<string> {
 
   // Bridge not healthy - restart it
   logger.info(`Restarting bridge for ${sessionName}...`);
-  const { socketPath: freshSocketPath } = await restartBridge(sessionName);
+  const { socketPath: freshSocketPath, pid } = await restartBridge(sessionName);
 
   // Wait for bridge to become responsive
-  // Bridge only responds to health-check when fully ready
+  // Bridge only responds to health-check when fully ready (MCP connected)
   const MAX_READY_ATTEMPTS = 10;
   const READY_RETRY_DELAY = 500; // ms
 
   for (let attempt = 1; attempt <= MAX_READY_ATTEMPTS; attempt++) {
+    // Check if bridge process is still alive
+    if (!isProcessAlive(pid)) {
+      // Bridge died - likely MCP connection failed (auth error, network error, etc.)
+      // Check logs for details
+      throw new ClientError(
+        `Bridge for ${sessionName} exited unexpectedly. ` +
+        `Check logs at ~/.mcpc/logs/bridge-${sessionName}.log for details. ` +
+        `Common causes: expired auth token, invalid credentials, server unreachable.`
+      );
+    }
+
     const isHealthy = await testBridgeSocketHealth(freshSocketPath);
     if (isHealthy) {
       logger.info(`Bridge for ${sessionName} is now ready`);

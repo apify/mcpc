@@ -6,7 +6,7 @@ import { OutputMode, isValidSessionName, validateProfileName } from '../../lib/i
 import { formatOutput, formatSuccess, formatError } from '../output.js';
 import { listAuthProfiles } from '../../lib/auth/auth-profiles.js';
 import { listSessions, sessionExists, deleteSession, saveSession, updateSession } from '../../lib/sessions.js';
-import { startBridge, stopBridge } from '../../lib/bridge-manager.js';
+import { startBridge, StartBridgeOptions, stopBridge } from '../../lib/bridge-manager.js';
 import { removeKeychainSessionHeaders, storeKeychainSessionHeaders } from '../../lib/auth/keychain.js';
 import { resolveTarget } from '../helpers.js';
 import { ClientError } from '../../lib/index.js';
@@ -48,11 +48,26 @@ export async function connectSession(
     const transportConfig = await resolveTarget(target, options);
 
     // Store headers in OS keychain (secure storage) before starting bridge
+    // For OAuth sessions (with --profile), DON'T store the `Authorization` header
+    // because it comes from the OAuth profile and may expire.
+    // The bridge will get fresh tokens via the profile mechanism instead.
     let headers: Record<string, string> | undefined;
-    if (transportConfig.type === 'http' && transportConfig.headers && Object.keys(transportConfig.headers).length > 0) {
-      headers = transportConfig.headers;
-      logger.debug(`Storing ${Object.keys(headers).length} headers for session ${name} in keychain`);
-      await storeKeychainSessionHeaders(name, headers);
+    if (transportConfig.type === 'http' && Object.keys(transportConfig.headers || {}).length > 0) {
+      headers = { ...transportConfig.headers };
+
+      // Remove OAuth-derived Authorization header - it will be handled via the profile
+      if (options.profile && headers.Authorization?.startsWith('Bearer ')) {
+        logger.debug(`Skipping OAuth Authorization header storage for session ${name} (handled via profile)`);
+        delete headers.Authorization;
+      }
+
+      // Only store remaining headers (from --header flags)
+      if (Object.keys(headers).length > 0) {
+        logger.debug(`Storing ${Object.keys(headers).length} headers for session ${name} in keychain`);
+        await storeKeychainSessionHeaders(name, headers);
+      } else {
+        headers = undefined;
+      }
     }
 
     // Create initial session record (without pid/socketPath - those come from startBridge)
@@ -70,7 +85,7 @@ export async function connectSession(
 
     // Start bridge process (handles spawning and IPC credential delivery)
     try {
-      const bridgeOptions: Parameters<typeof startBridge>[0] = {
+      const bridgeOptions: StartBridgeOptions = {
         sessionName: name,
         target: transportConfig,
         verbose: options.verbose || false,

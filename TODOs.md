@@ -10,8 +10,6 @@
 - Ensure we show tool annotations and tasks in text mode too
 - Revise the caching - is it needed, why not use SDK autoRefresh? 
 
-- OAuth issuer - save it and double-check it to ensure domain is not spoofed. Why do we need separate keychain entry for oauth-client?
-
 - add "mcpc --reset-all/clean-all/clean:a,b,c" ? command to clean up sessions, kill bridges, etc. It should keep shell-history and logs though.
   - add command to restart bridge process
 
@@ -19,6 +17,8 @@
 - "mcpc @apify-docs connect" still doesn't work: it should restart the session, or do nothing if it's already connected.
 -  "mcpc @apify-docs connect --session @apify-docs" should auto restart the session
 
+
+- The bridge and socket management is flakey, we can do better - see TODOs there
 
 ## Cosmetic
 - nit: on server/session info, print also auth info
@@ -48,7 +48,13 @@
   - that on session close we send HTTP DELETE https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#session-management
   - Test session failover - e.g. kill the bridge process, and try to access the session again (should be restarted)
   - Test server session aborting - if session is aborted by server, bridge process should exit and set session status to "expired"
+  - Test auth profiles work long-term and sessions too
 - Can we track test coverage also this way?
+
+
+## Security
+- Double-check the MCP security guidelines
+- OAuth issuer - maybe save it and double-check it to ensure domain is not spoofed?
 
 
 ## Later
