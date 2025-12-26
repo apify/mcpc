@@ -269,10 +269,7 @@ export async function showServerInfo(
   const { withMcpClient } = await import('../helpers.js');
 
   await withMcpClient(target, options, async (client) => {
-    const serverInfo = await client.getServerVersion();
-    const capabilities = await client.getServerCapabilities();
-    const instructions = await client.getInstructions();
-    const protocolVersion = await client.getProtocolVersion();
+    const { serverVersion, capabilities, instructions, protocolVersion } = await client.getServerInfo();
 
     // Get tools if supported
     let toolNames: string[] = [];
@@ -285,9 +282,9 @@ export async function showServerInfo(
       console.log('');
 
       // Server info
-      if (serverInfo) {
+      if (serverVersion) {
         const versionInfo = protocolVersion ? ` (MCP version: ${protocolVersion})` : '';
-        console.log(`Server: ${serverInfo.name} v${serverInfo.version}${versionInfo}`);
+        console.log(`Server: ${serverVersion.name} v${serverVersion.version}${versionInfo}`);
         console.log('');
       }
 
@@ -428,7 +425,7 @@ export async function showServerInfo(
         formatOutput(
           {
             target,
-            server: serverInfo,
+            server: serverVersion,
             instructions: instructions || null,
             capabilities: jsonCapabilities,
             availableCommands,

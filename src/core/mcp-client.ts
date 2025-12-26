@@ -14,12 +14,11 @@ import type {
   ReadResourceResult,
   ListPromptsResult,
   GetPromptResult,
-  ServerCapabilities,
   LoggingLevel,
 } from '@modelcontextprotocol/sdk/types.js';
 import { createNoOpLogger, type Logger } from '../lib/logger.js';
 import { ServerError, NetworkError } from '../lib/errors.js';
-import type { IMcpClient } from '../lib/types.js';
+import type { IMcpClient, ServerInfo } from '../lib/types.js';
 
 /**
  * Transport with protocol version information (e.g., StreamableHTTPClientTransport)
@@ -91,9 +90,6 @@ export class McpClient implements IMcpClient {
 
       await this.client.connect(transport);
 
-      const serverVersion = await this.getServerVersion();
-      const serverCapabilities = await this.getServerCapabilities();
-
       // Capture negotiated protocol version from transport if available
       // StreamableHTTPClientTransport exposes protocolVersion after initialization
       const transportWithVersion = transport as TransportWithProtocolVersion;
@@ -101,6 +97,9 @@ export class McpClient implements IMcpClient {
         this.negotiatedProtocolVersion = transportWithVersion.protocolVersion;
         this.logger.debug(`Negotiated protocol version: ${this.negotiatedProtocolVersion}`);
       }
+
+      const serverVersion = this.client.getServerVersion();
+      const serverCapabilities = this.client.getServerCapabilities();
 
       this.logger.info(
         `Connected to ${serverVersion?.name || 'unknown'} v${serverVersion?.version || 'unknown'}`
@@ -134,36 +133,21 @@ export class McpClient implements IMcpClient {
   }
 
   /**
-   * Get server capabilities
+   * Get all server information in a single call
    * Returns a Promise for interface compatibility with SessionClient
    */
-  getServerCapabilities(): Promise<ServerCapabilities | undefined> {
-    return Promise.resolve(this.client.getServerCapabilities());
-  }
+  getServerInfo(): Promise<ServerInfo> {
+    const info: ServerInfo = {};
+    const serverVersion = this.client.getServerVersion();
+    const capabilities = this.client.getServerCapabilities();
+    const instructions = this.client.getInstructions();
 
-  /**
-   * Get server version information
-   * Returns a Promise for interface compatibility with SessionClient
-   */
-  getServerVersion(): Promise<Implementation | undefined> {
-    return Promise.resolve(this.client.getServerVersion());
-  }
+    if (serverVersion) info.serverVersion = serverVersion;
+    if (capabilities) info.capabilities = capabilities;
+    if (instructions) info.instructions = instructions;
+    if (this.negotiatedProtocolVersion) info.protocolVersion = this.negotiatedProtocolVersion;
 
-  /**
-   * Get server instructions
-   * Returns a Promise for interface compatibility with SessionClient
-   */
-  getInstructions(): Promise<string | undefined> {
-    return Promise.resolve(this.client.getInstructions());
-  }
-
-  /**
-   * Get the negotiated protocol version
-   * Returns the protocol version agreed upon during initialization
-   * Returns a Promise for interface compatibility with SessionClient
-   */
-  getProtocolVersion(): Promise<string | undefined> {
-    return Promise.resolve(this.negotiatedProtocolVersion);
+    return Promise.resolve(info);
   }
 
   /**

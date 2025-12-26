@@ -694,20 +694,8 @@ class BridgeProcess {
           break;
         }
 
-        case 'getServerCapabilities':
-          result = await this.client.getServerCapabilities();
-          break;
-
-        case 'getServerVersion':
-          result = await this.client.getServerVersion();
-          break;
-
-        case 'getInstructions':
-          result = await this.client.getInstructions();
-          break;
-
-        case 'getProtocolVersion':
-          result = await this.client.getProtocolVersion();
+        case 'getServerInfo':
+          result = await this.client.getServerInfo();
           break;
 
         default:

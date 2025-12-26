@@ -5,8 +5,6 @@
 
 import { EventEmitter } from 'events';
 import type {
-  Implementation,
-  ServerCapabilities,
   ListToolsResult,
   CallToolResult,
   ListResourcesResult,
@@ -16,6 +14,7 @@ import type {
   LoggingLevel,
   IMcpClient,
   NotificationData,
+  ServerInfo,
 } from './types.js';
 import type { ListResourceTemplatesResult } from '@modelcontextprotocol/sdk/types.js';
 import { BridgeClient } from './bridge-client.js';
@@ -107,32 +106,11 @@ export class SessionClient extends EventEmitter implements IMcpClient {
     await this.bridgeClient.close();
   }
 
-  // Server info methods
-  async getServerCapabilities(): Promise<ServerCapabilities | undefined> {
+  // Server info (single IPC call for all server information)
+  async getServerInfo(): Promise<ServerInfo> {
     return this.withRetry(
-      () => this.bridgeClient.request('getServerCapabilities') as Promise<ServerCapabilities | undefined>,
-      'getServerCapabilities'
-    );
-  }
-
-  async getServerVersion(): Promise<Implementation | undefined> {
-    return this.withRetry(
-      () => this.bridgeClient.request('getServerVersion') as Promise<Implementation | undefined>,
-      'getServerVersion'
-    );
-  }
-
-  async getInstructions(): Promise<string | undefined> {
-    return this.withRetry(
-      () => this.bridgeClient.request('getInstructions') as Promise<string | undefined>,
-      'getInstructions'
-    );
-  }
-
-  async getProtocolVersion(): Promise<string | undefined> {
-    return this.withRetry(
-      () => this.bridgeClient.request('getProtocolVersion') as Promise<string | undefined>,
-      'getProtocolVersion'
+      () => this.bridgeClient.request('getServerInfo') as Promise<ServerInfo>,
+      'getServerInfo'
     );
   }
 

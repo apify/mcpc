@@ -64,16 +64,6 @@ export type {
 export { LATEST_PROTOCOL_VERSION } from '@modelcontextprotocol/sdk/types.js';
 
 /**
- * Server information (extracted from InitializeResult)
- */
-export interface ServerInfo {
-  name: string;
-  version: string;
-  websiteUrl?: string;
-  title?: string;
-}
-
-/**
  * Transport types supported by mcpc
  */
 export type TransportType = 'stdio' | 'http';
@@ -248,6 +238,21 @@ export interface McpServerConfig {
 }
 
 /**
+ * Combined server information returned by getServerInfo()
+ * Fetched once during initialization, cached locally
+ */
+export interface ServerInfo {
+  /** Server implementation details (name, version) */
+  serverVersion?: Implementation;
+  /** Server capabilities */
+  capabilities?: ServerCapabilities;
+  /** Server-provided instructions for the client */
+  instructions?: string;
+  /** Negotiated protocol version */
+  protocolVersion?: string;
+}
+
+/**
  * Common interface for MCP clients
  * Both McpClient (direct SDK wrapper) and SessionClient (bridge IPC wrapper) implement this
  *
@@ -258,13 +263,8 @@ export interface IMcpClient {
   // Connection management
   close(): Promise<void>;
 
-  // Server information
-  // Note: These return Promises because SessionClient must do IPC to get them from bridge
-  // McpClient has them cached locally but returns Promises for interface consistency
-  getServerCapabilities(): Promise<ServerCapabilities | undefined>;
-  getServerVersion(): Promise<Implementation | undefined>;
-  getInstructions(): Promise<string | undefined>;
-  getProtocolVersion(): Promise<string | undefined>;
+  // Server information (single call returns all info - avoids multiple IPC roundtrips)
+  getServerInfo(): Promise<ServerInfo>;
 
   // MCP operations
   ping(): Promise<void>;
