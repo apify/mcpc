@@ -5,6 +5,7 @@
 
 import { createLogger } from '../logger.js';
 import { AuthError } from '../errors.js';
+import * as util from 'node:util';
 
 const logger = createLogger('oauth-utils');
 
@@ -82,6 +83,8 @@ export async function refreshAccessToken(
     },
     body: params.toString(),
   });
+
+  logger.info(util.inspect({ params, response }));
 
   if (!response.ok) {
     const errorText = await response.text();

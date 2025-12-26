@@ -32,51 +32,51 @@ export interface OAuthTokenInfo {
 }
 
 /**
- * OAuth credentials stored in keychain (client info + tokens)
+ * Get a keychain account name for OAuth client info
  */
-export type KeychainOAuthInfo = OAuthClientInfo & OAuthTokenInfo;
-
-/**
- * Build a keychain account name for OAuth credentials
- * Format: auth:<serverUrl>:<profileName>
- */
-function buildOAuthAccountName(serverUrl: string, profileName: string): string {
-  return `auth-profile:${serverUrl}:${profileName}`;
+function buildOAuthClientAccountName(serverUrl: string, profileName: string): string {
+  return `auth-profile:${serverUrl}:${profileName}:client`;
 }
 
 /**
- * Build a keychain account name for session headers
- * Format: session:<sessionName>:headers
+ * Get a keychain account name for OAuth tokens
+ */
+function buildOAuthTokensAccountName(serverUrl: string, profileName: string): string {
+  return `auth-profile:${serverUrl}:${profileName}:tokens`;
+}
+
+/**
+ * Get a keychain account name for session headers
  */
 function buildSessionAccountName(sessionName: string): string {
   return `session:${sessionName}:headers`;
 }
 
 /**
- * Store OAuth credentials in keychain
+ * Store OAuth client info in keychain
  */
-async function storeKeychainOAuthInfo(
+export async function storeKeychainOAuthClientInfo(
   serverUrl: string,
   profileName: string,
-  credentials: KeychainOAuthInfo
+  client: OAuthClientInfo
 ): Promise<void> {
-  const account = buildOAuthAccountName(serverUrl, profileName);
-  const value = JSON.stringify(credentials);
+  const account = buildOAuthClientAccountName(serverUrl, profileName);
+  const value = JSON.stringify(client);
 
-  logger.debug(`Storing OAuth credentials for ${profileName} @ ${serverUrl}`);
+  logger.debug(`Storing OAuth client info for ${profileName} @ ${serverUrl}`);
   await keytar.setPassword(SERVICE_NAME, account, value);
 }
 
 /**
- * Retrieve OAuth credentials from keychain
+ * Get OAuth client info from keychain
  */
-async function getKeychainOAuthInfo(
+export async function readKeychainOAuthClientInfo(
   serverUrl: string,
   profileName: string
-): Promise<KeychainOAuthInfo | undefined> {
-  const account = buildOAuthAccountName(serverUrl, profileName);
+): Promise<OAuthClientInfo | undefined> {
+  const account = buildOAuthClientAccountName(serverUrl, profileName);
 
-  logger.debug(`Retrieving OAuth credentials for ${profileName} @ ${serverUrl}`);
+  logger.debug(`Retrieving OAuth client info for ${profileName} @ ${serverUrl}`);
   const value = await keytar.getPassword(SERVICE_NAME, account);
 
   if (!value) {
@@ -84,130 +84,76 @@ async function getKeychainOAuthInfo(
   }
 
   try {
-    return JSON.parse(value) as KeychainOAuthInfo;
+    return JSON.parse(value) as OAuthClientInfo;
   } catch (error) {
-    logger.error(`Failed to parse OAuth credentials from keychain: ${(error as Error).message}`);
+    logger.error(`Failed to parse OAuth client info from keychain: ${(error as Error).message}`);
     return undefined;
   }
 }
 
 /**
- * Delete OAuth credentials from keychain
+ * Delete OAuth client info from keychain
  */
-export async function deleteKeychainOAuthInfo(
+export async function removeKeychainOAuthClientInfo(
   serverUrl: string,
   profileName: string
 ): Promise<boolean> {
-  const account = buildOAuthAccountName(serverUrl, profileName);
+  const account = buildOAuthClientAccountName(serverUrl, profileName);
 
-  logger.debug(`Deleting OAuth credentials for ${profileName} @ ${serverUrl}`);
+  logger.debug(`Deleting OAuth client info for ${profileName} @ ${serverUrl}`);
   return keytar.deletePassword(SERVICE_NAME, account);
 }
 
 /**
- * Store OAuth client info, preserving existing tokens
- * Used after dynamic client registration (before tokens exist)
+ * Store OAuth tokens in keychain
  */
-export async function saveKeychainOAuthClientInfo(
-  serverUrl: string,
-  profileName: string,
-  client: OAuthClientInfo
-): Promise<void> {
-  const existing = await getKeychainOAuthInfo(serverUrl, profileName);
-
-  // Build credentials, only including defined values
-  const credentials: KeychainOAuthInfo = {
-    accessToken: existing?.accessToken ?? '',
-    tokenType: existing?.tokenType ?? 'Bearer',
-    clientId: client.clientId,
-  };
-
-  // Preserve existing token fields if any
-  if (existing?.refreshToken) credentials.refreshToken = existing.refreshToken;
-  if (existing?.expiresIn !== undefined) credentials.expiresIn = existing.expiresIn;
-  if (existing?.expiresAt !== undefined) credentials.expiresAt = existing.expiresAt;
-  if (existing?.scope) credentials.scope = existing.scope;
-
-  // Add client secret if provided
-  if (client.clientSecret) credentials.clientSecret = client.clientSecret;
-
-  await storeKeychainOAuthInfo(serverUrl, profileName, credentials);
-}
-
-/**
- * Get OAuth client info from keychain
- */
-export async function getKeychainOAuthClient(
-  serverUrl: string,
-  profileName: string
-): Promise<OAuthClientInfo | undefined> {
-  const info = await getKeychainOAuthInfo(serverUrl, profileName);
-  if (!info?.clientId) {
-    return undefined;
-  }
-  const result: OAuthClientInfo = {
-    clientId: info.clientId,
-  };
-  if (info.clientSecret) {
-    result.clientSecret = info.clientSecret;
-  }
-  return result;
-}
-
-/**
- * Store OAuth tokens, preserving existing client info
- * Used after OAuth flow completes
- */
-export async function saveKeychainOAuthTokenInfo(
+export async function storeKeychainOAuthTokenInfo(
   serverUrl: string,
   profileName: string,
   tokens: OAuthTokenInfo
 ): Promise<void> {
-  const existing = await getKeychainOAuthInfo(serverUrl, profileName);
+  const account = buildOAuthTokensAccountName(serverUrl, profileName);
+  const value = JSON.stringify(tokens);
 
-  if (!existing?.clientId) {
-    throw new Error(`Cannot save tokens without client info for ${profileName} @ ${serverUrl}`);
-  }
-
-  // Build credentials, only including defined values
-  const credentials: KeychainOAuthInfo = {
-    clientId: existing.clientId,
-    accessToken: tokens.accessToken,
-    tokenType: tokens.tokenType,
-  };
-
-  // Preserve client secret if exists
-  if (existing.clientSecret) credentials.clientSecret = existing.clientSecret;
-
-  // Add token fields if provided
-  if (tokens.refreshToken) credentials.refreshToken = tokens.refreshToken;
-  if (tokens.expiresIn !== undefined) credentials.expiresIn = tokens.expiresIn;
-  if (tokens.expiresAt !== undefined) credentials.expiresAt = tokens.expiresAt;
-  if (tokens.scope) credentials.scope = tokens.scope;
-
-  await storeKeychainOAuthInfo(serverUrl, profileName, credentials);
+  logger.debug(`Storing OAuth tokens for ${profileName} @ ${serverUrl}`);
+  await keytar.setPassword(SERVICE_NAME, account, value);
 }
 
 /**
  * Get OAuth tokens from keychain
  */
-export async function getKeychainOAuthTokenInfo(
+export async function readKeychainOAuthTokenInfo(
   serverUrl: string,
   profileName: string
 ): Promise<OAuthTokenInfo | undefined> {
-  const info = await getKeychainOAuthInfo(serverUrl, profileName);
-  if (!info?.accessToken) {
+  const account = buildOAuthTokensAccountName(serverUrl, profileName);
+
+  logger.debug(`Retrieving OAuth tokens for ${profileName} @ ${serverUrl}`);
+  const value = await keytar.getPassword(SERVICE_NAME, account);
+
+  if (!value) {
     return undefined;
   }
-  const result: OAuthTokenInfo = {
-    accessToken: info.accessToken,
-    tokenType: info.tokenType,
-  };
-  if (info.refreshToken) result.refreshToken = info.refreshToken;
-  if (info.expiresIn !== undefined) result.expiresIn = info.expiresIn;
-  if (info.expiresAt !== undefined) result.expiresAt = info.expiresAt;
-  if (info.scope) result.scope = info.scope;
-  return result;
+
+  try {
+    return JSON.parse(value) as OAuthTokenInfo;
+  } catch (error) {
+    logger.error(`Failed to parse OAuth tokens from keychain: ${(error as Error).message}`);
+    return undefined;
+  }
+}
+
+/**
+ * Delete OAuth tokens from keychain
+ */
+export async function removeKeychainOAuthTokenInfo(
+  serverUrl: string,
+  profileName: string
+): Promise<boolean> {
+  const account = buildOAuthTokensAccountName(serverUrl, profileName);
+
+  logger.debug(`Deleting OAuth tokens for ${profileName} @ ${serverUrl}`);
+  return keytar.deletePassword(SERVICE_NAME, account);
 }
 
 /**
@@ -228,7 +174,7 @@ export async function storeKeychainSessionHeaders(
 /**
  * Retrieve HTTP headers for a session from keychain
  */
-export async function getKeychainSessionHeaders(
+export async function readKeychainSessionHeaders(
   sessionName: string
 ): Promise<Record<string, string> | undefined> {
   const account = buildSessionAccountName(sessionName);
@@ -251,7 +197,7 @@ export async function getKeychainSessionHeaders(
 /**
  * Delete HTTP headers for a session from keychain
  */
-export async function deleteKeychainSessionHeaders(sessionName: string): Promise<boolean> {
+export async function removeKeychainSessionHeaders(sessionName: string): Promise<boolean> {
   const account = buildSessionAccountName(sessionName);
 
   logger.debug(`Deleting headers for session ${sessionName}`);

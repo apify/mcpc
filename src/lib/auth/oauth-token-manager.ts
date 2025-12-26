@@ -71,13 +71,6 @@ export class OAuthTokenManager {
   }
 
   /**
-   * Get the current refresh token
-   */
-  getRefreshToken(): string {
-    return this.refreshToken;
-  }
-
-  /**
    * Refresh the access token using the refresh token
    * @returns The token response from the server
    * @throws AuthError if refresh fails

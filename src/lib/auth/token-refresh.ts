@@ -8,7 +8,7 @@ import type { AuthProfile } from '../types.js';
 import { getAuthProfile, saveAuthProfile } from '../auth/auth-profiles.js';
 import { createLogger } from '../logger.js';
 import { createReauthError, DEFAULT_AUTH_PROFILE } from './oauth-utils.js';
-import { getKeychainOAuthTokenInfo, saveKeychainOAuthTokenInfo, type OAuthTokenInfo } from './keychain.js';
+import { readKeychainOAuthTokenInfo, storeKeychainOAuthTokenInfo, type OAuthTokenInfo } from './keychain.js';
 import { OAuthTokenManager, type OnTokenRefreshCallback } from './oauth-token-manager.js';
 
 const logger = createLogger('token-refresh');
@@ -37,7 +37,7 @@ function createPersistenceCallback(
     if (newTokens.scope !== undefined) {
       tokenInfo.scope = newTokens.scope;
     }
-    await saveKeychainOAuthTokenInfo(serverUrl, profileName, tokenInfo);
+    await storeKeychainOAuthTokenInfo(serverUrl, profileName, tokenInfo);
 
     // Update profile metadata
     const now = new Date().toISOString();
@@ -74,7 +74,7 @@ export async function getValidAccessTokenFromKeychain(
   }
 
   // Load tokens from keychain
-  const tokens = await getKeychainOAuthTokenInfo(serverUrl, profileName);
+  const tokens = await readKeychainOAuthTokenInfo(serverUrl, profileName);
   if (!tokens?.accessToken) {
     logger.warn(`Auth profile exists but has no access token in keychain: ${profileName}`);
     return undefined;

@@ -12,7 +12,10 @@ import { getAuthProfilesFilePath, fileExists, ensureDir, getMcpcHome } from '../
 import { withFileLock } from '../file-lock.js';
 import { createLogger } from '../logger.js';
 import { ClientError } from '../errors.js';
-import { deleteKeychainOAuthInfo } from './keychain.js';
+import {
+  removeKeychainOAuthClientInfo,
+  removeKeychainOAuthTokenInfo,
+} from './keychain.js';
 
 const logger = createLogger('auth-profiles');
 
@@ -154,7 +157,8 @@ export async function deleteAuthProfile(serverUrl: string, profileName: string):
     }
 
     // Delete credentials from OS keychain (tokens + client info)
-    await deleteKeychainOAuthInfo(serverUrl, profileName);
+    await removeKeychainOAuthClientInfo(serverUrl, profileName);
+    await removeKeychainOAuthTokenInfo(serverUrl, profileName);
 
     // Delete profile metadata from storage
     delete serverProfiles[profileName];

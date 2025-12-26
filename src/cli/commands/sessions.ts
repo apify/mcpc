@@ -7,7 +7,7 @@ import { formatOutput, formatSuccess, formatError } from '../output.js';
 import { listAuthProfiles } from '../../lib/auth/auth-profiles.js';
 import { listSessions, sessionExists, deleteSession, saveSession, updateSession } from '../../lib/sessions.js';
 import { startBridge, stopBridge } from '../../lib/bridge-manager.js';
-import { deleteKeychainSessionHeaders, storeKeychainSessionHeaders } from '../../lib/auth/keychain.js';
+import { removeKeychainSessionHeaders, storeKeychainSessionHeaders } from '../../lib/auth/keychain.js';
 import { resolveTarget } from '../helpers.js';
 import { ClientError } from '../../lib/index.js';
 import { createLogger } from '../../lib/logger.js';
@@ -98,7 +98,7 @@ export async function connectSession(
         // Ignore cleanup errors
       }
       try {
-        await deleteKeychainSessionHeaders(name);
+        await removeKeychainSessionHeaders(name);
       } catch {
         // Ignore cleanup errors
       }
@@ -213,7 +213,7 @@ export async function closeSession(
 
     // Delete headers from keychain (if any)
     try {
-      await deleteKeychainSessionHeaders(name);
+      await removeKeychainSessionHeaders(name);
       logger.debug(`Deleted headers from keychain for session: ${name}`);
     } catch {
       // Ignore errors - headers may not exist

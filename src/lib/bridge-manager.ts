@@ -13,7 +13,7 @@ import { updateSession } from './sessions.js';
 import { createLogger } from './logger.js';
 import { ClientError } from './errors.js';
 import { BridgeClient } from './bridge-client.js';
-import { getKeychainOAuthTokenInfo, getKeychainSessionHeaders } from './auth/keychain.js';
+import { readKeychainOAuthTokenInfo, readKeychainSessionHeaders } from './auth/keychain.js';
 import { getAuthProfile } from './auth/auth-profiles.js';
 
 const logger = createLogger('bridge-manager');
@@ -242,7 +242,7 @@ export async function ensureBridgeHealthy(sessionName: string): Promise<void> {
     // Retrieve transport headers from keychain for failover, and check their number
     let headers: Record<string, string> | undefined;
     if (session.transport === 'http' && session.headerCount && session.headerCount > 0) {
-      headers = await getKeychainSessionHeaders(sessionName);
+      headers = await readKeychainSessionHeaders(sessionName);
       const retrievedCount = Object.keys(headers || {}).length;
       if (retrievedCount !== session.headerCount) {
         throw new ClientError(
@@ -309,7 +309,7 @@ async function sendAuthCredentialsToBridge(
 
     const profile = await getAuthProfile(serverUrl, profileName);
     if (profile) {
-      const tokens = await getKeychainOAuthTokenInfo(profile.serverUrl, profileName);
+      const tokens = await readKeychainOAuthTokenInfo(profile.serverUrl, profileName);
       if (tokens?.refreshToken) {
         credentials.refreshToken = tokens.refreshToken;
         credentials.serverUrl = profile.serverUrl;
