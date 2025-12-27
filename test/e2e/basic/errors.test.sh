@@ -32,11 +32,11 @@ run_mcpc @test invalid-command
 assert_failure $EXIT_CODE
 pass
 
-# Test 5: Missing required argument
-begin_test "missing required argument for connect"
-run_mcpc example.com connect
+# Test 5: Missing required argument for session command
+begin_test "missing required argument for session"
+run_mcpc example.com session
 assert_failure $EXIT_CODE
-assert_contains "$STDERR" "session"
+assert_contains "$STDERR" "name"
 pass
 
 # Test 6: Invalid URL scheme

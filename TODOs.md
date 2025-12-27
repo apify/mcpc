@@ -5,7 +5,6 @@
 ## Bugs
 - Seems calling invalid/unknown MCP command in shell (perhaps also normally) causes the bridge to be flagged as expired
 
-
 - reconnection doesn't work
 mcpc @apify session                                                                                                        1 ✘
 error: missing required argument 'name'
@@ -19,7 +18,9 @@ error: missing required argument 'name'
     Active MCP sessions:
     @fs → npx (stdio) --- show also args instead of just "npx"
   - print PID of bridge process
-  
+
+Visual examples:
+
     Xxx/
     ├── run.sh                    # Master runner (parallel by suite)
     ├── lib/
@@ -32,18 +33,14 @@ error: missing required argument 'name'
     │   └── index.ts              # Configurable test MCP server
     │
 
-Cool example:
  * ▐▛███▜▌ *   Claude Code v2.0.75
 * ▝▜█████▛▘ *  Opus 4.5 · Claude Team
  *  ▘▘ ▝▝  *   ~/Projects/mcpc
 
 
-
 - Better error handling:
   - "mcpc https://mcp.sentry.dev/mcp" with an unknown sever => should hint to use "login"
   - Handle MCP errors by failing the command tool, e.g. invalid tool name..
-
-
 
 - implement resources-subscribe/resources-unsubscribe command properly
 - > # TODO: automatically update the -o file on changes, without it just keep track of changed files in bridge process' cache, and report in resources-list
@@ -59,7 +56,6 @@ Cool example:
 - nit: Colorize output, e.g. JSONs in one color. MCP provided data like descriptions and instructions in orange.
   -  warnings could be orange, errors red
 - - docs: add Claude Skills file to /docs, maybe also man page?
-- nit: in README, explain the MCP commands better in a standlone section, with details how they work
 - Add support for MCP elicitations, and potentially for sampling (e.g. via shell interface?)
 - Add `--proxy [HOST:]PORT` feature to `connect` command to enable MCP proxy:
   - `--proxy-bearer-token X` to require auth token for better security
@@ -67,12 +63,12 @@ Cool example:
     (what if tools have ":" or "," in their names?)
     In theory, we could add limit of capabilities to normal sessions, but the LLM could still break out of it, so what's the point.
   - Explain this is useful for AI sandboxing!
-- Impelled shell completions (e.g. "mcpc @a...")
-- nit: Nicer OAuth flow finish web page, add Apify example there.
+- Implement typing completions (e.g. "mcpc @a...") - not sure how difficult that is
+- nit: Nicer OAuth flow finish web page, add Apify example there. E.g. next step - check Apify rather than close
 - nit: cooler OAuth web pages "Authentication successful!" - show mcpc info
 - audit that on every command, we print next steps as examples
 - more shortcuts, e.g. --profile => -p
-
+- nit: in README, explain the MCP commands better in a standlone section, with details how they work
 
 
 
