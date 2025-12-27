@@ -2,7 +2,7 @@
  * Sessions command handlers
  */
 
-import { OutputMode, isValidSessionName, validateProfileName } from '../../lib/index.js';
+import { OutputMode, isValidSessionName, validateProfileName, isProcessAlive } from '../../lib/index.js';
 import { formatOutput, formatSuccess, formatError } from '../output.js';
 import { listAuthProfiles } from '../../lib/auth/auth-profiles.js';
 import { listSessions, sessionExists, deleteSession, saveSession, updateSession } from '../../lib/sessions.js';
@@ -10,6 +10,7 @@ import { startBridge, StartBridgeOptions, stopBridge } from '../../lib/bridge-ma
 import { removeKeychainSessionHeaders, storeKeychainSessionHeaders } from '../../lib/auth/keychain.js';
 import { resolveTarget } from '../helpers.js';
 import { ClientError } from '../../lib/index.js';
+import chalk from 'chalk';
 import { createLogger } from '../../lib/logger.js';
 
 const logger = createLogger('sessions');
@@ -147,6 +148,33 @@ export async function connectSession(
 }
 
 /**
+ * Determine bridge status for a session
+ */
+function getBridgeStatus(session: { status?: string; pid?: number }): 'live' | 'dead' | 'expired' {
+  if (session.status === 'expired') {
+    return 'expired';
+  }
+  if (!session.pid || !isProcessAlive(session.pid)) {
+    return 'dead';
+  }
+  return 'live';
+}
+
+/**
+ * Format bridge status for display
+ */
+function formatBridgeStatus(status: 'live' | 'dead' | 'expired'): string {
+  switch (status) {
+    case 'live':
+      return chalk.green('[live]');
+    case 'dead':
+      return chalk.yellow('[dead]');
+    case 'expired':
+      return chalk.red('[expired]');
+  }
+}
+
+/**
  * List active sessions and authentication profiles
  */
 export async function listSessionsAndAuthProfiles(options: { outputMode: OutputMode }): Promise<void> {
@@ -157,10 +185,15 @@ export async function listSessionsAndAuthProfiles(options: { outputMode: OutputM
   const profiles = await listAuthProfiles();
 
   if (options.outputMode === 'json') {
+    // Add bridge status to JSON output
+    const sessionsWithStatus = sessions.map((session) => ({
+      ...session,
+      bridgeStatus: getBridgeStatus(session),
+    }));
     console.log(
       formatOutput(
         {
-          sessions,
+          sessions: sessionsWithStatus,
           profiles,
         },
         'json'
@@ -171,10 +204,11 @@ export async function listSessionsAndAuthProfiles(options: { outputMode: OutputM
     if (sessions.length === 0) {
       console.log('No active MCP sessions.');
     } else {
-      console.log('Active MCP sessions:');
+      console.log('MCP sessions:');
       for (const session of sessions) {
-        const statusInfo = session.status === 'expired' ? ' [EXPIRED]' : '';
-        console.log(`  ${session.name} → ${session.target} (${session.transport})${statusInfo}`);
+        const status = getBridgeStatus(session);
+        const statusStr = formatBridgeStatus(status);
+        console.log(`  ${session.name} ${statusStr} → ${session.target} (${session.transport})`);
       }
     }
 

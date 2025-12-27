@@ -794,15 +794,20 @@ mcpc(@apify)> exit
 - Per-session bridge logs with rotation
 - Interactive shell: REPL features (history, tab completion)
 - Config file: Full stdio transport support for local packages
-
-### What's not yet implemented
-
-**📋 Major features pending:**
 - **Authentication**: OAuth profiles, keychain storage (structure exists, flow not complete)
 - **Error recovery**: Bridge crash recovery, automatic reconnection
-- **Package resolution**: Find and run local MCP packages (later)
 
 ## Implementation details
+
+### Design principles
+
+- Delightful for humans and AI agents alike (interactive + scripting)
+- One clear way to do things (orthogonal commands, no surprises, saving tokens)
+- Do not ask for user input (except `shell` and `login`)
+- Be forgiving, always help users make forward progress (great errors + guidance)
+- JSON strictly consistency with the MCP specification
+- Minimal and portable (few deps, cross-platform)
+- No slop!
 
 ### Architecture overview
 
@@ -822,15 +827,6 @@ mcpc (single package)
 │   └── mcpc-bridge     # Bridge process executable
 ```
 
-### Design principles
-
-- Delightful for humans and AI agents alike (interactive + scripting)
-- One clear way to do things (orthogonal commands, no surprises, saving tokens)
-- Do not ask for user input (except `shell` and `login`)
-- Be forgiving, always help users make forward progress (great errors + guidance).
-- JSON strictly consistency with the MCP specification
-- Minimal and portable (few deps, cross-platform)
-- No slop.
 
 ### Core module (runtime-agnostic)
 

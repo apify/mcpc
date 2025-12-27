@@ -26,7 +26,7 @@
   - Test server session aborting - if session is aborted by server, bridge process should exit and set session status to "expired"
   - Test auth profiles work long-term and sessions too
 - Can we track test coverage also this way?
-
+- Text copy can change, but the core texts needs to be shown in both text and JSON mode
 
 ## Cosmetic
 (once tests are in place, this should be easy)
