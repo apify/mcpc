@@ -88,13 +88,19 @@ async function main(): Promise<void> {
     void closeFileLogger();
   });
 
-  // Check for help or version flags first
-  if (
-    args.includes('--help') ||
-    args.includes('-h') ||
-    args.includes('--version') ||
-    args.includes('-v')
-  ) {
+  // Check for version flag - handle JSON output specially
+  if (args.includes('--version') || args.includes('-v')) {
+    const options = extractOptions(args);
+    if (options.json) {
+      console.log(JSON.stringify({ version: packageJson.version }, null, 2));
+    } else {
+      console.log(packageJson.version);
+    }
+    return;
+  }
+
+  // Check for help flag
+  if (args.includes('--help') || args.includes('-h')) {
     const program = createProgram();
     await program.parseAsync(process.argv);
     return;
