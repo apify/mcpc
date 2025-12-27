@@ -145,7 +145,7 @@ export interface AuthProfilesStorage {
 /**
  * IPC message types for CLI-bridge communication
  */
-export type IpcMessageType = 'request' | 'response' | 'health-check' | 'health-ok' | 'shutdown' | 'notification' | 'set-auth-credentials';
+export type IpcMessageType = 'request' | 'response' | 'shutdown' | 'notification' | 'set-auth-credentials';
 
 /**
  * Auth credentials sent from CLI to bridge via IPC

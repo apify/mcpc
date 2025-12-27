@@ -20,6 +20,8 @@
 
 - The bridge and socket management is flakey, we can do better - see TODOs there
 
+- "mcpc" - quickly probe the bridge for status and print it: expired (already known), crashed (if pid is not running), live (pid running, not expired)
+
 ## Cosmetic
 - nit: on server/session info, print also auth info
   - [Using session: apify-docs] => change to show server + transport + version? + auth info!!!

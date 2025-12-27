@@ -56,9 +56,20 @@ class BridgeProcess {
   private authCredentialsReceived: Promise<void> | null = null;
   private authCredentialsResolver: (() => void) | null = null;
 
+  // Promise to track when MCP client is connected (for blocking requests until ready)
+  private mcpClientReady: Promise<void>;
+  private mcpClientReadyResolver!: () => void;
+  private mcpClientReadyRejecter!: (error: Error) => void;
+
   constructor(options: BridgeOptions) {
     this.options = options;
     this.cache = new CacheManager();
+
+    // Create promise that resolves when MCP client connects
+    this.mcpClientReady = new Promise<void>((resolve, reject) => {
+      this.mcpClientReadyResolver = resolve;
+      this.mcpClientReadyRejecter = reject;
+    });
 
     if (options.verbose) {
       setVerbose(true);
@@ -269,7 +280,15 @@ class BridgeProcess {
       }
 
       // 5. Connect to MCP server (now with auth credentials if provided)
-      await this.connectToMcp();
+      try {
+        await this.connectToMcp();
+        // Signal that MCP client is ready (unblocks pending requests)
+        this.mcpClientReadyResolver();
+      } catch (error) {
+        // Signal that MCP connection failed (rejects pending requests)
+        this.mcpClientReadyRejecter(error as Error);
+        throw error;
+      }
 
       // 6. Start keepalive ping
       this.startKeepalive();
@@ -543,16 +562,6 @@ class BridgeProcess {
 
       // Handle different message types
       switch (message.type) {
-        case 'health-check':
-          // Only respond when MCP client is connected (bridge is fully ready)
-          if (this.client) {
-            this.sendResponse(socket, { type: 'health-ok' });
-          }
-          // TODO: This is super ugly, we can do better, e.g. await for client creation and then send response,
-          //  ensuring the right timing, and returning underlying error to client to diagnose connection issues
-          // Don't respond if not ready - let health check timeout
-          break;
-
         case 'request':
           await this.handleMcpRequest(socket, message);
           break;
@@ -591,9 +600,14 @@ class BridgeProcess {
 
   /**
    * Forward an MCP request to the MCP server
+   * Blocks until MCP client is connected, propagates connection errors to caller
    */
   private async handleMcpRequest(socket: Socket, message: IpcMessage): Promise<void> {
+    // Wait for MCP client to be ready (blocks if still connecting, throws if connection failed)
+    await this.mcpClientReady;
+
     if (!this.client) {
+      // Should never happen after mcpClientReady resolves, but TypeScript needs this check
       throw new NetworkError('MCP client not connected');
     }
 

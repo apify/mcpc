@@ -14,22 +14,18 @@
 
 import { spawn, type ChildProcess } from 'child_process';
 import { unlink } from 'fs/promises';
-import { connect, type Socket } from 'net';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import type { TransportConfig, IpcMessage, AuthCredentials } from './types.js';
+import type { TransportConfig, AuthCredentials } from './types.js';
 import { getBridgesDir, waitForFile, isProcessAlive, fileExists } from './utils.js';
 import { updateSession, getSession } from './sessions.js';
 import { createLogger } from './logger.js';
-import { ClientError } from './errors.js';
+import { ClientError, NetworkError } from './errors.js';
 import { BridgeClient } from './bridge-client.js';
 import { readKeychainOAuthTokenInfo, readKeychainOAuthClientInfo, readKeychainSessionHeaders } from './auth/keychain.js';
 import { getAuthProfile } from './auth/auth-profiles.js';
 
 const logger = createLogger('bridge-manager');
-
-// Timeout for health check - covers connect + response (3 seconds)
-const HEALTH_CHECK_TIMEOUT = 3 * 1000;
 
 // Get the path to the bridge executable
 function getBridgeExecutable(): string {
@@ -225,10 +221,10 @@ export async function restartBridge(sessionName: string): Promise<StartBridgeRes
   }
 
   // Determine target from session data
-  const target: TransportConfig = {
-    type: session.transport === 'http' ? 'http' : 'stdio',
-    url: session.target,
-  };
+  const target: TransportConfig =
+    session.transport === 'http'
+      ? { type: 'http', url: session.target }
+      : { type: 'stdio', command: session.target };
 
   // Retrieve transport headers from keychain for failover, and check their number
   let headers: Record<string, string> | undefined;
@@ -338,79 +334,44 @@ async function sendAuthCredentialsToBridge(
 }
 
 /**
- * Check if bridge process responds to health-check message
- * Uses a simple socket connection without BridgeClient to avoid complexity
- * TODO: Not using BridgeClient() actually increases complexity and duplicates code
+ * Test if bridge is responsive by calling getServerInfo
+ * This blocks until MCP client is connected, then returns server info
  *
  * @param socketPath - Path to bridge's Unix socket
- * @returns true if bridge responds to health-check, false otherwise
+ * @returns true if bridge responds, false on connection error
+ * @throws Error if MCP connection failed (auth error, network error, etc.)
  */
-async function testBridgeSocketHealth(socketPath: string): Promise<boolean> {
-  return new Promise<boolean>((resolve) => {
-    let socket: Socket | null = null;
-    let settled = false;
-    let buffer = '';
-
-    const settle = (result: boolean): void => {
-      if (!settled) {
-        settled = true;
-        clearTimeout(timeout);
-        if (socket) {
-          socket.destroy();
-          socket = null;
-        }
-        resolve(result);
-      }
-    };
-
-    // Single timeout for entire health check (connect + response)
-    const timeout = setTimeout(() => {
-      logger.debug('Health check: timeout');
-      settle(false);
-    }, HEALTH_CHECK_TIMEOUT);
-
-    try {
-      socket = connect(socketPath);
-
-      socket.on('connect', () => {
-        // Send health check immediately on connect
-        const message: IpcMessage = { type: 'health-check' };
-        socket?.write(JSON.stringify(message) + '\n');
-      });
-
-      socket.on('data', (data) => {
-        buffer += data.toString();
-
-        // Look for health-ok response
-        for (const line of buffer.split('\n')) {
-          if (!line.trim()) continue;
-          try {
-            const message = JSON.parse(line) as IpcMessage;
-            if (message.type === 'health-ok') {
-              logger.debug('Health check: bridge is healthy');
-              settle(true);
-              return;
-            }
-          } catch {
-            // Ignore parse errors
-          }
-        }
-      });
-
-      socket.on('error', () => settle(false));
-      socket.on('close', () => settle(false));
-    } catch {
-      settle(false);
+async function testBridgeWithGetServerInfo(socketPath: string): Promise<boolean> {
+  const client = new BridgeClient(socketPath);
+  try {
+    await client.connect();
+    // getServerInfo blocks until MCP client is connected, then returns info
+    // If MCP connection fails, the bridge will return an error via IPC
+    await client.request('getServerInfo');
+    return true;
+  } catch (error) {
+    // NetworkError means bridge socket not reachable (process dead or not ready)
+    if (error instanceof NetworkError) {
+      return false;
     }
-  });
+    // Other errors (auth, server errors) should be propagated to caller
+    throw error;
+  } finally {
+    await client.close();
+  }
 }
 
 /**
  * Ensure bridge is ready for use
- * Checks health and restarts if necessary
+ * Uses getServerInfo() as the health check - it blocks until MCP is connected.
  *
  * This is the main entry point for ensuring a session's bridge is usable.
  * After this returns successfully, the bridge is guaranteed to be responding.
+ *
+ * The simplicity of this approach:
+ * - getServerInfo() blocks until MCP client connects (no polling loop needed)
+ * - If MCP connection fails, error details are propagated to caller
+ * - If bridge process dies, socket connection fails and we restart
  *
  * @param sessionName - Name of the session
  * @returns The socket path of the healthy bridge
@@ -440,48 +401,46 @@ export async function ensureBridgeReady(sessionName: string): Promise<string> {
   const processAlive = session.pid ? isProcessAlive(session.pid) : false;
 
   if (processAlive) {
-    // Process alive, check if it responds to health check
-    const isHealthy = await testBridgeSocketHealth(session.socketPath);
-    if (isHealthy) {
-      logger.debug(`Bridge for ${sessionName} is healthy`);
-      return session.socketPath;
+    // Process alive, try getServerInfo (blocks until MCP connected)
+    try {
+      const isHealthy = await testBridgeWithGetServerInfo(session.socketPath);
+      if (isHealthy) {
+        logger.debug(`Bridge for ${sessionName} is healthy`);
+        return session.socketPath;
+      }
+      logger.warn(`Bridge process alive but socket not responding for ${sessionName}`);
+    } catch (error) {
+      // MCP connection error (auth, network, etc.) - propagate with context
+      throw new ClientError(
+        `Bridge for ${sessionName} failed to connect to MCP server: ${(error as Error).message}`
+      );
     }
-    logger.warn(`Bridge process alive but not responding for ${sessionName}`);
   } else {
     logger.warn(`Bridge process not alive for ${sessionName}`);
   }
 
   // Bridge not healthy - restart it
   logger.info(`Restarting bridge for ${sessionName}...`);
-  const { socketPath: freshSocketPath, pid } = await restartBridge(sessionName);
+  const { socketPath: freshSocketPath } = await restartBridge(sessionName);
 
-  // Wait for bridge to become responsive
-  // Bridge only responds to health-check when fully ready (MCP connected)
-  const MAX_READY_ATTEMPTS = 10;
-  const READY_RETRY_DELAY = 500; // ms
-
-  for (let attempt = 1; attempt <= MAX_READY_ATTEMPTS; attempt++) {
-    // Check if bridge process is still alive
-    if (!isProcessAlive(pid)) {
-      // Bridge died - likely MCP connection failed (auth error, network error, etc.)
-      // Check logs for details
-      throw new ClientError(
-        `Bridge for ${sessionName} exited unexpectedly. ` +
-        `Check logs at ~/.mcpc/logs/bridge-${sessionName}.log for details. ` +
-        `Common causes: expired auth token, invalid credentials, server unreachable.`
-      );
-    }
-
-    const isHealthy = await testBridgeSocketHealth(freshSocketPath);
+  // Try getServerInfo on restarted bridge (blocks until MCP connected)
+  try {
+    const isHealthy = await testBridgeWithGetServerInfo(freshSocketPath);
     if (isHealthy) {
       logger.info(`Bridge for ${sessionName} is now ready`);
       return freshSocketPath;
     }
-    if (attempt < MAX_READY_ATTEMPTS) {
-      logger.debug(`Bridge not ready yet, waiting... (${attempt}/${MAX_READY_ATTEMPTS})`);
-      await new Promise(resolve => setTimeout(resolve, READY_RETRY_DELAY));
+    // Socket not responding after restart
+    throw new ClientError(`Bridge for ${sessionName} not responding after restart`);
+  } catch (error) {
+    // If it's already a ClientError, rethrow it
+    if (error instanceof ClientError) {
+      throw error;
     }
+    // MCP connection error - provide helpful message
+    throw new ClientError(
+      `Bridge for ${sessionName} failed to connect to MCP server: ${(error as Error).message}. ` +
+      `Check logs at ~/.mcpc/logs/bridge-${sessionName}.log for details.`
+    );
   }
-
-  throw new ClientError(`Bridge for ${sessionName} not responding after restart`);
 }
