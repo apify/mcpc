@@ -15,11 +15,13 @@ const logger = createLogger('token-refresh');
 
 /**
  * Create a persistence callback for OAuthTokenManager that saves tokens to keychain
+ * @param existingTokens - The current tokens from keychain (used as fallback for refresh token)
  */
 function createPersistenceCallback(
   serverUrl: string,
   profileName: string,
-  profile: AuthProfile
+  profile: AuthProfile,
+  existingTokens: OAuthTokenInfo
 ): OnTokenRefreshCallback {
   return async (newTokens) => {
     // Store tokens in keychain
@@ -31,8 +33,11 @@ function createPersistenceCallback(
       tokenInfo.expiresIn = newTokens.expires_in;
       tokenInfo.expiresAt = Math.floor(Date.now() / 1000) + newTokens.expires_in;
     }
-    if (newTokens.refresh_token !== undefined) {
-      tokenInfo.refreshToken = newTokens.refresh_token;
+    // Use new refresh token if provided, otherwise preserve the existing one
+    // (some OAuth servers only return refresh_token once during initial auth)
+    const refreshToken = newTokens.refresh_token ?? existingTokens.refreshToken;
+    if (refreshToken) {
+      tokenInfo.refreshToken = refreshToken;
     }
     if (newTokens.scope !== undefined) {
       tokenInfo.scope = newTokens.scope;
@@ -110,7 +115,7 @@ export async function getValidAccessTokenFromKeychain(
     refreshToken: tokens.refreshToken,
     accessToken: tokens.accessToken,
     ...(tokens.expiresAt !== undefined && { accessTokenExpiresAt: tokens.expiresAt }),
-    onTokenRefresh: createPersistenceCallback(serverUrl, profileName, profile),
+    onTokenRefresh: createPersistenceCallback(serverUrl, profileName, profile, tokens),
   });
 
   // Get valid token (will refresh and persist if expired)
