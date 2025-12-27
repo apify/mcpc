@@ -16,7 +16,6 @@ import { ClientError, NetworkError } from '../lib/index.js';
 import { loadSessions, updateSession } from '../lib/sessions.js';
 import type { AuthCredentials } from '../lib/types.js';
 import { OAuthTokenManager } from '../lib/auth/oauth-token-manager.js';
-import { CacheManager } from './cache.js';
 import { join } from 'path';
 import packageJson from '../../package.json' with { type: 'json' };
 
@@ -43,7 +42,6 @@ class BridgeProcess {
   private connections: Set<Socket> = new Set();
   private options: BridgeOptions;
   private isShuttingDown = false;
-  private cache: CacheManager;
   private keepaliveInterval: NodeJS.Timeout | null = null;
 
   // OAuth token manager (created when CLI sends auth credentials via IPC)
@@ -63,7 +61,6 @@ class BridgeProcess {
 
   constructor(options: BridgeOptions) {
     this.options = options;
-    this.cache = new CacheManager();
 
     // Create promise that resolves when MCP client connects
     this.mcpClientReady = new Promise<void>((resolve, reject) => {
@@ -345,30 +342,25 @@ class BridgeProcess {
       },
       listChanged: {
         tools: {
-          // TODO: why not leverage SDK's autoRefresh, to avoid managing it ourselves? it has debounce to avoid DoS,
-          //  and also fetches the first page of resources/tools/prompts like we do
-          autoRefresh: false, // We manage caching ourselves
+          autoRefresh: true, // Let SDK handle automatic refresh
           onChanged: () => {
-            logger.debug('Tools list changed, invalidating cache');
-            this.cache.invalidate('tools');
+            logger.debug('Tools list changed');
             // Broadcast notification to all connected clients
             this.broadcastNotification('tools/list_changed');
           },
         },
         resources: {
-          autoRefresh: false,
+          autoRefresh: true,
           onChanged: () => {
-            logger.debug('Resources list changed, invalidating cache');
-            this.cache.invalidate('resources');
+            logger.debug('Resources list changed');
             // Broadcast notification to all connected clients
             this.broadcastNotification('resources/list_changed');
           },
         },
         prompts: {
-          autoRefresh: false,
+          autoRefresh: true,
           onChanged: () => {
-            logger.debug('Prompts list changed, invalidating cache');
-            this.cache.invalidate('prompts');
+            logger.debug('Prompts list changed');
             // Broadcast notification to all connected clients
             this.broadcastNotification('prompts/list_changed');
           },
@@ -626,21 +618,7 @@ class BridgeProcess {
 
         case 'listTools': {
           const cursor = message.params as string | undefined;
-          // Only use cache for first page (no cursor)
-          if (!cursor) {
-            const cached = this.cache.get('tools');
-            if (cached) {
-              result = cached;
-              break;
-            }
-          }
-
           result = await this.client.listTools(cursor);
-
-          // Cache first page only
-          if (!cursor) {
-            this.cache.set('tools', result);
-          }
           break;
         }
 
@@ -652,21 +630,7 @@ class BridgeProcess {
 
         case 'listResources': {
           const cursor = message.params as string | undefined;
-          // Only use cache for first page (no cursor)
-          if (!cursor) {
-            const cached = this.cache.get('resources');
-            if (cached) {
-              result = cached;
-              break;
-            }
-          }
-
           result = await this.client.listResources(cursor);
-
-          // Cache first page only
-          if (!cursor) {
-            this.cache.set('resources', result);
-          }
           break;
         }
 
@@ -678,21 +642,7 @@ class BridgeProcess {
 
         case 'listResourceTemplates': {
           const cursor = message.params as string | undefined;
-          // Only use cache for first page (no cursor)
-          if (!cursor) {
-            const cached = this.cache.get('resourceTemplates');
-            if (cached) {
-              result = cached;
-              break;
-            }
-          }
-
           result = await this.client.listResourceTemplates(cursor);
-
-          // Cache first page only
-          if (!cursor) {
-            this.cache.set('resourceTemplates', result);
-          }
           break;
         }
 
@@ -710,21 +660,7 @@ class BridgeProcess {
 
         case 'listPrompts': {
           const cursor = message.params as string | undefined;
-          // Only use cache for first page (no cursor)
-          if (!cursor) {
-            const cached = this.cache.get('prompts');
-            if (cached) {
-              result = cached;
-              break;
-            }
-          }
-
           result = await this.client.listPrompts(cursor);
-
-          // Cache first page only
-          if (!cursor) {
-            this.cache.set('prompts', result);
-          }
           break;
         }
 

@@ -118,27 +118,14 @@ export async function connectSession(
       throw error;
     }
 
-    // Success!
-    if (options.outputMode === 'human') {
-      console.log(formatSuccess(`Session ${name} created successfully`));
-      // TODO: print MCP protocol version if available
-      console.log(`  Server: ${transportConfig.url || target}`);
-      console.log(`  Transport: ${transportConfig.type}`);
-      console.log(`\nUse "mcpc ${name} tools-list" to list available tools.`);
-      console.log(`Use "mcpc ${name} close" to terminate the session.`);
-    } else {
-      console.log(
-        formatOutput(
-          {
-            sessionName: name,
-            target,
-            transport: transportConfig.type,
-            created: true,
-          },
-          'json'
-        )
-      );
-    }
+    // Success! Show server info like when running "mcpc <target>"
+    console.log(formatSuccess(`Session ${name} created`));
+
+    // Display server info via the new session
+    await showServerInfo(name, {
+      ...options,
+      hideTarget: false, // Show session name prefix
+    });
   } catch (error) {
     if (options.outputMode === 'human') {
       console.error(formatError((error as Error).message));
@@ -284,13 +271,6 @@ export async function showServerInfo(
   await withMcpClient(target, options, async (client) => {
     const { serverVersion, capabilities, instructions, protocolVersion } = await client.getServerInfo();
 
-    // Get tools if supported
-    let toolNames: string[] = [];
-    if (capabilities?.tools) {
-      const toolsResult = await client.listTools();
-      toolNames = toolsResult.tools.map((tool) => tool.name);
-    }
-
     if (options.outputMode === 'human') {
       console.log('');
 
@@ -310,9 +290,6 @@ export async function showServerInfo(
         capabilityList.push(
           `  • tools ${capabilities.tools.listChanged ? '(dynamic)' : '(static)'}`
         );
-        if (toolNames.length > 0) {
-          capabilityList[capabilityList.length - 1] += `: ` + toolNames.join(', ');
-        }
       }
 
       if (capabilities?.resources) {
@@ -385,7 +362,6 @@ export async function showServerInfo(
       if (capabilities?.tools) {
         jsonCapabilities.tools = {
           listChanged: capabilities.tools.listChanged || false,
-          names: toolNames,
         };
       }
 
