@@ -34,6 +34,7 @@
   - Handle MCP errors by failing the command tool, e.g. invalid tool name..
 
 
+
 ## E2E tests
 - add end-to-end tests e.g. under `test/e2e` - one bash script per test suite , organized in directories, and one master script that runs them all or selected ones (per directory) in parallel
 - Invariants:
@@ -62,6 +63,7 @@
 ## Later
 
 - nit: Colorize output, e.g. JSONs in one color. MCP provided data like descriptions and instructions in orange.
+  -  warnings could be orange, errors red
 - nit: in README, explain the MCP commands better in a standlone section, with details how they work
 - Add support for MCP elicitations, and potentially for sampling (e.g. via shell interface?)
 - docs: add Claude Skills file to /docs, maybe also man page?

@@ -163,7 +163,7 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
  * Use closeSession() for full session cleanup
  */
 export async function stopBridge(sessionName: string): Promise<void> {
-  logger.info(`Stopping bridge for session: ${sessionName}`);
+  logger.debug(`Stopping bridge for: ${sessionName}`);
 
   const session = await getSession(sessionName);
 
@@ -205,7 +205,7 @@ export async function stopBridge(sessionName: string): Promise<void> {
  * retrieved here and passed to startBridge() which sends them via IPC.
  */
 export async function restartBridge(sessionName: string): Promise<StartBridgeResult> {
-  logger.warn(`Restarting bridge for session ${sessionName}...`);
+  logger.info(`Trying to restart bridge for ${sessionName}...`);
 
   const session = await getSession(sessionName);
 
@@ -260,7 +260,7 @@ export async function restartBridge(sessionName: string): Promise<StartBridgeRes
     socketPath,
   });
 
-  logger.info(`Bridge restarted for session ${sessionName} with PID: ${pid}`);
+  logger.debug(`Bridge restarted for ${sessionName} with PID: ${pid}`);
 
   return { pid, socketPath };
 }
@@ -341,7 +341,7 @@ async function sendAuthCredentialsToBridge(
  * @returns true if bridge responds, false on connection error
  * @throws Error if MCP connection failed (auth error, network error, etc.)
  */
-async function testBridgeWithGetServerInfo(socketPath: string): Promise<boolean> {
+async function checkBridgeHealth(socketPath: string): Promise<boolean> {
   const client = new BridgeClient(socketPath);
   try {
     await client.connect();
@@ -403,7 +403,7 @@ export async function ensureBridgeReady(sessionName: string): Promise<string> {
   if (processAlive) {
     // Process alive, try getServerInfo (blocks until MCP connected)
     try {
-      const isHealthy = await testBridgeWithGetServerInfo(session.socketPath);
+      const isHealthy = await checkBridgeHealth(session.socketPath);
       if (isHealthy) {
         logger.debug(`Bridge for ${sessionName} is healthy`);
         return session.socketPath;
@@ -416,18 +416,17 @@ export async function ensureBridgeReady(sessionName: string): Promise<string> {
       );
     }
   } else {
-    logger.warn(`Bridge process not alive for ${sessionName}`);
+    logger.warn(`Bridge process not alive for ${sessionName}, will try to restart it`);
   }
 
   // Bridge not healthy - restart it
-  logger.info(`Restarting bridge for ${sessionName}...`);
   const { socketPath: freshSocketPath } = await restartBridge(sessionName);
 
   // Try getServerInfo on restarted bridge (blocks until MCP connected)
   try {
-    const isHealthy = await testBridgeWithGetServerInfo(freshSocketPath);
+    const isHealthy = await checkBridgeHealth(freshSocketPath);
     if (isHealthy) {
-      logger.info(`Bridge for ${sessionName} is now ready`);
+      logger.debug(`Bridge for ${sessionName} passed health check`);
       return freshSocketPath;
     }
     // Socket not responding after restart

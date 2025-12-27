@@ -83,7 +83,7 @@ export class SessionClient extends EventEmitter implements IMcpClient {
         throw error;
       }
 
-      logger.warn(`Socket error during ${operationName}, restarting bridge...`);
+      logger.warn(`Socket error during ${operationName}, will restart bridge...`);
 
       // Close the failed client
       await this.bridgeClient.close();
