@@ -12,6 +12,8 @@ error: missing required argument 'name'
 
 ## Next
 
+- serverUrl in profiles => canonicalName
+
 - nit: consistent good server and session info, on server/session info, print also auth info
   - [Using session: apify-docs] => change to show server + transport + version? + auth info!!!
     Active MCP sessions:
@@ -47,7 +49,7 @@ Visual examples:
 ## Security
 - Double-check the MCP security guidelines
 - OAuth issuer - maybe save it and double-check it to ensure domain is not spoofed?
-
+- Independent review of OAuth implementation
 
 ## Later
 
@@ -86,7 +88,7 @@ Visual examples:
   - that on session close we send HTTP DELETE https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#session-management
   - Test session failover - e.g. kill the bridge process, and try to access the session again (should be restarted)
   - Test server session aborting - if session is aborted by server, bridge process should exit and set session status to "expired"
-  - Test auth profiles work long-term and sessions too
+  - Test auth profiles work long-term and sessions too - basically when running some tests the next day they should use old saved auths and sessions
 - Can we track test coverage also this way?
 - Text copy can change, but the core texts needs to be shown in both text and JSON mode
 

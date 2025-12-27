@@ -3,6 +3,7 @@
  */
 
 import type { ClientCapabilities, ListChangedHandlers } from '@modelcontextprotocol/sdk/types.js';
+import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
 import { McpClient, type McpClientOptions } from './mcp-client.js';
 import { createTransportFromConfig } from './transports.js';
 import type { TransportConfig } from '../lib/types.js';
@@ -39,6 +40,11 @@ export interface CreateMcpClientOptions {
    * Handlers for list changed notifications
    */
   listChanged?: ListChangedHandlers;
+
+  /**
+   * OAuth provider for automatic token refresh (HTTP transport only)
+   */
+  authProvider?: OAuthClientProvider;
 
   /**
    * Whether to automatically connect after creation
@@ -104,7 +110,10 @@ export async function createMcpClient(options: CreateMcpClientOptions): Promise<
 
   // Create and connect transport if autoConnect is true
   if (autoConnect) {
-    const transport = createTransportFromConfig(options.transport);
+    const transport = createTransportFromConfig(
+      options.transport,
+      options.authProvider ? { authProvider: options.authProvider } : {}
+    );
     await client.connect(transport);
   }
 

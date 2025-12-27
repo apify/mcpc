@@ -27,6 +27,7 @@ export {
 export type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
 
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
+import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
 import {
   StdioClientTransport,
   type StdioServerParameters,
@@ -74,9 +75,22 @@ export function createStreamableHttpTransport(
 }
 
 /**
+ * Options for creating a transport from config
+ */
+export interface CreateTransportOptions {
+  /**
+   * OAuth provider for automatic token refresh (HTTP transport only)
+   */
+  authProvider?: OAuthClientProvider;
+}
+
+/**
  * Create a transport from a generic transport configuration
  */
-export function createTransportFromConfig(config: TransportConfig): Transport {
+export function createTransportFromConfig(
+  config: TransportConfig,
+  options: CreateTransportOptions = {}
+): Transport {
   switch (config.type) {
     case 'stdio': {
       if (!config.command) {
@@ -102,22 +116,27 @@ export function createTransportFromConfig(config: TransportConfig): Transport {
         throw new ClientError('http transport requires a URL');
       }
 
-      const options: StreamableHTTPClientTransportOptions = {};
+      const transportOptions: StreamableHTTPClientTransportOptions = {};
+
+      // Set auth provider for automatic token refresh (takes priority over static headers)
+      if (options.authProvider) {
+        transportOptions.authProvider = options.authProvider;
+      }
 
       if (config.headers !== undefined) {
-        options.requestInit = {
+        transportOptions.requestInit = {
           headers: config.headers,
         };
       }
 
       if (config.timeoutMs !== undefined) {
-        options.requestInit = {
-          ...options.requestInit,
+        transportOptions.requestInit = {
+          ...transportOptions.requestInit,
           signal: AbortSignal.timeout(config.timeoutMs),
         };
       }
 
-      return createStreamableHttpTransport(config.url, options);
+      return createStreamableHttpTransport(config.url, transportOptions);
     }
 
     default:
