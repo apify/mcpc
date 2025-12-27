@@ -30,7 +30,8 @@
   "scripts": {
     "build": "tsc",
     "build:watch": "tsc --watch",
-    "test": "jest --passWithNoTests",
+    "test": "npm run test:unit && npm run test:e2e",
+    "test:unit": "jest --passWithNoTests",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "test:e2e": "./test/e2e/run.sh",

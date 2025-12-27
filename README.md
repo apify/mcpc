@@ -84,7 +84,7 @@ mcpc <target> prompts-get <prompt-name> [--args key=val key2:=json ...] [--args-
 mcpc <target> resources
 mcpc <target> resources-list
 mcpc <target> resources-read <uri> [-o <file>] [--max-size <bytes>]
-mcpc <target> resources-subscribe <uri>
+mcpc <target> resources-subscribe <uri> # TODO
 mcpc <target> resources-unsubscribe <uri>
 mcpc <target> resources-templates-list
 
@@ -98,7 +98,7 @@ mcpc <server> session @<session-name> [--profile <name>]
 mcpc @<session-name> <command...>
 mcpc @<session-name> close
 
-# Authentication profile management (for OAuth to remote MCP servers)
+# Saved OAuth profiles for remote MCP servers
 mcpc <server> login [--profile <name>]
 mcpc <server> logout [--profile <name>]
 ```

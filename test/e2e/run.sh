@@ -88,7 +88,7 @@ fi
 export MCPC_HOME_DIR="$HOME/.mcpc-e2e-test"
 
 echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}mcpc E2E Tests${NC}"
+echo -e "${BLUE}mcpc E2E tests${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 echo "Test home: $MCPC_HOME_DIR"

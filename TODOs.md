@@ -1,10 +1,6 @@
 
 # TODOs
 
-
-- rename "connect --session" to just "session". And if you use it and session is dead, just reconnect it and print warning.
-  Better to do some work than none.
-
 - nit: consistent good server and session info, on server/session info, print also auth info
   - [Using session: apify-docs] => change to show server + transport + version? + auth info!!!
     Active MCP sessions:
