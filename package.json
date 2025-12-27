@@ -1,6 +1,6 @@
 {
   "name": "@apify/mcpc",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Universal command-line client for the Model Context Protocol (MCP).",
   "type": "module",
   "keywords": [
@@ -19,7 +19,7 @@
   "bugs": {
     "url": "https://github.com/apify/mcpc/issues"
   },
-  "homepage": "https://github.com/apify/mcpc#readme",
+  "homepage": "https://github.com/apify/mcpc",
   "bin": {
     "mcpc": "./bin/mcpc",
     "mcpc-bridge": "./bin/mcpc-bridge"
