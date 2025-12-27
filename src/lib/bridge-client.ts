@@ -56,7 +56,7 @@ export class BridgeClient extends EventEmitter {
       logger.debug(`Connecting to bridge socket: ${this.socketPath}`);
 
       let settled = false;
-      const settle = (fn: () => void) => {
+      const settle = (fn: () => void): void => {
         if (!settled) {
           settled = true;
           clearTimeout(timeoutId);

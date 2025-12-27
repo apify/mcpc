@@ -318,14 +318,15 @@ async function shellLoop(ctx: ShellContext): Promise<void> {
   });
 
   // Handle line input
-  rl.on('line', async (line: string) => {
+  rl.on('line', (line: string) => {
     addToHistory(ctx, line);
-    await executeCommand(ctx, line);
-    if (ctx.running) {
-      rl.prompt();
-    } else {
-      rl.close();
-    }
+    void executeCommand(ctx, line).then(() => {
+      if (ctx.running) {
+        rl.prompt();
+      } else {
+        rl.close();
+      }
+    });
   });
 
   // Handle Ctrl+C

@@ -41,7 +41,7 @@
     "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\"",
     "clean": "rm -rf dist",
     "prebuild": "npm run clean",
-    "prepublishOnly": "npm version patch --no-git-tag-version && npm run build && npm test",
+    "prepublishOnly": "npm version patch --no-git-tag-version && npm run lint && npm run build && npm test",
     "publish:placeholder": "bash scripts/publish-placeholder.sh"
   },
   "dependencies": {
