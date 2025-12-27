@@ -4,7 +4,7 @@
 
 import { OutputMode, isValidSessionName, validateProfileName, isProcessAlive } from '../../lib/index.js';
 import { formatOutput, formatSuccess, formatError } from '../output.js';
-import { listAuthProfiles } from '../../lib/auth/auth-profiles.js';
+import { listAuthProfiles } from '../../lib/auth/profiles.js';
 import { listSessions, sessionExists, deleteSession, saveSession, updateSession } from '../../lib/sessions.js';
 import { startBridge, StartBridgeOptions, stopBridge } from '../../lib/bridge-manager.js';
 import { removeKeychainSessionHeaders, storeKeychainSessionHeaders } from '../../lib/auth/keychain.js';

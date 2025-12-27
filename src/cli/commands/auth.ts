@@ -4,7 +4,7 @@
 
 import { formatSuccess, formatError, formatOutput, formatInfo } from '../output.js';
 import type { CommandOptions } from '../../lib/types.js';
-import { deleteAuthProfile } from '../../lib/auth/auth-profiles.js';
+import { deleteAuthProfile } from '../../lib/auth/profiles.js';
 import { performOAuthFlow } from '../../lib/auth/oauth-flow.js';
 import { normalizeServerUrl, validateProfileName } from '../../lib/utils.js';
 import chalk from 'chalk';

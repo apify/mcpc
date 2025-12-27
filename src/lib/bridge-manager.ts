@@ -23,7 +23,7 @@ import { createLogger } from './logger.js';
 import { ClientError, NetworkError } from './errors.js';
 import { BridgeClient } from './bridge-client.js';
 import { readKeychainOAuthTokenInfo, readKeychainOAuthClientInfo, readKeychainSessionHeaders } from './auth/keychain.js';
-import { getAuthProfile } from './auth/auth-profiles.js';
+import { getAuthProfile } from './auth/profiles.js';
 
 const logger = createLogger('bridge-manager');
 

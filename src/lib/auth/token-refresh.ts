@@ -5,7 +5,7 @@
  */
 
 import type { AuthProfile } from '../types.js';
-import { getAuthProfile, saveAuthProfile } from '../auth/auth-profiles.js';
+import { getAuthProfile, saveAuthProfile } from '../auth/profiles.js';
 import { createLogger } from '../logger.js';
 import { createReauthError, DEFAULT_AUTH_PROFILE } from './oauth-utils.js';
 import { readKeychainOAuthTokenInfo, storeKeychainOAuthTokenInfo, readKeychainOAuthClientInfo, type OAuthTokenInfo } from './keychain.js';

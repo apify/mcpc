@@ -11,7 +11,7 @@ import type {
   OAuthTokens,
 } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { AuthProfile } from '../types.js';
-import { getAuthProfile, saveAuthProfile } from '../auth/auth-profiles.js';
+import { getAuthProfile, saveAuthProfile } from '../auth/profiles.js';
 import {
   readKeychainOAuthTokenInfo,
   storeKeychainOAuthTokenInfo,
