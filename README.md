@@ -15,6 +15,74 @@ After all, UNIX-compatible shell script is THE most universal coding language, f
 
 Note that `mcpc` is deterministic and does not use any LLM on its own; that's for the higher layer to do.
 
+## Table of contents
+
+TODO: Simplify README - there are too many top-level sections, and then show just the second level ones
+
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN "npm run build:toc" TO UPDATE -->
+
+- [Features](#features)
+- [Install](#install)
+- [Quickstart](#quickstart)
+- [Usage](#usage)
+  - [MCP command arguments](#mcp-command-arguments)
+- [Global flags](#global-flags)
+- [Authentication](#authentication)
+  - [No authentication](#no-authentication)
+  - [Bearer token authentication](#bearer-token-authentication)
+  - [OAuth authentication](#oauth-authentication)
+    - [Authentication profiles](#authentication-profiles)
+    - [Authentication behavior](#authentication-behavior)
+    - [Multiple accounts for the same server](#multiple-accounts-for-the-same-server)
+  - [Authentication precedence](#authentication-precedence)
+  - [Authentication profiles storage format](#authentication-profiles-storage-format)
+- [Sessions](#sessions)
+  - [Managing sessions](#managing-sessions)
+  - [Piping between sessions](#piping-between-sessions)
+  - [Scripting](#scripting)
+  - [Session failover](#session-failover)
+- [Logging](#logging)
+- [Cleanup](#cleanup)
+- [Configuration](#configuration)
+  - [MCP config JSON file](#mcp-config-json-file)
+  - [Environment variables](#environment-variables)
+- [MCP protocol notes](#mcp-protocol-notes)
+- [Output format](#output-format)
+  - [Human-readable (default)](#human-readable-default)
+  - [JSON mode (`--json`)](#json-mode---json)
+- [Security](#security)
+  - [Credential storage](#credential-storage)
+  - [Bridge process authentication](#bridge-process-authentication)
+  - [File permissions](#file-permissions)
+  - [Network security](#network-security)
+- [Error handling](#error-handling)
+  - [Exit codes](#exit-codes)
+  - [Retry strategy](#retry-strategy)
+- [Interactive shell](#interactive-shell)
+- [Claude Code skill](#claude-code-skill)
+- [Implementation](#implementation)
+  - [Design principles](#design-principles)
+  - [Architecture overview](#architecture-overview)
+  - [Core module (runtime-agnostic)](#core-module-runtime-agnostic)
+  - [Bridge process](#bridge-process)
+  - [CLI executable](#cli-executable)
+  - [Session lifecycle](#session-lifecycle)
+  - [Error recovery](#error-recovery)
+- [Testing strategy](#testing-strategy)
+- [Troubleshooting](#troubleshooting)
+  - [Common issues](#common-issues)
+  - [Debug mode](#debug-mode)
+  - [Logs](#logs)
+- [Contributing](#contributing)
+  - [Development setup](#development-setup)
+  - [Release process](#release-process)
+  - [References](#references)
+- [Authors](#authors)
+- [License](#license)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
 ## Features
 
 - 🔌 **Universal MCP client** - Works with any MCP server over Streamable HTTP or stdio.

@@ -47,6 +47,14 @@ Visual examples:
 * ▝▜█████▛▘ *  Opus 4.5 · Claude Team
  *  ▘▘ ▝▝  *   ~/Projects/mcpc
 
+MCP sessions:
+  @test1 [dead] → https://mcp.apify.com (http)
+  @test-new [live] → https://mcp.apify.com (http)
+
+Authentication profiles:
+  default → https://mcp.apify.com (OAuth)
+
+
 
 - Better error handling:
   - "mcpc https://mcp.sentry.dev/mcp" with an unknown sever => should hint to use "login"

@@ -30,6 +30,7 @@
   "scripts": {
     "build": "tsc",
     "build:watch": "tsc --watch",
+    "build:toc": "doctoc README.md --github --notitle && sed -i '' '/^- \\[mcpc:/d' README.md",
     "test": "npm run test:unit && npm run test:e2e",
     "test:unit": "jest --passWithNoTests",
     "test:watch": "jest --watch",
@@ -60,6 +61,7 @@
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
+    "doctoc": "^2.2.1",
     "@types/node": "^25.0.3",
     "@types/proper-lockfile": "^4.1.4",
     "@types/uuid": "^11.0.0",
