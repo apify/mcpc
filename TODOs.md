@@ -19,6 +19,8 @@ error: missing required argument 'name'
 
 - serverUrl in profiles => canonicalName
 
+- Expand --help to use same text as in README, add link to help
+
 - nit: consistent good server and session info, on server/session info, print also auth info
   - [Using session: apify-docs] => change to show server + transport + version? + auth info!!!
     Active MCP sessions:

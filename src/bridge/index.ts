@@ -514,7 +514,8 @@ class BridgeProcess {
     if (process.platform !== 'win32') {
       await ensureDir(getBridgesDir());
 
-      // Remove existing socket file if it exists (Unix only)
+      // Remove existing socket file if it exists (Unix only).
+      // Fail on error
       if (await fileExists(this.socketPath)) {
         logger.debug(`Removing existing socket: ${this.socketPath}`);
         await unlink(this.socketPath);
@@ -824,7 +825,6 @@ class BridgeProcess {
       });
 
       // Remove socket file (Unix only - Windows named pipes don't leave files)
-      // TODO: Move this to utils, it's repeated
       if (process.platform !== 'win32') {
         try {
           if (await fileExists(this.socketPath)) {
