@@ -2,10 +2,16 @@
  * Sessions command handlers
  */
 
-import { OutputMode, isValidSessionName, validateProfileName, isProcessAlive, consolidateSessions } from '../../lib/index.js';
+import { OutputMode, isValidSessionName, validateProfileName, isProcessAlive } from '../../lib/index.js';
 import { formatOutput, formatSuccess, formatError } from '../output.js';
 import { listAuthProfiles } from '../../lib/auth/profiles.js';
-import { sessionExists, deleteSession, saveSession, updateSession } from '../../lib/sessions.js';
+import {
+  sessionExists,
+  deleteSession,
+  saveSession,
+  updateSession,
+  consolidateSessions,
+} from '../../lib/sessions.js';
 import { startBridge, StartBridgeOptions, stopBridge } from '../../lib/bridge-manager.js';
 import { storeKeychainSessionHeaders } from '../../lib/auth/keychain.js';
 import { resolveTarget } from '../helpers.js';

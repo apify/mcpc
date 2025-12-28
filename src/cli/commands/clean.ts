@@ -6,9 +6,9 @@
 import { readdir, unlink, rm } from 'fs/promises';
 import { join } from 'path';
 import type { OutputMode } from '../../lib/index.js';
-import { getMcpcHome, getBridgesDir, getLogsDir, fileExists, cleanupOrphanedLogFiles, consolidateSessions } from '../../lib/index.js';
+import { getMcpcHome, getBridgesDir, getLogsDir, fileExists, cleanupOrphanedLogFiles } from '../../lib/index.js';
 import { formatOutput, formatSuccess } from '../output.js';
-import { loadSessions, deleteSession } from '../../lib/sessions.js';
+import { loadSessions, deleteSession, consolidateSessions } from '../../lib/sessions.js';
 import { stopBridge } from '../../lib/bridge-manager.js';
 import { createLogger } from '../../lib/logger.js';
 

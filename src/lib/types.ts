@@ -85,8 +85,9 @@ export interface TransportConfig {
  * Session status
  * - active: Session is healthy and can be used
  * - expired: Server indicated session is no longer valid (e.g., 404 response)
+ * - dead: Bridge process is dead, session might or might not be usable. Bridge will be restarted on next command.
  */
-export type SessionStatus = 'active' | 'expired';
+export type SessionStatus = 'active' | 'expired' | 'dead';
 
 /**
  * Session data stored in sessions.json
