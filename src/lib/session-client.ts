@@ -30,7 +30,7 @@ import type { ListResourceTemplatesResult } from '@modelcontextprotocol/sdk/type
 import { BridgeClient } from './bridge-client.js';
 import { ensureBridgeReady, restartBridge } from './bridge-manager.js';
 import { NetworkError } from './errors.js';
-import { getSocketPath } from './utils.js';
+import { getSocketPath, getLogsDir } from './utils.js';
 import { createLogger } from './logger.js';
 
 const logger = createLogger('session-client');
@@ -80,6 +80,10 @@ export class SessionClient extends EventEmitter implements IMcpClient {
     } catch (error) {
       // Only retry on network errors (socket failures, connection lost)
       if (!(error instanceof NetworkError)) {
+        // Add log hint for MCP/server errors
+        const err = error as Error;
+        const logPath = `${getLogsDir()}/bridge-${this.sessionName}.log`;
+        err.message = `${err.message}. Check logs at ${logPath} for details.`;
         throw error;
       }
 

@@ -17,7 +17,7 @@ import { unlink } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import type { TransportConfig, AuthCredentials } from './types.js';
-import { getSocketPath, waitForFile, isProcessAlive, fileExists } from './utils.js';
+import { getSocketPath, waitForFile, isProcessAlive, fileExists, getLogsDir } from './utils.js';
 import { updateSession, getSession } from './sessions.js';
 import { createLogger } from './logger.js';
 import { ClientError, NetworkError } from './errors.js';
@@ -430,8 +430,9 @@ export async function ensureBridgeReady(sessionName: string): Promise<string> {
 
   // Not healthy after restart - provide detailed error
   const errorMsg = result.error?.message || 'unknown error';
+  const logPath = `${getLogsDir()}/bridge-${sessionName}.log`;
   throw new ClientError(
     `Bridge for ${sessionName} failed after restart: ${errorMsg}. ` +
-    `Check logs at ~/.mcpc/logs/bridge-${sessionName}.log for details.`
+    `Check logs at ${logPath} for details.`
   );
 }
