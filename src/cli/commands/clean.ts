@@ -23,7 +23,6 @@ interface CleanOptions {
 }
 
 interface CleanResult {
-  staleSockets: number;
   deadBridges: number;
   expiredSessions: number;
   orphanedBridgeLogs: number;
@@ -37,7 +36,6 @@ interface CleanResult {
  * This is non-destructive - only cleans up orphaned resources
  */
 async function cleanStale(): Promise<{
-  staleSockets: number;
   deadBridges: number;
   expiredSessions: number;
   orphanedBridgeLogs: number;
@@ -49,7 +47,6 @@ async function cleanStale(): Promise<{
   const orphanedBridgeLogs = await cleanupOrphanedLogFiles(consolidateResult.sessions);
 
   return {
-    staleSockets: consolidateResult.staleSockets,
     deadBridges: consolidateResult.deadBridges,
     expiredSessions: consolidateResult.expiredSessions,
     orphanedBridgeLogs,
@@ -140,7 +137,6 @@ async function cleanLogs(): Promise<number> {
  */
 async function cleanAll(): Promise<CleanResult> {
   const result: CleanResult = {
-    staleSockets: 0,
     deadBridges: 0,
     expiredSessions: 0,
     orphanedBridgeLogs: 0,
@@ -160,7 +156,6 @@ async function cleanAll(): Promise<CleanResult> {
 
   // Clean any remaining stale sockets and orphaned logs
   const staleResult = await cleanStale();
-  result.staleSockets = staleResult.staleSockets;
   result.deadBridges = staleResult.deadBridges;
   result.expiredSessions = staleResult.expiredSessions;
   result.orphanedBridgeLogs = staleResult.orphanedBridgeLogs;
@@ -201,7 +196,6 @@ async function cleanAll(): Promise<CleanResult> {
  */
 export async function clean(options: CleanOptions): Promise<void> {
   const result: CleanResult = {
-    staleSockets: 0,
     deadBridges: 0,
     expiredSessions: 0,
     orphanedBridgeLogs: 0,
@@ -219,7 +213,6 @@ export async function clean(options: CleanOptions): Promise<void> {
       if (allResult.sessions > 0) parts.push(`${allResult.sessions} session(s)`);
       if (allResult.profiles > 0) parts.push(`${allResult.profiles} profile(s)`);
       if (allResult.logs > 0) parts.push(`${allResult.logs} log file(s)`);
-      if (allResult.staleSockets > 0) parts.push(`${allResult.staleSockets} socket(s)`);
 
       if (parts.length > 0) {
         console.log(formatSuccess(`Cleaned ${parts.join(', ')}`));
@@ -238,7 +231,6 @@ export async function clean(options: CleanOptions): Promise<void> {
   // Always do safe cleanup unless specific options are provided
   if (!cleaningSpecific) {
     const staleResult = await cleanStale();
-    result.staleSockets = staleResult.staleSockets;
     result.deadBridges = staleResult.deadBridges;
     result.expiredSessions = staleResult.expiredSessions;
     result.orphanedBridgeLogs = staleResult.orphanedBridgeLogs;
@@ -264,7 +256,6 @@ export async function clean(options: CleanOptions): Promise<void> {
     if (!cleaningSpecific) {
       const hasCleanups =
         result.deadBridges > 0 ||
-        result.staleSockets > 0 ||
         result.expiredSessions > 0 ||
         result.orphanedBridgeLogs > 0;
 
@@ -272,7 +263,6 @@ export async function clean(options: CleanOptions): Promise<void> {
         const parts: string[] = [];
         if (result.deadBridges > 0) parts.push(`${result.deadBridges} dead bridge(s)`);
         if (result.expiredSessions > 0) parts.push(`${result.expiredSessions} expired session(s)`);
-        if (result.staleSockets > 0) parts.push(`${result.staleSockets} stale socket(s)`);
         if (result.orphanedBridgeLogs > 0) parts.push(`${result.orphanedBridgeLogs} orphaned log(s)`);
         messages.push(`Cleaned ${parts.join(', ')}`);
       } else {
