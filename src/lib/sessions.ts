@@ -10,6 +10,7 @@ import { join } from 'path';
 import type { SessionData, SessionsStorage } from './types.js';
 import {
   getSessionsFilePath,
+  getSocketPath,
   fileExists,
   ensureDir,
   getMcpcHome,
@@ -252,11 +253,12 @@ export async function consolidateSessions(cleanExpired: boolean): Promise<Consol
           // Ignore errors - headers may not exist
         }
 
-        // Delete socket file (if any)
-        if (session.socketPath) {
+        // Delete socket file (Unix only - Windows named pipes don't leave files)
+        if (process.platform !== 'win32') {
+          const socketPath = getSocketPath(name);
           try {
-            await unlink(session.socketPath);
-            logger.debug(`Removed stale socket: ${session.socketPath}`);
+            await unlink(socketPath);
+            logger.debug(`Removed stale socket: ${socketPath}`);
           } catch {
             // Ignore errors - file may already be deleted
           }
@@ -270,10 +272,9 @@ export async function consolidateSessions(cleanExpired: boolean): Promise<Consol
         continue;
       }
       if (session.status !== 'dead' && !isProcessAlive(session.pid)) {
-        // Bridge is dead → clear pid/socketPath and mark as dead
+        // Bridge is dead → clear pid and mark as dead
         logger.debug(`Clearing dead bridge info for session: ${name} (PID: ${session.pid})`);
         delete session.pid;
-        delete session.socketPath;
         session.status = 'dead';
         result.deadBridges++;
       }

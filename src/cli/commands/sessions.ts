@@ -97,7 +97,7 @@ export async function connectSession(
       }
     }
 
-    // Create or update session record (without pid/socketPath - those come from startBridge)
+    // Create or update session record (without pid - that comes from startBridge)
     const isReconnect = !!existingSession;
     if (isReconnect) {
       // Update existing session, preserving createdAt
@@ -140,10 +140,10 @@ export async function connectSession(
         bridgeOptions.profileName = options.profile;
       }
 
-      const { pid, socketPath } = await startBridge(bridgeOptions);
+      const { pid } = await startBridge(bridgeOptions);
 
-      // Update session with bridge info
-      await updateSession(name, { pid, socketPath });
+      // Update session with bridge info (socket path is computed from session name)
+      await updateSession(name, { pid });
       logger.debug(`Session ${name} updated with bridge PID: ${pid}`);
     } catch (error) {
       // Clean up on bridge start failure

@@ -11,7 +11,7 @@ import { createMcpClient, CreateMcpClientOptions } from '../core/index.js';
 import type { McpClient } from '../core/index.js';
 import type { TransportConfig, IpcMessage, LoggingLevel } from '../lib/index.js';
 import { createLogger, setVerbose, initFileLogger, closeFileLogger } from '../lib/index.js';
-import { fileExists, getBridgesDir, ensureDir, cleanupOrphanedLogFiles } from '../lib/index.js';
+import { fileExists, getBridgesDir, getSocketPath, ensureDir, cleanupOrphanedLogFiles } from '../lib/index.js';
 import { ClientError, NetworkError } from '../lib/index.js';
 import { loadSessions, updateSession } from '../lib/sessions.js';
 import type { AuthCredentials } from '../lib/types.js';
@@ -108,7 +108,6 @@ class BridgeOAuthProvider implements OAuthClientProvider {
 interface BridgeOptions {
   sessionName: string;
   target: TransportConfig;
-  socketPath: string;
   verbose?: boolean;
   profileName?: string; // Auth profile name for token refresh
 }
@@ -122,6 +121,7 @@ class BridgeProcess {
   private server: NetServer | null = null;
   private connections: Set<Socket> = new Set();
   private options: BridgeOptions;
+  private socketPath: string;
   private isShuttingDown = false;
   private keepaliveInterval: NodeJS.Timeout | null = null;
 
@@ -145,6 +145,8 @@ class BridgeProcess {
 
   constructor(options: BridgeOptions) {
     this.options = options;
+    // Compute socket path from session name (platform-aware: Unix socket or Windows named pipe)
+    this.socketPath = getSocketPath(options.sessionName);
 
     // Create promise that resolves when MCP client connects
     this.mcpClientReady = new Promise<void>((resolve, reject) => {
@@ -374,7 +376,9 @@ class BridgeProcess {
       ...(this.authProvider && { authProvider: this.authProvider }),
       listChanged: {
         tools: {
-          autoRefresh: true, // Let SDK handle automatic refresh
+          // Let SDK auto-fetch the tools on list changed notification.
+          // Note that it fetches just the first page, not the subsequent using cursor
+          autoRefresh: true,
           onChanged: (error: Error | null, tools: Tool[] | null) => {
             logger.debug('Tools list changed', { error, count: tools?.length });
             // Broadcast notification to all connected clients
@@ -503,28 +507,28 @@ class BridgeProcess {
   }
 
   /**
-   * Create Unix domain socket server for IPC
+   * Create socket server for IPC (Unix domain socket or Windows named pipe)
    */
   private async createSocketServer(): Promise<void> {
-    const { socketPath } = this.options;
+    // Ensure bridges directory exists (for Unix sockets; Windows named pipes don't need this)
+    if (process.platform !== 'win32') {
+      await ensureDir(getBridgesDir());
 
-    // Ensure bridges directory exists
-    await ensureDir(getBridgesDir());
-
-    // Remove existing socket file if it exists
-    if (await fileExists(socketPath)) {
-      logger.debug(`Removing existing socket: ${socketPath}`);
-      await unlink(socketPath);
+      // Remove existing socket file if it exists (Unix only)
+      if (await fileExists(this.socketPath)) {
+        logger.debug(`Removing existing socket: ${this.socketPath}`);
+        await unlink(this.socketPath);
+      }
     }
 
     // Create server
     const server = createServer((socket) => this.handleConnection(socket));
     this.server = server;
 
-    // Listen on Unix socket
+    // Listen on socket/pipe
     await new Promise<void>((resolve, reject) => {
-      server.listen(socketPath, () => {
-        logger.info(`Socket server listening: ${socketPath}`);
+      server.listen(this.socketPath, () => {
+        logger.info(`Socket server listening: ${this.socketPath}`);
         resolve();
       });
 
@@ -819,14 +823,17 @@ class BridgeProcess {
         });
       });
 
-      // Remove socket file
-      try {
-        if (await fileExists(this.options.socketPath)) {
-          await unlink(this.options.socketPath);
-          logger.debug('Socket file removed');
+      // Remove socket file (Unix only - Windows named pipes don't leave files)
+      // TODO: Move this to utils, it's repeated
+      if (process.platform !== 'win32') {
+        try {
+          if (await fileExists(this.socketPath)) {
+            await unlink(this.socketPath);
+            logger.debug('Socket file removed');
+          }
+        } catch (error) {
+          logger.warn('Failed to remove socket file:', error);
         }
-      } catch (error) {
-        logger.warn('Failed to remove socket file:', error);
       }
     }
 
@@ -857,14 +864,13 @@ async function main(): Promise<void> {
   // Parse command line arguments
   const args = process.argv.slice(2);
 
-  if (args.length < 3) {
-    console.error('Usage: mcpc-bridge <sessionName> <socketPath> <transportConfigJson> [--verbose] [--profile <name>]');
+  if (args.length < 2) {
+    console.error('Usage: mcpc-bridge <sessionName> <transportConfigJson> [--verbose] [--profile <name>]');
     process.exit(1);
   }
 
   const sessionName = args[0] as string;
-  const socketPath = args[1] as string;
-  const transportConfigJson = args[2] as string;
+  const transportConfigJson = args[1] as string;
   const verbose = args.includes('--verbose');
 
   // Parse --profile argument
@@ -880,7 +886,6 @@ async function main(): Promise<void> {
     const bridgeOptions: BridgeOptions = {
       sessionName,
       target,
-      socketPath,
       verbose,
     };
     if (profileName) {

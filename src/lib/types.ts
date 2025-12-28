@@ -99,7 +99,6 @@ export interface SessionData {
   profileName?: string; // Name of auth profile (for OAuth servers)
   headerCount?: number; // Number of headers stored in keychain (for validation on retrieval)
   pid?: number; // Bridge process PID
-  socketPath?: string; // Unix socket path
   protocolVersion?: string; // Negotiated MCP version
   serverInfo?: {
     name: string;

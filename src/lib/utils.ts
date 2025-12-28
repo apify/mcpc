@@ -3,6 +3,7 @@
  * Provides path handling, validation, and common helpers
  */
 
+import { createHash } from 'crypto';
 import { homedir } from 'os';
 import { join, resolve, isAbsolute } from 'path';
 import { mkdir, access, constants, stat } from 'fs/promises';
@@ -53,6 +54,28 @@ export function getSessionsFilePath(): string {
  */
 export function getBridgesDir(): string {
   return join(getMcpcHome(), 'bridges');
+}
+
+/**
+ * Get the socket/pipe path for a session's bridge process.
+ *
+ * On Unix/macOS: Returns a Unix domain socket path in the bridges directory.
+ * On Windows: Returns a named pipe path with a hash of the home directory
+ *             to avoid conflicts between different mcpc instances.
+ *
+ * @param sessionName - The session name (e.g., "@my-session")
+ * @returns The platform-appropriate socket/pipe path
+ */
+export function getSocketPath(sessionName: string): string {
+  if (process.platform === 'win32') {
+    // Windows named pipes are global, so include a hash of the home directory
+    // to avoid conflicts between different mcpc instances
+    const homeHash = createHash('sha256').update(getMcpcHome()).digest('hex').slice(0, 8);
+    return `\\\\.\\pipe\\mcpc-${homeHash}-${sessionName}`;
+  }
+
+  // Unix/macOS: use socket file in bridges directory (naturally isolated per home dir)
+  return join(getBridgesDir(), `${sessionName}.sock`);
 }
 
 /**

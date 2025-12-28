@@ -29,8 +29,8 @@ import type {
 import type { ListResourceTemplatesResult } from '@modelcontextprotocol/sdk/types.js';
 import { BridgeClient } from './bridge-client.js';
 import { ensureBridgeReady, restartBridge } from './bridge-manager.js';
-import { getSession } from './sessions.js';
-import { ClientError, NetworkError } from './errors.js';
+import { NetworkError } from './errors.js';
+import { getSocketPath } from './utils.js';
 import { createLogger } from './logger.js';
 
 const logger = createLogger('session-client');
@@ -88,17 +88,12 @@ export class SessionClient extends EventEmitter implements IMcpClient {
       // Close the failed client
       await this.bridgeClient.close();
 
-      // Restart bridge and get new socket path
+      // Restart bridge
       await restartBridge(this.sessionName);
 
-      // Get fresh session data
-      const session = await getSession(this.sessionName);
-      if (!session?.socketPath) {
-        throw new ClientError(`Session ${this.sessionName} not found after bridge restart`);
-      }
-
-      // Reconnect
-      this.bridgeClient = new BridgeClient(session.socketPath);
+      // Reconnect using computed socket path
+      const socketPath = getSocketPath(this.sessionName);
+      this.bridgeClient = new BridgeClient(socketPath);
       this.setupNotificationForwarding();
       await this.bridgeClient.connect();
 

@@ -17,7 +17,7 @@ import { unlink } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import type { TransportConfig, AuthCredentials } from './types.js';
-import { getBridgesDir, waitForFile, isProcessAlive, fileExists } from './utils.js';
+import { getSocketPath, waitForFile, isProcessAlive, fileExists } from './utils.js';
 import { updateSession, getSession } from './sessions.js';
 import { createLogger } from './logger.js';
 import { ClientError, NetworkError } from './errors.js';
@@ -48,7 +48,6 @@ export interface StartBridgeOptions {
 
 export interface StartBridgeResult {
   pid: number;
-  socketPath: string;
 }
 
 /**
@@ -62,22 +61,22 @@ export interface StartBridgeResult {
  *
  * NOTE: This function does NOT manage session storage. The caller is responsible for:
  * - Creating the session record before calling startBridge()
- * - Updating the session with pid/socketPath after startBridge() returns
+ * - Updating the session with pid after startBridge() returns
  *
- * @returns Bridge process PID and socket path
+ * @returns Bridge process PID
  */
 export async function startBridge(options: StartBridgeOptions): Promise<StartBridgeResult> {
   const { sessionName, target, verbose, profileName, headers } = options;
 
   logger.debug(`Launching bridge for session: ${sessionName}`);
 
-  // Get socket path
-  const socketPath = join(getBridgesDir(), `${sessionName}.sock`);
+  // Get socket path (computed from session name, platform-aware)
+  const socketPath = getSocketPath(sessionName);
 
-  // Remove existing socket file if it exists
+  // Remove existing socket file if it exists (Unix only, Windows named pipes don't leave files)
   // We MUST do it here, so waitForFile() below doesn't pick the old file!
   // Plus, if it fails, the user will see the error
-  if (await fileExists(socketPath)) {
+  if (process.platform !== 'win32' && (await fileExists(socketPath))) {
     logger.debug(`Removing existing socket: ${socketPath}`);
     await unlink(socketPath);
   }
@@ -92,7 +91,7 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
   // Prepare bridge arguments (with sanitized config - no headers)
   const bridgeExecutable = getBridgeExecutable();
   const targetJson = JSON.stringify(sanitizedTarget);
-  const args = [sessionName, socketPath, targetJson];
+  const args = [sessionName, targetJson];
 
   if (verbose) {
     args.push('--verbose');
@@ -155,7 +154,7 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
 
   logger.debug(`Bridge started successfully for session: ${sessionName}`);
 
-  return { pid, socketPath };
+  return { pid };
 }
 
 /**
@@ -252,17 +251,14 @@ export async function restartBridge(sessionName: string): Promise<StartBridgeRes
     bridgeOptions.profileName = session.profileName;
   }
 
-  const { pid, socketPath } = await startBridge(bridgeOptions);
+  const { pid } = await startBridge(bridgeOptions);
 
-  // Update session with new PID and socket path
-  await updateSession(sessionName, {
-    pid,
-    socketPath,
-  });
+  // Update session with new PID
+  await updateSession(sessionName, { pid });
 
   logger.debug(`Bridge restarted for ${sessionName} with PID: ${pid}`);
 
-  return { pid, socketPath };
+  return { pid };
 }
 
 /**
@@ -393,9 +389,8 @@ export async function ensureBridgeReady(sessionName: string): Promise<string> {
     );
   }
 
-  if (!session.socketPath) {
-    throw new ClientError(`Session ${sessionName} has no socket path`);
-  }
+  // Socket path is computed from session name (platform-aware)
+  const socketPath = getSocketPath(sessionName);
 
   // Quick check: is the process alive?
   const processAlive = session.pid ? isProcessAlive(session.pid) : false;
@@ -403,10 +398,10 @@ export async function ensureBridgeReady(sessionName: string): Promise<string> {
   if (processAlive) {
     // Process alive, try getServerInfo (blocks until MCP connected)
     try {
-      const isHealthy = await checkBridgeHealth(session.socketPath);
+      const isHealthy = await checkBridgeHealth(socketPath);
       if (isHealthy) {
         logger.debug(`Bridge for ${sessionName} is healthy`);
-        return session.socketPath;
+        return socketPath;
       }
       logger.warn(`Bridge process alive but socket not responding for ${sessionName}`);
     } catch (error) {
@@ -420,14 +415,14 @@ export async function ensureBridgeReady(sessionName: string): Promise<string> {
   }
 
   // Bridge not healthy - restart it
-  const { socketPath: freshSocketPath } = await restartBridge(sessionName);
+  await restartBridge(sessionName);
 
   // Try getServerInfo on restarted bridge (blocks until MCP connected)
   try {
-    const isHealthy = await checkBridgeHealth(freshSocketPath);
+    const isHealthy = await checkBridgeHealth(socketPath);
     if (isHealthy) {
       logger.debug(`Bridge for ${sessionName} passed health check`);
-      return freshSocketPath;
+      return socketPath;
     }
     // Socket not responding after restart
     throw new ClientError(`Bridge for ${sessionName} not responding after restart`);
