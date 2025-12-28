@@ -1,6 +1,18 @@
 
 # TODOs
 
+Let's take a deep look and improve the clean up logic and code.
+- Let's have just one consolidation function that will acquire the session file lock, review state of all sessions/bridges (getBridgeStatus),
+  and update the session status, pid, and socket file accordingly, and save the session file.
+  The function should also delete stale socket files (in background, ignore errors).
+- Once we have this function, use it in `listSessionsAndAuthProfiles()` as well as in `--clean` operation, to avoid code duplication.
+- Additionally, `--clean` should only delete orphaned log files (as it does now),
+  and remove expired sessions from the list (keep dead ones, they might still be possible to restore).
+- Update the README Cleanup section to reflect these changes
+- Rename orphanedLogs to orphanedBridgeLogs
+
+`socketPath` should contain pid to ensure uniqueness, e.g. `@apify-1234.sock`. It's always the bridge process which creates it so
+this can work I believe.
 
 ## Bugs
 - Seems calling invalid/unknown MCP command in shell (perhaps also normally) causes the bridge to be flagged as expired
@@ -19,6 +31,8 @@ error: missing required argument 'name'
     Active MCP sessions:
     @fs → npx (stdio) --- show also args instead of just "npx"
   - print PID of bridge process
+
+- rename headerCount to transportHeaderCount
 
 Visual examples:
 

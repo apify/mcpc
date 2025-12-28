@@ -6,11 +6,10 @@
 import { readdir, unlink, rm } from 'fs/promises';
 import { join } from 'path';
 import type { OutputMode } from '../../lib/index.js';
-import { getMcpcHome, getBridgesDir, getLogsDir, isProcessAlive, fileExists } from '../../lib/index.js';
+import { getMcpcHome, getBridgesDir, getLogsDir, fileExists, cleanupOrphanedLogFiles, consolidateSessions } from '../../lib/index.js';
 import { formatOutput, formatSuccess } from '../output.js';
 import { loadSessions, deleteSession } from '../../lib/sessions.js';
 import { stopBridge } from '../../lib/bridge-manager.js';
-import { removeKeychainSessionHeaders } from '../../lib/auth/keychain.js';
 import { createLogger } from '../../lib/logger.js';
 
 const logger = createLogger('clean');
@@ -26,67 +25,35 @@ interface CleanOptions {
 interface CleanResult {
   staleSockets: number;
   deadBridges: number;
+  expiredSessions: number;
+  orphanedBridgeLogs: number;
   sessions: number;
   profiles: number;
   logs: number;
 }
 
 /**
- * Safe cleanup: remove stale sockets and dead bridge processes
+ * Safe cleanup: consolidate sessions, remove stale sockets, and clean orphaned logs
  * This is non-destructive - only cleans up orphaned resources
  */
-async function cleanStale(): Promise<{ staleSockets: number; deadBridges: number }> {
-  let staleSockets = 0;
-  let deadBridges = 0;
+async function cleanStale(): Promise<{
+  staleSockets: number;
+  deadBridges: number;
+  expiredSessions: number;
+  orphanedBridgeLogs: number;
+}> {
+  // Consolidate sessions (clears dead bridges, removes expired sessions, deletes stale sockets)
+  const consolidateResult = await consolidateSessions();
 
-  // Load sessions
-  const sessionsStorage = await loadSessions();
-  const sessions = sessionsStorage.sessions;
+  // Clean up orphaned log files (for sessions that no longer exist, older than 7 days)
+  const orphanedBridgeLogs = await cleanupOrphanedLogFiles(consolidateResult.sessions);
 
-  // Check each session for dead bridges
-  for (const [name, session] of Object.entries(sessions)) {
-    if (session.pid && !isProcessAlive(session.pid)) {
-      logger.debug(`Found dead bridge for session ${name} (PID: ${session.pid})`);
-      deadBridges++;
-
-      // Remove socket file if it exists
-      if (session.socketPath && (await fileExists(session.socketPath))) {
-        try {
-          await unlink(session.socketPath);
-          staleSockets++;
-          logger.debug(`Removed stale socket: ${session.socketPath}`);
-        } catch {
-          // Ignore errors
-        }
-      }
-
-      // Note: We don't update the session record here since pid/socketPath
-      // will be overwritten when a new bridge starts. The important cleanup
-      // is removing the stale socket file (done above).
-    }
-  }
-
-  // Also clean up orphaned socket files (sockets with no matching session)
-  const bridgesDir = getBridgesDir();
-  if (await fileExists(bridgesDir)) {
-    const files = await readdir(bridgesDir);
-    for (const file of files) {
-      if (file.endsWith('.sock')) {
-        const sessionName = file.replace('.sock', '');
-        if (!sessions[sessionName]) {
-          try {
-            await unlink(join(bridgesDir, file));
-            staleSockets++;
-            logger.debug(`Removed orphaned socket: ${file}`);
-          } catch {
-            // Ignore errors
-          }
-        }
-      }
-    }
-  }
-
-  return { staleSockets, deadBridges };
+  return {
+    staleSockets: consolidateResult.staleSockets,
+    deadBridges: consolidateResult.deadBridges,
+    expiredSessions: consolidateResult.expiredSessions,
+    orphanedBridgeLogs,
+  };
 }
 
 /**
@@ -106,15 +73,8 @@ async function cleanSessions(): Promise<number> {
         // Bridge may already be stopped
       }
 
-      // Delete session record
+      // Delete session data
       await deleteSession(name);
-
-      // Remove keychain data
-      try {
-        await removeKeychainSessionHeaders(name);
-      } catch {
-        // May not have keychain data
-      }
 
       count++;
       logger.debug(`Cleaned session: ${name}`);
@@ -182,6 +142,8 @@ async function cleanAll(): Promise<CleanResult> {
   const result: CleanResult = {
     staleSockets: 0,
     deadBridges: 0,
+    expiredSessions: 0,
+    orphanedBridgeLogs: 0,
     sessions: 0,
     profiles: 0,
     logs: 0,
@@ -196,10 +158,12 @@ async function cleanAll(): Promise<CleanResult> {
   // Clean logs
   result.logs = await cleanLogs();
 
-  // Clean any remaining stale sockets
+  // Clean any remaining stale sockets and orphaned logs
   const staleResult = await cleanStale();
   result.staleSockets = staleResult.staleSockets;
   result.deadBridges = staleResult.deadBridges;
+  result.expiredSessions = staleResult.expiredSessions;
+  result.orphanedBridgeLogs = staleResult.orphanedBridgeLogs;
 
   // Remove any remaining empty directories
   const mcpcHome = getMcpcHome();
@@ -239,6 +203,8 @@ export async function clean(options: CleanOptions): Promise<void> {
   const result: CleanResult = {
     staleSockets: 0,
     deadBridges: 0,
+    expiredSessions: 0,
+    orphanedBridgeLogs: 0,
     sessions: 0,
     profiles: 0,
     logs: 0,
@@ -274,6 +240,8 @@ export async function clean(options: CleanOptions): Promise<void> {
     const staleResult = await cleanStale();
     result.staleSockets = staleResult.staleSockets;
     result.deadBridges = staleResult.deadBridges;
+    result.expiredSessions = staleResult.expiredSessions;
+    result.orphanedBridgeLogs = staleResult.orphanedBridgeLogs;
   }
 
   // Clean specific resources if requested
@@ -294,8 +262,19 @@ export async function clean(options: CleanOptions): Promise<void> {
     const messages: string[] = [];
 
     if (!cleaningSpecific) {
-      if (result.deadBridges > 0 || result.staleSockets > 0) {
-        messages.push(`Cleaned ${result.deadBridges} dead bridge(s), ${result.staleSockets} stale socket(s)`);
+      const hasCleanups =
+        result.deadBridges > 0 ||
+        result.staleSockets > 0 ||
+        result.expiredSessions > 0 ||
+        result.orphanedBridgeLogs > 0;
+
+      if (hasCleanups) {
+        const parts: string[] = [];
+        if (result.deadBridges > 0) parts.push(`${result.deadBridges} dead bridge(s)`);
+        if (result.expiredSessions > 0) parts.push(`${result.expiredSessions} expired session(s)`);
+        if (result.staleSockets > 0) parts.push(`${result.staleSockets} stale socket(s)`);
+        if (result.orphanedBridgeLogs > 0) parts.push(`${result.orphanedBridgeLogs} orphaned log(s)`);
+        messages.push(`Cleaned ${parts.join(', ')}`);
       } else {
         messages.push('No stale resources found');
       }

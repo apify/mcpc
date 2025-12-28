@@ -2,12 +2,12 @@
  * Sessions command handlers
  */
 
-import { OutputMode, isValidSessionName, validateProfileName, isProcessAlive } from '../../lib/index.js';
+import { OutputMode, isValidSessionName, validateProfileName, isProcessAlive, consolidateSessions } from '../../lib/index.js';
 import { formatOutput, formatSuccess, formatError } from '../output.js';
 import { listAuthProfiles } from '../../lib/auth/profiles.js';
-import { listSessions, sessionExists, deleteSession, saveSession, updateSession } from '../../lib/sessions.js';
+import { sessionExists, deleteSession, saveSession, updateSession } from '../../lib/sessions.js';
 import { startBridge, StartBridgeOptions, stopBridge } from '../../lib/bridge-manager.js';
-import { removeKeychainSessionHeaders, storeKeychainSessionHeaders } from '../../lib/auth/keychain.js';
+import { storeKeychainSessionHeaders } from '../../lib/auth/keychain.js';
 import { resolveTarget } from '../helpers.js';
 import { ClientError } from '../../lib/index.js';
 import chalk from 'chalk';
@@ -149,11 +149,6 @@ export async function connectSession(
         } catch {
           // Ignore cleanup errors
         }
-        try {
-          await removeKeychainSessionHeaders(name);
-        } catch {
-          // Ignore cleanup errors
-        }
       }
       throw error;
     }
@@ -215,10 +210,12 @@ function formatBridgeStatus(status: 'live' | 'dead' | 'expired'): string {
 
 /**
  * List active sessions and authentication profiles
+ * Consolidates session state first (cleans up dead bridges, removes expired sessions)
  */
 export async function listSessionsAndAuthProfiles(options: { outputMode: OutputMode }): Promise<void> {
-  // Load sessions from disk
-  const sessions = await listSessions();
+  // Consolidate sessions first (cleans up dead bridges, removes expired sessions)
+  const consolidateResult = await consolidateSessions();
+  const sessions = Object.values(consolidateResult.sessions);
 
   // Load auth profiles from disk
   const profiles = await listAuthProfiles();
@@ -282,15 +279,6 @@ export async function closeSession(
 
     // Delete session record from storage
     await deleteSession(name);
-    logger.debug(`Deleted session record: ${name}`);
-
-    // Delete headers from keychain (if any)
-    try {
-      await removeKeychainSessionHeaders(name);
-      logger.debug(`Deleted headers from keychain for session: ${name}`);
-    } catch {
-      // Ignore errors - headers may not exist
-    }
 
     // Success!
     if (options.outputMode === 'human') {

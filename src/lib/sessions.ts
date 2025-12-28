@@ -12,6 +12,7 @@ import { getSessionsFilePath, fileExists, ensureDir, getMcpcHome } from './utils
 import { withFileLock } from './file-lock.js';
 import { createLogger } from './logger.js';
 import { ClientError } from './errors.js';
+import { removeKeychainSessionHeaders } from './auth/keychain.js';
 
 const logger = createLogger('sessions');
 
@@ -187,7 +188,15 @@ export async function deleteSession(sessionName: string): Promise<void> {
 
     await saveSessionsInternal(storage);
 
-    logger.info(`Session ${sessionName} deleted`);
+    // Delete headers from keychain (if any)
+    try {
+      await removeKeychainSessionHeaders(sessionName);
+      logger.debug(`Deleted headers from keychain for session: ${sessionName}`);
+    } catch {
+      // Ignore errors - headers may not exist
+    }
+
+    logger.debug(`Session ${sessionName} deleted`);
   }, SESSIONS_DEFAULT_CONTENT);
 }
 

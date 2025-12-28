@@ -179,6 +179,10 @@ function createProgram(): Command {
     .option(
       '--schema-mode <mode>',
       'Schema validation mode: strict, compatible (default), or ignore'
+    )
+    .option(
+      '--clean[=types]',
+      'Clean up mcpc data: --clean or --clean=sessions,logs,profiles,all'
     );
 
   // Add examples to help
