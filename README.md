@@ -1023,22 +1023,25 @@ mcpc --help
 
 ### Release process
 
+Use the release script to publish a new version (must be on `main` branch):
+
 ```bash
-# Run tests
-npm test
-
-# Build
-npm run build
-
-# Bump version
-npm version patch|minor|major
-
-# Publish
-npm publish
-
-# Push tags
-git push --tags
+npm run release          # patch version bump (0.1.2 → 0.1.3)
+npm run release:minor    # minor version bump (0.1.2 → 0.2.0)
+npm run release:major    # major version bump (0.1.2 → 1.0.0)
 ```
+
+The script automatically:
+- Ensures you're on `main` branch
+- Ensures working directory is clean (no uncommitted changes)
+- Ensures branch is up-to-date with remote
+- Runs lint, build, and tests
+- Bumps the version in package.json
+- Creates a git commit and annotated tag (`v{version}`)
+- Pushes the commit and tag to origin
+- Publishes to npm
+
+After publishing, create a GitHub release at the provided link.
 
 Please open an issue or pull request on [GitHub](https://github.com/apify/mcpc).
 

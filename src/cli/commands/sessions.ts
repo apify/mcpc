@@ -230,7 +230,7 @@ export async function listSessionsAndAuthProfiles(options: { outputMode: OutputM
     // Add bridge status to JSON output
     const sessionsWithStatus = sessions.map((session) => ({
       ...session,
-      bridgeStatus: getBridgeStatus(session),
+      status: getBridgeStatus(session),
     }));
     console.log(
       formatOutput(
