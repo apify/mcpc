@@ -40,8 +40,8 @@ async function cleanStale(): Promise<{
   expiredSessions: number;
   orphanedBridgeLogs: number;
 }> {
-  // Consolidate sessions (clears dead bridges, removes expired sessions, deletes stale sockets)
-  const consolidateResult = await consolidateSessions();
+  // Consolidate sessions, removes expired ones
+  const consolidateResult = await consolidateSessions(true);
 
   // Clean up orphaned log files (for sessions that no longer exist, older than 7 days)
   const orphanedBridgeLogs = await cleanupOrphanedLogFiles(consolidateResult.sessions);

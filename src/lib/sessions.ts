@@ -211,19 +211,12 @@ export interface ConsolidateSessionsResult {
 }
 
 /**
- * Consolidate sessions: review all sessions, update their status, and clean up stale resources.
- *
- * This function performs a single atomic operation that:
- * 1. Acquires the session file lock
- * 2. Reviews each session's bridge status (live/dead/expired)
- * 3. Clears pid/socketPath from sessions with dead bridges
- * 4. Removes expired sessions from the list
- * 5. Saves the updated sessions file
- * 6. Deletes stale socket files (in background, ignoring errors)
+ * Consolidate sessions: flag them as 'dead' if not alive, remove expired or invalid ones.
+ * This function runs on every "mcpc" command, so it must be efficient, so it uses one lock for all sessions.
  *
  * @returns Counts of what was cleaned up, plus the updated sessions
  */
-export async function consolidateSessions(): Promise<ConsolidateSessionsResult> {
+export async function consolidateSessions(cleanExpired: boolean): Promise<ConsolidateSessionsResult> {
   const result: ConsolidateSessionsResult = {
     deadBridges: 0,
     expiredSessions: 0,
@@ -234,19 +227,19 @@ export async function consolidateSessions(): Promise<ConsolidateSessionsResult> 
   const defaultContent = JSON.stringify({ sessions: {} }, null, 2);
 
   await withFileLock(filePath, async () => {
-    // Load sessions
     const storage = await loadSessionsInternal();
+    let someMissing = false;
 
     // Review each session
     for (const [name, session] of Object.entries(storage.sessions)) {
       if (!session) {
         logger.debug(`Missing record for session: ${name}`);
-        result.expiredSessions++;
+        someMissing = true;
         delete storage.sessions[name];
       }
 
       // If session expired → remove it
-      if (session.status === 'expired') {
+      if (cleanExpired && session.status === 'expired') {
         logger.debug(`Removing expired session: ${name}`);
         delete storage.sessions[name];
         result.expiredSessions++;
@@ -287,7 +280,7 @@ export async function consolidateSessions(): Promise<ConsolidateSessionsResult> 
     }
 
     // Save updated sessions
-    if (result.deadBridges > 0 || result.expiredSessions > 0) {
+    if (someMissing || result.deadBridges > 0 || result.expiredSessions > 0) {
       await saveSessionsInternal(storage);
     }
 

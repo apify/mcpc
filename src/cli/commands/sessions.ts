@@ -220,7 +220,7 @@ function formatBridgeStatus(status: 'live' | 'dead' | 'expired'): string {
  */
 export async function listSessionsAndAuthProfiles(options: { outputMode: OutputMode }): Promise<void> {
   // Consolidate sessions first (cleans up dead bridges, removes expired sessions)
-  const consolidateResult = await consolidateSessions();
+  const consolidateResult = await consolidateSessions(false);
   const sessions = Object.values(consolidateResult.sessions);
 
   // Load auth profiles from disk

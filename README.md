@@ -495,14 +495,14 @@ mcpc @apify logging-set-level error
 
 ## Cleanup
 
-Clean up `mcpc` state using the `--clean` option:
+You can clean up the `mcpc` state and data using the `--clean` option:
 
 ```bash
-# Safe cleanup: remove expired sessions, delete stale sockets and old log files.
+# Safe non-destructive cleanup: remove expired sessions, delete old orphaned logs
 mcpc --clean
 
 # Clean specific resources (comma-separated)
-mcpc --clean=sessions      # Kill bridges, delete all sessions and their keychain data
+mcpc --clean=sessions      # Kill bridges, delete all sessions
 mcpc --clean=profiles      # Delete all authentication profiles
 mcpc --clean=logs          # Delete all log files
 mcpc --clean=sessions,logs # Clean multiple resource types
@@ -510,14 +510,6 @@ mcpc --clean=sessions,logs # Clean multiple resource types
 # Nuclear option: remove everything
 mcpc --clean=all           # Delete all sessions, profiles, logs, and sockets
 ```
-
-When used without arguments, `--clean` performs safe cleanup:
-- Clears bridge info (pid, socketPath) from sessions with dead bridges
-- Removes expired sessions from the list
-- Removes stale socket files (sockets without valid session)
-- Removes orphaned bridge log files (logs for deleted sessions, older than 7 days)
-
-Note: Running `mcpc` (to list sessions) also consolidates session state automatically.
 
 ## Configuration
 
