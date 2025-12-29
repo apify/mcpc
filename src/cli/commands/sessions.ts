@@ -120,6 +120,9 @@ export async function connectSession(
       if (profileName) {
         updateData.profileName = profileName;
       }
+      if (transportConfig.args && transportConfig.args.length > 0) {
+        updateData.stdioArgs = transportConfig.args;
+      }
       await updateSession(name, updateData);
       logger.debug(`Session record updated for reconnect: ${name}`);
     } else {
@@ -132,6 +135,9 @@ export async function connectSession(
       };
       if (profileName) {
         sessionData.profileName = profileName;
+      }
+      if (transportConfig.args && transportConfig.args.length > 0) {
+        sessionData.stdioArgs = transportConfig.args;
       }
       await saveSession(name, sessionData);
       logger.debug(`Initial session record created for: ${name}`);
@@ -249,10 +255,10 @@ function formatTimeAgo(isoDate: string | undefined): string {
 }
 
 /**
- * Truncate string with ellipsis
+ * Truncate string with ellipsis, if longer than +3 chars maxLen to avoid weird cutoffs
  */
-function truncateStr(str: string, maxLen: number): string {
-  if (str.length <= maxLen) return str;
+function truncateishStr(str: string, maxLen: number): string {
+  if (str.length <= maxLen + 3) return str;
   return str.substring(0, maxLen - 1) + '…';
 }
 
@@ -296,11 +302,20 @@ export async function listSessionsAndAuthProfiles(options: { outputMode: OutputM
         // Format session name (cyan)
         const nameStr = chalk.cyan(session.name);
 
-        // Format target (show host for HTTP, truncate command for stdio)
-        const target = session.transport === 'http'
-          ? getServerHost(session.target)
-          : session.target;
-        const targetStr = truncateStr(target, 36);
+        // Format target (show host for HTTP, command + args for stdio)
+        let target: string;
+        if (session.transport === 'http') {
+          target = getServerHost(session.target);
+        } else {
+          // For stdio: show command + truncated args
+          target = session.target;
+          const args = session.stdioArgs;
+          if (args && args.length > 0) {
+            const argsStr = args.join(' ');
+            target += ' ' + argsStr;
+          }
+        }
+        const targetStr = truncateishStr(target, 80);
 
         // Format transport/auth column
         let authStr: string;
@@ -312,12 +327,16 @@ export async function listSessionsAndAuthProfiles(options: { outputMode: OutputM
           authStr = chalk.dim('(http)');
         }
 
-        // Format status with optional time ago for dead/expired
+        // Format status with time ago info (only show if not live or last seen > 5 min ago)
         let statusStr = `${dot} ${text}`;
-        if (status !== 'live' && session.lastSeenAt) {
-          const timeAgo = formatTimeAgo(session.lastSeenAt);
-          if (timeAgo) {
-            statusStr += chalk.dim(`, ${timeAgo}`);
+        if (session.lastSeenAt) {
+          const lastSeenMs = Date.now() - new Date(session.lastSeenAt).getTime();
+          const isStale = lastSeenMs > 5 * 60 * 1000; // 5 minutes
+          if (status !== 'live' || isStale) {
+            const timeAgo = formatTimeAgo(session.lastSeenAt);
+            if (timeAgo) {
+              statusStr += chalk.dim(`, ${timeAgo}`);
+            }
           }
         }
 
@@ -328,9 +347,9 @@ export async function listSessionsAndAuthProfiles(options: { outputMode: OutputM
     // Display auth profiles
     console.log('');
     if (profiles.length === 0) {
-      console.log(chalk.dim('No authentication profiles.'));
+      console.log(chalk.dim('No OAuth profiles.'));
     } else {
-      console.log(chalk.bold('Authentication profiles:'));
+      console.log(chalk.bold('OAuth profiles:'));
       for (const profile of profiles) {
         const hostStr = getServerHost(profile.serverUrl);
         const nameStr = chalk.magenta(profile.name);
