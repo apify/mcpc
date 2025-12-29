@@ -458,17 +458,18 @@ class BridgeProcess {
    */
   private handlePossibleExpiration(error: Error): void {
     // Check for session expiration indicators:
-    // - HTTP 404 (session not found)
+    // - HTTP 404 (session not found on server)
     // - Specific error messages indicating session is no longer valid
-    // TODO: we could use a more robust check for expiration error,
-    //  this seems flakey - ideally check the real HTTP status code
+    // NOTE: Be careful not to match normal MCP errors like "tool not found"
     const errorMessage = error.message.toLowerCase();
     const isExpired =
-      errorMessage.includes('404') ||
-      errorMessage.includes('-32000') ||
-      errorMessage.includes('not found') ||
+      // HTTP 404 typically means session endpoint not found
+      (errorMessage.includes('404') && !errorMessage.includes('tool')) ||
+      // Explicit session-related messages
       errorMessage.includes('session expired') ||
-      errorMessage.includes('invalid session');
+      errorMessage.includes('session not found') ||
+      errorMessage.includes('invalid session') ||
+      errorMessage.includes('session is no longer valid');
 
     if (isExpired) {
       logger.warn('Session appears to be expired, marking as expired and shutting down');
