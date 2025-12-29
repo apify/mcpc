@@ -1,7 +1,6 @@
 
 # TODOs
 
-- When session is not longer operations mcpc @new3
 ## Bugs
 ...
 
@@ -23,28 +22,37 @@ BIG: We need to decide whether to show Markdown-ish or not
 
 ## Later
 
-- not: Print version info to logs, and link to https://github.com/apify/mcpc
+- nit: Print version info to logs, and link to https://github.com/apify/mcpc (to right release tag) - add this also to --help
 
-- Consider implementing "mcpc @apify session" to reconnect - maybe "restart" is better
-  add "mcpc @test kill / restart" ?
+- Implement "mcpc @session restart" 
 
 - nit: Colorize output, e.g. JSONs in one color. MCP provided data like descriptions and instructions in orange.
   -  warnings could be orange, errors red
-- Add support for MCP elicitations, and potentially for sampling (e.g. via shell interface?)
+- nit: Cooler OAuth flow finish web page with CSS animation, add Apify example there. E.g. next step - check Apify rather than close
+
 - Add `--proxy [HOST:]PORT` feature to `connect` command to enable MCP proxy:
   - `--proxy-bearer-token X` to require auth token for better security
   - `--proxy-capabilities tools:TOOL_NAME,TOOL_NAME2,...,prompts[:...],...` to limit access to selected MCP features and tools
     (what if tools have ":" or "," in their names?)
     In theory, we could add limit of capabilities to normal sessions, but the LLM could still break out of it, so what's the point.
   - Explain this is useful for AI sandboxing!
-- Implement typing completions (e.g. "mcpc @a...") - not sure how difficult that is
-- nit: Nicer OAuth flow finish web page, add Apify example there. E.g. next step - check Apify rather than close
+
+- For auth profiles, fetch the detailed user info from http, ensure the info is up-to-date
+- Add support for MCP elicitations, and potentially for sampling (e.g. via shell interface?)
+
 - nit: cooler OAuth web pages "Authentication successful!" - show mcpc info
 - audit that on every command, we print next steps as examples
 - more shortcuts, e.g. --profile => -p
 - nit: in README, explain the MCP commands better in a standlone section, with details how they work
 - Add unique Session.id and Profile.id and use it for OS keychain keys, to truly enable using multiple independent mcpc profiles
 - When user runs --clean=profiles, print warning if some sessions were using them 
+
+- nit: Implement typing completions (e.g. "mcpc @a...") - not sure how difficult that is
+
+
+
+## Total nits
+
 
 ## E2E test scenarios
 - DONE: add end-to-end tests e.g. under `test/e2e` - one bash script per test suite , organized in directories,and one master script that runs them all or selected ones (per directory) in parallel

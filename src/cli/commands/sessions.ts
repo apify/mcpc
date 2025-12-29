@@ -335,14 +335,16 @@ export async function listSessionsAndAuthProfiles(options: { outputMode: OutputM
         const hostStr = getServerHost(profile.serverUrl);
         const nameStr = chalk.magenta(profile.name);
         const userStr = profile.userEmail || profile.userName || '';
-        const createdAgo = formatTimeAgo(profile.createdAt);
+        // Show refreshedAt if available, otherwise createdAt
+        const timeAgo = formatTimeAgo(profile.refreshedAt || profile.createdAt);
+        const timeLabel = profile.refreshedAt ? 'refreshed' : 'created';
 
         let line = `  ${hostStr} / ${nameStr}`;
         if (userStr) {
           line += chalk.dim(` (${userStr})`);
         }
-        if (createdAgo) {
-          line += chalk.dim(`, ${createdAgo}`);
+        if (timeAgo) {
+          line += chalk.dim(`, ${timeLabel} ${timeAgo}`);
         }
         console.log(line);
       }
