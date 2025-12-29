@@ -24,7 +24,14 @@ BIG: We need to decide whether to show Markdown-ish or not
     In theory, we could add limit of capabilities to normal sessions, but the LLM could still break out of it, so what's the point.
   - Explain this is useful for AI sandboxing!
 - Add support for MCP elicitations, and potentially for sampling (e.g. via shell interface?)
- 
+- In tools-list, let's show simplified args on tool details view, e.g. read_text_file
+   • Tool: `write_file` [destructive, idempotent]
+   Input:
+     path: string
+     tail: number - If provided, returns only the last N lines of the file
+     Output: N/A
+  Description:
+  Text...
   
 ## Security
 - Double-check the MCP security guidelines

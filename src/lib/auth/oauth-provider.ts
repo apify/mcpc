@@ -121,11 +121,11 @@ export class OAuthProvider implements OAuthClientProvider {
       this._clientId = options.clientId;
     }
 
-    if (this.tokenManager) {
-      logger.debug(`OAuthProvider created in runtime mode for ${options.profileName}`);
-    } else {
-      logger.debug(`OAuthProvider created in auth flow mode for ${options.profileName}`);
-    }
+    // if (this.tokenManager) {
+    //  logger.debug(`OAuthProvider created in runtime mode for ${options.profileName}`);
+    // } else {
+    //  logger.debug(`OAuthProvider created in auth flow mode for ${options.profileName}`);
+    // }
   }
 
   /**
@@ -185,25 +185,16 @@ export class OAuthProvider implements OAuthClientProvider {
       clientInfo.clientSecret = clientInformation.client_secret;
     }
     await storeKeychainOAuthClientInfo(this.serverUrl, this.profileName, clientInfo);
-
-    logger.debug('Saved client information to keychain');
   }
 
   async tokens(): Promise<OAuthTokens | undefined> {
     // Runtime mode: use token manager for automatic refresh
     if (this.isRuntimeMode() && this.tokenManager) {
-      logger.debug('OAuthProvider.tokens() called (runtime mode)');
-      try {
-        const accessToken = await this.tokenManager.getValidAccessToken();
-        logger.debug(`OAuthProvider.tokens() returning token: ${accessToken.substring(0, 20)}...`);
-        return {
-          access_token: accessToken,
-          token_type: 'Bearer',
-        };
-      } catch (error) {
-        logger.error('OAuthProvider.tokens() error:', error);
-        throw error;
-      }
+      const accessToken = await this.tokenManager.getValidAccessToken();
+      return {
+        access_token: accessToken,
+        token_type: 'Bearer',
+      };
     }
 
     // Auth flow mode: check keychain
@@ -239,12 +230,8 @@ export class OAuthProvider implements OAuthClientProvider {
   async saveTokens(tokens: OAuthTokens): Promise<void> {
     // Runtime mode: no-op (token manager handles state)
     if (this.isRuntimeMode()) {
-      logger.debug('SDK called saveTokens (handled by token manager)');
       return;
     }
-
-    // Auth flow mode: save to keychain
-    logger.debug('Saving OAuth tokens to keychain');
 
     const tokenInfo: OAuthTokenInfo = {
       accessToken: tokens.access_token,
@@ -266,8 +253,6 @@ export class OAuthProvider implements OAuthClientProvider {
 
     // Update profile metadata
     await this.updateProfileMetadata(tokens);
-
-    logger.debug('Tokens saved to keychain, profile metadata updated');
   }
 
   /**
