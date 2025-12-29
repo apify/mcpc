@@ -116,13 +116,9 @@ if [ -n "$REMOTE" ] && [ "$LOCAL" != "$REMOTE" ]; then
   fi
 
   if [ "$AHEAD" -gt 0 ]; then
-    echo -e "${YELLOW}⚠️  Branch is ahead of origin/$BRANCH by $AHEAD commit(s).${NC}"
-    read -p "Push these commits before publishing? (Y/n) " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-      echo "Pushing to origin/$BRANCH..."
-      git push origin "$BRANCH"
-    fi
+    echo -e "${RED}❌ Branch is ahead of origin/$BRANCH by $AHEAD commit(s). Please push first.${NC}"
+    echo "   Run: git push origin $BRANCH"
+    exit 1
   fi
 fi
 echo -e "${GREEN}✓ Branch is up-to-date${NC}"
