@@ -178,6 +178,7 @@ export async function resolveAuthProfile(
  * - <url> - Remote HTTP server (defaults to https:// if no scheme provided)
  * - <config-entry> - Entry from config file (when --config is used)
  */
+// eslint-disable-next-line @typescript-eslint/require-await
 export async function resolveTarget(
   target: string,
   options: {

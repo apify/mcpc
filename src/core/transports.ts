@@ -36,7 +36,7 @@ import {
   StreamableHTTPClientTransport,
   type StreamableHTTPClientTransportOptions,
 } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { createLogger } from '../lib/logger.js';
+import { createLogger, getVerbose } from '../lib/logger.js';
 import type { TransportConfig } from '../lib/types.js';
 import { ClientError } from '../lib/errors.js';
 
@@ -47,7 +47,14 @@ export function createStdioTransport(config: StdioServerParameters): Transport {
   const logger = createLogger('StdioTransport');
   logger.debug('Creating stdio transport', { command: config.command, args: config.args });
 
-  return new StdioClientTransport(config);
+  // Suppress server stderr unless in verbose mode
+  // Server stderr typically contains startup messages that clutter output
+  const transportConfig: StdioServerParameters = {
+    ...config,
+    stderr: getVerbose() ? 'inherit' : 'ignore',
+  };
+
+  return new StdioClientTransport(transportConfig);
 }
 
 /**

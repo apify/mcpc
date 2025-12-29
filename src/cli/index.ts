@@ -158,6 +158,10 @@ async function main(): Promise<void> {
   } finally {
     await closeFileLogger();
   }
+
+  // Explicit exit to avoid waiting for stdio child processes to close
+  // (the MCP SDK's StdioClientTransport keeps handles in the event loop)
+  process.exit(0);
 }
 
 function createProgram(): Command {
