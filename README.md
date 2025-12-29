@@ -15,13 +15,15 @@ After all, UNIX-compatible shell script is THE most universal coding language, f
 
 Note that `mcpc` is deterministic and does not use any LLM on its own; that's left for the higher layer.
 
+<!--
 ## Table of contents
 
 TODO: Simplify README - there are too many top-level sections, and then show just the second level ones
+-->
 
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
-
+<!--
 - [Features](#features)
 - [Install](#install)
 - [Quickstart](#quickstart)
@@ -80,7 +82,7 @@ TODO: Simplify README - there are too many top-level sections, and then show jus
   - [References](#references)
 - [Authors](#authors)
 - [License](#license)
-
+-->
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
 ## Features

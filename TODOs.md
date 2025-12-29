@@ -51,7 +51,6 @@ BIG: We need to decide whether to show Markdown-ish or not
 
 
 
-## Total nits
 
 
 ## E2E test scenarios
