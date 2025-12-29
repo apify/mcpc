@@ -4,8 +4,7 @@
 
 import { OutputMode, isValidSessionName, validateProfileName, isProcessAlive } from '../../lib/index.js';
 import { formatOutput, formatSuccess, formatError } from '../output.js';
-import { listAuthProfiles, getAuthProfile } from '../../lib/auth/profiles.js';
-import { DEFAULT_AUTH_PROFILE } from '../../lib/auth/oauth-utils.js';
+import { listAuthProfiles } from '../../lib/auth/profiles.js';
 import {
   sessionExists,
   deleteSession,
@@ -15,7 +14,7 @@ import {
 } from '../../lib/sessions.js';
 import { startBridge, StartBridgeOptions, stopBridge } from '../../lib/bridge-manager.js';
 import { storeKeychainSessionHeaders } from '../../lib/auth/keychain.js';
-import { resolveTarget } from '../helpers.js';
+import { resolveTarget, resolveAuthProfile } from '../helpers.js';
 import { ClientError } from '../../lib/index.js';
 import chalk from 'chalk';
 import { createLogger } from '../../lib/logger.js';
@@ -75,52 +74,15 @@ export async function connectSession(
     // Resolve target to transport config
     const transportConfig = await resolveTarget(target, options);
 
-    // TODO: This code is not just for sessions, but for one-shot use too!!!
-    // For HTTP targets, determine the auth profile to use
-    let profileName = options.profile;
+    // For HTTP targets, resolve auth profile (with helpful errors if none available)
+    let profileName: string | undefined;
     if (transportConfig.type === 'http' && transportConfig.url) {
-      if (!profileName) {
-        // No profile specified - try to use "default" profile if it exists
-        const defaultProfile = await getAuthProfile(transportConfig.url, DEFAULT_AUTH_PROFILE);
-        if (defaultProfile) {
-          profileName = DEFAULT_AUTH_PROFILE;
-          logger.debug(`Using default auth profile for ${transportConfig.url}`);
-        } else {
-          // No default profile - check if ANY profile exists for this server
-          const allProfiles = await listAuthProfiles();
-          const serverProfiles = allProfiles.filter(p => p.serverUrl === transportConfig.url);
-
-          if (serverProfiles.length === 0) {
-            // No profiles at all - error with guidance
-            throw new ClientError(
-              `No authentication profile found for ${transportConfig.url}.\n\n` +
-              `To authenticate, run:\n` +
-              `  mcpc ${target} auth\n\n` +
-              `Then create the session:\n` +
-              `  mcpc ${target} session ${name}`
-            );
-          } else {
-            // Profiles exist but no default - suggest using --profile
-            const profileNames = serverProfiles.map(p => p.name).join(', ');
-            throw new ClientError(
-              `No default authentication profile for ${transportConfig.url}.\n\n` +
-              `Available profiles: ${profileNames}\n\n` +
-              `To use a profile, run:\n` +
-              `  mcpc ${target} session ${name} --profile <name>`
-            );
-          }
-        }
-      } else {
-        // Profile specified - verify it exists
-        const profile = await getAuthProfile(transportConfig.url, profileName);
-        if (!profile) {
-          throw new ClientError(
-            `Authentication profile "${profileName}" not found for ${transportConfig.url}.\n\n` +
-            `To create this profile, run:\n` +
-            `  mcpc ${target} auth --profile ${profileName}`
-          );
-        }
-      }
+      profileName = await resolveAuthProfile(
+        transportConfig.url,
+        target,
+        options.profile,
+        { sessionName: name }
+      );
     }
 
     // Store headers in OS keychain (secure storage) before starting bridge

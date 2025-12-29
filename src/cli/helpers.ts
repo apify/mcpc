@@ -11,7 +11,7 @@ import { setVerbose, createLogger } from '../lib/logger.js';
 import { loadConfig, getServerConfig, validateServerConfig } from '../lib/config.js';
 import { OAuthProvider } from '../lib/auth/oauth-provider.js';
 import { OAuthTokenManager } from '../lib/auth/oauth-token-manager.js';
-import { getAuthProfile } from '../lib/auth/profiles.js';
+import { getAuthProfile, listAuthProfiles } from '../lib/auth/profiles.js';
 import { readKeychainOAuthTokenInfo, readKeychainOAuthClientInfo } from '../lib/auth/keychain.js';
 import { logTarget } from './output.js';
 import packageJson from '../../package.json' with { type: 'json' };
@@ -98,6 +98,73 @@ async function createAuthProviderForServer(
     // Log other errors but don't fail the connection
     logger.warn(`Failed to create auth provider: ${(error as Error).message}`);
     return undefined;
+  }
+}
+
+/**
+ * Resolve which auth profile to use for an HTTP server
+ * Returns the profile name to use, or throws with helpful error if none available
+ *
+ * @param serverUrl - The server URL
+ * @param target - Original target string (for error messages)
+ * @param specifiedProfile - Profile name from --profile flag (optional)
+ * @param context - Additional context for error messages (e.g., session name)
+ * @returns The profile name to use
+ * @throws ClientError with helpful guidance if no profile available
+ */
+export async function resolveAuthProfile(
+  serverUrl: string,
+  target: string,
+  specifiedProfile?: string,
+  context?: { sessionName?: string }
+): Promise<string> {
+  if (specifiedProfile) {
+    // Profile specified - verify it exists
+    const profile = await getAuthProfile(serverUrl, specifiedProfile);
+    if (!profile) {
+      throw new ClientError(
+        `Authentication profile "${specifiedProfile}" not found for ${serverUrl}.\n\n` +
+        `To create this profile, run:\n` +
+        `  mcpc ${target} auth --profile ${specifiedProfile}`
+      );
+    }
+    return specifiedProfile;
+  }
+
+  // No profile specified - try to use "default" profile if it exists
+  const defaultProfile = await getAuthProfile(serverUrl, DEFAULT_AUTH_PROFILE);
+  if (defaultProfile) {
+    logger.debug(`Using default auth profile for ${serverUrl}`);
+    return DEFAULT_AUTH_PROFILE;
+  }
+
+  // No default profile - check if ANY profile exists for this server
+  const allProfiles = await listAuthProfiles();
+  const serverProfiles = allProfiles.filter(p => p.serverUrl === serverUrl);
+
+  if (serverProfiles.length === 0) {
+    // No profiles at all - error with guidance
+    const sessionHint = context?.sessionName
+      ? `Then create the session:\n  mcpc ${target} session ${context.sessionName}`
+      : `Then run your command again.`;
+    throw new ClientError(
+      `No authentication profile found for ${serverUrl}.\n\n` +
+      `To authenticate, run:\n` +
+      `  mcpc ${target} login\n\n` +
+      sessionHint
+    );
+  } else {
+    // Profiles exist but no default - suggest using --profile
+    const profileNames = serverProfiles.map(p => p.name).join(', ');
+    const commandHint = context?.sessionName
+      ? `mcpc ${target} session ${context.sessionName} --profile <name>`
+      : `mcpc ${target} <command> --profile <name>`;
+    throw new ClientError(
+      `No default authentication profile for ${serverUrl}.\n\n` +
+      `Available profiles: ${profileNames}\n\n` +
+      `To use a profile, run:\n` +
+      `  ${commandHint}`
+    );
   }
 }
 
@@ -285,9 +352,9 @@ export async function withMcpClient<T>(
     clientConfig.verbose = true;
   }
 
-  // For HTTP transports, try to create authProvider from stored profile
+  // For HTTP transports, resolve auth profile and create authProvider
   if (transportConfig.type === 'http' && transportConfig.url) {
-    const profileName = options.profile || DEFAULT_AUTH_PROFILE;
+    const profileName = await resolveAuthProfile(transportConfig.url, target, options.profile);
     const authProvider = await createAuthProviderForServer(transportConfig.url, profileName);
     if (authProvider) {
       clientConfig.authProvider = authProvider;

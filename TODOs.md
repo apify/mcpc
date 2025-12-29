@@ -87,6 +87,7 @@ BIG: We need to decide whether to show Markdown-ish or not
 - more shortcuts, e.g. --profile => -p
 - nit: in README, explain the MCP commands better in a standlone section, with details how they work
 - Add unique Session.id and Profile.id and use it for OS keychain keys, to truly enable using multiple independent mcpc profiles
+- When user runs --clean=profiles, print warning if some sessions were using them
 
 
 ## E2E test scenarios
