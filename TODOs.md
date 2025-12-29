@@ -1,14 +1,6 @@
 
 # TODOs
 
-And now, a large change on many places. The auth profiles are based around serverUrl, which is also in storage.
-But even with normalizeServerUrl(), the serverUrl can be "https://mcp.apify.com" or
-"https://mcp.apify.com/some/dir", which both refer to the same OAuth server and credentials system.
-So, we need some shortened version, like "mcp.apify.com", "or mcp.apify.com:1234" for some non-standard ports.
-We can skip "https://" as that's implied. This new server name would be nicer to print in "mcpc" list of profiles 
-and elsewhere in the logs for users. I'm just not sure how to call it, but "host" seems the best and it's not used in the code yet.
-
-
 ## Bugs
 - Seems calling invalid/unknown MCP command in shell (perhaps also normally) causes the bridge to be flagged as expired
 
@@ -97,6 +89,7 @@ BIG: We need to decide whether to show Markdown-ish or not
   - --verbose only adds extra info to stderr, never to stdout
   - --json always returns single JSON object to stdout on success (exit code = 0), or an object or nothing at all on error (exit code != 0)
 - We'll need a testing server with all the available features and configurable, for testing.
+- "npm run test:coverage" doesn't seem to work and cover e2e tests
 - Things to test:
   - handling of errors, invalid params, names, etc.
   - pagination
@@ -106,12 +99,11 @@ BIG: We need to decide whether to show Markdown-ish or not
   - expired session (create fake record in session.json) - ensure attempts to use it will fail with the right error
   - for all commands, tests --verbose doesn't print anything extra to stdout, --json returns json
   - that on session close we send HTTP DELETE https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#session-management
-  - Test session failover - e.g. kill the bridge process, and try to access the session again (should be restarted)
+  - Test session failover - e.g. kill the bridge process, and try to access the session again - should be restarted, work, and have same MCP-Session-Id
   - Test auth - if no profile available and server requires OAuth, we need to fail with info what to do! e.g. "mcpc https://mcp.sentry.dev/mcp --verbose"
   - Test server session aborting - if session is aborted by server, bridge process should exit and set session status to "expired"
   - Test auth profiles work long-term and sessions too - basically when running some tests the next day they should use old saved auths and sessions
   - Test "mcpc @test close" and "mcpc <server> session @test" in rapid succession, it should work and use different pid (check sessions.json)
-- Can we track test coverage also this way?
 - Text copy can change, but the core texts needs to be shown in both text and JSON mode
 - Testing servers we can use:
   - https://mcp.apify.com (for testing real OAuth login, we can create various accounts, both OAuth and API tokens)

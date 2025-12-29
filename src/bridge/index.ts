@@ -17,6 +17,7 @@ import { loadSessions, updateSession } from '../lib/sessions.js';
 import type { AuthCredentials } from '../lib/types.js';
 import { OAuthTokenManager } from '../lib/auth/oauth-token-manager.js';
 import { OAuthProvider } from '../lib/auth/oauth-provider.js';
+import { storeKeychainOAuthTokenInfo } from '../lib/auth/keychain.js';
 import type { Tool, Resource, Prompt } from '@modelcontextprotocol/sdk/types.js';
 import packageJson from '../../package.json' with { type: 'json' };
 
@@ -97,8 +98,26 @@ class BridgeProcess {
         profileName: credentials.profileName,
         clientId: credentials.clientId,
         refreshToken: credentials.refreshToken,
-        // TODO: Should we notify CLI when tokens are rotated?
-        // onTokenRefresh: (tokens) => { ... }
+        // Persist new tokens when refresh token rotation happens
+        onTokenRefresh: async (tokens) => {
+          logger.debug('Token rotation detected, persisting new tokens to keychain');
+          const tokenInfo: Parameters<typeof storeKeychainOAuthTokenInfo>[2] = {
+            accessToken: tokens.access_token,
+            tokenType: tokens.token_type,
+          };
+          if (tokens.expires_in !== undefined) {
+            tokenInfo.expiresIn = tokens.expires_in;
+            tokenInfo.expiresAt = Math.floor(Date.now() / 1000) + tokens.expires_in;
+          }
+          if (tokens.refresh_token !== undefined) {
+            tokenInfo.refreshToken = tokens.refresh_token;
+          }
+          if (tokens.scope !== undefined) {
+            tokenInfo.scope = tokens.scope;
+          }
+          await storeKeychainOAuthTokenInfo(credentials.serverUrl, credentials.profileName, tokenInfo);
+          logger.debug('New tokens persisted to keychain');
+        },
       });
       logger.debug('OAuth token manager initialized');
 
