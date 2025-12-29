@@ -18,6 +18,7 @@ import type { AuthCredentials } from '../lib/types.js';
 import { OAuthTokenManager } from '../lib/auth/oauth-token-manager.js';
 import { OAuthProvider } from '../lib/auth/oauth-provider.js';
 import { storeKeychainOAuthTokenInfo, readKeychainOAuthTokenInfo } from '../lib/auth/keychain.js';
+import { updateAuthProfileRefreshedAt } from '../lib/auth/profiles.js';
 import type { Tool, Resource, Prompt } from '@modelcontextprotocol/sdk/types.js';
 import packageJson from '../../package.json' with { type: 'json' };
 
@@ -121,7 +122,7 @@ class BridgeProcess {
         },
         // Persist new tokens when refresh token rotation happens
         onTokenRefresh: async (tokens) => {
-          logger.debug('Token rotation detected, persisting new tokens to keychain');
+          logger.debug('Token refresh detected, persisting new tokens to keychain');
           const tokenInfo: Parameters<typeof storeKeychainOAuthTokenInfo>[2] = {
             accessToken: tokens.access_token,
             tokenType: tokens.token_type,
@@ -137,6 +138,11 @@ class BridgeProcess {
             tokenInfo.scope = tokens.scope;
           }
           await storeKeychainOAuthTokenInfo(credentials.serverUrl, credentials.profileName, tokenInfo);
+
+          // Update profile's refreshedAt timestamp (atomic operation)
+          await updateAuthProfileRefreshedAt(credentials.serverUrl, credentials.profileName);
+          logger.debug('Profile refreshedAt timestamp updated');
+
           logger.debug('New tokens persisted to keychain');
         },
       });

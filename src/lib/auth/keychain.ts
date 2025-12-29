@@ -111,6 +111,7 @@ export async function removeKeychainOAuthClientInfo(
 
 /**
  * Store OAuth tokens in keychain
+ * TODO: The operations on Keychain should be done under profiles file lock, to ensure atomocity...
  */
 export async function storeKeychainOAuthTokenInfo(
   serverUrl: string,

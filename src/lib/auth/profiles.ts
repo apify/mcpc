@@ -148,6 +148,25 @@ export async function saveAuthProfile(profile: AuthProfile): Promise<void> {
 }
 
 /**
+ * Update the refreshedAt timestamp for a profile (atomic operation)
+ * Uses getServerHost() to normalize the URL to a canonical host key
+ */
+export async function updateAuthProfileRefreshedAt(serverUrl: string, profileName: string): Promise<void> {
+  const filePath = getAuthProfilesFilePath();
+  return withFileLock(filePath, async () => {
+    const storage = await loadAuthProfilesInternal();
+    const host = getServerHost(serverUrl);
+
+    const profile = storage.profiles[host]?.[profileName];
+    if (profile) {
+      profile.refreshedAt = new Date().toISOString();
+      await saveAuthProfilesInternal(storage);
+      logger.debug(`Updated refreshedAt for profile: ${profileName} on ${host}`);
+    }
+  }, AUTH_PROFILES_DEFAULT_CONTENT);
+}
+
+/**
  * Delete a specific auth profile (metadata + keychain credentials)
  * Uses getServerHost() to normalize the URL to a canonical host key
  */
