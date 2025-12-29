@@ -96,6 +96,7 @@ export async function createMcpClient(options: CreateMcpClientOptions): Promise<
   factoryLogger.debug('Creating MCP client', {
     clientName: options.clientInfo.name,
     transportType: options.transport.type,
+    hasAuthProvider: !!options.authProvider,
   });
 
   // Create the client with a logger
@@ -110,6 +111,7 @@ export async function createMcpClient(options: CreateMcpClientOptions): Promise<
 
   // Create and connect transport if autoConnect is true
   if (autoConnect) {
+    factoryLogger.debug('Creating transport with authProvider:', !!options.authProvider);
     const transport = createTransportFromConfig(
       options.transport,
       options.authProvider ? { authProvider: options.authProvider } : {}

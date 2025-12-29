@@ -9,7 +9,10 @@ import { ClientError, NetworkError, AuthError } from '../lib/errors.js';
 import { normalizeServerUrl, isValidSessionName } from '../lib/utils.js';
 import { setVerbose, createLogger } from '../lib/logger.js';
 import { loadConfig, getServerConfig, validateServerConfig } from '../lib/config.js';
-import { getValidAccessTokenFromKeychain } from '../lib/auth/token-refresh.js';
+import { OAuthProvider } from '../lib/auth/oauth-provider.js';
+import { OAuthTokenManager } from '../lib/auth/oauth-token-manager.js';
+import { getAuthProfile } from '../lib/auth/profiles.js';
+import { readKeychainOAuthTokenInfo, readKeychainOAuthClientInfo } from '../lib/auth/keychain.js';
 import { logTarget } from './output.js';
 import packageJson from '../../package.json' with { type: 'json' };
 import { DEFAULT_AUTH_PROFILE } from '../lib/auth/oauth-utils.js';
@@ -37,32 +40,64 @@ function parseHeaderFlags(headerFlags: string[] | undefined): Record<string, str
 }
 
 /**
- * Load auth profile and add Authorization header if available
- * Automatically refreshes expired tokens if a refresh token is available
- * Tokens are read from and saved to OS keychain for security
+ * Create an OAuthProvider for a server URL if auth profile exists
+ * Returns undefined if no auth profile or tokens are available
  */
-async function addAuthHeader(
+async function createAuthProviderForServer(
   url: string,
-  headers: Record<string, string>,
   profileName: string = DEFAULT_AUTH_PROFILE
-): Promise<Record<string, string>> {
+): Promise<OAuthProvider | undefined> {
   try {
-    const accessToken = await getValidAccessTokenFromKeychain(url, profileName);
-    if (!accessToken) {
-      return headers;
+    // Check if auth profile exists
+    const profile = await getAuthProfile(url, profileName);
+    if (!profile) {
+      logger.debug(`No auth profile found for ${url} (profile: ${profileName})`);
+      return undefined;
     }
-    return {
-      ...headers,
-      Authorization: `Bearer ${accessToken}`,
+
+    // Load tokens from keychain
+    const tokens = await readKeychainOAuthTokenInfo(url, profileName);
+    if (!tokens?.refreshToken) {
+      logger.debug(`No refresh token in keychain for profile: ${profileName}`);
+      return undefined;
+    }
+
+    // Load client info from keychain
+    const clientInfo = await readKeychainOAuthClientInfo(url, profileName);
+    if (!clientInfo?.clientId) {
+      logger.warn(`OAuth client ID not found in keychain for profile: ${profileName}`);
+      return undefined;
+    }
+
+    // Create token manager with tokens from keychain
+    const tokenManagerOptions: ConstructorParameters<typeof OAuthTokenManager>[0] = {
+      serverUrl: url,
+      profileName,
+      clientId: clientInfo.clientId,
+      refreshToken: tokens.refreshToken,
+      accessToken: tokens.accessToken,
     };
+    if (tokens.expiresAt !== undefined) {
+      tokenManagerOptions.accessTokenExpiresAt = tokens.expiresAt;
+    }
+    const tokenManager = new OAuthTokenManager(tokenManagerOptions);
+
+    // Create and return OAuthProvider in runtime mode
+    logger.debug(`Created OAuthProvider for profile: ${profileName}`);
+    return new OAuthProvider({
+      serverUrl: url,
+      profileName,
+      tokenManager,
+      clientId: clientInfo.clientId,
+    });
   } catch (error) {
     // Re-throw AuthError (expired token, refresh failed, etc.)
     if (error instanceof AuthError) {
       throw error;
     }
     // Log other errors but don't fail the connection
-    logger.warn(`Failed to load auth profile: ${(error as Error).message}`);
-    return headers;
+    logger.warn(`Failed to create auth provider: ${(error as Error).message}`);
+    return undefined;
   }
 }
 
@@ -109,23 +144,20 @@ export async function resolveTarget(
     // Convert to TransportConfig
     if (serverConfig.url) {
       // HTTP/HTTPS server - merge config headers with CLI --header flags (CLI takes precedence)
+      // Note: Auth is handled via authProvider in withMcpClient, not via headers
       const headers: Record<string, string> = {
         ...serverConfig.headers,
         ...parseHeaderFlags(options.headers),
       };
 
-      // Add auth header if profile exists
-      const headersWithAuth = await addAuthHeader(
-        serverConfig.url,
-        headers,
-        options.profile
-      );
-
       const transportConfig: TransportConfig = {
         type: 'http',
         url: serverConfig.url,
-        headers: headersWithAuth,
       };
+
+      if (Object.keys(headers).length > 0) {
+        transportConfig.headers = headers;
+      }
 
       // Timeout: CLI flag > config file > default
       if (options.timeout) {
@@ -173,15 +205,17 @@ export async function resolveTarget(
     );
   }
 
-  // Parse --header flags and add auth header if profile exists
+  // Parse --header flags (auth is handled via authProvider in withMcpClient)
   const headers = parseHeaderFlags(options.headers);
-  const headersWithAuth = await addAuthHeader(url, headers, options.profile);
 
   const config: TransportConfig = {
     type: 'http',
     url,
-    headers: headersWithAuth,
   };
+
+  if (Object.keys(headers).length > 0) {
+    config.headers = headers;
+  }
 
   // Only include timeout if it's provided
   if (options.timeout) {
@@ -249,6 +283,16 @@ export async function withMcpClient<T>(
   // Only include verbose if it's true
   if (options.verbose) {
     clientConfig.verbose = true;
+  }
+
+  // For HTTP transports, try to create authProvider from stored profile
+  if (transportConfig.type === 'http' && transportConfig.url) {
+    const profileName = options.profile || DEFAULT_AUTH_PROFILE;
+    const authProvider = await createAuthProviderForServer(transportConfig.url, profileName);
+    if (authProvider) {
+      clientConfig.authProvider = authProvider;
+      logger.debug(`Using auth profile: ${profileName}`);
+    }
   }
 
   const client = await createMcpClient(clientConfig);

@@ -118,7 +118,7 @@ function formatToolAnnotations(annotations: Tool['annotations']): string | null 
 export function formatTools(tools: Tool[]): string {
   const lines: string[] = [];
 
-  lines.push(`Available tools (${tools.length})`);
+  lines.push(`Available tools (${tools.length}):`);
   lines.push('');
 
   // First: quick summary list with annotations
@@ -142,6 +142,7 @@ export function formatTools(tools: Tool[]): string {
     } else {
       lines.push(`## \`${tool.name}\`${titleSuffix}: ${chalk.gray('(no description)')}`);
     }
+    lines.push('');
   }
 
   return lines.join('\n');

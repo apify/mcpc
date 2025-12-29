@@ -7,7 +7,7 @@ import { createServer, type Server, type IncomingMessage, type ServerResponse } 
 import type { Socket } from 'net';
 import { URL } from 'url';
 import { auth as sdkAuth } from '@modelcontextprotocol/sdk/client/auth.js';
-import { McpcOAuthProvider } from './oauth-provider.js';
+import { OAuthProvider } from './oauth-provider.js';
 import { normalizeServerUrl } from '../utils.js';
 import { ClientError } from '../errors.js';
 import { createLogger } from '../logger.js';
@@ -237,10 +237,15 @@ export async function performOAuthFlow(
 
   logger.debug(`Using redirect URL: ${redirectUrl}`);
 
-  // Create OAuth provider with ignoreExistingTokens=true to force re-authentication
+  // Create OAuth provider in auth flow mode with forceReauth=true
   // This allows users to change scope or switch accounts
   // Old tokens are only overwritten after successful authentication
-  const provider = new McpcOAuthProvider(normalizedServerUrl, profileName, redirectUrl, true);
+  const provider = new OAuthProvider({
+    serverUrl: normalizedServerUrl,
+    profileName,
+    redirectUrl,
+    forceReauth: true,
+  });
 
   // Start callback server
   const { server, codePromise, destroyConnections } = startCallbackServer(port);

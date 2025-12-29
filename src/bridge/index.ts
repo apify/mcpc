@@ -16,8 +16,7 @@ import { ClientError, NetworkError } from '../lib/index.js';
 import { loadSessions, updateSession } from '../lib/sessions.js';
 import type { AuthCredentials } from '../lib/types.js';
 import { OAuthTokenManager } from '../lib/auth/oauth-token-manager.js';
-import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
-import type { OAuthClientMetadata, OAuthClientInformationMixed, OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
+import { OAuthProvider } from '../lib/auth/oauth-provider.js';
 import type { Tool, Resource, Prompt } from '@modelcontextprotocol/sdk/types.js';
 import packageJson from '../../package.json' with { type: 'json' };
 
@@ -25,85 +24,6 @@ import packageJson from '../../package.json' with { type: 'json' };
 const KEEPALIVE_INTERVAL_MS = 30_000;
 
 const logger = createLogger('bridge');
-
-/**
- * Bridge-side OAuth provider that wraps OAuthTokenManager
- * Implements the SDK's OAuthClientProvider interface for automatic token refresh
- *
- * This provider:
- * - Provides tokens to the SDK transport via tokens()
- * - Receives refreshed tokens from SDK via saveTokens()
- * - Does NOT support the full OAuth flow (login, authorization, etc.)
- *   Those are handled by the CLI before starting the bridge
- */
-class BridgeOAuthProvider implements OAuthClientProvider {
-  private tokenManager: OAuthTokenManager;
-  private clientId: string;
-
-  constructor(tokenManager: OAuthTokenManager, clientId: string) {
-    this.tokenManager = tokenManager;
-    this.clientId = clientId;
-  }
-
-  get redirectUrl(): string {
-    // Not used by bridge (full OAuth flow is done by CLI)
-    return 'http://localhost/callback';
-  }
-
-  get clientMetadata(): OAuthClientMetadata {
-    return {
-      redirect_uris: [this.redirectUrl],
-      grant_types: ['authorization_code', 'refresh_token'],
-      response_types: ['code'],
-      token_endpoint_auth_method: 'none',
-      client_name: 'mcpc',
-    };
-  }
-
-  clientInformation(): Promise<OAuthClientInformationMixed | undefined> {
-    return Promise.resolve({ client_id: this.clientId });
-  }
-
-  saveClientInformation(_info: OAuthClientInformationMixed): Promise<void> {
-    // Bridge doesn't save client info - CLI handles this
-    return Promise.resolve();
-  }
-
-  async tokens(): Promise<OAuthTokens | undefined> {
-    try {
-      // Get a fresh token (will refresh if expired)
-      const accessToken = await this.tokenManager.getValidAccessToken();
-      return {
-        access_token: accessToken,
-        token_type: 'Bearer',
-      };
-    } catch (error) {
-      logger.error('Failed to get tokens for SDK:', error);
-      return undefined;
-    }
-  }
-
-  saveTokens(_tokens: OAuthTokens): Promise<void> {
-    // Bridge token manager handles its own token state
-    // SDK may call this after refresh, but we manage refresh ourselves
-    logger.debug('SDK called saveTokens (handled by token manager)');
-    return Promise.resolve();
-  }
-
-  redirectToAuthorization(_url: URL): Promise<void> {
-    // Bridge doesn't handle authorization redirects - CLI does
-    return Promise.reject(new Error('Bridge does not support OAuth authorization flow'));
-  }
-
-  saveCodeVerifier(_verifier: string): Promise<void> {
-    // Not used by bridge
-    return Promise.resolve();
-  }
-
-  codeVerifier(): Promise<string> {
-    return Promise.reject(new Error('Bridge does not support OAuth authorization flow'));
-  }
-}
 
 interface BridgeOptions {
   sessionName: string;
@@ -129,7 +49,7 @@ class BridgeProcess {
   private tokenManager: OAuthTokenManager | null = null;
 
   // OAuth provider for SDK transport (wraps tokenManager)
-  private authProvider: BridgeOAuthProvider | null = null;
+  private authProvider: OAuthProvider | null = null;
 
   // HTTP headers (received via IPC, stored in memory only)
   private headers: Record<string, string> | null = null;
@@ -165,6 +85,10 @@ class BridgeProcess {
    */
   setAuthCredentials(credentials: AuthCredentials): void {
     logger.info(`Received auth credentials for profile: ${credentials.profileName}`);
+    logger.debug(`  serverUrl: ${credentials.serverUrl}`);
+    logger.debug(`  refreshToken: ${credentials.refreshToken ? 'present' : 'MISSING'}`);
+    logger.debug(`  clientId: ${credentials.clientId ? 'present' : 'MISSING'}`);
+    logger.debug(`  headers: ${credentials.headers ? Object.keys(credentials.headers).length : 0}`);
 
     // Set up OAuth token manager if refresh token and client ID are provided
     if (credentials.refreshToken && credentials.clientId) {
@@ -179,8 +103,13 @@ class BridgeProcess {
       logger.debug('OAuth token manager initialized');
 
       // Create auth provider for SDK transport (enables automatic token refresh)
-      this.authProvider = new BridgeOAuthProvider(this.tokenManager, credentials.clientId);
-      logger.debug('OAuth provider created for SDK transport');
+      this.authProvider = new OAuthProvider({
+        serverUrl: credentials.serverUrl,
+        profileName: credentials.profileName,
+        tokenManager: this.tokenManager,
+        clientId: credentials.clientId,
+      });
+      logger.debug('OAuthProvider created for SDK transport (runtime mode)');
     } else if (credentials.refreshToken && !credentials.clientId) {
       logger.warn('Refresh token provided but client ID is missing - token refresh will not work');
     }
@@ -374,9 +303,33 @@ class BridgeProcess {
    */
   private async connectToMcp(): Promise<void> {
     logger.debug('Connecting to MCP server...');
+    logger.debug(`  authProvider: ${this.authProvider ? 'present' : 'NOT SET'}`);
+    logger.debug(`  tokenManager: ${this.tokenManager ? 'present' : 'NOT SET'}`);
+    logger.debug(`  headers: ${this.headers ? Object.keys(this.headers).length : 0}`);
 
-    // Get transport config with fresh auth token if using auth profile
-    const transport = await this.updateTransportAuth();
+    // Get transport config
+    let transport: TransportConfig;
+    if (this.authProvider) {
+      // TODO: feels like this code should (is?) be handled by updateTransportAuth
+      // If we have an authProvider, DON'T add Authorization header to transport
+      // Let the SDK's authProvider handle token refresh automatically
+      // Only add non-OAuth headers (from --header flags) to transport
+      transport = { ...this.options.target };
+      if (transport.type === 'http' && this.headers) {
+        transport.headers = { ...transport.headers, ...this.headers };
+        logger.debug(`Added ${Object.keys(this.headers).length} non-OAuth headers to transport`);
+      }
+    } else {
+      // No authProvider - use updateTransportAuth for static headers
+      logger.debug('No authProvider - using updateTransportAuth for headers');
+      transport = await this.updateTransportAuth();
+    }
+
+    logger.debug('Building MCP client config...');
+    logger.debug(`  this.authProvider is set: ${!!this.authProvider}`);
+    if (this.authProvider) {
+      logger.debug(`  authProvider type: ${this.authProvider.constructor.name}`);
+    }
 
     const clientConfig: CreateMcpClientOptions = {
       clientInfo: { name: 'mcpc', version: packageJson.version },
@@ -419,12 +372,18 @@ class BridgeProcess {
       verbose: this.options.verbose || false,
     };
 
+    logger.debug('Calling createMcpClient with authProvider:', !!clientConfig.authProvider);
     this.client = await createMcpClient(clientConfig);
 
     logger.info('Connected to MCP server');
+    logger.debug('MCP client created successfully, authProvider was:', !!clientConfig.authProvider);
 
     // Update lastSeenAt on successful connection
     await this.updateLastSeenAt();
+
+    // Note: Token refresh is handled automatically by the SDK
+    // The SDK calls authProvider.tokens() before each request,
+    // which triggers OAuthTokenManager.getValidAccessToken() to refresh if needed
   }
 
   /**
@@ -645,6 +604,8 @@ class BridgeProcess {
    * Blocks until MCP client is connected, propagates connection errors to caller
    */
   private async handleMcpRequest(socket: Socket, message: IpcMessage): Promise<void> {
+    logger.debug(`>>> handleMcpRequest: ${message.method} <<<`);
+
     // Wait for MCP client to be ready (blocks if still connecting, throws if connection failed)
     await this.mcpClientReady;
 
@@ -655,6 +616,13 @@ class BridgeProcess {
 
     if (!message.method) {
       throw new ClientError('Missing method in request');
+    }
+
+    // Log auth state before making request
+    logger.debug(`  authProvider is set: ${!!this.authProvider}`);
+    if (this.tokenManager) {
+      const expiresIn = this.tokenManager.getSecondsUntilExpiry();
+      logger.debug(`  token expires in: ${expiresIn} seconds`);
     }
 
     try {

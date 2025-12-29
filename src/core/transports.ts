@@ -59,6 +59,10 @@ export function createStreamableHttpTransport(
 ): Transport {
   const logger = createLogger('StreamableHttpTransport');
   logger.debug('Creating Streamable HTTP transport', { url });
+  logger.debug('Transport options:', {
+    hasAuthProvider: !!options.authProvider,
+    hasRequestInit: !!options.requestInit,
+  });
 
   // Default reconnection options matching CLAUDE.md specs
   const defaultReconnectionOptions = {
@@ -68,10 +72,30 @@ export function createStreamableHttpTransport(
     maxRetries: 10, // Max 10 reconnection attempts
   };
 
-  return new StreamableHTTPClientTransport(new URL(url), {
+  const transport = new StreamableHTTPClientTransport(new URL(url), {
     reconnectionOptions: defaultReconnectionOptions,
     ...options,
-  }) as Transport;
+  });
+
+  // Verify authProvider is correctly attached
+  // @ts-expect-error accessing private property for debugging
+  const hasAuthProvider = !!transport._authProvider;
+  logger.debug('Transport created, authProvider attached:', hasAuthProvider);
+
+  // Verification: Test that tokens() is actually callable
+  // Note: This is a non-blocking test - the actual tokens() call during requests
+  // is what matters. This just verifies the authProvider is correctly attached.
+  if (hasAuthProvider) {
+    // @ts-expect-error accessing private property for debugging
+    const authProvider = transport._authProvider as OAuthClientProvider;
+    if (typeof authProvider.tokens === 'function') {
+      logger.debug('authProvider.tokens() is a function - verification passed');
+    } else {
+      logger.error('authProvider.tokens() is NOT a function - this is a bug!');
+    }
+  }
+
+  return transport as Transport;
 }
 
 /**
@@ -116,11 +140,17 @@ export function createTransportFromConfig(
         throw new ClientError('http transport requires a URL');
       }
 
+      const logger = createLogger('TransportFactory');
       const transportOptions: StreamableHTTPClientTransportOptions = {};
 
       // Set auth provider for automatic token refresh (takes priority over static headers)
       if (options.authProvider) {
         transportOptions.authProvider = options.authProvider;
+        logger.debug('Setting authProvider on transport options');
+        logger.debug(`  authProvider type: ${options.authProvider.constructor.name}`);
+        logger.debug(`  authProvider has tokens method: ${typeof options.authProvider.tokens === 'function'}`);
+      } else {
+        logger.debug('No authProvider provided for HTTP transport');
       }
 
       if (config.headers !== undefined) {

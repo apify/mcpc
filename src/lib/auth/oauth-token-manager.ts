@@ -75,6 +75,18 @@ export class OAuthTokenManager {
   }
 
   /**
+   * Get seconds until the access token expires (accounting for buffer)
+   * Returns 0 if already expired or no token
+   */
+  getSecondsUntilExpiry(): number {
+    if (!this.accessToken || !this.accessTokenExpiresAt) {
+      return 0;
+    }
+    const secondsUntil = this.accessTokenExpiresAt - EXPIRY_BUFFER_SECONDS - Math.floor(Date.now() / 1000);
+    return Math.max(0, secondsUntil);
+  }
+
+  /**
    * Refresh the access token using the refresh token
    * @returns The token response from the server
    * @throws AuthError if refresh fails
@@ -134,14 +146,24 @@ export class OAuthTokenManager {
    * @throws AuthError if refresh fails
    */
   async getValidAccessToken(): Promise<string> {
+    logger.debug('>>> getValidAccessToken() called <<<');
+    logger.debug(`  hasAccessToken: ${!!this.accessToken}`);
+    logger.debug(`  accessTokenExpiresAt: ${this.accessTokenExpiresAt}`);
+    logger.debug(`  isExpired: ${this.isAccessTokenExpired()}`);
+    logger.debug(`  secondsUntilExpiry: ${this.getSecondsUntilExpiry()}`);
+
     if (this.isAccessTokenExpired()) {
+      logger.debug('  Token is expired, refreshing...');
       await this.refreshAccessToken();
+    } else {
+      logger.debug('  Token is still valid, returning cached token');
     }
 
     if (!this.accessToken) {
       throw new AuthError('No access token available after refresh');
     }
 
+    logger.debug(`  Returning token: ${this.accessToken.substring(0, 20)}...`);
     return this.accessToken;
   }
 }

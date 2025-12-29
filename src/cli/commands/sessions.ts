@@ -4,7 +4,8 @@
 
 import { OutputMode, isValidSessionName, validateProfileName, isProcessAlive } from '../../lib/index.js';
 import { formatOutput, formatSuccess, formatError } from '../output.js';
-import { listAuthProfiles } from '../../lib/auth/profiles.js';
+import { listAuthProfiles, getAuthProfile } from '../../lib/auth/profiles.js';
+import { DEFAULT_AUTH_PROFILE } from '../../lib/auth/oauth-utils.js';
 import {
   sessionExists,
   deleteSession,
@@ -74,6 +75,54 @@ export async function connectSession(
     // Resolve target to transport config
     const transportConfig = await resolveTarget(target, options);
 
+    // TODO: This code is not just for sessions, but for one-shot use too!!!
+    // For HTTP targets, determine the auth profile to use
+    let profileName = options.profile;
+    if (transportConfig.type === 'http' && transportConfig.url) {
+      if (!profileName) {
+        // No profile specified - try to use "default" profile if it exists
+        const defaultProfile = await getAuthProfile(transportConfig.url, DEFAULT_AUTH_PROFILE);
+        if (defaultProfile) {
+          profileName = DEFAULT_AUTH_PROFILE;
+          logger.debug(`Using default auth profile for ${transportConfig.url}`);
+        } else {
+          // No default profile - check if ANY profile exists for this server
+          const allProfiles = await listAuthProfiles();
+          const serverProfiles = allProfiles.filter(p => p.serverUrl === transportConfig.url);
+
+          if (serverProfiles.length === 0) {
+            // No profiles at all - error with guidance
+            throw new ClientError(
+              `No authentication profile found for ${transportConfig.url}.\n\n` +
+              `To authenticate, run:\n` +
+              `  mcpc ${target} auth\n\n` +
+              `Then create the session:\n` +
+              `  mcpc ${target} session ${name}`
+            );
+          } else {
+            // Profiles exist but no default - suggest using --profile
+            const profileNames = serverProfiles.map(p => p.name).join(', ');
+            throw new ClientError(
+              `No default authentication profile for ${transportConfig.url}.\n\n` +
+              `Available profiles: ${profileNames}\n\n` +
+              `To use a profile, run:\n` +
+              `  mcpc ${target} session ${name} --profile <name>`
+            );
+          }
+        }
+      } else {
+        // Profile specified - verify it exists
+        const profile = await getAuthProfile(transportConfig.url, profileName);
+        if (!profile) {
+          throw new ClientError(
+            `Authentication profile "${profileName}" not found for ${transportConfig.url}.\n\n` +
+            `To create this profile, run:\n` +
+            `  mcpc ${target} auth --profile ${profileName}`
+          );
+        }
+      }
+    }
+
     // Store headers in OS keychain (secure storage) before starting bridge
     // For OAuth sessions (with --profile), DON'T store the `Authorization` header
     // because it comes from the OAuth profile and may expire.
@@ -83,7 +132,7 @@ export async function connectSession(
       headers = { ...transportConfig.headers };
 
       // Remove OAuth-derived Authorization header - it will be handled via the profile
-      if (options.profile && headers.Authorization?.startsWith('Bearer ')) {
+      if (profileName && headers.Authorization?.startsWith('Bearer ')) {
         logger.debug(`Skipping OAuth Authorization header storage for session ${name} (handled via profile)`);
         delete headers.Authorization;
       }
@@ -106,8 +155,8 @@ export async function connectSession(
         transport: transportConfig.type,
         headerCount: Object.keys(headers || {}).length,
       };
-      if (options.profile) {
-        updateData.profileName = options.profile;
+      if (profileName) {
+        updateData.profileName = profileName;
       }
       await updateSession(name, updateData);
       logger.debug(`Session record updated for reconnect: ${name}`);
@@ -119,8 +168,8 @@ export async function connectSession(
         createdAt: new Date().toISOString(),
         headerCount: Object.keys(headers || {}).length,
       };
-      if (options.profile) {
-        sessionData.profileName = options.profile;
+      if (profileName) {
+        sessionData.profileName = profileName;
       }
       await saveSession(name, sessionData);
       logger.debug(`Initial session record created for: ${name}`);
@@ -136,8 +185,8 @@ export async function connectSession(
       if (headers) {
         bridgeOptions.headers = headers;
       }
-      if (options.profile) {
-        bridgeOptions.profileName = options.profile;
+      if (profileName) {
+        bridgeOptions.profileName = profileName;
       }
 
       const { pid } = await startBridge(bridgeOptions);
