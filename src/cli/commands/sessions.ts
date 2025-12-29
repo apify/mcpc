@@ -411,12 +411,12 @@ export async function showServerInfo(
       // Server info
       if (serverVersion) {
         const versionInfo = protocolVersion ? ` (MCP version: ${protocolVersion})` : '';
-        console.log(`Server: ${serverVersion.name} v${serverVersion.version}${versionInfo}`);
+        console.log(chalk.bold('Server:') + ` ${serverVersion.name} v${serverVersion.version}${versionInfo}`);
         console.log('');
       }
 
       // Capabilities - only show what the server actually exposes
-      console.log('Capabilities:');
+      console.log(chalk.bold('Capabilities:'));
 
       const capabilityList: string[] = [];
 
@@ -455,7 +455,7 @@ export async function showServerInfo(
       console.log('');
 
       // Commands
-      console.log('Available commands:');
+      console.log(chalk.bold('Available commands:'));
       const commands: string[] = [];
 
       if (capabilities?.tools) {
@@ -484,9 +484,10 @@ export async function showServerInfo(
       console.log('');
 
       // Instructions
-      if (instructions) {
-        console.log('Server instructions:');
-        console.log(instructions);
+      const trimmed = instructions ? instructions.trim() : '';
+      if (trimmed) {
+        console.log(chalk.bold('Server instructions:'));
+        console.log(trimmed);
         console.log('');
       }
     } else {

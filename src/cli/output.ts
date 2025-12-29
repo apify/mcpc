@@ -157,7 +157,7 @@ function formatToolAnnotations(annotations: Tool['annotations']): string | null 
 export function formatTools(tools: Tool[]): string {
   const lines: string[] = [];
 
-  lines.push(`Available tools (${tools.length}):`);
+  lines.push(chalk.bold(`Available tools (${tools.length}):`));
   lines.push('');
 
   // First: quick summary list with annotations
@@ -169,7 +169,7 @@ export function formatTools(tools: Tool[]): string {
   lines.push('');
 
   // Then: full descriptions
-  lines.push('Tool details:');
+  lines.push(chalk.bold('Tool details:'));
   lines.push('');
   for (const tool of tools) {
     // Use title from annotations if available, otherwise use name
@@ -249,7 +249,7 @@ export function formatToolDetail(tool: Tool): string {
 export function formatResources(resources: Resource[]): string {
   const lines: string[] = [];
 
-  lines.push(`# Resources`);
+  lines.push(chalk.bold(`Resources (${resources.length}):`));
   lines.push('');
 
   for (const resource of resources) {
@@ -281,7 +281,7 @@ export function formatResources(resources: Resource[]): string {
 export function formatPrompts(prompts: Prompt[]): string {
   const lines: string[] = [];
 
-  lines.push(`# Prompts`);
+  lines.push(chalk.bold(`Prompts (${prompts.length}):`));
   lines.push('');
 
   for (const prompt of prompts) {
@@ -415,8 +415,8 @@ export interface LogTargetOptions {
 
 /**
  * Log target prefix (only in human mode)
- * For sessions: [MCP: @name → server (transport, auth)]
- * For direct connections: [MCP: target (transport, auth)]
+ * For sessions: [@name → server (transport, auth)]
+ * For direct connections: [target (transport, auth)]
  */
 export async function logTarget(target: string, options: LogTargetOptions): Promise<void> {
   if (options.outputMode !== 'human' || options.hide) {
@@ -427,7 +427,7 @@ export async function logTarget(target: string, options: LogTargetOptions): Prom
   if (isValidSessionName(target)) {
     const session = await getSession(target);
     if (session) {
-      console.log(`[MCP session: ${formatSessionLine(session)}]\n`);
+      console.log(`[${formatSessionLine(session)}]\n`);
       return;
     }
   }
@@ -441,7 +441,7 @@ export async function logTarget(target: string, options: LogTargetOptions): Prom
       targetStr += ' ' + tc.args.join(' ');
     }
     targetStr = truncateWithEllipsis(targetStr, 80);
-    console.log(`[MCP server: ${targetStr} ${chalk.dim('(stdio)')}]\n`);
+    console.log(`[${targetStr} ${chalk.dim('(stdio)')}]\n`);
     return;
   }
 
@@ -453,7 +453,7 @@ export async function logTarget(target: string, options: LogTargetOptions): Prom
   } else {
     authStr = chalk.dim('(http)');
   }
-  console.log(`[MCP server: ${hostStr} ${authStr}]\n`);
+  console.log(`[${hostStr} ${authStr}]\n`);
 }
 
 /**
