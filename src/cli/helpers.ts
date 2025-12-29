@@ -380,6 +380,7 @@ export async function withMcpClient<T>(
         outputMode: options.outputMode,
         hide: options.hideTarget,
         profileName,
+        transportConfig,
       });
     }
 

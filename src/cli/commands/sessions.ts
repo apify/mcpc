@@ -313,7 +313,7 @@ export async function listSessionsAndAuthProfiles(options: { outputMode: OutputM
     if (profiles.length === 0) {
       console.log(chalk.dim('No OAuth profiles.'));
     } else {
-      console.log(chalk.bold('OAuth profiles:'));
+      console.log(chalk.bold('Available OAuth profiles:'));
       for (const profile of profiles) {
         const hostStr = getServerHost(profile.serverUrl);
         const nameStr = chalk.magenta(profile.name);
@@ -408,8 +408,6 @@ export async function showServerInfo(
     const { serverVersion, capabilities, instructions, protocolVersion } = await client.getServerInfo();
 
     if (options.outputMode === 'human') {
-      console.log('');
-
       // Server info
       if (serverVersion) {
         const versionInfo = protocolVersion ? ` (MCP version: ${protocolVersion})` : '';

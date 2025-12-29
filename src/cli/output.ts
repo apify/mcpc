@@ -6,7 +6,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 
 import chalk from 'chalk';
-import type { OutputMode } from '../lib/index.js';
+import type { OutputMode, TransportConfig } from '../lib/index.js';
 import type { Tool, Resource, Prompt, SessionData } from '../lib/types.js';
 import { extractSingleTextContent } from './tool-result.js';
 import { isValidSessionName, getServerHost } from '../lib/utils.js';
@@ -410,12 +410,13 @@ export interface LogTargetOptions {
   outputMode: OutputMode;
   hide?: boolean | undefined;
   profileName?: string | undefined; // Auth profile being used (for http targets)
+  transportConfig?: TransportConfig | undefined; // Resolved transport config (for non-session targets)
 }
 
 /**
  * Log target prefix (only in human mode)
- * For sessions: [MCP session: @name → server (transport, auth)]
- * For URLs: [MCP server: host (http, oauth: profile)]
+ * For sessions: [MCP: @name → server (transport, auth)]
+ * For direct connections: [MCP: target (transport, auth)]
  */
 export async function logTarget(target: string, options: LogTargetOptions): Promise<void> {
   if (options.outputMode !== 'human' || options.hide) {
@@ -431,8 +432,21 @@ export async function logTarget(target: string, options: LogTargetOptions): Prom
     }
   }
 
-  // For URL targets, show server info with auth
-  const hostStr = getServerHost(target);
+  // For direct connections, use transportConfig if available
+  const tc = options.transportConfig;
+  if (tc?.type === 'stdio' && tc.command) {
+    // Stdio transport: show command + args
+    let targetStr = tc.command;
+    if (tc.args && tc.args.length > 0) {
+      targetStr += ' ' + tc.args.join(' ');
+    }
+    targetStr = truncateWithEllipsis(targetStr, 80);
+    console.log(`[MCP server: ${targetStr} ${chalk.dim('(stdio)')}]\n`);
+    return;
+  }
+
+  // HTTP transport: show host with auth info
+  const hostStr = tc?.url ? getServerHost(tc.url) : getServerHost(target);
   let authStr: string;
   if (options.profileName) {
     authStr = chalk.dim('(http, oauth: ') + chalk.magenta(options.profileName) + chalk.dim(')');
