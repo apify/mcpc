@@ -253,7 +253,10 @@ class BridgeProcess {
    */
   async start(): Promise<void> {
     // 1. First, initialize file logger to see what's going on
-    await initFileLogger(`bridge-${this.options.sessionName}.log`);
+    await initFileLogger(`bridge-${this.options.sessionName}.log`, {
+      version: packageJson.version,
+      command: process.argv.slice(1).join(' '),
+    });
 
     logger.info(`Bridge process starting for session: ${this.options.sessionName}`);
 

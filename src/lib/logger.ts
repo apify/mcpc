@@ -38,10 +38,21 @@ export function getVerbose(): boolean {
 }
 
 /**
+ * Options for initializing the file logger
+ */
+export interface InitFileLoggerOptions {
+  /** Version string to log at startup */
+  version?: string;
+  /** Command/args to log at startup */
+  command?: string;
+}
+
+/**
  * Initialize file logger
  * @param logFileName - Name of the log file (e.g., 'cli.log', 'bridge.log')
+ * @param options - Optional version and command info to log at startup
  */
-export async function initFileLogger(logFileName: string): Promise<void> {
+export async function initFileLogger(logFileName: string, options?: InitFileLoggerOptions): Promise<void> {
   // Close existing logger if any
   if (fileLogger) {
     log('warn', 'Logging file already open?');
@@ -56,6 +67,17 @@ export async function initFileLogger(logFileName: string): Promise<void> {
   });
 
   await fileLogger.init();
+
+  // Log startup info
+  const timestamp = new Date().toISOString();
+  fileLogger.write(`[${timestamp}] ========================================`);
+  if (options?.version) {
+    fileLogger.write(`[${timestamp}] mcpc v${options.version}`);
+  }
+  if (options?.command) {
+    fileLogger.write(`[${timestamp}] Command: ${options.command}`);
+  }
+  fileLogger.write(`[${timestamp}] ========================================`);
 }
 
 /**
