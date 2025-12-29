@@ -5,7 +5,7 @@
       "args": ["@playwright/mcp@latest"]
     },
 
-    "filesystem": {
+    "fs": {
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-filesystem", "${PWD}"]
     },

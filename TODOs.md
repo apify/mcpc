@@ -2,7 +2,7 @@
 # TODOs
 
 ## Bugs
-- Seems calling invalid/unknown MCP command in shell (perhaps also normally) causes the bridge to be flagged as expired
+...
 
 
 ## Next
@@ -15,7 +15,7 @@
     @fs → npx (stdio) --- show also args instead of just "npx"
   - print PID of bridge process
 
-  
+
 Visual examples:
 
     Xxx/
@@ -45,6 +45,7 @@ Authentication profiles:
 BIG: We need to decide whether to show Markdown-ish or not
 
 
+
 - Better error handling:
   - "mcpc https://mcp.sentry.dev/mcp" with an unknown sever => should hint to use "login"
   - Handle MCP errors by failing the command tool, e.g. invalid tool name..
@@ -60,13 +61,13 @@ BIG: We need to decide whether to show Markdown-ish or not
 
 ## Later
 
+- not: Print version info to logs, and link to https://github.com/apify/mcpc
 
 - Consider implementing "mcpc @apify session" to reconnect - maybe "restart" is better
   add "mcpc @test kill / restart" ?
 
 - nit: Colorize output, e.g. JSONs in one color. MCP provided data like descriptions and instructions in orange.
   -  warnings could be orange, errors red
-- - docs: add Claude Skills file to /docs, maybe also man page?
 - Add support for MCP elicitations, and potentially for sampling (e.g. via shell interface?)
 - Add `--proxy [HOST:]PORT` feature to `connect` command to enable MCP proxy:
   - `--proxy-bearer-token X` to require auth token for better security
@@ -84,8 +85,8 @@ BIG: We need to decide whether to show Markdown-ish or not
 - When user runs --clean=profiles, print warning if some sessions were using them 
 
 ## E2E test scenarios
-- add end-to-end tests e.g. under `test/e2e` - one bash script per test suite , organized in directories, and one master script that runs them all or selected ones (per directory) in parallel
-- Invariants:
+- DONE: add end-to-end tests e.g. under `test/e2e` - one bash script per test suite , organized in directories,and one master script that runs them all or selected ones (per directory) in parallel
+- Invariants (ideally test this for all commands used in other tests, or is it better just to always test one thing?):
   - --verbose only adds extra info to stderr, never to stdout
   - --json always returns single JSON object to stdout on success (exit code = 0), or an object or nothing at all on error (exit code != 0)
 - We'll need a testing server with all the available features and configurable, for testing.
@@ -94,9 +95,10 @@ BIG: We need to decide whether to show Markdown-ish or not
   - handling of errors, invalid params, names, etc.
   - pagination
   - env vars...
-  - stdio + filesystem operations,
+  - stdio + filesystem operations
   - sessions
-  - expired session (create fake record in session.json) - ensure attempts to use it will fail with the right error
+  - test stdio transport with fs mcp server
+  - test expired session (create fake record in session.json) - ensure attempts to use it will fail with the right error
   - for all commands, tests --verbose doesn't print anything extra to stdout, --json returns json
   - that on session close we send HTTP DELETE https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#session-management
   - Test session failover - e.g. kill the bridge process, and try to access the session again - should be restarted, work, and have same MCP-Session-Id
@@ -104,6 +106,7 @@ BIG: We need to decide whether to show Markdown-ish or not
   - Test server session aborting - if session is aborted by server, bridge process should exit and set session status to "expired"
   - Test auth profiles work long-term and sessions too - basically when running some tests the next day they should use old saved auths and sessions
   - Test "mcpc @test close" and "mcpc <server> session @test" in rapid succession, it should work and use different pid (check sessions.json)
+  - Ensure calling invalid/unknown MCP command in shell and normally doesn't causes the bridge to be flagged as expired or dead
 - Text copy can change, but the core texts needs to be shown in both text and JSON mode
 - Testing servers we can use:
   - https://mcp.apify.com (for testing real OAuth login, we can create various accounts, both OAuth and API tokens)
