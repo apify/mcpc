@@ -54,8 +54,7 @@ BIG: We need to decide whether to show Markdown-ish or not
 
 - implement resources-subscribe/resources-unsubscribe, --o file command properly, --max-size
 - > # TODO: automatically update the -o file on changes, without it just keep track of changed files in bridge process' cache, and report in resources-list
-
-
+  
   
 ## Security
 - Double-check the MCP security guidelines
@@ -109,6 +108,7 @@ BIG: We need to decide whether to show Markdown-ish or not
 - Can we track test coverage also this way?
 - Text copy can change, but the core texts needs to be shown in both text and JSON mode
 - Testing servers we can use:
-  - https://mcp.sentry.dev/mcp (login)
-  - https://mcp.apify.com (login)
-  - https://mcp.apify.com/tools=docs (anonymous)
+  - https://mcp.apify.com (for testing real OAuth login, we can create various accounts, both OAuth and API tokens)
+  - https://mcp.apify.com/tools=docs (anonymous, no auth needed)
+  - https://mcp.sentry.dev/mcp (for testing if no auth profile available)
+  

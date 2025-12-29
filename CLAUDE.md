@@ -59,41 +59,28 @@ mcpc --config ~/.vscode/mcp.json filesystem tools-list
 # Login to OAuth-enabled MCP server and save authentication for future use
 mcpc mcp.apify.com login
 
-# Show information about a remote MCP server
+# Show information about a remote MCP server and open interactive shell
 mcpc mcp.apify.com
+mcpc mcp.apify.com shell
 
-# Create a persistent session
+# Use JSON mode for scripting
+mcpc --json mcp.apify.com tools-list
+
+# Create a persistent session (or reconnect if it exists but bridge is dead)
 mcpc mcp.apify.com session @test
 mcpc @test tools-call search-actors --args query="web crawler"
 mcpc @test shell
-
-# List tools
-mcpc mcp.apify.com tools-list
-mcpc @apify tools-list --json
-
-# Call a tool with arguments
-mcpc @apify tools-call search --args '{"query":"hello"}'
-mcpc @apify tools-call search --args query=hello limit:=10
-
-# Set logging level
-mcpc @apify logging-set-level debug
-
-# Clean up stale data
-mcpc --clean=sessions,logs
 ```
 
 ## Design Principles
 
-- Make `mcpc` delightful to use for **both** AI agents and humans, interactively as well in scripts:
-    - Avoid unnecessary interaction loops to reduce room for error
-    - Keep functions orthogonal – there should be just one clear way to do things
-    - Do not ask for user input, except for `shell` and `login` commands
-    - Be clear what's happening and what to do next, especially on errors
-    - Be concise to save tokens
-    - Be forgiving and ignore irrelevant options, rather than fail
-    - Use colors for easy readability
-- Keep strict consistency with MCP specification and object schemas
-- Minimal dependencies, cross-platform
+- Delightful for humans and AI agents alike (interactive + scripting)
+- Avoid unnecessary interaction loops, provide sufficient context, yet be concise (save tokens)
+- One clear way to do things (orthogonal commands, no surprises)
+- Do not ask for user input (except `shell` and `login`, no unexpected OAuth flows)
+- Be forgiving, always help users make progress (great errors + guidance)
+- JSON mode strictly consistent with the [MCP specification](https://modelcontextprotocol.io/specification/latest)
+- Minimal and portable (few deps, cross-platform)
 - No slop!
 
 ## Architecture
