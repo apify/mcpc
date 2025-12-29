@@ -205,6 +205,8 @@ Examples:
   $ mcpc mcp.apify.com tools-list                                  # List server tools
   $ mcpc mcp.apify.com session @apify                              # Create or reconnect persistent session
   $ mcpc @apify tools-call search-actors --args query="crawler"    # Call tool with arguments
+
+Documentation: https://github.com/apify/mcpc/tree/v${packageJson.version}
 `
   );
 
