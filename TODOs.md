@@ -60,7 +60,7 @@ BIG: We need to decide whether to show Markdown-ish or not
 
 ## Later
 
-- --json should print JSON with syntax highligthing. Just make sure that it will be valid JSON when piping to commands
+
 - Consider implementing "mcpc @apify session" to reconnect - maybe "restart" is better
   add "mcpc @test kill / restart" ?
 

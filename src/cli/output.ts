@@ -24,10 +24,47 @@ export function formatOutput(data: unknown, mode: OutputMode = 'human'): string 
 }
 
 /**
- * Format data as JSON
+ * Format data as JSON with optional syntax highlighting
+ * Highlighting only applies when outputting to a TTY (not when piping)
  */
 export function formatJson(data: unknown): string {
-  return JSON.stringify(data, null, 2);
+  const json = JSON.stringify(data, null, 2);
+
+  // Only apply syntax highlighting if outputting to a TTY
+  if (!process.stdout.isTTY) {
+    return json;
+  }
+
+  return highlightJson(json);
+}
+
+/**
+ * Apply syntax highlighting to JSON string
+ */
+function highlightJson(json: string): string {
+  // Match JSON tokens and apply colors
+  return json.replace(
+    /("(?:\\.|[^"\\])*")\s*:|("(?:\\.|[^"\\])*")|(\b(?:true|false|null)\b)|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g,
+    (match, key: string | undefined, str: string | undefined, bool: string | undefined, num: string | undefined) => {
+      if (key) {
+        // Object key (includes the quotes and colon)
+        return chalk.cyan(key) + ':';
+      }
+      if (str) {
+        // String value
+        return chalk.green(str);
+      }
+      if (bool) {
+        // Boolean or null
+        return chalk.magenta(bool);
+      }
+      if (num) {
+        // Number
+        return chalk.yellow(num);
+      }
+      return match;
+    }
+  );
 }
 
 /**
@@ -335,12 +372,8 @@ export function logTarget(target: string, outputMode: OutputMode, hide = false):
  * Format JSON error output
  */
 export function formatJsonError(error: Error, code: number): string {
-  return JSON.stringify(
-    {
-      error: error.message,
-      code,
-    },
-    null,
-    2
-  );
+  return formatJson({
+    error: error.message,
+    code,
+  });
 }
