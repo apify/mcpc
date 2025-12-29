@@ -2,7 +2,7 @@
  * Sessions command handlers
  */
 
-import { OutputMode, isValidSessionName, validateProfileName, isProcessAlive } from '../../lib/index.js';
+import { OutputMode, isValidSessionName, validateProfileName, isProcessAlive, getServerHost } from '../../lib/index.js';
 import { formatOutput, formatSuccess, formatError } from '../output.js';
 import { listAuthProfiles } from '../../lib/auth/profiles.js';
 import {
@@ -272,7 +272,7 @@ export async function listSessionsAndAuthProfiles(options: { outputMode: OutputM
     } else {
       console.log('Authentication profiles:');
       for (const profile of profiles) {
-        console.log(`  ${profile.name} → ${profile.serverUrl} (OAuth)`);
+        console.log(`  ${profile.name} → ${getServerHost(profile.serverUrl)} (OAuth)`);
       }
     }
   }

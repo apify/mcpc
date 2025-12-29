@@ -5,6 +5,7 @@
 
 import keytar from 'keytar';
 import { createLogger } from '../logger.js';
+import { getServerHost } from '../utils.js';
 
 const logger = createLogger('keychain');
 
@@ -33,16 +34,20 @@ export interface OAuthTokenInfo {
 
 /**
  * Get a keychain account name for OAuth client info
+ * Uses getServerHost() to normalize the server URL to a canonical host
  */
 function buildOAuthClientAccountName(serverUrl: string, profileName: string): string {
-  return `auth-profile:${serverUrl}:${profileName}:client`;
+  const host = getServerHost(serverUrl);
+  return `auth-profile:${host}:${profileName}:client`;
 }
 
 /**
  * Get a keychain account name for OAuth tokens
+ * Uses getServerHost() to normalize the server URL to a canonical host
  */
 function buildOAuthTokensAccountName(serverUrl: string, profileName: string): string {
-  return `auth-profile:${serverUrl}:${profileName}:tokens`;
+  const host = getServerHost(serverUrl);
+  return `auth-profile:${host}:${profileName}:tokens`;
 }
 
 /**

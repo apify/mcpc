@@ -8,7 +8,7 @@ import { readFile, writeFile, rename, unlink } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import type { AuthProfile, AuthProfilesStorage } from '../types.js';
-import { getAuthProfilesFilePath, fileExists, ensureDir, getMcpcHome } from '../utils.js';
+import { getAuthProfilesFilePath, fileExists, ensureDir, getMcpcHome, getServerHost } from '../utils.js';
 import { withFileLock } from '../file-lock.js';
 import { createLogger } from '../logger.js';
 import { ClientError } from '../errors.js';
@@ -113,45 +113,51 @@ export async function listAuthProfiles(): Promise<AuthProfile[]> {
 
 /**
  * Get a specific auth profile by server URL and profile name
+ * Uses getServerHost() to normalize the URL to a canonical host key
  */
 export async function getAuthProfile(
   serverUrl: string,
   profileName: string
 ): Promise<AuthProfile | undefined> {
   const storage = await loadAuthProfiles();
-  return storage.profiles[serverUrl]?.[profileName];
+  const host = getServerHost(serverUrl);
+  return storage.profiles[host]?.[profileName];
 }
 
 /**
  * Save or update a single auth profile
+ * Uses getServerHost() to normalize the URL to a canonical host key
  */
 export async function saveAuthProfile(profile: AuthProfile): Promise<void> {
   const filePath = getAuthProfilesFilePath();
   return withFileLock(filePath, async () => {
     const storage = await loadAuthProfilesInternal();
+    const host = getServerHost(profile.serverUrl);
 
     // Ensure server entry exists
-    if (!storage.profiles[profile.serverUrl]) {
-      storage.profiles[profile.serverUrl] = {};
+    if (!storage.profiles[host]) {
+      storage.profiles[host] = {};
     }
 
     // Update profile
-    storage.profiles[profile.serverUrl]![profile.name] = profile;
+    storage.profiles[host]![profile.name] = profile;
 
     await saveAuthProfilesInternal(storage);
-    logger.debug(`Saved auth profile: ${profile.name} for ${profile.serverUrl}`);
+    logger.debug(`Saved auth profile: ${profile.name} for ${host}`);
   }, AUTH_PROFILES_DEFAULT_CONTENT);
 }
 
 /**
  * Delete a specific auth profile (metadata + keychain credentials)
+ * Uses getServerHost() to normalize the URL to a canonical host key
  */
 export async function deleteAuthProfile(serverUrl: string, profileName: string): Promise<boolean> {
   const filePath = getAuthProfilesFilePath();
   return withFileLock(filePath, async () => {
     const storage = await loadAuthProfilesInternal();
+    const host = getServerHost(serverUrl);
 
-    const serverProfiles = storage.profiles[serverUrl];
+    const serverProfiles = storage.profiles[host];
     if (!serverProfiles || !serverProfiles[profileName]) {
       return false;
     }
@@ -165,11 +171,11 @@ export async function deleteAuthProfile(serverUrl: string, profileName: string):
 
     // Clean up empty server entries
     if (Object.keys(serverProfiles).length === 0) {
-      delete storage.profiles[serverUrl];
+      delete storage.profiles[host];
     }
 
     await saveAuthProfilesInternal(storage);
-    logger.debug(`Deleted auth profile: ${profileName} for ${serverUrl}`);
+    logger.debug(`Deleted auth profile: ${profileName} for ${host}`);
     return true;
   }, AUTH_PROFILES_DEFAULT_CONTENT);
 }

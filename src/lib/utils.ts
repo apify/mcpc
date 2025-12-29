@@ -191,12 +191,30 @@ export function normalizeServerUrl(str: string): string {
 }
 
 /**
- * Extract hostname from a URL for authentication key
- * Returns only the hostname in lowercase (port is not relevant for auth)
+ * Extract a canonical server host identifier from a URL
+ * Used for auth profile storage keys and display
+ *
+ * Returns:
+ * - `hostname` for standard ports (443 for https, 80 for http)
+ * - `hostname:port` for non-standard ports
+ *
+ * Examples:
+ * - `https://mcp.apify.com` → `mcp.apify.com`
+ * - `https://mcp.apify.com/path` → `mcp.apify.com`
+ * - `https://example.com:8443` → `example.com:8443`
+ * - `http://localhost:3000` → `localhost:3000`
  */
-export function getAuthServerKey(urlString: string): string {
+export function getServerHost(urlString: string): string {
   const url = new URL(normalizeServerUrl(urlString));
-  return url.hostname.toLowerCase();
+  const hostname = url.hostname.toLowerCase();
+  const port = url.port;
+
+  // Include port only if non-standard
+  // Standard ports: 443 for https, 80 for http
+  if (port && port !== '443' && port !== '80') {
+    return `${hostname}:${port}`;
+  }
+  return hostname;
 }
 
 /**

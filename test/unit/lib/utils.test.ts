@@ -13,7 +13,7 @@ import {
   getLogsDir,
   isValidHttpUrl,
   normalizeServerUrl,
-  getAuthServerKey,
+  getServerHost,
   isValidSessionName,
   isValidProfileName,
   validateProfileName,
@@ -205,35 +205,38 @@ describe('normalizeServerUrl', () => {
   });
 });
 
-describe('getAuthServerKey', () => {
+describe('getServerHost', () => {
   it('should extract hostname from URL', () => {
-    expect(getAuthServerKey('https://example.com')).toBe('example.com');
-    expect(getAuthServerKey('https://mcp.apify.com')).toBe('mcp.apify.com');
-    expect(getAuthServerKey('http://example.com')).toBe('example.com');
-    expect(getAuthServerKey('example.com')).toBe('example.com');
+    expect(getServerHost('https://example.com')).toBe('example.com');
+    expect(getServerHost('https://mcp.apify.com')).toBe('mcp.apify.com');
+    expect(getServerHost('http://example.com')).toBe('example.com');
+    expect(getServerHost('example.com')).toBe('example.com');
   });
 
-  it('should ignore port numbers', () => {
-    expect(getAuthServerKey('https://example.com:8443')).toBe('example.com');
-    expect(getAuthServerKey('http://localhost:8080')).toBe('localhost');
-    expect(getAuthServerKey('example.com:3000')).toBe('example.com');
-    expect(getAuthServerKey('https://example.com:443')).toBe('example.com');
-    expect(getAuthServerKey('http://example.com:80')).toBe('example.com');
+  it('should include non-standard ports', () => {
+    expect(getServerHost('https://example.com:8443')).toBe('example.com:8443');
+    expect(getServerHost('http://localhost:8080')).toBe('localhost:8080');
+    expect(getServerHost('example.com:3000')).toBe('example.com:3000');
+  });
+
+  it('should strip standard ports', () => {
+    expect(getServerHost('https://example.com:443')).toBe('example.com');
+    expect(getServerHost('http://example.com:80')).toBe('example.com');
   });
 
   it('should normalize hostname to lowercase', () => {
-    expect(getAuthServerKey('https://EXAMPLE.COM')).toBe('example.com');
-    expect(getAuthServerKey('HTTPS://Example.COM')).toBe('example.com');
-    expect(getAuthServerKey('MCP.APIFY.COM')).toBe('mcp.apify.com');
-    expect(getAuthServerKey('Localhost:8080')).toBe('localhost');
+    expect(getServerHost('https://EXAMPLE.COM')).toBe('example.com');
+    expect(getServerHost('HTTPS://Example.COM')).toBe('example.com');
+    expect(getServerHost('MCP.APIFY.COM')).toBe('mcp.apify.com');
+    expect(getServerHost('Localhost:8080')).toBe('localhost:8080');
   });
 
   it('should strip path, query, and hash from URL', () => {
-    expect(getAuthServerKey('https://example.com/path')).toBe('example.com');
-    expect(getAuthServerKey('https://example.com/path?query=1')).toBe('example.com');
-    expect(getAuthServerKey('https://example.com:8443/path')).toBe('example.com');
-    expect(getAuthServerKey('https://example.com#hash')).toBe('example.com');
-    expect(getAuthServerKey('https://user:pass@example.com/path')).toBe('example.com');
+    expect(getServerHost('https://example.com/path')).toBe('example.com');
+    expect(getServerHost('https://example.com/path?query=1')).toBe('example.com');
+    expect(getServerHost('https://example.com:8443/path')).toBe('example.com:8443');
+    expect(getServerHost('https://example.com#hash')).toBe('example.com');
+    expect(getServerHost('https://user:pass@example.com/path')).toBe('example.com');
   });
 });
 

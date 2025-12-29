@@ -6,7 +6,7 @@
 import { createMcpClient } from '../core/factory.js';
 import type { IMcpClient, OutputMode, TransportConfig } from '../lib/types.js';
 import { ClientError, NetworkError, AuthError } from '../lib/errors.js';
-import { normalizeServerUrl, isValidSessionName } from '../lib/utils.js';
+import { normalizeServerUrl, isValidSessionName, getServerHost } from '../lib/utils.js';
 import { setVerbose, createLogger } from '../lib/logger.js';
 import { loadConfig, getServerConfig, validateServerConfig } from '../lib/config.js';
 import { OAuthProvider } from '../lib/auth/oauth-provider.js';
@@ -118,14 +118,16 @@ export async function resolveAuthProfile(
   specifiedProfile?: string,
   context?: { sessionName?: string }
 ): Promise<string> {
+  const host = getServerHost(serverUrl);
+
   if (specifiedProfile) {
     // Profile specified - verify it exists
     const profile = await getAuthProfile(serverUrl, specifiedProfile);
     if (!profile) {
       throw new ClientError(
-        `Authentication profile "${specifiedProfile}" not found for ${serverUrl}.\n\n` +
+        `Authentication profile "${specifiedProfile}" not found for ${host}.\n\n` +
         `To create this profile, run:\n` +
-        `  mcpc ${target} auth --profile ${specifiedProfile}`
+        `  mcpc ${target} login --profile ${specifiedProfile}`
       );
     }
     return specifiedProfile;
@@ -134,13 +136,13 @@ export async function resolveAuthProfile(
   // No profile specified - try to use "default" profile if it exists
   const defaultProfile = await getAuthProfile(serverUrl, DEFAULT_AUTH_PROFILE);
   if (defaultProfile) {
-    logger.debug(`Using default auth profile for ${serverUrl}`);
+    logger.debug(`Using default auth profile for ${host}`);
     return DEFAULT_AUTH_PROFILE;
   }
 
   // No default profile - check if ANY profile exists for this server
   const allProfiles = await listAuthProfiles();
-  const serverProfiles = allProfiles.filter(p => p.serverUrl === serverUrl);
+  const serverProfiles = allProfiles.filter(p => getServerHost(p.serverUrl) === host);
 
   if (serverProfiles.length === 0) {
     // No profiles at all - error with guidance
@@ -148,7 +150,7 @@ export async function resolveAuthProfile(
       ? `Then create the session:\n  mcpc ${target} session ${context.sessionName}`
       : `Then run your command again.`;
     throw new ClientError(
-      `No authentication profile found for ${serverUrl}.\n\n` +
+      `No authentication profile found for ${host}.\n\n` +
       `To authenticate, run:\n` +
       `  mcpc ${target} login\n\n` +
       sessionHint
@@ -160,7 +162,7 @@ export async function resolveAuthProfile(
       ? `mcpc ${target} session ${context.sessionName} --profile <name>`
       : `mcpc ${target} <command> --profile <name>`;
     throw new ClientError(
-      `No default authentication profile for ${serverUrl}.\n\n` +
+      `No default authentication profile for ${host}.\n\n` +
       `Available profiles: ${profileNames}\n\n` +
       `To use a profile, run:\n` +
       `  ${commandHint}`

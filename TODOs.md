@@ -1,14 +1,19 @@
 
 # TODOs
 
+And now, a large change on many places. The auth profiles are based around serverUrl, which is also in storage.
+But even with normalizeServerUrl(), the serverUrl can be "https://mcp.apify.com" or
+"https://mcp.apify.com/some/dir", which both refer to the same OAuth server and credentials system.
+So, we need some shortened version, like "mcp.apify.com", "or mcp.apify.com:1234" for some non-standard ports.
+We can skip "https://" as that's implied. This new server name would be nicer to print in "mcpc" list of profiles 
+and elsewhere in the logs for users. I'm just not sure how to call it, but "host" seems the best and it's not used in the code yet.
+
 
 ## Bugs
 - Seems calling invalid/unknown MCP command in shell (perhaps also normally) causes the bridge to be flagged as expired
 
 
 ## Next
-
-- serverUrl in profiles => canonicalName
 
 - Expand --help to use same text as in README, add link to README
 
@@ -63,6 +68,7 @@ BIG: We need to decide whether to show Markdown-ish or not
 
 ## Later
 
+- --json should print JSON with syntax highligthing. Just make sure that it will be valid JSON when piping to commands
 - Consider implementing "mcpc @apify session" to reconnect - maybe "restart" is better
   add "mcpc @test kill / restart" ?
 
@@ -83,8 +89,7 @@ BIG: We need to decide whether to show Markdown-ish or not
 - more shortcuts, e.g. --profile => -p
 - nit: in README, explain the MCP commands better in a standlone section, with details how they work
 - Add unique Session.id and Profile.id and use it for OS keychain keys, to truly enable using multiple independent mcpc profiles
-- When user runs --clean=profiles, print warning if some sessions were using them
-
+- When user runs --clean=profiles, print warning if some sessions were using them 
 
 ## E2E test scenarios
 - add end-to-end tests e.g. under `test/e2e` - one bash script per test suite , organized in directories, and one master script that runs them all or selected ones (per directory) in parallel
@@ -111,4 +116,5 @@ BIG: We need to decide whether to show Markdown-ish or not
   - https://mcp.apify.com (for testing real OAuth login, we can create various accounts, both OAuth and API tokens)
   - https://mcp.apify.com/tools=docs (anonymous, no auth needed)
   - https://mcp.sentry.dev/mcp (for testing if no auth profile available)
+  - ideally get some on non-standard port, maybe localhost
   
