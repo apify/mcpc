@@ -404,12 +404,21 @@ export function formatSessionLine(session: SessionData): string {
 }
 
 /**
- * Log target prefix (only in human mode)
- * For sessions, shows formatted info like: @name → server (transport, auth)
- * @param hide - If true, suppress the output (useful in interactive shell)
+ * Options for logTarget
  */
-export async function logTarget(target: string, outputMode: OutputMode, hide = false): Promise<void> {
-  if (outputMode !== 'human' || hide) {
+export interface LogTargetOptions {
+  outputMode: OutputMode;
+  hide?: boolean | undefined;
+  profileName?: string | undefined; // Auth profile being used (for http targets)
+}
+
+/**
+ * Log target prefix (only in human mode)
+ * For sessions: [MCP session: @name → server (transport, auth)]
+ * For URLs: [MCP server: host (http, oauth: profile)]
+ */
+export async function logTarget(target: string, options: LogTargetOptions): Promise<void> {
+  if (options.outputMode !== 'human' || options.hide) {
     return;
   }
 
@@ -417,13 +426,20 @@ export async function logTarget(target: string, outputMode: OutputMode, hide = f
   if (isValidSessionName(target)) {
     const session = await getSession(target);
     if (session) {
-      console.log(`[MCP session: ${formatSessionLine(session)}]`);
+      console.log(`[MCP session: ${formatSessionLine(session)}]\n`);
       return;
     }
   }
 
-  // Fallback for non-session targets or if session not found
-  console.log(chalk.dim(`Target: ${target}`));
+  // For URL targets, show server info with auth
+  const hostStr = getServerHost(target);
+  let authStr: string;
+  if (options.profileName) {
+    authStr = chalk.dim('(http, oauth: ') + chalk.magenta(options.profileName) + chalk.dim(')');
+  } else {
+    authStr = chalk.dim('(http)');
+  }
+  console.log(`[MCP server: ${hostStr} ${authStr}]\n`);
 }
 
 /**

@@ -326,7 +326,10 @@ export async function withMcpClient<T>(
 
     // Log target prefix (unless hidden)
     if (options.outputMode) {
-      await logTarget(target, options.outputMode, options.hideTarget);
+      await logTarget(target, {
+        outputMode: options.outputMode,
+        hide: options.hideTarget,
+      });
     }
 
     // Use session client (SessionClient implements IMcpClient interface)
@@ -356,8 +359,9 @@ export async function withMcpClient<T>(
   }
 
   // For HTTP transports, resolve auth profile and create authProvider
+  let profileName: string | undefined;
   if (transportConfig.type === 'http' && transportConfig.url) {
-    const profileName = await resolveAuthProfile(transportConfig.url, target, options.profile);
+    profileName = await resolveAuthProfile(transportConfig.url, target, options.profile);
     const authProvider = await createAuthProviderForServer(transportConfig.url, profileName);
     if (authProvider) {
       clientConfig.authProvider = authProvider;
@@ -372,7 +376,11 @@ export async function withMcpClient<T>(
 
     // Log target prefix (unless hidden)
     if (options.outputMode) {
-      await logTarget(target, options.outputMode, options.hideTarget);
+      await logTarget(target, {
+        outputMode: options.outputMode,
+        hide: options.hideTarget,
+        profileName,
+      });
     }
 
     // Execute callback with connected client
