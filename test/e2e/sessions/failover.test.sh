@@ -9,7 +9,7 @@ trap cleanup_test EXIT
 
 # Test 1: Create a session
 begin_test "create session for failover test"
-run_mcpc "$TEST_SERVER_URL" connect --session "$TEST_SESSION"
+run_mcpc "$TEST_SERVER_URL" session "$TEST_SESSION"
 assert_success $EXIT_CODE
 pass
 

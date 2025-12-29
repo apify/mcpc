@@ -28,7 +28,7 @@ error: missing required argument 'name'
     @fs → npx (stdio) --- show also args instead of just "npx"
   - print PID of bridge process
 
-- If session command fails, suggest the user to check the bridge log file (print its location)
+add "mcpc @test kill / restart" ?
 
 - rename headerCount to transportHeaderCount
 
@@ -89,7 +89,7 @@ Authentication profiles:
 - audit that on every command, we print next steps as examples
 - more shortcuts, e.g. --profile => -p
 - nit: in README, explain the MCP commands better in a standlone section, with details how they work
-
+- Add unique Session.id and Profile.id and use it for OS keychain keys, to truly enable using multiple independent mcpc profiles
 
 
 ## E2E test scenarios
@@ -104,6 +104,7 @@ Authentication profiles:
   - env vars...
   - stdio + filesystem operations,
   - sessions
+  - expired session (create fake record in session.json) - ensure attempts to use it will fail with the right error
   - for all commands, tests --verbose doesn't print anything extra to stdout, --json returns json
   - that on session close we send HTTP DELETE https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#session-management
   - Test session failover - e.g. kill the bridge process, and try to access the session again (should be restarted)

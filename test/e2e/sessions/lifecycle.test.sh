@@ -9,7 +9,7 @@ trap cleanup_test EXIT
 
 # Test 1: Connect to test server
 begin_test "connect creates session"
-run_mcpc "$TEST_SERVER_URL" connect --session "$TEST_SESSION"
+run_mcpc "$TEST_SERVER_URL" session "$TEST_SESSION"
 assert_success $EXIT_CODE "connect should succeed"
 assert_contains "$STDOUT" "created"
 pass
