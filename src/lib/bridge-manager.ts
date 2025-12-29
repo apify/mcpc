@@ -227,12 +227,12 @@ export async function restartBridge(sessionName: string): Promise<StartBridgeRes
 
   // Retrieve transport headers from keychain for failover, and check their number
   let headers: Record<string, string> | undefined;
-  if (session.transport === 'http' && session.transportHeaderCount && session.transportHeaderCount > 0) {
+  if (session.transport === 'http' && session.httpHeaderCount && session.httpHeaderCount > 0) {
     headers = await readKeychainSessionHeaders(sessionName);
     const retrievedCount = Object.keys(headers || {}).length;
-    if (retrievedCount !== session.transportHeaderCount) {
+    if (retrievedCount !== session.httpHeaderCount) {
       throw new ClientError(
-        `Failed to retrieve ${session.transportHeaderCount} HTTP header(s) from keychain for session ${sessionName}. ` +
+        `Failed to retrieve ${session.httpHeaderCount} HTTP header(s) from keychain for session ${sessionName}. ` +
           `The session may need to be recreated with "mcpc ${sessionName} close" followed by a new connect.`
       );
     }

@@ -115,7 +115,7 @@ export async function connectSession(
       const updateData: Parameters<typeof updateSession>[1] = {
         target: transportConfig.url || transportConfig.command || 'unknown',
         transport: transportConfig.type,
-        transportHeaderCount: Object.keys(headers || {}).length,
+        httpHeaderCount: Object.keys(headers || {}).length,
       };
       if (profileName) {
         updateData.profileName = profileName;
@@ -128,7 +128,7 @@ export async function connectSession(
         target: transportConfig.url || transportConfig.command || 'unknown',
         transport: transportConfig.type,
         createdAt: new Date().toISOString(),
-        transportHeaderCount: Object.keys(headers || {}).length,
+        httpHeaderCount: Object.keys(headers || {}).length,
       };
       if (profileName) {
         sessionData.profileName = profileName;
