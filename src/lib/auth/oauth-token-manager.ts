@@ -23,6 +23,13 @@ const EXPIRY_BUFFER_SECONDS = 60;
 export type OnTokenRefreshCallback = (tokens: OAuthTokenResponse) => void | Promise<void>;
 
 /**
+ * Callback invoked before token refresh to reload latest tokens
+ * Returns the current refresh token from persistent storage (e.g., keychain)
+ * This handles cases where another process may have rotated the token
+ */
+export type OnBeforeRefreshCallback = () => Promise<{ refreshToken?: string; accessToken?: string; accessTokenExpiresAt?: number } | undefined>;
+
+/**
  * Options for creating an OAuthTokenManager
  */
 export interface OAuthTokenManagerOptions {
@@ -38,6 +45,8 @@ export interface OAuthTokenManagerOptions {
   accessTokenExpiresAt?: number;
   /** Callback when tokens are refreshed (for persistence) */
   onTokenRefresh?: OnTokenRefreshCallback;
+  /** Callback to reload tokens before refresh (handles token rotation by other processes) */
+  onBeforeRefresh?: OnBeforeRefreshCallback;
 }
 
 /**
@@ -51,6 +60,7 @@ export class OAuthTokenManager {
   private accessToken: string | null = null;
   private accessTokenExpiresAt: number | null = null; // unix timestamp
   private onTokenRefresh?: OnTokenRefreshCallback;
+  private onBeforeRefresh?: OnBeforeRefreshCallback;
 
   constructor(options: OAuthTokenManagerOptions) {
     this.serverUrl = options.serverUrl;
@@ -61,6 +71,9 @@ export class OAuthTokenManager {
     this.accessTokenExpiresAt = options.accessTokenExpiresAt ?? null;
     if (options.onTokenRefresh) {
       this.onTokenRefresh = options.onTokenRefresh;
+    }
+    if (options.onBeforeRefresh) {
+      this.onBeforeRefresh = options.onBeforeRefresh;
     }
   }
 
@@ -92,6 +105,32 @@ export class OAuthTokenManager {
    * @throws AuthError if refresh fails
    */
   async refreshAccessToken(): Promise<OAuthTokenResponse> {
+    // Reload tokens from keychain before refresh (handles token rotation by other processes)
+    if (this.onBeforeRefresh) {
+      logger.debug('Reloading tokens from storage before refresh...');
+      const latestTokens = await this.onBeforeRefresh();
+      if (latestTokens) {
+        if (latestTokens.refreshToken && latestTokens.refreshToken !== this.refreshToken) {
+          logger.debug('Found newer refresh token in storage (another process rotated it)');
+          this.refreshToken = latestTokens.refreshToken;
+        }
+        // Also update access token if still valid (another process may have refreshed)
+        if (latestTokens.accessToken && latestTokens.accessTokenExpiresAt) {
+          const nowSeconds = Math.floor(Date.now() / 1000);
+          if (latestTokens.accessTokenExpiresAt > nowSeconds + EXPIRY_BUFFER_SECONDS) {
+            logger.debug('Found valid access token in storage, using it instead of refreshing');
+            this.accessToken = latestTokens.accessToken;
+            this.accessTokenExpiresAt = latestTokens.accessTokenExpiresAt;
+            // Return early - no need to refresh, we have a valid token
+            return {
+              access_token: this.accessToken,
+              token_type: 'Bearer',
+            };
+          }
+        }
+      }
+    }
+
     if (!this.refreshToken) {
       throw createReauthError(
         this.serverUrl,

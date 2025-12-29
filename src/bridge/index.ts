@@ -17,7 +17,7 @@ import { loadSessions, updateSession } from '../lib/sessions.js';
 import type { AuthCredentials } from '../lib/types.js';
 import { OAuthTokenManager } from '../lib/auth/oauth-token-manager.js';
 import { OAuthProvider } from '../lib/auth/oauth-provider.js';
-import { storeKeychainOAuthTokenInfo } from '../lib/auth/keychain.js';
+import { storeKeychainOAuthTokenInfo, readKeychainOAuthTokenInfo } from '../lib/auth/keychain.js';
 import type { Tool, Resource, Prompt } from '@modelcontextprotocol/sdk/types.js';
 import packageJson from '../../package.json' with { type: 'json' };
 
@@ -98,6 +98,27 @@ class BridgeProcess {
         profileName: credentials.profileName,
         clientId: credentials.clientId,
         refreshToken: credentials.refreshToken,
+        // Reload tokens from keychain before refresh (handles token rotation by other processes)
+        onBeforeRefresh: async () => {
+          logger.debug('Reloading tokens from keychain before refresh...');
+          const tokenInfo = await readKeychainOAuthTokenInfo(credentials.serverUrl, credentials.profileName);
+          if (!tokenInfo) {
+            logger.debug('No tokens found in keychain');
+            return undefined;
+          }
+          logger.debug('Loaded tokens from keychain');
+          // Build result object with only defined properties (for exactOptionalPropertyTypes)
+          const result: { refreshToken?: string; accessToken?: string; accessTokenExpiresAt?: number } = {
+            accessToken: tokenInfo.accessToken,
+          };
+          if (tokenInfo.refreshToken) {
+            result.refreshToken = tokenInfo.refreshToken;
+          }
+          if (tokenInfo.expiresAt !== undefined) {
+            result.accessTokenExpiresAt = tokenInfo.expiresAt;
+          }
+          return result;
+        },
         // Persist new tokens when refresh token rotation happens
         onTokenRefresh: async (tokens) => {
           logger.debug('Token rotation detected, persisting new tokens to keychain');
