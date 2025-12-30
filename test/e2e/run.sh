@@ -221,40 +221,44 @@ fi
 echo -e "${GREEN}Build complete${NC}"
 echo ""
 
-# Results tracking
-RESULTS_DIR="$RUN_DIR/results"
-mkdir -p "$RESULTS_DIR"
-
 # Function to run a single test
 run_test() {
   local test_path="$1"
   local test_id=$(test_name "$test_path")
-  local result_file="$RESULTS_DIR/${test_id//\//_}.result"
-  local log_file="$RESULTS_DIR/${test_id//\//_}.log"
+  local test_dir="$E2E_RUNS_DIR/$E2E_RUN_ID/$test_id"
 
-  # Run the test
-  if bash "$test_path" > "$log_file" 2>&1; then
-    echo "0" > "$result_file"
+  # Ensure test directory exists (framework.sh creates it, but be safe)
+  mkdir -p "$test_dir"
+
+  # Run the test, output goes to test's directory
+  if bash "$test_path" > "$test_dir/output.log" 2>&1; then
+    echo "0" > "$test_dir/result"
   else
-    echo "$?" > "$result_file"
+    echo "$?" > "$test_dir/result"
   fi
 }
 
 export -f run_test test_name
-export SCRIPT_DIR SUITES_DIR RESULTS_DIR E2E_RUN_ID E2E_RUNS_DIR E2E_SHARED_HOME E2E_ISOLATED_ALL PROJECT_ROOT NODE_V8_COVERAGE
+export SCRIPT_DIR SUITES_DIR E2E_RUN_ID E2E_RUNS_DIR E2E_SHARED_HOME E2E_ISOLATED_ALL PROJECT_ROOT NODE_V8_COVERAGE
 
 # Run tests
 echo -e "${BLUE}Running tests...${NC}"
 echo ""
 
 if [[ "$VERBOSE" == "true" ]]; then
-  # Sequential with output
+  # Sequential with output shown in real-time
   for test in "${TESTS[@]}"; do
     name=$(test_name "$test")
+    test_dir="$RUN_DIR/$name"
+    mkdir -p "$test_dir"
+
     echo -e "${DIM}Running: $name${NC}"
-    if bash "$test"; then
+    # Run test, show output in real-time, and save to file
+    if bash "$test" 2>&1 | tee "$test_dir/output.log"; then
+      echo "0" > "$test_dir/result"
       echo -e "${GREEN}✓${NC} $name"
     else
+      echo "${PIPESTATUS[0]}" > "$test_dir/result"
       echo -e "${RED}✗${NC} $name"
     fi
   done
@@ -276,8 +280,8 @@ FAILED_TESTS=()
 
 for test in "${TESTS[@]}"; do
   test_id=$(test_name "$test")
-  result_file="$RESULTS_DIR/${test_id//\//_}.result"
-  log_file="$RESULTS_DIR/${test_id//\//_}.log"
+  test_dir="$RUN_DIR/$test_id"
+  result_file="$test_dir/result"
 
   if [[ -f "$result_file" ]]; then
     result=$(cat "$result_file")
@@ -308,7 +312,7 @@ if [[ ${#FAILED_TESTS[@]} -gt 0 ]]; then
   echo ""
   echo -e "${RED}Failed test logs:${NC}"
   for test_id in "${FAILED_TESTS[@]}"; do
-    log_file="$RESULTS_DIR/${test_id//\//_}.log"
+    log_file="$RUN_DIR/$test_id/output.log"
     if [[ -f "$log_file" ]]; then
       echo ""
       echo -e "${RED}═══ $test_id ═══${NC}"
@@ -353,6 +357,9 @@ if [[ "$COVERAGE" == "true" ]]; then
   echo "Coverage report: $COVERAGE_DIR/index.html"
   echo "LCOV data:       $COVERAGE_DIR/lcov.info"
 fi
+
+# Clean up empty tmp directories (no value keeping them)
+find "$RUN_DIR" -type d -name "tmp" -empty -delete 2>/dev/null || true
 
 # Cleanup or preserve run directory
 if [[ "$KEEP_RUNS" != "true" && $FAILED -eq 0 ]]; then

@@ -292,7 +292,27 @@ test/
 │       │   └── failover.test.sh
 │       └── stdio/          # Stdio transport tests
 │           └── filesystem.test.sh
-└── runs/                   # Test run artifacts (auto-cleaned)
+└── runs/                   # Test run artifacts (auto-cleaned on success)
+```
+
+### Test run directory structure
+
+Each test run creates a timestamped directory with all test artifacts:
+
+```
+test/runs/<run-id>/
+├── _shared_home/           # Shared mcpc home directory
+│   ├── sessions.json
+│   └── profiles.json
+├── basic/                  # Test suite
+│   └── help/               # Individual test
+│       ├── result          # Exit code (0 = pass)
+│       ├── output.log      # Test stdout/stderr
+│       ├── commands.log    # Detailed mcpc command logs
+│       ├── server.log      # Test server logs (if started)
+│       ├── tmp/            # Temp artifacts
+│       └── _home/          # Isolated home (if --isolated)
+└── v8-coverage/            # Coverage data (if --coverage)
 ```
 
 ### Environment variables

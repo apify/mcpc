@@ -116,9 +116,6 @@ test_init() {
   fi
   mkdir -p "$MCPC_HOME_DIR"
 
-  # Create logs directory
-  mkdir -p "$_TEST_RUN_DIR/logs"
-
   # Create temp directory for test artifacts
   export TEST_TMP="$_TEST_RUN_DIR/tmp"
   mkdir -p "$TEST_TMP"
@@ -194,7 +191,7 @@ run_mcpc() {
     cat "$stderr_file"
     echo "=== end ==="
     echo ""
-  } >> "$_TEST_RUN_DIR/logs/commands.log"
+  } >> "$_TEST_RUN_DIR/commands.log"
 
   rm -f "$stdout_file" "$stderr_file"
 }
@@ -506,7 +503,7 @@ start_test_server() {
 
   # Start server
   cd "$PROJECT_ROOT"
-  env $env_str npx tsx test/e2e/server/index.ts >"$_TEST_RUN_DIR/logs/server.log" 2>&1 &
+  env $env_str npx tsx test/e2e/server/index.ts >"$_TEST_RUN_DIR/server.log" 2>&1 &
   _TEST_SERVER_PID=$!
 
   # Wait for server to be ready
@@ -517,7 +514,7 @@ start_test_server() {
     ((waited++)) || true
     if [[ $waited -ge $max_wait ]]; then
       echo "Error: Test server failed to start" >&2
-      cat "$_TEST_RUN_DIR/logs/server.log" >&2
+      cat "$_TEST_RUN_DIR/server.log" >&2
       kill $_TEST_SERVER_PID 2>/dev/null || true
       exit 1
     fi
