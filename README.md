@@ -5,7 +5,7 @@ which maps MCP operations to intuitive commands for interactive shell use, scrip
 
 `mcpc` can connect to any MCP server over Streamable HTTP or stdio transports,
 securely login via OAuth credentials and store credentials,
-and keep long-term sessions to multiple servers in parallel.
+and keep long-term sessions to multiple servers.
 It supports all major MCP features, including tools, resources, prompts, asynchronous tasks, and notifications.
 
 `mcpc` is handy for manual testing of MCP servers, scripting,
@@ -13,18 +13,27 @@ and AI coding agents to use MCP in ["code mode"](https://www.anthropic.com/engin
 for better accuracy and lower token compared to traditional tool function calling.
 After all, UNIX-compatible shell script is THE most universal coding language, for people and LLMs alike.
 
-Note that `mcpc` is deterministic and does not use any LLM on its own; that's left for the higher layer.
+Note that `mcpc` does not use LLMs on its own; that's left for the higher layer.
 
-<!--
+**Features**
+
+- 🔌 **Universal MCP client** - Works with any MCP server over Streamable HTTP or stdio.
+- 🔄 **Persistent sessions** - Keep multiple server connections alive simultaneously.
+- 🚀 **Zero setup** - Connect to remote servers instantly with just a URL.
+- 🔧 **Full protocol support** - Tools, resources, prompts, dynamic discovery, and async notifications.
+- 📊 **JSON output** - Easy integration with `jq`, scripts, and other CLI tools.
+- 🤖 **AI-friendly** - Designed for code generation and automated workflows.
+- 🔒 **Secure** - OS keychain integration for credentials, encrypted auth storage.
+
+
 ## Table of contents
-
+<!--
 TODO: Simplify README - there are too many top-level sections, and then show just the second level ones
 -->
 
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
 
-- [Features](#features)
 - [Install](#install)
 - [Quickstart](#quickstart)
 - [Usage](#usage)
@@ -72,15 +81,6 @@ TODO: Simplify README - there are too many top-level sections, and then show jus
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
-## Features
-
-- 🔌 **Universal MCP client** - Works with any MCP server over Streamable HTTP or stdio.
-- 🔄 **Persistent sessions** - Keep multiple server connections alive simultaneously.
-- 🚀 **Zero setup** - Connect to remote servers instantly with just a URL.
-- 🔧 **Full protocol support** - Tools, resources, prompts, dynamic discovery, and async notifications.
-- 📊 **`--json` output** - Easy integration with `jq`, scripts, and other CLI tools.
-- 🤖 **AI-friendly** - Designed for code generation and automated workflows.
-- 🔒 **Secure** - OS keychain integration for credentials, encrypted auth storage.
 
 ## Install
 
@@ -701,10 +701,10 @@ Config files support environment variable substitution using `${VAR_NAME}` synta
 
 Default output is formatted for human and AI readability with plain text, colors, and Markdown-like formatting.
 
-### JSON mode (`--json`)
+### JSON mode
 
-In JSON mode, `mcpc` always emits only a single JSON object to enable scripting.
-For MCP commands, the object is always consistent with the MCP protocol specification.
+If `--json` option is provided, `mcpc` always emits only a single JSON object, in order to enable scripting.
+For MCP commands, the returned objects are always consistent with the [MCP protocol specification](https://modelcontextprotocol.io/specification/latest).
 On success, the JSON object is printed to stdout, otherwise to stderr.
 
 ## Security
