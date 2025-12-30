@@ -23,13 +23,13 @@ TODO: Simplify README - there are too many top-level sections, and then show jus
 
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
-<!--
+
 - [Features](#features)
 - [Install](#install)
 - [Quickstart](#quickstart)
 - [Usage](#usage)
   - [MCP command arguments](#mcp-command-arguments)
-- [Global flags](#global-flags)
+  - [Global flags](#global-flags)
 - [Authentication](#authentication)
   - [No authentication](#no-authentication)
   - [Bearer token authentication](#bearer-token-authentication)
@@ -64,25 +64,12 @@ TODO: Simplify README - there are too many top-level sections, and then show jus
 - [Interactive shell](#interactive-shell)
 - [Claude Code skill](#claude-code-skill)
 - [Troubleshooting](#troubleshooting)
-  - [Common issues](#common-issues)
-  - [Debug mode](#debug-mode)
   - [Logs](#logs)
-- [Development](#development)
-  - [Design principles](#design-principles)
-  - [Architecture overview](#architecture-overview)
-  - [Core module (runtime-agnostic)](#core-module-runtime-agnostic)
-  - [Bridge process](#bridge-process)
-  - [CLI executable](#cli-executable)
-  - [Session lifecycle](#session-lifecycle)
-  - [Error recovery](#error-recovery)
-- [Testing strategy](#testing-strategy)
+  - [Common issues](#common-issues)
 - [Contributing](#contributing)
-  - [Development setup](#development-setup)
-  - [Release process](#release-process)
-  - [References](#references)
 - [Authors](#authors)
 - [License](#license)
--->
+
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
 ## Features
@@ -216,7 +203,7 @@ echo '{"query":"hello","count":10}' | mcpc @server tools-call my-tool
 - `=` assigns as string, `:=` parses as JSON
 - Stdin is automatically detected when input is piped (not interactive terminal)
 
-## Global flags
+### Global flags
 
 - `--json` - Input and output in JSON format for scripting
 - `--config <file>` - Use MCP config JSON file (e.g., `.vscode/mcp.json`)
@@ -535,6 +522,8 @@ mcpc https://mcp.apify.com session @apify
 ```
 
 ## Logging
+
+TODO: Move this to MPC features section
 
 The background bridge process logs to `~/.mcpc/logs/bridge-<session-name>.log`.
 The main `mcpc` process doesn't save log files, but you can use `--verbose` flag to print all logs to stderr.
@@ -860,25 +849,7 @@ See [`claude-skill/README.md`](./claude-skill/README.md) for details.
 
 ## Troubleshooting
 
-### Common issues
-
-**"Cannot connect to bridge"**
-- Bridge may have crashed. Try: `mcpc <server> session @<session-name>`
-- Check bridge is running: `ps aux | grep -e 'mcpc-bridge' -e '[m]cpc/dist/bridge'`
-- Check socket exists: `ls ~/.mcpc/bridges/`
-
-**"Session not found"**
-- Session may have expired. Create new session: `mcpc <target> session @<session-name>`
-- List existing sessions: `mcpc`
-
-**"Authentication failed"**
-- List saved profiles: `mcpc`
-- Re-authenticate: `mcpc <server> login [--profile <name>]`
-- For bearer tokens: provide `--header "Authorization: Bearer ${TOKEN}"` again
-
-### Debug mode
-
-Enable detailed logging with `--verbose`:
+To see what's happening, enable detailed logging with `--verbose`:
 
 ```bash
 mcpc --verbose @apify tools-list
@@ -899,231 +870,26 @@ Bridge processes log to:
 
 Log rotation: Keep last 10MB per session, max 5 files.
 
-## Development
+### Common issues
 
-`mcpc` is under active development and some things might not work 100% yet. You have been warned.
+**"Cannot connect to bridge"**
+- Bridge may have crashed. Try: `mcpc @<session-name> tools-list` to restart the bridge
+- Check bridge is running: `ps aux | grep -e 'mcpc-bridge' -e '[m]cpc/dist/bridge'`
+- Check socket exists: `ls ~/.mcpc/bridges/`
 
-### Design principles
+**"Session not found"**
+- List existing sessions: `mcpc`
+- Create new session if expired: `mcpc @<session-name> close` and `mcpc <target> session @<session-name>`
 
-- Delightful for humans and AI agents alike (interactive + scripting)
-- Avoid unnecessary interaction loops, provide sufficient context, yet be concise (save tokens)
-- One clear way to do things (orthogonal commands, no surprises)
-- Do not ask for user input (except `shell` and `login`, no unexpected OAuth flows)
-- Be forgiving, always help users make progress (great errors + guidance)
-- Be consistent with the [MCP specification](https://modelcontextprotocol.io/specification/latest), with `--json` strictly
-- Minimal and portable (few deps, cross-platform)
-- Keep backwards compatibility as much as possible
-- No slop!
+**"Authentication failed"**
+- List saved OAuth profiles: `mcpc`
+- Re-authenticate: `mcpc <server> login [--profile <name>]`
+- For bearer tokens: provide `--header "Authorization: Bearer ${TOKEN}"` again
 
-### Architecture overview
-
-```
-TODO: add interaction diagram
-mcpc ──> cli ├──> bridge (UNIX socket) ──> MCP server (stdio/HTTP)
-             ├──> MCP server (stdio/HTTP)
-
-mcpc (single package)
-├── src/
-│   ├── core/           # Core MCP protocol implementation
-│   ├── bridge/         # Bridge process logic
-│   ├── cli/            # CLI interface
-│   └── lib/            # Shared utilities
-├── bin/
-│   ├── mcpc            # Main CLI executable
-│   └── mcpc-bridge     # Bridge process executable
-```
-
-### Core module (runtime-agnostic)
-
-Implemented with minimal dependencies to support both Node.js (≥18.0.0) and Bun (≥1.0.0).
-
-**Core responsibilities:**
-- Transport selection and initialization (Streamable HTTP vs stdio)
-- MCP protocol implementation and version negotiation
-- Session state machine management
-- Streamable HTTP connection management (reconnection with exponential backoff)
-- Request/response correlation (JSON-RPC style with request IDs)
-- Multiplexing concurrent requests (up to 10 concurrent)
-- Event emitter for async notifications
-
-**Key dependencies:**
-- Native `fetch` API (available in Node.js 18+ and Bun)
-- Native process APIs for stdio transport
-- Minimal: UUID generation, event emitter abstraction
-
-### Bridge process
-
-Implemented as a separate executable (`mcpc-bridge`) that maintains persistent connections.
-
-**Bridge responsibilities:**
-- Session persistence (reads/writes `~/.mcpc/sessions.json` with file locking)
-- Process lifecycle management for local package servers
-- Stdio framing and protocol handling
-- Unix domain socket server for CLI communication
-- Heartbeat mechanism for health monitoring
-- Orphaned process cleanup on startup
-
-**IPC protocol:**
-- Unix domain sockets (located in `~/.mcpc/bridges/<session-name>.sock`)
-- Named pipes on Windows
-- JSON-RPC style messages over socket
-- Control messages: init, request, cancel, close, health-check
-
-**Bridge discovery:**
-- CLI reads `~/.mcpc/sessions.json` to find socket path and PID
-- Validates bridge is alive (connect to socket + health-check)
-- Auto-restarts crashed bridges (detected via socket connection failure)
-- Cleanup: removes stale socket files for dead processes
-
-**Concurrency safety:**
-- `~/.mcpc/sessions.json` protected with file locking (`proper-lockfile` package)
-- Atomic writes (write to temp file, then rename)
-- Lock timeout: 5 seconds (fails if can't acquire lock)
-
-### CLI executable
-
-The main `mcpc` command provides the user interface.
-
-**CLI responsibilities:**
-- Argument parsing using Commander.js
-- Output formatting (human-readable vs `--json`)
-- Bridge lifecycle: start/connect/stop
-- Communication with bridge via socket
-- Interactive shell (REPL using Node.js `readline`)
-- Configuration file loading (standard MCP JSON format)
-- Credential management (OS keychain via `keytar` package)
-
-**Shell implementation:**
-- Built on Node.js `readline` module for input handling with history support
-- Command history using `~/.mcpc/history` (last 1000 commands)
-- Real-time notification display during shell sessions
-- Graceful exit handling (cleanup on Ctrl+C/Ctrl+D)
-
-### Session lifecycle
-
-1. User: `mcpc https://mcp.apify.com session @apify`
-2. CLI: Atomically creates session entry in `~/.mcpc/sessions.json`
-3. CLI: Spawns bridge process (`mcpc-bridge`)
-4. Bridge: Creates Unix socket at `~/.mcpc/bridges/apify.sock`
-5. Bridge: Performs MCP initialization handshake with server:
-   - Sends initialize request with protocol version and capabilities
-   - Receives server info, version, and capabilities
-   - Sends initialized notification to activate session
-6. Bridge: Updates session in `~/.mcpc/sessions.json` (adds PID, socket path, protocol version)
-7. CLI: Confirms session created
-
-Later...
-
-8. User: mcpc @apify tools-list
-9. CLI: Reads `~/.mcpc/sessions.json`, finds socket path
-10. CLI: Connects to bridge socket
-11. CLI: Sends `tools/list` JSON-RPC request via socket
-12. Bridge: Forwards to MCP server via Streamable HTTP
-13. Bridge: Returns response via socket
-14. CLI: Formats and displays to user
-
-
-### Error recovery
-
-**Bridge crashes:**
-1. CLI detects socket connection failure
-2. Reads `~/.mcpc/sessions.json` for last known config
-3. Spawns new bridge process
-4. Bridge re-initializes connection to MCP server
-5. Continues request
-
-**Network failures:**
-1. Bridge detects connection error
-2. Begins exponential backoff reconnection
-3. Queues incoming requests (up to 100, max 3min)
-4. On reconnect: drains queue
-5. On timeout: fails queued requests with network error
-
-**Orphaned processes:**
-1. On startup, CLI scans `~/.mcpc/bridges/` directory
-2. For each socket file, attempts connection
-3. If connection fails, reads PID from sessions.json
-4. Checks if process exists (via `kill -0` or similar)
-5. If dead: removes socket file and session entry
-6. If alive but unresponsive: kills process, removes entries
-
-## Testing strategy
-
-**Unit tests:**
-- Core protocol implementation (mocked transports)
-- Argument parsing and validation
-- Output formatting (human and JSON modes)
-
-**Integration tests:**
-- Mock MCP server (simple Streamable HTTP + stdio servers)
-- Bridge lifecycle (start, connect, restart, cleanup)
-- Session management with file locking
-- Stream reconnection logic
-
-**E2E tests:**
-- Real MCP server implementations
-- Cross-runtime (Node.js and Bun)
-- Interactive shell workflows
-
-**Test utilities:**
-- `test/e2e/server/` - Test MCP server for E2E tests
-- `test/mock-keychain.ts` - Mock OS keychain for testing
 
 ## Contributing
 
-Contributions are welcome!
-
-### Development setup
-
-```bash
-# Clone repository
-git clone https://github.com/apify/mcpc.git
-cd mcpc
-
-# Install dependencies
-npm install
-
-# Run tests
-npm test
-
-# Build
-npm run build
-
-# Test locally
-npm link
-mcpc --help
-```
-
-### Release process
-
-Use the release script to publish a new version (must be on `main` branch):
-
-```bash
-npm run release          # patch version bump (0.1.2 → 0.1.3)
-npm run release:minor    # minor version bump (0.1.2 → 0.2.0)
-npm run release:major    # major version bump (0.1.2 → 1.0.0)
-```
-
-The script automatically:
-- Ensures you're on `main` branch
-- Ensures working directory is clean (no uncommitted changes)
-- Ensures branch is up-to-date with remote
-- Runs lint, build, and tests
-- Bumps the version in package.json
-- Creates a git commit and annotated tag (`v{version}`)
-- Pushes the commit and tag to origin
-- Publishes to npm
-
-After publishing, create a GitHub release at the provided link.
-
-Please open an issue or pull request on [GitHub](https://github.com/apify/mcpc).
-
-
-### References
-
-- [Official MCP documentation](https://modelcontextprotocol.io/llms.txt)
-- [Official TypeScript SDK for MCP servers and clients](https://www.npmjs.com/package/@modelcontextprotocol/sdk)
-- [MCP Inspector](https://github.com/modelcontextprotocol/inspector) - CLI client implementation for reference
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for development setup, architecture overview, and contribution guidelines.
 
 ## Authors
 
