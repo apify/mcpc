@@ -2,9 +2,9 @@
  * Authentication management commands
  */
 
-import { formatSuccess, formatError, formatOutput, formatInfo } from '../output.js';
+import { formatSuccess, formatError, formatOutput, formatInfo, formatWarning } from '../output.js';
 import type { CommandOptions } from '../../lib/types.js';
-import { deleteAuthProfile } from '../../lib/auth/profiles.js';
+import { deleteAuthProfiles } from '../../lib/auth/profiles.js';
 import { performOAuthFlow } from '../../lib/auth/oauth-flow.js';
 import { normalizeServerUrl, validateProfileName } from '../../lib/utils.js';
 import chalk from 'chalk';
@@ -74,9 +74,9 @@ export async function logout(
 
     validateProfileName(profileName);
 
-    const deleted = await deleteAuthProfile(normalizedUrl, profileName);
+    const result = await deleteAuthProfiles(normalizedUrl, profileName);
 
-    if (!deleted) {
+    if (result.count === 0) {
       if (options.outputMode === 'human') {
         console.error(
           formatError(`Profile ${chalk.cyan(profileName)} for ${normalizedUrl} not found`)
@@ -90,6 +90,14 @@ export async function logout(
 
     if (options.outputMode === 'human') {
       console.log(formatSuccess(`Profile ${chalk.cyan(profileName)} for ${normalizedUrl} deleted`));
+
+      // Warn about affected sessions
+      if (result.affectedSessions.length > 0) {
+        console.log(formatWarning(
+          `Warning: ${result.affectedSessions.length} session(s) were using this profile: ${result.affectedSessions.join(', ')}`
+        ));
+        console.log(formatWarning('These sessions may fail to authenticate. Recreate them or login again.'));
+      }
     } else {
       console.log(
         formatOutput(
@@ -97,6 +105,7 @@ export async function logout(
             profile: profileName,
             serverUrl: normalizedUrl,
             deleted: true,
+            affectedSessions: result.affectedSessions,
           },
           'json'
         )

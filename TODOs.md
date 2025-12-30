@@ -2,9 +2,7 @@
 # TODOs
 
 ## Bugs
-- IMPORTANT: on profile clean, delete the keychain data, otherwise OAuth login might fail next
-  time, for the same client_id !!! Plus when user runs --clean=profiles, print warning if some 
-  sessions were using them
+- 
 
 ## Next
 

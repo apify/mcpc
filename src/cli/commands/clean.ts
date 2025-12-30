@@ -7,10 +7,11 @@ import { readdir, unlink, rm } from 'fs/promises';
 import { join } from 'path';
 import type { OutputMode } from '../../lib/index.js';
 import { getMcpcHome, getBridgesDir, getLogsDir, fileExists, cleanupOrphanedLogFiles } from '../../lib/index.js';
-import { formatOutput, formatSuccess } from '../output.js';
+import { formatOutput, formatSuccess, formatWarning } from '../output.js';
 import { loadSessions, deleteSession, consolidateSessions } from '../../lib/sessions.js';
 import { stopBridge } from '../../lib/bridge-manager.js';
 import { createLogger } from '../../lib/logger.js';
+import { deleteAuthProfiles } from '../../lib/auth/profiles.js';
 
 const logger = createLogger('clean');
 
@@ -29,6 +30,7 @@ interface CleanResult {
   sessions: number;
   profiles: number;
   logs: number;
+  affectedSessions?: string[]; // Sessions that were using deleted profiles
 }
 
 /**
@@ -84,27 +86,6 @@ async function cleanSessions(): Promise<number> {
 }
 
 /**
- * Clean all authentication profiles
- */
-async function cleanProfiles(): Promise<number> {
-  const mcpcHome = getMcpcHome();
-  const profilesFile = join(mcpcHome, 'profiles.json');
-
-  if (!(await fileExists(profilesFile))) {
-    return 0;
-  }
-
-  try {
-    await unlink(profilesFile);
-    logger.debug('Removed profiles.json');
-    // TODO: Also clean keychain entries for OAuth tokens
-    return 1;
-  } catch {
-    return 0;
-  }
-}
-
-/**
  * Clean all log files
  */
 async function cleanLogs(): Promise<number> {
@@ -148,8 +129,10 @@ async function cleanAll(): Promise<CleanResult> {
   // Clean sessions first (stops bridges, removes keychain data)
   result.sessions = await cleanSessions();
 
-  // Clean auth profiles
-  result.profiles = await cleanProfiles();
+  // Clean auth profiles (including keychain entries)
+  const profilesResult = await deleteAuthProfiles();
+  result.profiles = profilesResult.count;
+  result.affectedSessions = profilesResult.affectedSessions;
 
   // Clean logs
   result.logs = await cleanLogs();
@@ -242,7 +225,9 @@ export async function clean(options: CleanOptions): Promise<void> {
   }
 
   if (options.profiles) {
-    result.profiles = await cleanProfiles();
+    const profilesResult = await deleteAuthProfiles();
+    result.profiles = profilesResult.count;
+    result.affectedSessions = profilesResult.affectedSessions;
   }
 
   if (options.logs) {
@@ -275,7 +260,7 @@ export async function clean(options: CleanOptions): Promise<void> {
     }
 
     if (options.profiles) {
-      messages.push(result.profiles > 0 ? 'Removed authentication profiles' : 'No profiles to remove');
+      messages.push(result.profiles > 0 ? `Removed ${result.profiles} authentication profile(s)` : 'No profiles to remove');
     }
 
     if (options.logs) {
@@ -284,6 +269,14 @@ export async function clean(options: CleanOptions): Promise<void> {
 
     for (const msg of messages) {
       console.log(formatSuccess(msg));
+    }
+
+    // Warn about sessions that were using deleted profiles
+    if (result.affectedSessions && result.affectedSessions.length > 0) {
+      console.log(formatWarning(
+        `Warning: ${result.affectedSessions.length} session(s) were using deleted profiles: ${result.affectedSessions.join(', ')}`
+      ));
+      console.log(formatWarning('These sessions may fail to authenticate. Recreate them or login again.'));
     }
   } else {
     console.log(formatOutput(result, 'json'));

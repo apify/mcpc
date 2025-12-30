@@ -1,6 +1,9 @@
 # Testing
 
 This directory contains the test suite for mcpc.
+There are two kinds of tests: unit and end-to-end (e2e).
+Unit tests are self-contained and don't need any configurations.
+However, **e2e tests need a local setup** - see [E2E Setup](#e2e-setup) for details.
 
 ## Quick start
 
@@ -75,7 +78,19 @@ test/unit/
 
 ## E2E tests
 
-End-to-end tests verify mcpc behavior from the command line, testing real MCP connections with session management, bridge processes, and various transports.
+End-to-end tests verify mcpc behavior from the command line, testing real MCP connections with
+session management, bridge processes, and various transports.
+
+### E2E setup
+
+In order to test OAuth with real-world, remote MCP server, you need to run the following commands 
+locally:
+
+- `mcpc mcp.apify.com login --profile e2e-test1`
+- `mcpc mcp.apify.com login --profile e2e-test2`
+
+To do that, you'll need to [create a free Apify account](http://console.apify.com/sign-up) - you 
+can use the same one for both profiles.
 
 ### Running tests
 

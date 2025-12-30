@@ -119,7 +119,7 @@ mcpc [--json] [--config <file>] [-H|--header "K: V"] [-v|--version]
      <target> <command...>
 
 # Lists all active sessions and saved authentication profiles
-mcpc         
+mcpc
 
 # Shows server or session info, instructions, and capabilities         
 mcpc <target>

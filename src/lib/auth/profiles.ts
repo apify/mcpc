@@ -9,6 +9,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import type { AuthProfile, AuthProfilesStorage } from '../types.js';
 import { getAuthProfilesFilePath, fileExists, ensureDir, getMcpcHome, getServerHost } from '../utils.js';
+import { loadSessions } from '../sessions.js';
 import { withFileLock } from '../file-lock.js';
 import { createLogger } from '../logger.js';
 import { ClientError } from '../errors.js';
@@ -167,34 +168,133 @@ export async function updateAuthProfileRefreshedAt(serverUrl: string, profileNam
 }
 
 /**
- * Delete a specific auth profile (metadata + keychain credentials)
- * Uses getServerHost() to normalize the URL to a canonical host key
+ * Result of deleting auth profiles
  */
-export async function deleteAuthProfile(serverUrl: string, profileName: string): Promise<boolean> {
+export interface DeleteAuthProfilesResult {
+  /** Number of profiles deleted */
+  count: number;
+  /** Session names that were using deleted profiles */
+  affectedSessions: string[];
+}
+
+/**
+ * Delete authentication profiles (metadata + keychain credentials)
+ * Also identifies sessions that were using the deleted profiles
+ *
+ * @param serverUrl - If provided with profileName, delete only that specific profile
+ * @param profileName - If provided with serverUrl, delete only that specific profile
+ * @returns Result with count of deleted profiles and affected sessions
+ *
+ * Usage:
+ * - deleteAuthProfiles() - Delete all profiles
+ * - deleteAuthProfiles(serverUrl, profileName) - Delete specific profile
+ */
+export async function deleteAuthProfiles(
+  serverUrl?: string,
+  profileName?: string
+): Promise<DeleteAuthProfilesResult> {
   const filePath = getAuthProfilesFilePath();
+
+  // Check if profiles file exists
+  if (!(await fileExists(filePath))) {
+    return { count: 0, affectedSessions: [] };
+  }
+
+  const deleteSpecific = serverUrl !== undefined && profileName !== undefined;
+
   return withFileLock(filePath, async () => {
     const storage = await loadAuthProfilesInternal();
-    const host = getServerHost(serverUrl);
 
-    const serverProfiles = storage.profiles[host];
-    if (!serverProfiles || !serverProfiles[profileName]) {
-      return false;
+    // Collect profiles to delete
+    const profilesToDelete: AuthProfile[] = [];
+
+    if (deleteSpecific) {
+      // Delete specific profile
+      const host = getServerHost(serverUrl);
+      const profile = storage.profiles[host]?.[profileName];
+      if (profile) {
+        profilesToDelete.push(profile);
+      }
+    } else {
+      // Delete all profiles
+      for (const host in storage.profiles) {
+        const serverProfiles = storage.profiles[host];
+        if (serverProfiles) {
+          for (const name in serverProfiles) {
+            const profile = serverProfiles[name];
+            if (profile) {
+              profilesToDelete.push(profile);
+            }
+          }
+        }
+      }
     }
 
-    // Delete credentials from OS keychain (tokens + client info)
-    await removeKeychainOAuthClientInfo(serverUrl, profileName);
-    await removeKeychainOAuthTokenInfo(serverUrl, profileName);
-
-    // Delete profile metadata from storage
-    delete serverProfiles[profileName];
-
-    // Clean up empty server entries
-    if (Object.keys(serverProfiles).length === 0) {
-      delete storage.profiles[host];
+    if (profilesToDelete.length === 0) {
+      // No profiles to delete
+      if (!deleteSpecific) {
+        // Delete empty profiles file
+        try {
+          await unlink(filePath);
+        } catch {
+          // Ignore errors
+        }
+      }
+      return { count: 0, affectedSessions: [] };
     }
 
-    await saveAuthProfilesInternal(storage);
-    logger.debug(`Deleted auth profile: ${profileName} for ${host}`);
-    return true;
+    // Find sessions that reference the profiles being deleted
+    const sessionsStorage = await loadSessions();
+    const affectedSessions: string[] = [];
+
+    for (const session of Object.values(sessionsStorage.sessions)) {
+      if (session.profileName) {
+        const sessionHost = getServerHost(session.target);
+        for (const profile of profilesToDelete) {
+          const profileHost = getServerHost(profile.serverUrl);
+          if (sessionHost === profileHost && session.profileName === profile.name) {
+            affectedSessions.push(session.name);
+            break;
+          }
+        }
+      }
+    }
+
+    // Delete keychain entries for each profile
+    for (const profile of profilesToDelete) {
+      try {
+        await removeKeychainOAuthClientInfo(profile.serverUrl, profile.name);
+        await removeKeychainOAuthTokenInfo(profile.serverUrl, profile.name);
+        logger.debug(`Removed keychain entries for profile: ${profile.name} on ${getServerHost(profile.serverUrl)}`);
+      } catch (error) {
+        logger.warn(`Failed to remove keychain entries for ${profile.name}:`, error);
+      }
+    }
+
+    // Update or delete the profiles file
+    if (deleteSpecific) {
+      // Remove specific profile from storage
+      const host = getServerHost(serverUrl);
+      const serverProfiles = storage.profiles[host];
+      if (serverProfiles) {
+        delete serverProfiles[profileName];
+        // Clean up empty server entries
+        if (Object.keys(serverProfiles).length === 0) {
+          delete storage.profiles[host];
+        }
+      }
+      await saveAuthProfilesInternal(storage);
+      logger.debug(`Deleted auth profile: ${profileName} for ${host}`);
+    } else {
+      // Delete the entire profiles file
+      try {
+        await unlink(filePath);
+        logger.debug('Removed profiles.json');
+      } catch {
+        // Ignore errors
+      }
+    }
+
+    return { count: profilesToDelete.length, affectedSessions };
   }, AUTH_PROFILES_DEFAULT_CONTENT);
 }
