@@ -1066,7 +1066,7 @@ Later...
 - Interactive shell workflows
 
 **Test utilities:**
-- `examples/test-server/` - Reference MCP server for testing
+- `test/e2e/server/` - Test MCP server for E2E tests
 - `test/mock-keychain.ts` - Mock OS keychain for testing
 
 ## Contributing

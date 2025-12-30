@@ -168,9 +168,12 @@ function paginate<T>(items: T[], cursor?: string): { items: T[]; nextCursor?: st
   const startIndex = cursor ? parseInt(cursor, 10) : 0;
   const endIndex = startIndex + PAGINATION_SIZE;
   const pageItems = items.slice(startIndex, endIndex);
-  const nextCursor = endIndex < items.length ? String(endIndex) : undefined;
 
-  return { items: pageItems, nextCursor };
+  // Only include nextCursor when there are more items (exactOptionalPropertyTypes compatibility)
+  if (endIndex < items.length) {
+    return { items: pageItems, nextCursor: String(endIndex) };
+  }
+  return { items: pageItems };
 }
 
 // Helper for artificial latency
@@ -464,7 +467,8 @@ async function main() {
         });
 
         // Connect to MCP server
-        await mcpServer.connect(transport);
+        // Type assertion needed due to exactOptionalPropertyTypes incompatibility with MCP SDK
+        await mcpServer.connect(transport as Parameters<typeof mcpServer.connect>[0]);
       } else if (req.method === 'DELETE') {
         // Session termination
         if (sessionId && transports.has(sessionId)) {

@@ -101,8 +101,9 @@ mcpc/
 ├── bin/
 │   ├── mcpc            # Main CLI executable
 │   └── mcpc-bridge     # Bridge process executable
-└── examples/
-    └── test-server/    # Reference MCP server for testing
+└── test/
+    └── e2e/
+        └── server/     # Test MCP server for E2E tests
 ```
 
 ### Core Components
@@ -329,7 +330,7 @@ Environment variable substitution supported: `${VAR_NAME}`
 - Output formatting (human and JSON modes)
 
 **Integration tests:**
-- Mock MCP server (simple Streamable HTTP + stdio servers in `examples/test-server/`)
+- Test MCP server (`test/e2e/server/`)
 - Bridge lifecycle (start, connect, restart, cleanup)
 - Session management with file locking
 - Stream reconnection logic
@@ -340,7 +341,7 @@ Environment variable substitution supported: `${VAR_NAME}`
 - Interactive shell workflows
 
 **Test utilities:**
-- `examples/test-server/` - Reference MCP server
+- `test/e2e/server/` - Test MCP server
 - `test/mock-keychain.ts` - Mock OS keychain
 
 ## Runtime Requirements

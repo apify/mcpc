@@ -1,9 +1,0 @@
-{
-  "name": "example-mcp-server",
-  "version": "1.0.0",
-  "description": "Example MCP server package for testing mcpc",
-  "main": "index.js",
-  "bin": {
-    "example-mcp-server": "index.js"
-  }
-}
