@@ -48,8 +48,7 @@
     "prepublishOnly": "npm run lint && npm run build && npm test",
     "release": "bash scripts/publish.sh",
     "release:minor": "bash scripts/publish.sh minor",
-    "release:major": "bash scripts/publish.sh major",
-    "publish:placeholder": "bash scripts/publish-placeholder.sh"
+    "release:major": "bash scripts/publish.sh major"
   },
   "dependencies": {
     "@inquirer/input": "^5.0.3",
