@@ -182,7 +182,6 @@ async function executeCommand(ctx: ShellContext, line: string): Promise<void> {
 
   if (command === 'exit' || command === 'quit') {
     ctx.running = false;
-    console.log(chalk.dim('Goodbye!'));
     return;
   }
 

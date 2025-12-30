@@ -94,22 +94,22 @@ npm install -g @apify/mcpc
 # List all active sessions and saved authentication profiles
 mcpc
 
-# Use a local server package referenced by MCP config file
+# Interact with a local MCP server package (stdio) referenced from config file
 mcpc --config ~/.vscode/mcp.json filesystem tools-list
 
-# Login to OAuth-enabled MCP server and save authentication for future use
+# Login to remote MCP server and save OAuth credentials for future use
 mcpc mcp.apify.com login
 
 # Show information about a remote MCP server and open interactive shell
 mcpc mcp.apify.com
 mcpc mcp.apify.com shell
 
-# Use JSON mode for scripting
+# Enable JSON mode for scripting
 mcpc --json mcp.apify.com tools-list
 
-# Create a persistent session (or reconnect if it exists but bridge is dead)
+# Create and use persistent MCP session
 mcpc mcp.apify.com session @test
-mcpc @test tools-call search-actors --args query="web crawler"
+mcpc @test tools-call search-actors --args keywords="web crawler"
 mcpc @test shell
 ```
 
