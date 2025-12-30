@@ -8,6 +8,8 @@
 ## Next
 
 - Simplify README - there are too many top-level sections, and then show just the second level ones
+-  - nit: in README, explain the MCP commands better in a standlone section, with details how they work
+
 - Expand --help to use same text as in README, add link to README
 - Do not use Markdown formatting on output
 
@@ -16,20 +18,22 @@
 - Implement resources-subscribe/resources-unsubscribe, --o file command properly, --max-size
   automatically update the -o file on changes, without it just keep track of changed files in bridge process' cache, and report in resources-list
 - Add `--proxy [HOST:]PORT` feature to `connect` command to enable MCP proxy:
-  - `--proxy-bearer-token X` to require auth token for better security
+  - `--proxy-bearer-token X` for proxy to require auth token for better security
   - `--proxy-capabilities tools:TOOL_NAME,TOOL_NAME2,...,prompts[:...],...` to limit access to selected MCP features and tools
     (what if tools have ":" or "," in their names?)
     In theory, we could add limit of capabilities to normal sessions, but the LLM could still break out of it, so what's the point.
   - Explain this is useful for AI sandboxing!
-- Add support for MCP elicitations, and potentially for sampling (e.g. via shell interface?)
-- In tools-list, let's show simplified args on tool details view, e.g. read_text_file
-   • Tool: `write_file` [destructive, idempotent]
-   Input:
-     path: string
-     tail: number - If provided, returns only the last N lines of the file
-     Output: N/A
-  Description:
+
+- In tools-list and tools-schema commdand with human output, let's show simplified tool args, rather than JSON schemas. For example:
+Tool: `write_file` [destructive, idempotent]
+  Input arguments: 
+    path: string [required]
+    tail: number - If provided, returns only the last N lines of the file
+  Output: N/A
+  Description: 
   Text...
+- Later: Add support for MCP elicitations, and potentially for sampling (e.g. via shell interface?)
+
   
 ## Security
 - Double-check the MCP security guidelines
@@ -38,18 +42,19 @@
 ## Later
 
 
-- Implement "mcpc @session restart" .. and maybe also "mcpc <server> connect @session" ?
+- When user runs --clean=profiles, print warning if some sessions were using them
 
 - nit: Colorize output, e.g. JSONs in one color. MCP provided data like descriptions and instructions in orange.
   -  warnings could be orange, errors red
-- nit: Cooler OAuth flow finish web page with CSS animation, add Apify example there, show mcpc info. E.g. next step - check Apify rather than close
-- For auth profiles, fetch the detailed user info via http, ensure the info is up-to-date
 
-- audit that on every command, we print next steps as examples
-- add more shortcuts, e.g. --profile => -p
-- nit: in README, explain the MCP commands better in a standlone section, with details how they work
-- Add unique Session.id and Profile.id and use it for OS keychain keys, to truly enable using multiple independent mcpc profiles
-- When user runs --clean=profiles, print warning if some sessions were using them 
+
+- Implement "mcpc @session restart" .. and maybe also "mcpc <server> connect @session" ?
+
+- nit: Cooler OAuth flow finish web page with CSS animation, add Apify example there, show mcpc info. E.g. next step - check Apify rather than close
+- nit: For auth profiles, fetch the detailed user info via http, ensure the info is up-to-date
+
+- nit: add more shortcuts, e.g. --profile => -p
+- later: Add unique Session.id and Profile.id and use it for OS keychain keys, to truly enable using multiple independent mcpc profiles 
 
 - nit: Implement typing completions (e.g. "mcpc @a...") - not sure how difficult that is
 
@@ -60,17 +65,4 @@
 ## E2E test scenarios
 
 Let's add more e2e test scenarios:
-  - test "mcpc --version" works, with both --json (returns JSON) and without (returns text)
-  - more test for handling of errors, invalid params, names, etc.
-  - test mcpc list operations handle MCP server responses with pagination
-  - test expired session (create fake record in session.json) - ensure attempts to use it will fail with the right error
-  - Test that on graceful session close we send HTTP DELETE to the server (see https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#session-management)
-  - Test session failover - e.g. kill the bridge process, and try to access the session again - should be restarted, work, and have same MCP-Session-Id
-  - Test auth - if no profile available and server requires OAuth, we need to fail with info what to do! e.g. "mcpc https://mcp.sentry.dev/mcp" must suggest running "mcpc https://mcp.sentry.dev/mcp login" in both human mode and in error message in --json mode 
-  - Test server session aborting - if session is rejected by server, bridge process should exit and set session status to "expired"
-  - Test "mcpc @test close" and "mcpc <server> session @test" in rapid succession, it should work and use different pid (check sessions.json)
-  - Ensure calling invalid/unknown MCP command in shell and normally doesn't causes the bridge to be flagged as expired or dead
-  - test env vars work as specified in README
-
-
 - Test auth profiles work long-term and sessions too - basically when running some tests the next day they should use old saved auths and sessions
