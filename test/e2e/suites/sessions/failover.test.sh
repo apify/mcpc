@@ -1,7 +1,7 @@
 #!/bin/bash
 # Test: Session failover (bridge crash recovery)
 
-source "$(dirname "$0")/../lib/framework.sh"
+source "$(dirname "$0")/../../lib/framework.sh"
 test_init "sessions/failover"
 
 # Start test server

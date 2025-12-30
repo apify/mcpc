@@ -1,5 +1,5 @@
 #!/bin/bash
-# E2E Testing Framework for mcpc
+# End-to-end (E2E) testing framework for mcpc
 #
 # Features:
 # - Per-test isolation (each test gets unique home dir, session names)

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Test: Output invariants (--verbose, --json behavior)
 
-source "$(dirname "$0")/../lib/framework.sh"
+source "$(dirname "$0")/../../lib/framework.sh"
 test_init "basic/output-invariants"
 
 # Test: --verbose doesn't change stdout for --help

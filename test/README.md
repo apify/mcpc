@@ -154,7 +154,7 @@ The framework enforces these invariants via `run_xmcpc`:
 #!/bin/bash
 # Test: Description of what this test covers
 
-source "$(dirname "$0")/../lib/framework.sh"
+source "$(dirname "$0")/../../lib/framework.sh"
 test_init "suite/test-name"
 
 # Test case 1
@@ -178,9 +178,9 @@ test_pass
 test_done
 ```
 
-2. Make it executable: `chmod +x test/e2e/suite/mytest.test.sh`
+2. Make it executable: `chmod +x test/e2e/suites/mysuite/mytest.test.sh`
 
-3. Run it: `./test/e2e/run.sh suite/mytest.test.sh`
+3. Run it: `./test/e2e/run.sh mysuite/mytest.test.sh`
 
 ### Framework reference
 
@@ -269,15 +269,16 @@ test/
 │   │   └── framework.sh    # Testing framework
 │   ├── server/
 │   │   └── index.ts        # Test MCP server
-│   ├── basic/              # Basic CLI tests
-│   │   ├── help.test.sh
-│   │   ├── errors.test.sh
-│   │   └── output-invariants.test.sh
-│   ├── sessions/           # Session management tests
-│   │   ├── lifecycle.test.sh
-│   │   └── failover.test.sh
-│   └── stdio/              # Stdio transport tests
-│       └── filesystem.test.sh
+│   └── suites/             # Test suites
+│       ├── basic/          # Basic CLI tests
+│       │   ├── help.test.sh
+│       │   ├── errors.test.sh
+│       │   └── output-invariants.test.sh
+│       ├── sessions/       # Session management tests
+│       │   ├── lifecycle.test.sh
+│       │   └── failover.test.sh
+│       └── stdio/          # Stdio transport tests
+│           └── filesystem.test.sh
 └── runs/                   # Test run artifacts (auto-cleaned)
 ```
 

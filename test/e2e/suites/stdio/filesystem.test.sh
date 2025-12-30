@@ -1,7 +1,7 @@
 #!/bin/bash
 # Test: Stdio transport with filesystem MCP server
 
-source "$(dirname "$0")/../lib/framework.sh"
+source "$(dirname "$0")/../../lib/framework.sh"
 test_init "stdio/filesystem"
 
 # Create a config file for the filesystem server

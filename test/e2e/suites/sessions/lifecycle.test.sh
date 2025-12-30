@@ -1,7 +1,7 @@
 #!/bin/bash
 # Test: Session lifecycle (connect, use, close)
 
-source "$(dirname "$0")/../lib/framework.sh"
+source "$(dirname "$0")/../../lib/framework.sh"
 test_init "sessions/lifecycle"
 
 # Start test server

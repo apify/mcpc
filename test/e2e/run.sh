@@ -76,13 +76,11 @@ while [[ $# -gt 0 ]]; do
       echo "  (no pattern)       Run all tests"
       echo ""
       echo "Available test suites:"
-      for suite in "$SCRIPT_DIR"/*/; do
+      for suite in "$SCRIPT_DIR"/suites/*/; do
         suite_name=$(basename "$suite")
-        if [[ "$suite_name" != "lib" && "$suite_name" != "server" ]]; then
-          test_count=$(find "$suite" -name "*.test.sh" 2>/dev/null | wc -l | tr -d ' ')
-          if [[ $test_count -gt 0 ]]; then
-            echo "  $suite_name/ ($test_count tests)"
-          fi
+        test_count=$(find "$suite" -name "*.test.sh" 2>/dev/null | wc -l | tr -d ' ')
+        if [[ $test_count -gt 0 ]]; then
+          echo "  $suite_name/ ($test_count tests)"
         fi
       done
       exit 0
@@ -98,30 +96,33 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Suites directory
+SUITES_DIR="$SCRIPT_DIR/suites"
+
 # Find all test files matching patterns
 find_tests() {
   local tests=()
 
   if [[ ${#PATTERNS[@]} -eq 0 ]]; then
-    # No pattern - find all tests
+    # No pattern - find all tests in suites/
     while IFS= read -r -d '' test; do
       tests+=("$test")
-    done < <(find "$SCRIPT_DIR" -name "*.test.sh" -print0 | sort -z)
+    done < <(find "$SUITES_DIR" -name "*.test.sh" -print0 | sort -z)
   else
     for pattern in "${PATTERNS[@]}"; do
-      if [[ -f "$SCRIPT_DIR/$pattern" ]]; then
+      if [[ -f "$SUITES_DIR/$pattern" ]]; then
         # Specific file
-        tests+=("$SCRIPT_DIR/$pattern")
-      elif [[ -d "$SCRIPT_DIR/$pattern" ]]; then
+        tests+=("$SUITES_DIR/$pattern")
+      elif [[ -d "$SUITES_DIR/$pattern" ]]; then
         # Directory - find all tests in it
         while IFS= read -r -d '' test; do
           tests+=("$test")
-        done < <(find "$SCRIPT_DIR/$pattern" -name "*.test.sh" -print0 | sort -z)
-      elif [[ -d "$SCRIPT_DIR/${pattern%/}" ]]; then
+        done < <(find "$SUITES_DIR/$pattern" -name "*.test.sh" -print0 | sort -z)
+      elif [[ -d "$SUITES_DIR/${pattern%/}" ]]; then
         # Directory without trailing slash
         while IFS= read -r -d '' test; do
           tests+=("$test")
-        done < <(find "$SCRIPT_DIR/${pattern%/}" -name "*.test.sh" -print0 | sort -z)
+        done < <(find "$SUITES_DIR/${pattern%/}" -name "*.test.sh" -print0 | sort -z)
       else
         echo "Warning: No tests match pattern: $pattern" >&2
       fi
@@ -131,10 +132,10 @@ find_tests() {
   printf '%s\n' "${tests[@]}"
 }
 
-# Get test name from path (relative to e2e dir, without .test.sh)
+# Get test name from path (relative to suites dir, without .test.sh)
 test_name() {
   local path="$1"
-  local rel="${path#$SCRIPT_DIR/}"
+  local rel="${path#$SUITES_DIR/}"
   echo "${rel%.test.sh}"
 }
 
@@ -218,7 +219,7 @@ run_test() {
 }
 
 export -f run_test test_name
-export SCRIPT_DIR RESULTS_DIR E2E_RUN_ID E2E_RUNS_DIR PROJECT_ROOT NODE_V8_COVERAGE
+export SCRIPT_DIR SUITES_DIR RESULTS_DIR E2E_RUN_ID E2E_RUNS_DIR PROJECT_ROOT NODE_V8_COVERAGE
 
 # Run tests
 echo -e "${BLUE}Running tests...${NC}"

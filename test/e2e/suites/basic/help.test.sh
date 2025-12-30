@@ -1,7 +1,7 @@
 #!/bin/bash
 # Test: CLI help and version commands
 
-source "$(dirname "$0")/../lib/framework.sh"
+source "$(dirname "$0")/../../lib/framework.sh"
 test_init "basic/help"
 
 # Test: --help shows usage

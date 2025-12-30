@@ -1,7 +1,7 @@
 #!/bin/bash
 # Test: Error handling for invalid inputs
 
-source "$(dirname "$0")/../lib/framework.sh"
+source "$(dirname "$0")/../../lib/framework.sh"
 test_init "basic/errors"
 
 # Test: invalid session name (special characters)
