@@ -37,7 +37,7 @@
     "test:coverage": "npm run test:coverage:unit && npm run test:coverage:e2e && npm run test:coverage:merge",
     "test:coverage:unit": "jest --coverage && find test/coverage/unit -name '*.html' -exec sed -i '' -e 's/Code coverage report for All files/mcpc Coverage (Unit Tests)/g' -e 's/<h1>All files<\\/h1>/<h1>Unit Test Coverage<\\/h1>/g' {} \\;",
     "test:coverage:e2e": "./test/e2e/run.sh --coverage",
-    "test:coverage:merge": "test/coverage-merge.sh",
+    "test:coverage:merge": "test/coverage/coverage-merge.sh",
     "test:e2e": "./test/e2e/run.sh --keep",
     "lint": "eslint src/**/*.ts",
     "lint:fix": "eslint src/**/*.ts --fix",
