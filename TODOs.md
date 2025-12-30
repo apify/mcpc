@@ -7,8 +7,9 @@
 
 ## Next
 
+- Simplify README - there are too many top-level sections, and then show just the second level ones
 - Expand --help to use same text as in README, add link to README
-- Do not use Markdown formatting
+- Do not use Markdown formatting on output
 
 # MCP features
 
@@ -58,28 +59,12 @@
 
 ## E2E test scenarios
 
-
-Now, each E2E test runs with its own home directory, for isolation of the tests, and they can run in parallel (--parallel option).
-But given that auth profiles are pre-defined in the tests, the only potentially conflicting place is sessions, but each test is supposed to use 
-unique session name, so that should be okay too. So I'm thinking, we could actually use a single home dir for most of the tests
-(with some special exceptions where we directly manipulate the home dir files), and that way we'll also test that mcpc
-synchronizes access to shared files well. If something goes wrong, we can use --parallel=1 to run the tests sequentially
-to find a root cause of problems. Is this reasonable strategy?
-
-the pote confliexcting place are sessions
-
-
-(most?) tests use it's own session
-
-- Implement e2e test scenarios:
-  - handling of errors, invalid params, names, etc.
-  - pagination
-  - env vars...
-  - stdio + filesystem operations
-  - sessions
-  - test stdio transport with fs mcp server
+Let's add more e2e test scenarios:
+  - more test for handling of errors, invalid params, names, etc.
+  - test mcpc list operations handle MCP server responses with pagination
+  - test env vars...
+  - sessions lifecycle
   - test expired session (create fake record in session.json) - ensure attempts to use it will fail with the right error
-  - for all commands, tests --verbose doesn't print anything extra to stdout, --json returns json
   - that on session close we send HTTP DELETE https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#session-management
   - Test session failover - e.g. kill the bridge process, and try to access the session again - should be restarted, work, and have same MCP-Session-Id
   - Test auth - if no profile available and server requires OAuth, we need to fail with info what to do! e.g. "mcpc https://mcp.sentry.dev/mcp --verbose"

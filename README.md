@@ -13,7 +13,7 @@ and AI coding agents to use MCP in ["code mode"](https://www.anthropic.com/engin
 for better accuracy and lower token compared to traditional tool function calling.
 After all, UNIX-compatible shell script is THE most universal coding language, for people and LLMs alike.
 
-Note that `mcpc` does not use LLMs on its own; that's left for the higher layer.
+Note that `mcpc` does not use LLMs on its own; that's job for the higher layer.
 
 **Key features**
 
@@ -27,9 +27,6 @@ Note that `mcpc` does not use LLMs on its own; that's left for the higher layer.
 
 
 ## Table of contents
-<!--
-TODO: Simplify README - there are too many top-level sections, and then show just the second level ones
--->
 
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
@@ -469,10 +466,28 @@ mcpc --json @apify tools-call search-actors --args query="tiktok scraper" \
 
 ### Scripting
 
-`mcpc` is designed to be easily usable in (AI-generated) scripts. To ensure consistency
-of your scripts with the current MCP server interface, you can use `--schema <file>` argument
-to pass `mcpc` the expected schema. If the MCP server's current schema is incompatible,
-the command returns an error.
+`mcpc` is designed for us in (AI-generated) scripts.
+With the `--json` option, `mcpc` returns a single JSON object (object or array) as follows:
+
+- On success, the JSON object is printed to stdout
+- On error, the JSON object is printed to stderr
+
+You can use tools like `jq` to process the output.
+
+For all MCP operations, the **returned JSON is and always will be strictly consistent
+with the [MCP specification](https://modelcontextprotocol.io/specification/latest)**,
+based to the protocol version negotiated between client and server in the initial handshake.
+
+Additionally, one of the core [design principles](CONTRIBUTING.md#design-principles) of `mcpc` 
+is to keep backwards compatibility to maximum extent possible, to ensure the scripts using `mcpc`
+will not break over time.
+
+#### MCP server schema changes
+
+MCP is a fluid protocol, and MCP servers can change operations and their schema at any time. 
+To ensure your scripts fail fast whenever such schema change occurs, rather than fail silently later,
+you can use the `--schema <file>` option to pass `mcpc` the expected operation schema.
+If the MCP server's current schema is incompatible, the command returns an error.
 
 ```bash
 # Save tool schema for future validation
@@ -482,13 +497,14 @@ mcpc --json @apify tools-schema search-actors > search-actors-schema.json
 mcpc @apify tools-call search-actors \
   --schema search-actors-schema.json \
   --schema-mode strict \
-  --args query="tiktok scraper"
+  --args keywords="tiktok scraper"
 ```
 
-**Schema validation modes using the `--schema-mode` parameter:**
-- `strict` - Exact schema match required (all fields, types must be identical)
+The `--schema-mode <mode>` parameter determines how `mcpc` validates the schema:
+
 - `compatible` (default) - Backwards compatible (new optional fields OK, required fields and types must match)
-- `ignore` - Skip schema validation
+- `strict` - Exact schema match required (all fields, types must be identical)
+- `ignore` - Skip schema validation altogether
 
 ### Session failover
 

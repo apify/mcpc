@@ -19,7 +19,7 @@ test_pass
 
 # Test: session shows stdio transport
 test_case "session shows stdio transport"
-run_mcpc_json
+run_mcpc --json
 transport=$(json_get ".sessions[] | select(.name == \"$SESSION\") | .transport")
 assert_eq "$transport" "stdio" "transport should be stdio"
 test_pass

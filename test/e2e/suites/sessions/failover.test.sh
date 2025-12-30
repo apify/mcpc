@@ -19,7 +19,7 @@ test_pass
 
 # Test: get bridge PID
 test_case "get bridge PID"
-run_mcpc_json
+run_mcpc --json
 bridge_pid=$(json_get ".sessions[] | select(.name == \"$SESSION\") | .pid")
 assert_not_empty "$bridge_pid" "should have bridge PID"
 test_pass
@@ -44,7 +44,7 @@ test_pass
 
 # Test: session shows as dead
 test_case "session shows as dead after bridge kill"
-run_mcpc_json
+run_mcpc --json
 session_status=$(json_get ".sessions[] | select(.name == \"$SESSION\") | .bridgeStatus")
 assert_eq "$session_status" "dead" "session should show as dead"
 test_pass
@@ -58,7 +58,7 @@ test_pass
 
 # Test: session is live again
 test_case "session is live after auto-restart"
-run_mcpc_json
+run_mcpc --json
 session_status=$(json_get ".sessions[] | select(.name == \"$SESSION\") | .bridgeStatus")
 assert_eq "$session_status" "live" "session should be live again"
 test_pass

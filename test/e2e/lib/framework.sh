@@ -196,15 +196,11 @@ run_mcpc() {
   rm -f "$stdout_file" "$stderr_file"
 }
 
-# Run mcpc with --json
-run_mcpc_json() {
-  run_mcpc --json "$@"
-}
-
 # Run mcpc with extended invariant checks (xmcpc)
 # Checks:
 # 1. --verbose only adds to stderr, not stdout
-# 2. --json returns valid JSON on success
+# 2. --json on success: valid JSON to stdout, nothing to stderr
+# 3. --json on error: valid JSON to stderr, nothing to stdout
 run_xmcpc() {
   local args=("$@")
 
@@ -226,26 +222,39 @@ run_xmcpc() {
     return 1
   fi
 
-  # Check --json invariant: should return valid JSON on success
+  # Check --json invariants
   run_mcpc --json "${args[@]}"
   if [[ $EXIT_CODE -eq 0 ]]; then
+    # On success: valid JSON to stdout, stderr should be empty
     if ! echo "$STDOUT" | jq . >/dev/null 2>&1; then
-      echo "INVARIANT VIOLATION: --json did not return valid JSON on success" >&2
+      echo "INVARIANT VIOLATION: --json success did not return valid JSON to stdout" >&2
       echo "--- stdout ---" >&2
       echo "$STDOUT" >&2
       EXIT_CODE=99
       return 1
     fi
+    if [[ -n "$STDERR" ]]; then
+      echo "INVARIANT VIOLATION: --json success should not output to stderr" >&2
+      echo "--- stderr ---" >&2
+      echo "$STDERR" >&2
+      EXIT_CODE=99
+      return 1
+    fi
   else
-    # On error, stdout should be valid JSON or empty
+    # On error: valid JSON to stderr, stdout should be empty
+    if ! echo "$STDERR" | jq . >/dev/null 2>&1; then
+      echo "INVARIANT VIOLATION: --json error did not return valid JSON to stderr" >&2
+      echo "--- stderr ---" >&2
+      echo "$STDERR" >&2
+      EXIT_CODE=99
+      return 1
+    fi
     if [[ -n "$STDOUT" ]]; then
-      if ! echo "$STDOUT" | jq . >/dev/null 2>&1; then
-        echo "INVARIANT VIOLATION: --json returned invalid JSON on error" >&2
-        echo "--- stdout ---" >&2
-        echo "$STDOUT" >&2
-        EXIT_CODE=99
-        return 1
-      fi
+      echo "INVARIANT VIOLATION: --json error should not output to stdout" >&2
+      echo "--- stdout ---" >&2
+      echo "$STDOUT" >&2
+      EXIT_CODE=99
+      return 1
     fi
   fi
 

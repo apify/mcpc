@@ -157,7 +157,7 @@ To force all tests to use isolated home directories (for troubleshooting):
 
 The framework enforces these invariants via `run_xmcpc`:
 - `--verbose` only adds to stderr, never changes stdout
-- `--json` always returns valid JSON (on success and on error)
+- `--json` always returns valid JSON (on success to stdout, otherwise to stderr)
 
 ### Writing a new test
 
@@ -212,8 +212,7 @@ test_done                     # Print summary and exit
 
 ```bash
 run_mcpc <args>               # Run mcpc, sets $STDOUT, $STDERR, $EXIT_CODE
-run_mcpc_json <args>          # Run mcpc --json <args>
-run_xmcpc <args>              # Run with invariant checks (--verbose, --json)
+run_xmcpc <args>              # Same as above, but with invariant checks (--verbose, --json)
 ```
 
 #### Session helpers
