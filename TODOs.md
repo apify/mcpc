@@ -24,15 +24,8 @@
     In theory, we could add limit of capabilities to normal sessions, but the LLM could still break out of it, so what's the point.
   - Explain this is useful for AI sandboxing!
 
-- In tools-list and tools-schema commdand with human output, let's show simplified tool args, rather than JSON schemas. For example:
-Tool: `write_file` [destructive, idempotent]
-  Input arguments: 
-    path: string [required]
-    tail: number - If provided, returns only the last N lines of the file
-  Output: N/A
-  Description: 
-  Text...
 - Later: Add support for MCP elicitations, and potentially for sampling (e.g. via shell interface?)
+
 
   
 ## Security

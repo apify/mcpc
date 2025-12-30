@@ -3,7 +3,7 @@
  */
 
 import { OutputMode, isValidSessionName, validateProfileName, isProcessAlive, getServerHost } from '../../lib/index.js';
-import { formatOutput, formatSuccess, formatError, formatSessionLine } from '../output.js';
+import { formatOutput, formatSuccess, formatError, formatSessionLine, formatServerInfo } from '../output.js';
 import { listAuthProfiles } from '../../lib/auth/profiles.js';
 import {
   sessionExists,
@@ -405,91 +405,11 @@ export async function showServerInfo(
   const { withMcpClient } = await import('../helpers.js');
 
   await withMcpClient(target, options, async (client) => {
-    const { serverVersion, capabilities, instructions, protocolVersion } = await client.getServerInfo();
+    const serverInfo = await client.getServerInfo();
+    const { serverVersion, capabilities, instructions } = serverInfo;
 
     if (options.outputMode === 'human') {
-      // Server info
-      if (serverVersion) {
-        const versionInfo = protocolVersion ? ` (MCP version: ${protocolVersion})` : '';
-        console.log(chalk.bold('Server:') + ` ${serverVersion.name} v${serverVersion.version}${versionInfo}`);
-        console.log('');
-      }
-
-      // Capabilities - only show what the server actually exposes
-      console.log(chalk.bold('Capabilities:'));
-
-      const capabilityList: string[] = [];
-
-      if (capabilities?.tools) {
-        capabilityList.push(
-          `  • tools ${capabilities.tools.listChanged ? '(dynamic)' : '(static)'}`
-        );
-      }
-
-      if (capabilities?.resources) {
-        const features: string[] = [];
-        if (capabilities.resources.subscribe) features.push('subscribe');
-        if (capabilities.resources.listChanged) features.push('dynamic list');
-        const featureStr = features.length > 0 ? ` (supports ${features.join(', ')})` : '';
-        capabilityList.push(`  • resources${featureStr}`);
-      }
-
-      if (capabilities?.prompts) {
-        const featureStr = capabilities.prompts.listChanged ? ' (dynamic list)' : '';
-        capabilityList.push(`  • prompts${featureStr}`);
-      }
-
-      if (capabilities?.logging) {
-        capabilityList.push('  • logging');
-      }
-
-      if (capabilities?.completions) {
-        capabilityList.push('  • completions');
-      }
-
-      if (capabilityList.length > 0) {
-        console.log(capabilityList.join('\n'));
-      } else {
-        console.log('  (none)');
-      }
-      console.log('');
-
-      // Commands
-      console.log(chalk.bold('Available commands:'));
-      const commands: string[] = [];
-
-      if (capabilities?.tools) {
-        commands.push(`  mcpc ${target} tools-list`);
-        commands.push(`  mcpc ${target} tools-schema <name>`);
-        commands.push(`  mcpc ${target} tools-call <name> [--args key=val ...] [--args-file <file>]`);
-      }
-
-      if (capabilities?.resources) {
-        commands.push(`  mcpc ${target} resources-list`);
-        commands.push(`  mcpc ${target} resources-read <uri>`);
-      }
-
-      if (capabilities?.prompts) {
-        commands.push(`  mcpc ${target} prompts-list`);
-        commands.push(`  mcpc ${target} prompts-get <name>`);
-      }
-
-      if (capabilities?.logging) {
-        commands.push(`  mcpc ${target} logging-set-level <lvl> Set server log level`);
-      }
-
-      commands.push(`  mcpc ${target} shell`);
-
-      console.log(commands.join('\n'));
-      console.log('');
-
-      // Instructions
-      const trimmed = instructions ? instructions.trim() : '';
-      if (trimmed) {
-        console.log(chalk.bold('Server instructions:'));
-        console.log(trimmed);
-        console.log('');
-      }
+      console.log(formatServerInfo(serverInfo, target));
     } else {
       // JSON output - only include capabilities that are present
       const jsonCapabilities: Record<string, any> = {};

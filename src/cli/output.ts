@@ -7,7 +7,7 @@
 
 import chalk from 'chalk';
 import type { OutputMode, TransportConfig } from '../lib/index.js';
-import type { Tool, Resource, Prompt, SessionData } from '../lib/types.js';
+import type { Tool, Resource, Prompt, SessionData, ServerInfo } from '../lib/types.js';
 import { extractSingleTextContent } from './tool-result.js';
 import { isValidSessionName, getServerHost } from '../lib/utils.js';
 import { getSession } from '../lib/sessions.js';
@@ -234,7 +234,7 @@ export function formatSimplifiedArgs(
 ): string[] {
   const lines: string[] = [];
 
-  const bullet = chalk.bold('*');
+  const bullet = chalk.dim('*');
 
   if (!schema || typeof schema !== 'object') {
     lines.push(`${indent}${bullet} ${chalk.gray('(none)')}`);
@@ -286,10 +286,11 @@ export function formatTools(tools: Tool[]): string {
   lines.push(chalk.bold(`Available tools (${tools.length}):`));
 
   // Summary list of tools
+  const bullet = chalk.dim('*');
   for (const tool of tools) {
     const annotationsStr = formatToolAnnotations(tool.annotations);
     const annotationsSuffix = annotationsStr ? ` ${chalk.gray(`[${annotationsStr}]`)}` : '';
-    lines.push(`- ${inBackticks(tool.name)}${annotationsSuffix}`);
+    lines.push(`${bullet} ${inBackticks(tool.name)}${annotationsSuffix}`);
   }
 
   // Detailed view for each tool with separators
@@ -570,4 +571,102 @@ export function formatJsonError(error: Error, code: number): string {
     error: error.message,
     code,
   });
+}
+
+/**
+ * Format server info for human-readable output
+ */
+export function formatServerInfo(info: ServerInfo, target: string): string {
+  const lines: string[] = [];
+  const bullet = chalk.dim('*');
+  const bt = chalk.gray('`'); // backtick
+
+  const { serverVersion, capabilities, instructions, protocolVersion } = info;
+
+  // Server info
+  if (serverVersion) {
+    const versionInfo = protocolVersion ? ` (MCP version: ${protocolVersion})` : '';
+    lines.push(chalk.bold('Server:') + ` ${serverVersion.name} v${serverVersion.version}${versionInfo}`);
+    lines.push('');
+  }
+
+  // Capabilities - only show what the server actually exposes
+  lines.push(chalk.bold('Capabilities:'));
+
+  const capabilityList: string[] = [];
+
+  if (capabilities?.tools) {
+    capabilityList.push(
+      `${bullet} tools ${capabilities.tools.listChanged ? '(dynamic)' : '(static)'}`
+    );
+  }
+
+  if (capabilities?.resources) {
+    const features: string[] = [];
+    if (capabilities.resources.subscribe) features.push('subscribe');
+    if (capabilities.resources.listChanged) features.push('dynamic list');
+    const featureStr = features.length > 0 ? ` (supports ${features.join(', ')})` : '';
+    capabilityList.push(`${bullet} resources${featureStr}`);
+  }
+
+  if (capabilities?.prompts) {
+    const featureStr = capabilities.prompts.listChanged ? ' (dynamic list)' : '';
+    capabilityList.push(`${bullet} prompts${featureStr}`);
+  }
+
+  if (capabilities?.logging) {
+    capabilityList.push(`${bullet} logging`);
+  }
+
+  if (capabilities?.completions) {
+    capabilityList.push(`${bullet} completions`);
+  }
+
+  if (capabilityList.length > 0) {
+    lines.push(capabilityList.join('\n'));
+  } else {
+    lines.push(`${bullet} (none)`);
+  }
+  lines.push('');
+
+  // Commands
+  lines.push(chalk.bold('Available commands:'));
+  const commands: string[] = [];
+
+  if (capabilities?.tools) {
+    commands.push(`${bullet} ${bt}mcpc ${target} tools-list${bt}`);
+    commands.push(`${bullet} ${bt}mcpc ${target} tools-schema <name>${bt}`);
+    commands.push(`${bullet} ${bt}mcpc ${target} tools-call <name> [--args key=val ...] [--args-file <file>]${bt}`);
+  }
+
+  if (capabilities?.resources) {
+    commands.push(`${bullet} ${bt}mcpc ${target} resources-list${bt}`);
+    commands.push(`${bullet} ${bt}mcpc ${target} resources-read <uri>${bt}`);
+  }
+
+  if (capabilities?.prompts) {
+    commands.push(`${bullet} ${bt}mcpc ${target} prompts-list${bt}`);
+    commands.push(`${bullet} ${bt}mcpc ${target} prompts-get <name>${bt}`);
+  }
+
+  if (capabilities?.logging) {
+    commands.push(`${bullet} ${bt}mcpc ${target} logging-set-level <lvl>${bt}`);
+  }
+
+  commands.push(`${bullet} ${bt}mcpc ${target} shell${bt}`);
+
+  lines.push(commands.join('\n'));
+  lines.push('');
+
+  // Instructions in code block
+  const trimmed = instructions ? instructions.trim() : '';
+  if (trimmed) {
+    lines.push(chalk.bold('Instructions:'));
+    lines.push(chalk.gray('````'));
+    lines.push(trimmed);
+    lines.push(chalk.gray('````'));
+    lines.push('');
+  }
+
+  return lines.join('\n');
 }

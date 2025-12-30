@@ -31,8 +31,8 @@ jest.mock('chalk', () => ({
 }));
 
 // Import after mock is set up
-import { formatSchemaType, formatSimplifiedArgs, formatToolDetail } from '../../../src/cli/output.js';
-import type { Tool } from '../../../src/lib/types.js';
+import { formatSchemaType, formatSimplifiedArgs, formatToolDetail, formatServerInfo } from '../../../src/cli/output.js';
+import type { Tool, ServerInfo } from '../../../src/lib/types.js';
 
 describe('extractSingleTextContent', () => {
   it('should return text for single text content item', () => {
@@ -465,5 +465,168 @@ describe('formatToolDetail', () => {
     expect(output).toContain('(default: "json")');
     // Default should come before description
     expect(output).toMatch(/\(default: 100\).*Max items/);
+  });
+});
+
+describe('formatServerInfo', () => {
+  it('should format server info with all features', () => {
+    const info: ServerInfo = {
+      serverVersion: { name: 'Test Server', version: '1.2.3' },
+      protocolVersion: '2025-11-25',
+      capabilities: {
+        tools: { listChanged: true },
+        resources: { subscribe: true, listChanged: true },
+        prompts: { listChanged: false },
+        logging: {},
+        completions: {},
+      },
+      instructions: 'This is the server instructions.',
+    };
+
+    const output = formatServerInfo(info, '@test');
+
+    // Should contain server version and protocol version
+    expect(output).toContain('Server:');
+    expect(output).toContain('Test Server v1.2.3');
+    expect(output).toContain('(MCP version: 2025-11-25)');
+
+    // Should contain capabilities section
+    expect(output).toContain('Capabilities:');
+    expect(output).toContain('tools (dynamic)');
+    expect(output).toContain('resources (supports subscribe, dynamic list)');
+    expect(output).toContain('prompts');
+    expect(output).toContain('logging');
+    expect(output).toContain('completions');
+
+    // Should contain available commands
+    expect(output).toContain('Available commands:');
+    expect(output).toContain('mcpc @test tools-list');
+    expect(output).toContain('mcpc @test tools-call');
+    expect(output).toContain('mcpc @test resources-list');
+    expect(output).toContain('mcpc @test resources-read');
+    expect(output).toContain('mcpc @test prompts-list');
+    expect(output).toContain('mcpc @test logging-set-level');
+    expect(output).toContain('mcpc @test shell');
+
+    // Should contain instructions in code block
+    expect(output).toContain('Instructions:');
+    expect(output).toContain('````');
+    expect(output).toContain('This is the server instructions.');
+  });
+
+  it('should format server info with minimal features', () => {
+    const info: ServerInfo = {
+      serverVersion: { name: 'Minimal Server', version: '0.1.0' },
+      capabilities: {},
+    };
+
+    const output = formatServerInfo(info, 'https://example.com');
+
+    // Should contain server version without protocol version
+    expect(output).toContain('Server:');
+    expect(output).toContain('Minimal Server v0.1.0');
+    expect(output).not.toContain('MCP version');
+
+    // Should show (none) for capabilities
+    expect(output).toContain('Capabilities:');
+    expect(output).toContain('(none)');
+
+    // Should only show shell command
+    expect(output).toContain('Available commands:');
+    expect(output).toContain('mcpc https://example.com shell');
+    expect(output).not.toContain('tools-list');
+    expect(output).not.toContain('resources-list');
+    expect(output).not.toContain('prompts-list');
+
+    // Should NOT contain instructions section (no instructions provided)
+    expect(output).not.toContain('Instructions:');
+  });
+
+  it('should format server with only tools capability', () => {
+    const info: ServerInfo = {
+      serverVersion: { name: 'Tools Server', version: '1.0.0' },
+      capabilities: {
+        tools: { listChanged: false },
+      },
+    };
+
+    const output = formatServerInfo(info, '@tools');
+
+    // Should show tools as static
+    expect(output).toContain('tools (static)');
+
+    // Should show tools commands
+    expect(output).toContain('mcpc @tools tools-list');
+    expect(output).toContain('mcpc @tools tools-schema');
+    expect(output).toContain('mcpc @tools tools-call');
+
+    // Should NOT show other commands
+    expect(output).not.toContain('resources-list');
+    expect(output).not.toContain('prompts-list');
+    expect(output).not.toContain('logging-set-level');
+  });
+
+  it('should format server with resources capability (subscribe only)', () => {
+    const info: ServerInfo = {
+      serverVersion: { name: 'Resource Server', version: '2.0.0' },
+      capabilities: {
+        resources: { subscribe: true, listChanged: false },
+      },
+    };
+
+    const output = formatServerInfo(info, '@res');
+
+    // Should show resources with subscribe feature
+    expect(output).toContain('resources (supports subscribe)');
+
+    // Should show resources commands
+    expect(output).toContain('mcpc @res resources-list');
+    expect(output).toContain('mcpc @res resources-read');
+  });
+
+  it('should format empty instructions as no Instructions section', () => {
+    const info: ServerInfo = {
+      serverVersion: { name: 'No Instructions', version: '1.0.0' },
+      capabilities: { tools: {} },
+      instructions: '   ',  // whitespace-only
+    };
+
+    const output = formatServerInfo(info, '@test');
+
+    // Should NOT contain instructions section for whitespace-only
+    expect(output).not.toContain('Instructions:');
+  });
+
+  it('should format instructions with leading/trailing whitespace trimmed', () => {
+    const info: ServerInfo = {
+      serverVersion: { name: 'Test', version: '1.0.0' },
+      capabilities: {},
+      instructions: '\n\n  Some instructions here.  \n\n',
+    };
+
+    const output = formatServerInfo(info, '@test');
+
+    // Should contain trimmed instructions
+    expect(output).toContain('Instructions:');
+    expect(output).toContain('Some instructions here.');
+    // Should be wrapped in code block
+    expect(output).toContain('````');
+  });
+
+  it('should handle server info without serverVersion', () => {
+    const info: ServerInfo = {
+      capabilities: { prompts: { listChanged: true } },
+    };
+
+    const output = formatServerInfo(info, '@test');
+
+    // Should NOT contain Server: line
+    expect(output).not.toMatch(/^Server:/m);
+
+    // Should still show capabilities and commands
+    expect(output).toContain('Capabilities:');
+    expect(output).toContain('prompts (dynamic list)');
+    expect(output).toContain('prompts-list');
+    expect(output).toContain('prompts-get');
   });
 });
