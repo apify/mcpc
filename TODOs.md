@@ -35,6 +35,9 @@
 ## Later
 
 
+- When running "mcpc --cleanwefwef" it succeeds, we should fail on invalid args (update design 
+  principles)
+
 - When user runs --clean=profiles, print warning if some sessions were using them
 
 - nit: Colorize output, e.g. JSONs in one color. MCP provided data like descriptions and instructions in orange.
@@ -58,4 +61,9 @@
 ## E2E test scenarios
 
 Let's add more e2e test scenarios:
-- Test auth profiles work long-term and sessions too - basically when running some tests the next day they should use old saved auths and sessions
+- Test that output from "mcpc @test --json" is consistent with MCP server handshake "results" (see https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle) - additional properties are fine
+- Test that output from "mcpc @test tools-list --json" and "mcpc @test tools-schema xxx --json" are consistent with MCP specs
+
+- Test auth profiles work long-term and sessions too - basically when running some tests the 
+  next day they should use old saved auths and sessions.
+  We could have some special dir for long-term testing...

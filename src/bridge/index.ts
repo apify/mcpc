@@ -745,8 +745,8 @@ class BridgeProcess {
           break;
         }
 
-        case 'getServerInfo':
-          result = await this.client.getServerInfo();
+        case 'getServerDetails':
+          result = await this.client.getServerDetails();
           break;
 
         default:

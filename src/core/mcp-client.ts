@@ -18,7 +18,7 @@ import type {
 } from '@modelcontextprotocol/sdk/types.js';
 import { createNoOpLogger, type Logger } from '../lib/logger.js';
 import { ServerError, NetworkError, isShutdownError } from '../lib/errors.js';
-import type { IMcpClient, ServerInfo } from '../lib/types.js';
+import type { IMcpClient, ServerDetails } from '../lib/types.js';
 
 /**
  * Transport with protocol version information (e.g., StreamableHTTPClientTransport)
@@ -133,19 +133,20 @@ export class McpClient implements IMcpClient {
   /**
    * Get all server information in a single call
    * Returns a Promise for interface compatibility with SessionClient
+   * Structure matches MCP InitializeResult for consistency
    */
-  getServerInfo(): Promise<ServerInfo> {
-    const info: ServerInfo = {};
-    const serverVersion = this.client.getServerVersion();
+  getServerDetails(): Promise<ServerDetails> {
+    const details: ServerDetails = {};
+    const serverInfo = this.client.getServerVersion();
     const capabilities = this.client.getServerCapabilities();
     const instructions = this.client.getInstructions();
 
-    if (serverVersion) info.serverVersion = serverVersion;
-    if (capabilities) info.capabilities = capabilities;
-    if (instructions) info.instructions = instructions;
-    if (this.negotiatedProtocolVersion) info.protocolVersion = this.negotiatedProtocolVersion;
+    if (this.negotiatedProtocolVersion) details.protocolVersion = this.negotiatedProtocolVersion;
+    if (capabilities) details.capabilities = capabilities;
+    if (serverInfo) details.serverInfo = serverInfo;
+    if (instructions) details.instructions = instructions;
 
-    return Promise.resolve(info);
+    return Promise.resolve(details);
   }
 
   /**

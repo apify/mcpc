@@ -338,7 +338,7 @@ interface BridgeHealthResult {
 }
 
 /**
- * Test if bridge is responsive by calling getServerInfo
+ * Test if bridge is responsive by calling getServerDetails
  * This blocks until MCP client is connected, then returns server info
  *
  * @param socketPath - Path to bridge's Unix socket
@@ -348,9 +348,9 @@ async function checkBridgeHealth(socketPath: string): Promise<BridgeHealthResult
   const client = new BridgeClient(socketPath);
   try {
     await client.connect();
-    // getServerInfo blocks until MCP client is connected, then returns info
+    // getServerDetails blocks until MCP client is connected, then returns info
     // If MCP connection fails, the bridge will return an error via IPC
-    await client.request('getServerInfo');
+    await client.request('getServerDetails');
     return { healthy: true };
   } catch (error) {
     // Return error details so caller can provide informative message
@@ -362,13 +362,13 @@ async function checkBridgeHealth(socketPath: string): Promise<BridgeHealthResult
 
 /**
  * Ensure bridge is ready for use
- * Uses getServerInfo() as the health check - it blocks until MCP is connected.
+ * Uses getServerDetails() as the health check - it blocks until MCP is connected.
  *
  * This is the main entry point for ensuring a session's bridge is usable.
  * After this returns successfully, the bridge is guaranteed to be responding.
  *
  * The simplicity of this approach:
- * - getServerInfo() blocks until MCP client connects (no polling loop needed)
+ * - getServerDetails() blocks until MCP client connects (no polling loop needed)
  * - If MCP connection fails, error details are propagated to caller
  * - If bridge process dies, socket connection fails and we restart
  *
@@ -399,7 +399,7 @@ export async function ensureBridgeReady(sessionName: string): Promise<string> {
   const processAlive = session.pid ? isProcessAlive(session.pid) : false;
 
   if (processAlive) {
-    // Process alive, try getServerInfo (blocks until MCP connected)
+    // Process alive, try getServerDetails (blocks until MCP connected)
     const result = await checkBridgeHealth(socketPath);
     if (result.healthy) {
       logger.debug(`Bridge for ${sessionName} is healthy`);
@@ -421,7 +421,7 @@ export async function ensureBridgeReady(sessionName: string): Promise<string> {
   // Bridge not healthy - restart it
   await restartBridge(sessionName);
 
-  // Try getServerInfo on restarted bridge (blocks until MCP connected)
+  // Try getServerDetails on restarted bridge (blocks until MCP connected)
   const result = await checkBridgeHealth(socketPath);
   if (result.healthy) {
     logger.debug(`Bridge for ${sessionName} passed health check`);

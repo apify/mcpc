@@ -7,7 +7,7 @@
 
 import chalk from 'chalk';
 import type { OutputMode, TransportConfig } from '../lib/index.js';
-import type { Tool, Resource, Prompt, SessionData, ServerInfo } from '../lib/types.js';
+import type { Tool, Resource, Prompt, SessionData, ServerDetails } from '../lib/types.js';
 import { extractSingleTextContent } from './tool-result.js';
 import { isValidSessionName, getServerHost } from '../lib/utils.js';
 import { getSession } from '../lib/sessions.js';
@@ -574,19 +574,19 @@ export function formatJsonError(error: Error, code: number): string {
 }
 
 /**
- * Format server info for human-readable output
+ * Format server details for human-readable output
  */
-export function formatServerInfo(info: ServerInfo, target: string): string {
+export function formatServerDetails(details: ServerDetails, target: string): string {
   const lines: string[] = [];
   const bullet = chalk.dim('*');
   const bt = chalk.gray('`'); // backtick
 
-  const { serverVersion, capabilities, instructions, protocolVersion } = info;
+  const { serverInfo, capabilities, instructions, protocolVersion } = details;
 
   // Server info
-  if (serverVersion) {
+  if (serverInfo) {
     const versionInfo = protocolVersion ? ` (MCP version: ${protocolVersion})` : '';
-    lines.push(chalk.bold('Server:') + ` ${serverVersion.name} v${serverVersion.version}${versionInfo}`);
+    lines.push(chalk.bold('Server:') + ` ${serverInfo.name} v${serverInfo.version}${versionInfo}`);
     lines.push('');
   }
 

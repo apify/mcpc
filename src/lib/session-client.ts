@@ -24,7 +24,7 @@ import type {
   LoggingLevel,
   IMcpClient,
   NotificationData,
-  ServerInfo,
+  ServerDetails,
 } from './types.js';
 import type { ListResourceTemplatesResult } from '@modelcontextprotocol/sdk/types.js';
 import { BridgeClient } from './bridge-client.js';
@@ -113,10 +113,10 @@ export class SessionClient extends EventEmitter implements IMcpClient {
   }
 
   // Server info (single IPC call for all server information)
-  async getServerInfo(): Promise<ServerInfo> {
+  async getServerDetails(): Promise<ServerDetails> {
     return this.withRetry(
-      () => this.bridgeClient.request('getServerInfo') as Promise<ServerInfo>,
-      'getServerInfo'
+      () => this.bridgeClient.request('getServerDetails') as Promise<ServerDetails>,
+      'getServerDetails'
     );
   }
 

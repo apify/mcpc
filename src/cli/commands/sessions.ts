@@ -3,7 +3,7 @@
  */
 
 import { OutputMode, isValidSessionName, validateProfileName, isProcessAlive, getServerHost } from '../../lib/index.js';
-import { formatOutput, formatSuccess, formatError, formatSessionLine, formatServerInfo } from '../output.js';
+import { formatOutput, formatSuccess, formatError, formatSessionLine, formatServerDetails } from '../output.js';
 import { listAuthProfiles } from '../../lib/auth/profiles.js';
 import {
   sessionExists,
@@ -405,14 +405,15 @@ export async function showServerInfo(
   const { withMcpClient } = await import('../helpers.js');
 
   await withMcpClient(target, options, async (client) => {
-    const serverInfo = await client.getServerInfo();
-    const { serverVersion, capabilities, instructions } = serverInfo;
+    const serverDetails = await client.getServerDetails();
+    const { serverInfo, capabilities, instructions, protocolVersion } = serverDetails;
 
     if (options.outputMode === 'human') {
-      console.log(formatServerInfo(serverInfo, target));
+      console.log(formatServerDetails(serverDetails, target));
     } else {
-      // JSON output - only include capabilities that are present
-      const jsonCapabilities: Record<string, any> = {};
+      // JSON output - structure matches MCP InitializeResult for consistency
+      // Only include capabilities that are present
+      const jsonCapabilities: Record<string, unknown> = {};
 
       if (capabilities?.tools) {
         jsonCapabilities.tools = {
@@ -465,14 +466,19 @@ export async function showServerInfo(
 
       availableCommands.push('shell');
 
+      // Output matches MCP InitializeResult structure
       console.log(
         formatOutput(
           {
+            // mcpc-specific additions
+            // TODO: I think we should prefix them with "mcpc" or "x-"
             target,
-            server: serverVersion,
-            instructions: instructions || null,
-            capabilities: jsonCapabilities,
             availableCommands,
+            // MCP specs fields
+            protocolVersion: protocolVersion || null,
+            capabilities: jsonCapabilities,
+            serverInfo: serverInfo || null,
+            instructions: instructions || null,
           },
           'json'
         )

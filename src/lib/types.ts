@@ -245,18 +245,19 @@ export interface McpServerConfig {
 }
 
 /**
- * Combined server information returned by getServerInfo()
+ * Combined server details returned by getServerDetails()
+ * Structure matches MCP InitializeResult for consistency
  * Fetched once during initialization, cached locally
  */
-export interface ServerInfo {
-  /** Server implementation details (name, version) */
-  serverVersion?: Implementation;
-  /** Server capabilities */
-  capabilities?: ServerCapabilities;
-  /** Server-provided instructions for the client */
-  instructions?: string;
+export interface ServerDetails {
   /** Negotiated protocol version */
   protocolVersion?: string;
+  /** Server capabilities */
+  capabilities?: ServerCapabilities;
+  /** Server implementation details (name, version, etc.) - matches MCP serverInfo field */
+  serverInfo?: Implementation;
+  /** Server-provided instructions for the client */
+  instructions?: string;
 }
 
 /**
@@ -272,7 +273,7 @@ export interface IMcpClient {
 
   // Server information (capabilities, instructions, version etc.)
   // single call returns all info to avoid multiple IPC roundtrips)
-  getServerInfo(): Promise<ServerInfo>;
+  getServerDetails(): Promise<ServerDetails>;
 
   // MCP operations
   ping(): Promise<void>;

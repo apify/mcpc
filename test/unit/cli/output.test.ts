@@ -31,8 +31,8 @@ jest.mock('chalk', () => ({
 }));
 
 // Import after mock is set up
-import { formatSchemaType, formatSimplifiedArgs, formatToolDetail, formatServerInfo } from '../../../src/cli/output.js';
-import type { Tool, ServerInfo } from '../../../src/lib/types.js';
+import { formatSchemaType, formatSimplifiedArgs, formatToolDetail, formatServerDetails } from '../../../src/cli/output.js';
+import type { Tool, ServerDetails } from '../../../src/lib/types.js';
 
 describe('extractSingleTextContent', () => {
   it('should return text for single text content item', () => {
@@ -468,10 +468,9 @@ describe('formatToolDetail', () => {
   });
 });
 
-describe('formatServerInfo', () => {
+describe('formatServerDetails', () => {
   it('should format server info with all features', () => {
-    const info: ServerInfo = {
-      serverVersion: { name: 'Test Server', version: '1.2.3' },
+    const details: ServerDetails = {
       protocolVersion: '2025-11-25',
       capabilities: {
         tools: { listChanged: true },
@@ -480,10 +479,11 @@ describe('formatServerInfo', () => {
         logging: {},
         completions: {},
       },
+      serverInfo: { name: 'Test Server', version: '1.2.3' },
       instructions: 'This is the server instructions.',
     };
 
-    const output = formatServerInfo(info, '@test');
+    const output = formatServerDetails(details, '@test');
 
     // Should contain server version and protocol version
     expect(output).toContain('Server:');
@@ -515,12 +515,12 @@ describe('formatServerInfo', () => {
   });
 
   it('should format server info with minimal features', () => {
-    const info: ServerInfo = {
-      serverVersion: { name: 'Minimal Server', version: '0.1.0' },
+    const details: ServerDetails = {
       capabilities: {},
+      serverInfo: { name: 'Minimal Server', version: '0.1.0' },
     };
 
-    const output = formatServerInfo(info, 'https://example.com');
+    const output = formatServerDetails(details, 'https://example.com');
 
     // Should contain server version without protocol version
     expect(output).toContain('Server:');
@@ -543,14 +543,14 @@ describe('formatServerInfo', () => {
   });
 
   it('should format server with only tools capability', () => {
-    const info: ServerInfo = {
-      serverVersion: { name: 'Tools Server', version: '1.0.0' },
+    const details: ServerDetails = {
       capabilities: {
         tools: { listChanged: false },
       },
+      serverInfo: { name: 'Tools Server', version: '1.0.0' },
     };
 
-    const output = formatServerInfo(info, '@tools');
+    const output = formatServerDetails(details, '@tools');
 
     // Should show tools as static
     expect(output).toContain('tools (static)');
@@ -567,14 +567,14 @@ describe('formatServerInfo', () => {
   });
 
   it('should format server with resources capability (subscribe only)', () => {
-    const info: ServerInfo = {
-      serverVersion: { name: 'Resource Server', version: '2.0.0' },
+    const details: ServerDetails = {
       capabilities: {
         resources: { subscribe: true, listChanged: false },
       },
+      serverInfo: { name: 'Resource Server', version: '2.0.0' },
     };
 
-    const output = formatServerInfo(info, '@res');
+    const output = formatServerDetails(details, '@res');
 
     // Should show resources with subscribe feature
     expect(output).toContain('resources (supports subscribe)');
@@ -585,26 +585,26 @@ describe('formatServerInfo', () => {
   });
 
   it('should format empty instructions as no Instructions section', () => {
-    const info: ServerInfo = {
-      serverVersion: { name: 'No Instructions', version: '1.0.0' },
+    const details: ServerDetails = {
       capabilities: { tools: {} },
-      instructions: '   ',  // whitespace-only
+      serverInfo: { name: 'No Instructions', version: '1.0.0' },
+      instructions: '   ', // whitespace-only
     };
 
-    const output = formatServerInfo(info, '@test');
+    const output = formatServerDetails(details, '@test');
 
     // Should NOT contain instructions section for whitespace-only
     expect(output).not.toContain('Instructions:');
   });
 
   it('should format instructions with leading/trailing whitespace trimmed', () => {
-    const info: ServerInfo = {
-      serverVersion: { name: 'Test', version: '1.0.0' },
+    const details: ServerDetails = {
       capabilities: {},
+      serverInfo: { name: 'Test', version: '1.0.0' },
       instructions: '\n\n  Some instructions here.  \n\n',
     };
 
-    const output = formatServerInfo(info, '@test');
+    const output = formatServerDetails(details, '@test');
 
     // Should contain trimmed instructions
     expect(output).toContain('Instructions:');
@@ -613,12 +613,12 @@ describe('formatServerInfo', () => {
     expect(output).toContain('````');
   });
 
-  it('should handle server info without serverVersion', () => {
-    const info: ServerInfo = {
+  it('should handle server details without serverInfo', () => {
+    const details: ServerDetails = {
       capabilities: { prompts: { listChanged: true } },
     };
 
-    const output = formatServerInfo(info, '@test');
+    const output = formatServerDetails(details, '@test');
 
     // Should NOT contain Server: line
     expect(output).not.toMatch(/^Server:/m);
