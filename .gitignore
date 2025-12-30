@@ -10,7 +10,9 @@ dist/
 *.tsbuildinfo
 
 # Test coverage
-test/coverage/
+test/coverage/e2e
+test/coverage/unit
+test/coverage/merged
 test/runs/
 
 # Logs
