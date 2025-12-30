@@ -4,6 +4,36 @@
 
 import { extractSingleTextContent } from '../../../src/cli/tool-result.js';
 
+// Mock chalk to return plain strings (required because Jest can't handle chalk's ESM imports)
+jest.mock('chalk', () => ({
+  default: {
+    cyan: (s: string) => s,
+    yellow: (s: string) => s,
+    red: (s: string) => s,
+    dim: (s: string) => s,
+    gray: (s: string) => s,
+    bold: (s: string) => s,
+    green: (s: string) => s,
+    blue: (s: string) => s,
+    magenta: (s: string) => s,
+    white: (s: string) => s,
+  },
+  cyan: (s: string) => s,
+  yellow: (s: string) => s,
+  red: (s: string) => s,
+  dim: (s: string) => s,
+  gray: (s: string) => s,
+  bold: (s: string) => s,
+  green: (s: string) => s,
+  blue: (s: string) => s,
+  magenta: (s: string) => s,
+  white: (s: string) => s,
+}));
+
+// Import after mock is set up
+import { formatSchemaType, formatSimplifiedArgs, formatToolDetail } from '../../../src/cli/output.js';
+import type { Tool } from '../../../src/lib/types.js';
+
 describe('extractSingleTextContent', () => {
   it('should return text for single text content item', () => {
     const result = {
@@ -77,5 +107,363 @@ describe('extractSingleTextContent', () => {
       content: [{ type: 'text', text: '' }],
     };
     expect(extractSingleTextContent(result)).toBe('');
+  });
+});
+
+describe('formatSchemaType', () => {
+  it('should return simple type string', () => {
+    expect(formatSchemaType({ type: 'string' })).toBe('string');
+    expect(formatSchemaType({ type: 'number' })).toBe('number');
+    expect(formatSchemaType({ type: 'boolean' })).toBe('boolean');
+    expect(formatSchemaType({ type: 'integer' })).toBe('integer');
+    expect(formatSchemaType({ type: 'object' })).toBe('object');
+  });
+
+  it('should handle union types (array of types)', () => {
+    expect(formatSchemaType({ type: ['string', 'null'] })).toBe('string | null');
+    expect(formatSchemaType({ type: ['number', 'string', 'boolean'] })).toBe(
+      'number | string | boolean'
+    );
+  });
+
+  it('should handle array type with items', () => {
+    expect(formatSchemaType({ type: 'array', items: { type: 'string' } })).toBe('array<string>');
+    expect(formatSchemaType({ type: 'array', items: { type: 'number' } })).toBe('array<number>');
+    expect(
+      formatSchemaType({
+        type: 'array',
+        items: { type: 'array', items: { type: 'boolean' } },
+      })
+    ).toBe('array<array<boolean>>');
+  });
+
+  it('should handle object type with properties', () => {
+    expect(
+      formatSchemaType({
+        type: 'object',
+        properties: { name: { type: 'string' } },
+      })
+    ).toBe('object');
+  });
+
+  it('should handle small enums (5 or fewer values)', () => {
+    expect(formatSchemaType({ enum: ['a', 'b', 'c'] })).toBe('"a" | "b" | "c"');
+    expect(formatSchemaType({ enum: [1, 2, 3] })).toBe('1 | 2 | 3');
+    expect(formatSchemaType({ enum: [true, false] })).toBe('true | false');
+  });
+
+  it('should handle large enums (more than 5 values)', () => {
+    expect(formatSchemaType({ enum: ['a', 'b', 'c', 'd', 'e', 'f'] })).toBe('enum(6 values)');
+    expect(formatSchemaType({ enum: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] })).toBe('enum(10 values)');
+  });
+
+  it('should handle oneOf', () => {
+    expect(formatSchemaType({ oneOf: [{ type: 'string' }, { type: 'number' }] })).toBe(
+      'string | number'
+    );
+  });
+
+  it('should handle anyOf', () => {
+    expect(formatSchemaType({ anyOf: [{ type: 'boolean' }, { type: 'null' }] })).toBe(
+      'boolean | null'
+    );
+  });
+
+  it('should return "any" for invalid input', () => {
+    expect(formatSchemaType(null as unknown as Record<string, unknown>)).toBe('any');
+    expect(formatSchemaType(undefined as unknown as Record<string, unknown>)).toBe('any');
+    expect(formatSchemaType('string' as unknown as Record<string, unknown>)).toBe('any');
+    expect(formatSchemaType({} as Record<string, unknown>)).toBe('any');
+  });
+});
+
+describe('formatSimplifiedArgs', () => {
+  it('should format simple properties with bullet points', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        age: { type: 'number' },
+      },
+    };
+    const lines = formatSimplifiedArgs(schema);
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toBe('* `name`: string');
+    expect(lines[1]).toBe('* `age`: number');
+  });
+
+  it('should mark required properties', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        email: { type: 'string' },
+      },
+      required: ['name'],
+    };
+    const lines = formatSimplifiedArgs(schema);
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toBe('* `name`: string [required]');
+    expect(lines[1]).toBe('* `email`: string');
+  });
+
+  it('should include descriptions', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'The file path to read' },
+      },
+    };
+    const lines = formatSimplifiedArgs(schema);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toBe('* `path`: string - The file path to read');
+  });
+
+  it('should include default values', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        limit: { type: 'number', default: 10 },
+        enabled: { type: 'boolean', default: true },
+        format: { type: 'string', default: 'json' },
+      },
+    };
+    const lines = formatSimplifiedArgs(schema);
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toBe('* `limit`: number (default: 10)');
+    expect(lines[1]).toBe('* `enabled`: boolean (default: true)');
+    expect(lines[2]).toBe('* `format`: string (default: "json")');
+  });
+
+  it('should handle full combination of required, description, and default', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Search query',
+        },
+        limit: {
+          type: 'number',
+          description: 'Max results',
+          default: 10,
+        },
+      },
+      required: ['query'],
+    };
+    const lines = formatSimplifiedArgs(schema);
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toBe('* `query`: string [required] - Search query');
+    expect(lines[1]).toBe('* `limit`: number (default: 10) - Max results');
+  });
+
+  it('should use custom indent', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+      },
+    };
+    const lines = formatSimplifiedArgs(schema, '  ');
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toBe('  * `name`: string');
+  });
+
+  it('should return "(none)" for schema without properties', () => {
+    const lines1 = formatSimplifiedArgs({ type: 'object' });
+    expect(lines1).toEqual(['* (none)']);
+
+    const lines2 = formatSimplifiedArgs({ type: 'object', properties: {} });
+    expect(lines2).toEqual(['* (none)']);
+  });
+
+  it('should return "(none)" for null or invalid schema', () => {
+    expect(formatSimplifiedArgs(null as unknown as Record<string, unknown>)).toEqual([
+      '* (none)',
+    ]);
+    expect(formatSimplifiedArgs(undefined as unknown as Record<string, unknown>)).toEqual([
+      '* (none)',
+    ]);
+    expect(formatSimplifiedArgs('string' as unknown as Record<string, unknown>)).toEqual([
+      '* (none)',
+    ]);
+  });
+
+  it('should handle complex types in properties', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        tags: { type: 'array', items: { type: 'string' } },
+        status: { enum: ['active', 'inactive'] },
+        data: { type: ['string', 'null'] },
+      },
+    };
+    const lines = formatSimplifiedArgs(schema);
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toBe('* `tags`: array<string>');
+    expect(lines[1]).toBe('* `status`: "active" | "inactive"');
+    expect(lines[2]).toBe('* `data`: string | null');
+  });
+});
+
+describe('formatToolDetail', () => {
+  it('should format tool with all features: title, annotations, input, output, description', () => {
+    const tool: Tool = {
+      name: 'call-actor',
+      description: 'Calls an Actor on Apify platform',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          actorId: { type: 'string', description: 'Actor ID to call' },
+          input: { type: 'object', description: 'Input for the Actor' },
+        },
+        required: ['actorId'],
+      },
+      outputSchema: {
+        type: 'object',
+        properties: {
+          runId: { type: 'string', description: 'ID of the Actor run' },
+        },
+      },
+      annotations: {
+        title: 'Call Actor',
+        openWorldHint: true,
+      },
+    };
+
+    const output = formatToolDetail(tool);
+
+    // Should contain title as heading
+    expect(output).toContain('# Call Actor');
+
+    // Should contain tool name with annotations
+    expect(output).toContain('Tool:');
+    expect(output).toContain('`call-actor`');
+    expect(output).toContain('[open-world]');
+
+    // Should contain Input section with arguments
+    expect(output).toContain('Input:');
+    expect(output).toContain('`actorId`');
+    expect(output).toContain('[required]');
+    expect(output).toContain('Actor ID to call');
+    expect(output).toContain('`input`');
+
+    // Should contain Output section
+    expect(output).toContain('Output:');
+    expect(output).toContain('`runId`');
+    expect(output).toContain('ID of the Actor run');
+
+    // Should contain Description in code block
+    expect(output).toContain('Description:');
+    expect(output).toContain('````');
+    expect(output).toContain('Calls an Actor on Apify platform');
+  });
+
+  it('should format tool with minimal features (no title, no output, no annotations)', () => {
+    const tool: Tool = {
+      name: 'simple-tool',
+      description: 'A simple tool',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string' },
+        },
+      },
+    };
+
+    const output = formatToolDetail(tool);
+
+    // Should NOT contain title heading (no annotations.title)
+    expect(output).not.toContain('# ');
+
+    // Should contain tool name
+    expect(output).toContain('Tool:');
+    expect(output).toContain('`simple-tool`');
+
+    // Should NOT contain annotation brackets (no annotations)
+    expect(output).not.toContain('[read-only]');
+    expect(output).not.toContain('[open-world]');
+
+    // Should contain Input section
+    expect(output).toContain('Input:');
+    expect(output).toContain('`query`');
+
+    // Should NOT contain Output section
+    expect(output).not.toMatch(/Output:/);
+
+    // Should contain Description
+    expect(output).toContain('Description:');
+    expect(output).toContain('A simple tool');
+  });
+
+  it('should format tool with read-only annotation', () => {
+    const tool: Tool = {
+      name: 'fetch-data',
+      description: 'Fetches data',
+      inputSchema: {
+        type: 'object',
+        properties: {},
+      },
+      annotations: {
+        readOnlyHint: true,
+      },
+    };
+
+    const output = formatToolDetail(tool);
+
+    expect(output).toContain('[read-only]');
+    expect(output).not.toContain('[open-world]');
+  });
+
+  it('should show (none) for tool with no input properties', () => {
+    const tool: Tool = {
+      name: 'no-args-tool',
+      description: 'Tool with no arguments',
+      inputSchema: {
+        type: 'object',
+        properties: {},
+      },
+    };
+
+    const output = formatToolDetail(tool);
+
+    expect(output).toContain('Input:');
+    expect(output).toContain('(none)');
+  });
+
+  it('should show (no description) placeholder when description is missing', () => {
+    const tool: Tool = {
+      name: 'undocumented-tool',
+      inputSchema: {
+        type: 'object',
+        properties: {},
+      },
+    };
+
+    const output = formatToolDetail(tool);
+
+    expect(output).toContain('Description:');
+    expect(output).toContain('(no description)');
+  });
+
+  it('should show default values for input arguments', () => {
+    const tool: Tool = {
+      name: 'tool-with-defaults',
+      description: 'Tool with default values',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          limit: { type: 'number', default: 100, description: 'Max items' },
+          format: { type: 'string', default: 'json' },
+        },
+      },
+    };
+
+    const output = formatToolDetail(tool);
+
+    expect(output).toContain('(default: 100)');
+    expect(output).toContain('(default: "json")');
+    // Default should come before description
+    expect(output).toMatch(/\(default: 100\).*Max items/);
   });
 });

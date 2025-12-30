@@ -156,7 +156,7 @@ function formatToolAnnotations(annotations: Tool['annotations']): string | null 
  *       { type: 'array', items: { type: 'number' } } -> 'array<number>'
  *       { type: ['string', 'null'] } -> 'string | null'
  */
-function formatSchemaType(schema: Record<string, unknown>): string {
+export function formatSchemaType(schema: Record<string, unknown>): string {
   if (!schema || typeof schema !== 'object') {
     return 'any';
   }
@@ -208,19 +208,36 @@ function formatSchemaType(schema: Record<string, unknown>): string {
 }
 
 /**
+ * Format backticks in gray color for subtle Markdown-like display
+ */
+function grayBacktick(): string {
+  return chalk.gray('`');
+}
+
+/**
+ * Wrap text in gray backticks with cyan coloring for code-like terms
+ * Used for tool names, argument names, and other identifiers
+ */
+function inBackticks(text: string): string {
+  return `${grayBacktick()}${chalk.cyan(text)}${grayBacktick()}`;
+}
+
+/**
  * Format a JSON Schema as simplified human-readable args
  * Returns lines like:
- *   path: string [required]
- *   tail: number - If provided, returns only the last N lines
+ *   * `path`: string [required] - description
+ *   * `tail`: number - If provided, returns only the last N lines
  */
-function formatSimplifiedArgs(
+export function formatSimplifiedArgs(
   schema: Record<string, unknown>,
-  indent: string = '    '
+  indent: string = ''
 ): string[] {
   const lines: string[] = [];
 
+  const bullet = chalk.bold('*');
+
   if (!schema || typeof schema !== 'object') {
-    lines.push(`${indent}(none)`);
+    lines.push(`${indent}${bullet} ${chalk.gray('(none)')}`);
     return lines;
   }
 
@@ -228,7 +245,7 @@ function formatSimplifiedArgs(
   const required = (schema.required as string[]) || [];
 
   if (!properties || Object.keys(properties).length === 0) {
-    lines.push(`${indent}(none)`);
+    lines.push(`${indent}${bullet} ${chalk.gray('(none)')}`);
     return lines;
   }
 
@@ -238,19 +255,19 @@ function formatSimplifiedArgs(
     const description = propSchema.description as string | undefined;
     const defaultValue = propSchema.default;
 
-    // Build the line: name: type [required] - description (default: value)
-    let line = `${indent}${chalk.cyan(name)}: ${chalk.yellow(typeStr)}`;
+    // Build the line: * `name`: type [required] (default: value) - description
+    let line = `${indent}${bullet} ${inBackticks(name)}: ${chalk.yellow(typeStr)}`;
 
     if (isRequired) {
       line += ` ${chalk.red('[required]')}`;
     }
 
-    if (description) {
-      line += ` ${chalk.dim('-')} ${description}`;
-    }
-
     if (defaultValue !== undefined) {
       line += chalk.dim(` (default: ${JSON.stringify(defaultValue)})`);
+    }
+
+    if (description) {
+      line += ` ${chalk.dim('-')} ${description}`;
     }
 
     lines.push(line);
@@ -260,74 +277,73 @@ function formatSimplifiedArgs(
 }
 
 /**
- * Format a list of tools with simplified args display
+ * Format a list of tools with Markdown-like display
  */
 export function formatTools(tools: Tool[]): string {
   const lines: string[] = [];
 
+  // Header with tool count
   lines.push(chalk.bold(`Available tools (${tools.length}):`));
-  lines.push('');
 
+  // Summary list of tools
   for (const tool of tools) {
-    // Tool header: name [annotations]
     const annotationsStr = formatToolAnnotations(tool.annotations);
     const annotationsSuffix = annotationsStr ? ` ${chalk.gray(`[${annotationsStr}]`)}` : '';
-    lines.push(`${chalk.bold('Tool:')} ${tool.name}${annotationsSuffix}`);
+    lines.push(`- ${inBackticks(tool.name)}${annotationsSuffix}`);
+  }
 
-    // Input args
-    lines.push(`  ${chalk.bold('Input:')}`);
-    const inputArgs = formatSimplifiedArgs(tool.inputSchema as Record<string, unknown>, '    ');
-    lines.push(...inputArgs);
-
-    // Output schema (if present)
-    if ('outputSchema' in tool && tool.outputSchema) {
-      lines.push(`  ${chalk.bold('Output:')}`);
-      const outputArgs = formatSimplifiedArgs(tool.outputSchema as Record<string, unknown>, '    ');
-      lines.push(...outputArgs);
-    }
-
-    // Description
-    lines.push(`  ${chalk.bold('Description:')}`);
-    if (tool.description) {
-      lines.push(`    ${tool.description}`);
-    } else {
-      lines.push(`    ${chalk.gray('(no description)')}`);
-    }
+  // Detailed view for each tool with separators
+  for (const tool of tools) {
     lines.push('');
+    lines.push(chalk.dim('---'));
+    lines.push(formatToolDetail(tool));
   }
 
   return lines.join('\n');
 }
 
 /**
- * Format a single tool with details (simplified args display)
+ * Format a single tool with details (Markdown-like display)
  */
 export function formatToolDetail(tool: Tool): string {
   const lines: string[] = [];
 
-  // Tool header: name [annotations]
+  // Title from annotations (if present) - shown as heading above tool name
+  const title = tool.annotations?.title;
+  if (title) {
+    lines.push(chalk.bold(`# ${title}`));
+  }
+
+  // Tool header: Tool: `name` [annotations]
   const annotationsStr = formatToolAnnotations(tool.annotations);
   const annotationsSuffix = annotationsStr ? ` ${chalk.gray(`[${annotationsStr}]`)}` : '';
-  lines.push(`${chalk.bold('Tool:')} ${tool.name}${annotationsSuffix}`);
+  lines.push(`${chalk.bold('Tool:')} ${inBackticks(tool.name)}${annotationsSuffix}`);
 
   // Input args
-  lines.push(`  ${chalk.bold('Input:')}`);
-  const inputArgs = formatSimplifiedArgs(tool.inputSchema as Record<string, unknown>, '    ');
+  lines.push('');
+  lines.push(chalk.bold('Input:'));
+  const inputArgs = formatSimplifiedArgs(tool.inputSchema as Record<string, unknown>, '');
   lines.push(...inputArgs);
 
   // Output schema (if present)
   if ('outputSchema' in tool && tool.outputSchema) {
-    lines.push(`  ${chalk.bold('Output:')}`);
-    const outputArgs = formatSimplifiedArgs(tool.outputSchema as Record<string, unknown>, '    ');
+    lines.push('');
+    lines.push(chalk.bold('Output:'));
+    const outputArgs = formatSimplifiedArgs(tool.outputSchema as Record<string, unknown>, '');
     lines.push(...outputArgs);
   }
 
-  // Description
-  lines.push(`  ${chalk.bold('Description:')}`);
+  // Description in code block
+  lines.push('');
+  lines.push(chalk.bold('Description:'));
   if (tool.description) {
-    lines.push(`    ${tool.description}`);
+    lines.push(chalk.gray('````'));
+    lines.push(tool.description);
+    lines.push(chalk.gray('````'));
   } else {
-    lines.push(`    ${chalk.gray('(no description)')}`);
+    lines.push(chalk.gray('````'));
+    lines.push(chalk.gray('(no description)'));
+    lines.push(chalk.gray('````'));
   }
 
   return lines.join('\n');
