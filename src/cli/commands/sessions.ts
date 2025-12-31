@@ -22,7 +22,7 @@ import { createLogger } from '../../lib/logger.js';
 const logger = createLogger('sessions');
 
 /**
- * Connect to an MCP server and create a session
+ * Creates a new session, starts a bridge process, and instructs it to connect an MCP server.
  * If session already exists with dead bridge, reconnects it automatically
  */
 export async function connectSession(
@@ -54,7 +54,7 @@ export async function connectSession(
         if (options.outputMode === 'human') {
           console.log(formatSuccess(`Session ${name} is already active`));
         }
-        await showServerInfo(name, { ...options, hideTarget: false });
+        await showServerDetails(name, { ...options, hideTarget: false });
         return;
       }
 
@@ -110,36 +110,20 @@ export async function connectSession(
 
     // Create or update session record (without pid - that comes from startBridge)
     const isReconnect = !!existingSession;
+    const sessionTarget = transportConfig.url || transportConfig.command || 'unknown';
+    const sessionUpdate: Parameters<typeof updateSession>[1] = {
+      target: sessionTarget,
+      transport: transportConfig.type,
+      ...(profileName && { profileName }),
+      ...(transportConfig.args?.length && { stdioArgs: transportConfig.args }),
+      ...(transportConfig.type === 'http' && { httpHeaderCount: Object.keys(headers || {}).length }),
+    };
+
     if (isReconnect) {
-      // Update existing session, preserving createdAt
-      const updateData: Parameters<typeof updateSession>[1] = {
-        target: transportConfig.url || transportConfig.command || 'unknown',
-        transport: transportConfig.type,
-        httpHeaderCount: Object.keys(headers || {}).length,
-      };
-      if (profileName) {
-        updateData.profileName = profileName;
-      }
-      if (transportConfig.args && transportConfig.args.length > 0) {
-        updateData.stdioArgs = transportConfig.args;
-      }
-      await updateSession(name, updateData);
+      await updateSession(name, sessionUpdate);
       logger.debug(`Session record updated for reconnect: ${name}`);
     } else {
-      // Create new session
-      const sessionData: Parameters<typeof saveSession>[1] = {
-        target: transportConfig.url || transportConfig.command || 'unknown',
-        transport: transportConfig.type,
-        createdAt: new Date().toISOString(),
-        httpHeaderCount: Object.keys(headers || {}).length,
-      };
-      if (profileName) {
-        sessionData.profileName = profileName;
-      }
-      if (transportConfig.args && transportConfig.args.length > 0) {
-        sessionData.stdioArgs = transportConfig.args;
-      }
-      await saveSession(name, sessionData);
+      await saveSession(name, { target: sessionTarget, transport: transportConfig.type, createdAt: new Date().toISOString(), ...sessionUpdate });
       logger.debug(`Initial session record created for: ${name}`);
     }
 
@@ -180,7 +164,7 @@ export async function connectSession(
     console.log(formatSuccess(`Session ${name} ${isReconnect ? 'reconnected' : 'created'}`));
 
     // Display server info via the new session
-    await showServerInfo(name, {
+    await showServerDetails(name, {
       ...options,
       hideTarget: false, // Show session info prefix
     });
@@ -391,7 +375,7 @@ export async function closeSession(
 /**
  * Get server instructions and capabilities (also used for help command)
  */
-export async function showServerInfo(
+export async function showServerDetails(
   target: string,
   options: {
     outputMode: OutputMode;
@@ -494,7 +478,7 @@ export async function showHelp(
   target: string,
   options: { outputMode: OutputMode }
 ): Promise<void> {
-  await showServerInfo(target, options);
+  await showServerDetails(target, options);
 }
 
 /**

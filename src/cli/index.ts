@@ -226,7 +226,7 @@ async function handleCommands(target: string, args: string[]): Promise<void> {
     const options = extractOptions(args);
     if (options.verbose) setVerbose(true);
 
-    await sessions.showServerInfo(target, {
+    await sessions.showServerDetails(target, {
       outputMode: options.json ? 'json' : 'human',
       ...(options.verbose && { verbose: true }),
       ...(options.config && { config: options.config }),

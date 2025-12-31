@@ -233,15 +233,15 @@ export interface McpConfig {
 }
 
 /**
- * Individual server configuration
+ * Individual server configuration in MCP JSON config file
  */
 export interface McpServerConfig {
-  url?: string; // For HTTP servers
+  url?: string; // For http servers
+  headers?: Record<string, string>; // For http servers
   command?: string; // For stdio servers
-  args?: string[];
-  env?: Record<string, string>;
-  headers?: Record<string, string>;
-  timeout?: number;
+  args?: string[]; // For stdio servers
+  env?: Record<string, string>; // For stdio servers
+  timeout?: number; // For both stdio and http servers, in seconds
 }
 
 /**
