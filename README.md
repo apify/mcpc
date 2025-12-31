@@ -125,8 +125,8 @@ Options:
   --timeout <seconds>     Request timeout in seconds (default: 300)
   --profile <name>        Authentication profile to use (default: "default")
   --schema <file>         Validate against expected tool/prompt schema
-  --schema-mode <mode>    Schema validation mode: "strict", "compatible" (default), or "ignore"
-  --clean[=types]         Clean up mcpc data (types: "sessions,logs,profiles,all")
+  --schema-mode <mode>    Schema validation mode: strict, compatible (default), ignore
+  --clean[=types]         Clean up mcpc data (types: sessions, logs, profiles, all)
   -h, --help              Display general help
 
 Targets:
@@ -909,13 +909,12 @@ Log rotation: Keep last 10MB per session, max 5 files.
 - For bearer tokens: provide `--header "Authorization: Bearer ${TOKEN}"` again
 
 
-## Contributing
+## Development
+
+`mcpc` was built by [Jan Curn](https://x.com/jancurn) from [Apify](https://apify.com) over the 
+2025 Xmas holidays.
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for development setup, architecture overview, and contribution guidelines.
-
-## Authors
-
-Built by [Jan Curn](https://x.com/jancurn) / [Apify](https://apify.com).
 
 ## License
 

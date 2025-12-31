@@ -16,26 +16,45 @@ import type { AuthProfile } from '../types.js';
 
 const logger = createLogger('oauth-flow');
 
-// Escape key code
+// Special key codes
 const ESCAPE_KEY = '\x1b';
+const CTRL_C = '\x03';
+const ENTER_CR = '\r';
+const ENTER_LF = '\n';
 
 /**
- * Wait for user to press Escape key
- * Returns a promise that rejects when Escape is pressed
+ * Result from key handler callback
  */
-function waitForEscapeKey(): { promise: Promise<never>; cleanup: () => void } {
+type KeyHandlerResult<T> =
+  | { done: true; value: T }
+  | { done: true; error: Error }
+  | { done: false };
+
+/**
+ * Set up raw mode keypress listener
+ * Returns cleanup function and allows custom key handling via callback
+ */
+function setupKeyListener<T>(
+  onKey: (char: string) => KeyHandlerResult<T>
+): { promise: Promise<T>; cleanup: () => void } {
   let cleanup = () => {};
   let cleaned = false;
 
-  const promise = new Promise<never>((_resolve, reject) => {
+  const promise = new Promise<T>((resolve, reject) => {
     // Only set up key listener if stdin is a TTY
     if (!process.stdin.isTTY) {
-      return; // Promise will never resolve/reject, which is fine
+      return; // Promise will never resolve, which is fine for non-TTY
     }
 
     const onData = (key: Buffer) => {
-      if (key.toString() === ESCAPE_KEY) {
-        reject(new ClientError('Authentication cancelled by user'));
+      const result = onKey(key.toString());
+      if (result.done) {
+        cleanup();
+        if ('error' in result) {
+          reject(result.error);
+        } else {
+          resolve(result.value);
+        }
       }
     };
 
@@ -47,7 +66,6 @@ function waitForEscapeKey(): { promise: Promise<never>; cleanup: () => void } {
     cleanup = () => {
       if (cleaned) return;
       cleaned = true;
-
       process.stdin.off('data', onData);
       process.stdin.setRawMode(false);
       process.stdin.pause();
@@ -55,6 +73,43 @@ function waitForEscapeKey(): { promise: Promise<never>; cleanup: () => void } {
   });
 
   return { promise, cleanup };
+}
+
+/**
+ * Wait for user to press Escape key
+ * Returns a promise that rejects when Escape is pressed
+ */
+function waitForEscapeKey(): { promise: Promise<never>; cleanup: () => void } {
+  const { promise, cleanup } = setupKeyListener<never>((char) => {
+    if (char === ESCAPE_KEY || char === CTRL_C) {
+      return { done: true, error: new ClientError('Authentication cancelled by user') };
+    }
+    return { done: false };
+  });
+  return { promise, cleanup };
+}
+
+/**
+ * Prompt user to press Enter to continue
+ * Returns true if Enter was pressed, false otherwise
+ */
+async function waitForEnterKey(prompt: string): Promise<boolean> {
+  if (!process.stdin.isTTY) {
+    return true;
+  }
+
+  process.stdout.write(prompt);
+
+  const { promise } = setupKeyListener<boolean>((char) => {
+    console.log(''); // Print newline after keypress
+    if (char === ENTER_CR || char === ENTER_LF) {
+      return { done: true, value: true };
+    }
+    // Any other key cancels
+    return { done: true, value: false };
+  });
+
+  return promise;
 }
 
 /**
@@ -273,12 +328,26 @@ export async function performOAuthFlow(
       });
     });
 
+    // Escape handler - set up after browser opens (use object wrapper to avoid TypeScript closure narrowing)
+    const escapeHandlerRef: { current: ReturnType<typeof waitForEscapeKey> | null } = { current: null };
+
     // Override redirectToAuthorization to open browser
     provider.redirectToAuthorization = async (authorizationUrl: URL) => {
       logger.debug('Opening browser for authorization...');
-      console.log(`\nOpening browser to: ${authorizationUrl.toString()}`);
+      console.log(`\nAuthorization URL: ${authorizationUrl.toString()}`);
+
+      // Ask for confirmation before opening browser
+      const confirmed = await waitForEnterKey('Press Enter to open browser (any other key to cancel): ');
+      if (!confirmed) {
+        throw new ClientError('Authentication cancelled by user');
+      }
+
+      console.log('Opening browser...');
       console.log('If the browser does not open automatically, please visit the URL above.');
       console.log('Press Esc to cancel.\n');
+
+      // Set up escape key handler AFTER Enter confirmation (to avoid raw mode conflicts)
+      escapeHandlerRef.current = waitForEscapeKey();
 
       try {
         await openBrowser(authorizationUrl.toString());
@@ -286,9 +355,6 @@ export async function performOAuthFlow(
         console.error((error as Error).message);
       }
     };
-
-    // Set up escape key handler
-    const escapeHandler = waitForEscapeKey();
 
     try {
       // Start OAuth flow
@@ -304,10 +370,11 @@ export async function performOAuthFlow(
       if (result === 'REDIRECT') {
         // Wait for callback with authorization code, or user pressing Escape
         logger.debug('Waiting for authorization code...');
-        const { code } = await Promise.race([
-          codePromise,
-          escapeHandler.promise,
-        ]);
+        const racers: Promise<{ code: string }>[] = [codePromise];
+        if (escapeHandlerRef.current) {
+          racers.push(escapeHandlerRef.current.promise as Promise<{ code: string }>);
+        }
+        const { code } = await Promise.race(racers);
 
         // Exchange code for tokens
         logger.debug('Exchanging authorization code for tokens...');
@@ -322,7 +389,7 @@ export async function performOAuthFlow(
       }
     } finally {
       // Clean up escape key handler
-      escapeHandler.cleanup();
+      escapeHandlerRef.current?.cleanup();
     }
 
     // Get the saved profile
