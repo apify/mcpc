@@ -303,11 +303,14 @@ export async function withMcpClient<T>(
 
     // Log target prefix (unless hidden)
     if (options.outputMode) {
+      // Get protocol version for display
+      const serverDetails = await client.getServerDetails();
       await logTarget(target, {
         outputMode: options.outputMode,
         hide: options.hideTarget,
         profileName,
         serverConfig: serverConfig,
+        protocolVersion: serverDetails.protocolVersion,
       });
     }
 

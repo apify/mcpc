@@ -427,8 +427,18 @@ class BridgeProcess {
     logger.info('Connected to MCP server');
     logger.debug('MCP client created successfully, authProvider was:', !!clientConfig.authProvider);
 
-    // Update lastSeenAt on successful connection
-    await this.updateLastSeenAt();
+    // Update session with protocol version and lastSeenAt
+    const serverDetails = await this.client.getServerDetails();
+    const sessionUpdate: Parameters<typeof updateSession>[1] = {
+      lastSeenAt: new Date().toISOString(),
+    };
+    if (serverDetails.protocolVersion) {
+      sessionUpdate.protocolVersion = serverDetails.protocolVersion;
+    }
+    if (serverDetails.serverInfo) {
+      sessionUpdate.serverInfo = serverDetails.serverInfo;
+    }
+    await updateSession(this.options.sessionName, sessionUpdate);
 
     // Note: Token refresh is handled automatically by the SDK
     // The SDK calls authProvider.tokens() before each request,

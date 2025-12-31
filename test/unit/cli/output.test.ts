@@ -496,10 +496,9 @@ describe('formatServerDetails', () => {
 
     const output = formatServerDetails(details, '@test');
 
-    // Should contain server version and protocol version
+    // Should contain server info
     expect(output).toContain('Server:');
     expect(output).toContain('Test Server v1.2.3');
-    expect(output).toContain('(MCP version: 2025-11-25)');
 
     // Should contain capabilities section
     expect(output).toContain('Capabilities:');

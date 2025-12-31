@@ -635,7 +635,7 @@ function truncateWithEllipsis(str: string, maxLen: number): string {
 
 /**
  * Format a session line for display (without status)
- * Returns: "@name → target (transport)" with colors applied
+ * Returns: "@name → target (transport, MCP: version)" with colors applied
  */
 export function formatSessionLine(session: SessionData): string {
   // Format session name (cyan)
@@ -656,16 +656,25 @@ export function formatSessionLine(session: SessionData): string {
   const targetStr = truncateWithEllipsis(target, 80);
 
   // Format transport/auth info
-  let authStr: string;
+  const parts: string[] = [];
+
   if (session.server.command) {
-    authStr = chalk.dim('(stdio)');
-  } else if (session.profileName) {
-    authStr = chalk.dim('(http, oauth: ') + chalk.magenta(session.profileName) + chalk.dim(')');
+    parts.push('stdio');
   } else {
-    authStr = chalk.dim('(http)');
+    parts.push('HTTP');
+    if (session.profileName) {
+      parts.push('OAuth: ' + chalk.magenta(session.profileName) + chalk.dim(''));
+    }
   }
 
-  return `${nameStr} → ${targetStr} ${authStr}`;
+  // Add MCP protocol version if available
+  if (session.protocolVersion) {
+    parts.push('MCP: ' + session.protocolVersion);
+  }
+
+  const infoStr = chalk.dim('(') + chalk.dim(parts.join(', ')) + chalk.dim(')');
+
+  return `${nameStr} → ${targetStr} ${infoStr}`;
 }
 
 /**
@@ -676,6 +685,7 @@ export interface LogTargetOptions {
   hide?: boolean | undefined;
   profileName?: string | undefined; // Auth profile being used (for http targets)
   serverConfig?: ServerConfig | undefined; // Resolved transport config (for non-session targets)
+  protocolVersion?: string | undefined; // MCP protocol version (for direct connections)
 }
 
 /**
@@ -699,6 +709,8 @@ export async function logTarget(target: string, options: LogTargetOptions): Prom
 
   // For direct connections, use transportConfig if available
   const tc = options.serverConfig;
+  const mcpVersionStr = options.protocolVersion ? `, MCP: ${options.protocolVersion}` : '';
+
   if (tc?.command) {
     // Stdio transport: show command + args
     let targetStr = tc.command;
@@ -706,19 +718,20 @@ export async function logTarget(target: string, options: LogTargetOptions): Prom
       targetStr += ' ' + tc.args.join(' ');
     }
     targetStr = truncateWithEllipsis(targetStr, 80);
-    console.log(`[→ ${targetStr} ${chalk.dim('(stdio)')}]\n`);
+    console.log(`[→ ${targetStr} ${chalk.dim(`(stdio${mcpVersionStr})`)}]`);
     return;
   }
 
   // HTTP transport: show server URL with auth info
-  const serverStr = tc?.url || target; // tc?.url ? getServerHost(tc.url) : getServerHost(target);
-  let authStr: string;
+  const serverStr = tc?.url || target;
+  const parts: string[] = ['HTTP'];
   if (options.profileName) {
-    authStr = chalk.dim('(http, oauth: ') + chalk.magenta(options.profileName) + chalk.dim(')');
-  } else {
-    authStr = chalk.dim('(http)');
+    parts.push('OAuth: ' + chalk.magenta(options.profileName));
   }
-  console.log(`[→ ${serverStr} ${authStr}]\n`);
+  if (options.protocolVersion) {
+    parts.push('MCP: ' + options.protocolVersion);
+  }
+  console.log(`[→ ${serverStr} ${chalk.dim('(' + parts.join(', ') + ')')}]\n`);
 }
 
 /**
@@ -739,12 +752,11 @@ export function formatServerDetails(details: ServerDetails, target: string): str
   const bullet = chalk.dim('*');
   const bt = chalk.gray('`'); // backtick
 
-  const { serverInfo, capabilities, instructions, protocolVersion } = details;
+  const { serverInfo, capabilities, instructions } = details;
 
   // Server info
   if (serverInfo) {
-    const versionInfo = protocolVersion ? ` (MCP version: ${protocolVersion})` : '';
-    lines.push(chalk.bold('Server:') + ` ${serverInfo.name} v${serverInfo.version}${versionInfo}`);
+    lines.push(chalk.bold('Server:') + ` ${serverInfo.name} v${serverInfo.version}`);
     lines.push('');
   }
 
@@ -823,7 +835,6 @@ export function formatServerDetails(details: ServerDetails, target: string): str
     lines.push(chalk.gray('````'));
     lines.push(trimmed);
     lines.push(chalk.gray('````'));
-    lines.push('');
   }
 
   return lines.join('\n');
