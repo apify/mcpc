@@ -405,7 +405,7 @@ export async function performOAuthFlow(
       success: true,
     };
   } catch (error) {
-    logger.error(`OAuth flow failed: ${(error as Error).message}`);
+    logger.debug(`OAuth flow failed: ${(error as Error).message}`);
     throw error;
   } finally {
     // Close callback server and destroy all connections

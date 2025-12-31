@@ -15,6 +15,12 @@ import { inspect } from 'util';
 let isVerbose = false;
 
 /**
+ * Global JSON mode flag (set by CLI --json flag)
+ * When true, suppresses console output to keep stderr clean for JSON errors
+ */
+let isJsonMode = false;
+
+/**
  * Global file logger instance (optional)
  */
 let fileLogger: FileLogger | null = null;
@@ -35,6 +41,20 @@ export function setVerbose(verbose: boolean): void {
  */
 export function getVerbose(): boolean {
   return isVerbose;
+}
+
+/**
+ * Set JSON mode (suppresses console output)
+ */
+export function setJsonMode(json: boolean): void {
+  isJsonMode = json;
+}
+
+/**
+ * Check if JSON mode is enabled
+ */
+export function getJsonMode(): boolean {
+  return isJsonMode;
 }
 
 /**
@@ -114,9 +134,14 @@ export function setLogLevel(level: LogLevel): void {
 }
 
 /**
- * Check if a message at the given level should be logged
+ * Check if a message at the given level should be logged to console
  */
 function shouldLog(level: LogLevel): boolean {
+  // In JSON mode, suppress all console output to keep stderr clean for JSON errors
+  if (isJsonMode) {
+    return false;
+  }
+
   // Debug logs only shown in verbose mode
   if (level === 'debug' && !isVerbose) {
     return false;

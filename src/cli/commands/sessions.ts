@@ -179,7 +179,7 @@ export async function connectSession(
     if (options.outputMode === 'human') {
       console.error(formatError((error as Error).message));
     } else {
-      console.log(
+      console.error(
         formatOutput(
           {
             sessionName: name,
@@ -364,7 +364,7 @@ export async function closeSession(
     if (options.outputMode === 'human') {
       console.error(formatError((error as Error).message));
     } else {
-      console.log(
+      console.error(
         formatOutput(
           {
             sessionName: name,
@@ -499,7 +499,7 @@ export async function restartSession(
     if (options.outputMode === 'human') {
       console.error(formatError((error as Error).message));
     } else {
-      console.log(
+      console.error(
         formatOutput(
           {
             sessionName: name,

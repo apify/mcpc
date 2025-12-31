@@ -11,7 +11,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
 
 import { Command } from 'commander';
-import { setVerbose, closeFileLogger } from '../lib/index.js';
+import { setVerbose, setJsonMode, closeFileLogger } from '../lib/index.js';
 import { isMcpError, formatError } from '../lib/index.js';
 import { formatJson, formatJsonError, rainbow } from './output.js';
 import * as tools from './commands/tools.js';
@@ -54,6 +54,7 @@ function getOptionsFromCommand(command: Command): HandlerOptions {
 
   // Check for JSON mode from flag or environment variable
   const json = opts.json || getJsonFromEnv();
+  if (json) setJsonMode(true);
 
   const options: HandlerOptions = {
     outputMode: (json ? 'json' : 'human') as OutputMode,
@@ -102,6 +103,7 @@ async function main(): Promise<void> {
   if (args.includes('--version') || args.includes('-v')) {
     const options = extractOptions(args);
     if (options.json) {
+      setJsonMode(true);
       console.log(formatJson({ version: packageJson.version }));
     } else {
       console.log(packageJson.version);
@@ -131,6 +133,7 @@ async function main(): Promise<void> {
   if (cleanArg) {
     const options = extractOptions(args);
     if (options.verbose) setVerbose(true);
+    if (options.json) setJsonMode(true);
 
     // Parse --clean value: --clean or --clean=all,sessions,profiles,logs
     const cleanValue = cleanArg.includes('=') ? cleanArg.split('=')[1] : '';
@@ -162,6 +165,7 @@ async function main(): Promise<void> {
   // If no target found, list sessions
   if (!targetInfo) {
     const { json } = extractOptions(args);
+    if (json) setJsonMode(true);
     await sessions.listSessionsAndAuthProfiles({ outputMode: json ? 'json' : 'human' });
     if (!json) {
       console.log('\nRun "mcpc --help" for usage information.');
@@ -252,6 +256,7 @@ async function handleCommands(target: string, args: string[]): Promise<void> {
   if (!hasCommandAfterTarget(args)) {
     const options = extractOptions(args);
     if (options.verbose) setVerbose(true);
+    if (options.json) setJsonMode(true);
 
     await sessions.showServerDetails(target, {
       outputMode: options.json ? 'json' : 'human',
