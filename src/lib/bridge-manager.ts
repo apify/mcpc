@@ -413,7 +413,7 @@ export async function ensureBridgeReady(sessionName: string): Promise<string> {
       );
     }
   } else {
-    logger.warn(`Bridge process not alive for ${sessionName}, will try to restart it`);
+    logger.debug(`Bridge process not alive for ${sessionName}, will try to restart it`);
   }
 
   // Bridge not healthy - restart it
@@ -431,6 +431,6 @@ export async function ensureBridgeReady(sessionName: string): Promise<string> {
   const logPath = `${getLogsDir()}/bridge-${sessionName}.log`;
   throw new ClientError(
     `Bridge for ${sessionName} failed after restart: ${errorMsg}. ` +
-    `Check logs at ${logPath} for details.`
+    `For details, check logs at ${logPath}`
   );
 }

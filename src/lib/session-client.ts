@@ -83,7 +83,7 @@ export class SessionClient extends EventEmitter implements IMcpClient {
         // Add log hint for MCP/server errors
         const err = error as Error;
         const logPath = `${getLogsDir()}/bridge-${this.sessionName}.log`;
-        err.message = `${err.message}. Check logs at ${logPath} for details.`;
+        err.message = `${err.message}. For details, check logs at ${logPath}`;
         throw error;
       }
 
