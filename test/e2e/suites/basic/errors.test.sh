@@ -91,4 +91,60 @@ run_mcpc @nonexistent logging-set-level
 assert_failure
 test_pass
 
+# Test: unknown option should fail
+test_case "unknown option fails"
+run_mcpc --unknownoption
+assert_failure
+assert_contains "$STDERR" "Unknown option"
+test_pass
+
+# Test: invalid --clean type should fail
+test_case "invalid --clean type fails"
+run_mcpc --clean=invalid
+assert_failure
+assert_contains "$STDERR" "Invalid --clean type"
+test_pass
+
+# Test: option that looks like --clean but isn't should fail
+test_case "typo option --cleanblah fails"
+run_mcpc --cleanblah
+assert_failure
+assert_contains "$STDERR" "Unknown option"
+test_pass
+
+# Test: invalid --header format (missing colon)
+test_case "invalid --header format fails"
+run_mcpc example.com tools-list --header "InvalidHeader"
+assert_failure
+assert_contains "$STDERR" "Invalid header format"
+test_pass
+
+# Test: invalid --schema-mode value
+test_case "invalid --schema-mode fails"
+run_mcpc example.com tools-list --schema-mode invalid
+assert_failure
+assert_contains "$STDERR" "Invalid --schema-mode"
+test_pass
+
+# Test: non-numeric --timeout value
+test_case "non-numeric --timeout fails"
+run_mcpc example.com tools-list --timeout notanumber
+assert_failure
+assert_contains "$STDERR" "Invalid --timeout"
+test_pass
+
+# Test: non-existent --config file
+test_case "non-existent --config file fails"
+run_mcpc --config /nonexistent/config-$RANDOM.json fs tools-list
+assert_failure
+assert_contains "$STDERR" "not found"
+test_pass
+
+# Test: non-existent --schema file
+test_case "non-existent --schema file fails"
+run_mcpc example.com tools-list --schema /nonexistent/schema-$RANDOM.json
+assert_failure
+assert_contains "$STDERR" "not found"
+test_pass
+
 test_done

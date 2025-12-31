@@ -464,6 +464,18 @@ mcpc --json @apify tools-call search-actors --args query="tiktok scraper" \
   | mcpc @playwright tools-call run-browser
 ```
 
+### Output format
+
+#### Human-readable (default)
+
+Default output is formatted for human and AI readability with plain text, colors, and Markdown-like formatting.
+
+#### JSON mode
+
+If `--json` option is provided, `mcpc` always emits only a single JSON object, in order to enable scripting.
+For MCP commands, the returned objects are always consistent with the [MCP protocol specification](https://modelcontextprotocol.io/specification/latest).
+On success, the JSON object is printed to stdout, otherwise to stderr.
+
 ### Scripting
 
 `mcpc` is designed for us in (AI-generated) scripts.
@@ -473,6 +485,9 @@ With the `--json` option, `mcpc` returns a single JSON object (object or array) 
 - On error, the JSON object is printed to stderr
 
 You can use tools like `jq` to process the output.
+
+Note that `--json` option has no effect on `--help` command,
+or if there are invalid arguments, as those take precedence.
 
 For all MCP operations, the **returned JSON is and always will be strictly consistent
 with the [MCP specification](https://modelcontextprotocol.io/specification/latest)**,
@@ -710,18 +725,6 @@ Config files support environment variable substitution using `${VAR_NAME}` synta
 - Pagination: List operations automatically fetch all pages when the server returns paginated results
 - Pings: `mcpc` periodically issues the MCP `ping` request to keep the connection alive
 - Sampling is not supported as `mcpc` has no access to an LLM
-
-## Output format
-
-### Human-readable (default)
-
-Default output is formatted for human and AI readability with plain text, colors, and Markdown-like formatting.
-
-### JSON mode
-
-If `--json` option is provided, `mcpc` always emits only a single JSON object, in order to enable scripting.
-For MCP commands, the returned objects are always consistent with the [MCP protocol specification](https://modelcontextprotocol.io/specification/latest).
-On success, the JSON object is printed to stdout, otherwise to stderr.
 
 ## Security
 

@@ -2,7 +2,7 @@
  * Command-line argument parsing utilities
  * Pure functions with no external dependencies for easy testing
  */
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { ClientError, resolvePath } from '../lib/index.js';
 
 /**
@@ -41,12 +41,127 @@ const OPTIONS_WITH_VALUES = [
   '--schema-mode',
 ];
 
+// All known options (both boolean flags and value options)
+// Includes both global options and command-specific options
+const KNOWN_OPTIONS = [
+  ...OPTIONS_WITH_VALUES,
+  '-j',
+  '--json',
+  '-v',
+  '--version',
+  '-h',
+  '--help',
+  '--verbose',
+  '--clean',
+  // Command-specific options
+  '--args',
+  '--args-file',
+];
+
+// Valid --clean types
+const VALID_CLEAN_TYPES = ['sessions', 'profiles', 'logs', 'all'];
+
+// Valid --schema-mode values
+const VALID_SCHEMA_MODES = ['strict', 'compatible', 'ignore'];
+
 /**
  * Check if an option takes a value
  */
 export function optionTakesValue(arg: string): boolean {
   const optionName = arg.includes('=') ? arg.substring(0, arg.indexOf('=')) : arg;
   return OPTIONS_WITH_VALUES.includes(optionName);
+}
+
+/**
+ * Check if an option is known
+ */
+function isKnownOption(arg: string): boolean {
+  // Extract option name (before = if present)
+  const optionName = arg.includes('=') ? arg.substring(0, arg.indexOf('=')) : arg;
+  return KNOWN_OPTIONS.includes(optionName);
+}
+
+/**
+ * Validate that all options in args are known
+ * @throws ClientError if unknown option is found
+ */
+export function validateOptions(args: string[]): void {
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (!arg) continue;
+
+    // Only check arguments that start with -
+    if (arg.startsWith('-')) {
+      if (!isKnownOption(arg)) {
+        throw new ClientError(`Unknown option: ${arg}`);
+      }
+      // Skip the value for options that take values
+      if (optionTakesValue(arg) && !arg.includes('=') && i + 1 < args.length) {
+        i++;
+      }
+    }
+  }
+}
+
+/**
+ * Validate --clean types
+ * @throws ClientError if invalid clean type is found
+ */
+export function validateCleanTypes(types: string[]): void {
+  for (const type of types) {
+    if (type && !VALID_CLEAN_TYPES.includes(type)) {
+      throw new ClientError(
+        `Invalid --clean type: "${type}". Valid types are: ${VALID_CLEAN_TYPES.join(', ')}`
+      );
+    }
+  }
+}
+
+/**
+ * Validate argument values (--schema-mode, --timeout, etc.)
+ * @throws ClientError if invalid value is found
+ */
+export function validateArgValues(args: string[]): void {
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    const nextArg = args[i + 1];
+    if (!arg) continue;
+
+    // Validate --schema-mode value
+    if (arg === '--schema-mode' && nextArg) {
+      if (!VALID_SCHEMA_MODES.includes(nextArg)) {
+        throw new ClientError(
+          `Invalid --schema-mode value: "${nextArg}". Valid modes are: ${VALID_SCHEMA_MODES.join(', ')}`
+        );
+      }
+    }
+
+    // Validate --timeout is a number
+    if (arg === '--timeout' && nextArg) {
+      const timeout = parseInt(nextArg, 10);
+      if (isNaN(timeout) || timeout <= 0) {
+        throw new ClientError(
+          `Invalid --timeout value: "${nextArg}". Must be a positive number (seconds).`
+        );
+      }
+    }
+
+    // Validate --config file exists
+    if ((arg === '--config' || arg === '-c') && nextArg) {
+      const configPath = resolvePath(nextArg);
+      if (!existsSync(configPath)) {
+        throw new ClientError(`Config file not found: ${nextArg}`);
+      }
+    }
+
+    // Validate --schema file exists
+    if (arg === '--schema' && nextArg) {
+      const schemaPath = resolvePath(nextArg);
+      if (!existsSync(schemaPath)) {
+        throw new ClientError(`Schema file not found: ${nextArg}`);
+      }
+    }
+  }
 }
 
 /**

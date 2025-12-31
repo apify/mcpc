@@ -23,7 +23,7 @@ import * as utilities from './commands/utilities.js';
 import * as auth from './commands/auth.js';
 import { clean } from './commands/clean.js';
 import type { OutputMode } from '../lib/index.js';
-import { findTarget, extractOptions, hasCommandAfterTarget, getVerboseFromEnv, getJsonFromEnv } from './parser.js';
+import { findTarget, extractOptions, hasCommandAfterTarget, getVerboseFromEnv, getJsonFromEnv, validateOptions, validateCleanTypes, validateArgValues } from './parser.js';
 import packageJson from '../../package.json' with { type: 'json' };
 
 /**
@@ -106,6 +106,16 @@ async function main(): Promise<void> {
     return;
   }
 
+  // Validate all options are known (before any processing)
+  // Argument validation errors are always plain text - --json only applies to command output
+  try {
+    validateOptions(args);
+    validateArgValues(args);
+  } catch (error) {
+    console.error(formatError(error as Error, false));
+    process.exit(1);
+  }
+
   // Handle --clean option (global command, no target needed)
   const cleanArg = args.find((arg) => arg === '--clean' || arg.startsWith('--clean='));
   if (cleanArg) {
@@ -115,6 +125,14 @@ async function main(): Promise<void> {
     // Parse --clean value: --clean or --clean=all,sessions,profiles,logs
     const cleanValue = cleanArg.includes('=') ? cleanArg.split('=')[1] : '';
     const cleanTypes = cleanValue ? cleanValue.split(',').map((s) => s.trim()) : [];
+
+    // Validate clean types (argument validation - always plain text)
+    try {
+      validateCleanTypes(cleanTypes);
+    } catch (error) {
+      console.error(formatError(error as Error, false));
+      process.exit(1);
+    }
 
     await clean({
       outputMode: options.json ? 'json' : 'human',

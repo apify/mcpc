@@ -29,8 +29,6 @@
 
 ## Later
 
-- When running "mcpc --cleanwefwef" it succeeds, we should fail on invalid args (update design
-  principles)
 
 - Add support for MCP elicitations, and potentially for sampling (e.g. via shell interface?)
 
@@ -38,10 +36,8 @@
 
 - nit: Cooler OAuth flow finish web page with CSS animation, add Apify example there, show mcpc info. E.g. next step - check Apify rather than close
 - nit: For auth profiles, fetch the detailed user info via http, ensure the info is up-to-date
-
 - nit: add more shortcuts, e.g. --profile => -p
-- later: Add unique Session.id and Profile.id and use it for OS keychain keys, to truly enable using multiple independent mcpc profiles 
-
+- later: Add unique Session.id and Profile.id and use it for OS keychain keys, to truly enable using multiple independent mcpc profiles
 - nit: Implement typing completions (e.g. "mcpc @a...") - not sure how difficult that is
 
 
@@ -60,6 +56,7 @@ Let's add more e2e test scenarios:
 
 - test that all headers for HTTP server do not leak in process list (e.g. use --header to pass 
   something, and ensure it's not present in "ps aux")
+
 
 - Testing servers we can use:
   - https://mcp.apify.com (for testing real OAuth login, we can create various accounts, both OAuth and API tokens)
