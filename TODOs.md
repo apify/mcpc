@@ -9,30 +9,31 @@
 
 ## MCP features
 
-- Implement resources-subscribe/resources-unsubscribe, --o file command properly, --max-size
-  automatically update the -o file on changes, without it just keep track of changed files in 
-  bridge process' cache, and report in resources-list/resources-read operation
 - Add `--proxy [HOST:]PORT` feature to `connect` command to enable MCP proxy:
   - `--proxy-bearer-token X` for proxy to require auth token for better security
   - `--proxy-capabilities tools:TOOL_NAME,TOOL_NAME2,...,prompts[:...],...` to limit access to selected MCP features and tools
     (what if tools have ":" or "," in their names?)
     In theory, we could add limit of capabilities to normal sessions, but the LLM could still break out of it, so what's the point.
   Explain this is useful for AI sandboxing!
+- Implement resources-subscribe/resources-unsubscribe, --o file command properly, --max-size
+  automatically update the -o file on changes, without it just keep track of changed files in
+  bridge process' cache, and report in resources-list/resources-read operation
 - Add support for asynchronous tasks
 - Add support for client roots, need to figure how exactly
 
 ## Later
 
-- Check how we deal with connection and command timeouts
+- Check how we deal with connection and command timeouts, that --timeout and timeout from config 
+  file are obeyed
 
-- Add support for MCP elicitations, and potentially for sampling (e.g. via shell interface?)
+- Consider adding support for MCP elicitations, and potentially for sampling (e.g. via shell 
+  interface?)
 
 - nit: Cooler OAuth flow finish web page with CSS animation, add Apify example there, show mcpc info. E.g. next step - check Apify rather than close
 - nit: For auth profiles, fetch the detailed user info via http, ensure the info is up-to-date
 - nit: add more shortcuts, e.g. --profile => -p
 - later: Add unique Session.id and Profile.id and use it for OS keychain keys, to truly enable using multiple independent mcpc profiles
-- nit: Implement typing completions (e.g. "mcpc @a...") - not sure how difficult that is
-
+- nit: Implement typing completions (e.g. "mcpc @a...") - not sure if that's even possible
 
 
 ## E2E test scenarios

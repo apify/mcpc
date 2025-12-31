@@ -668,6 +668,9 @@ EOF
 # Stop test server
 stop_test_server() {
   if [[ -n "$_TEST_SERVER_PID" ]]; then
+    # Kill all child processes first (tsx spawns node as child)
+    pkill -P "$_TEST_SERVER_PID" 2>/dev/null || true
+    # Then kill the parent process
     kill "$_TEST_SERVER_PID" 2>/dev/null || true
     wait "$_TEST_SERVER_PID" 2>/dev/null || true
     _TEST_SERVER_PID=""

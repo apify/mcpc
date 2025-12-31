@@ -392,8 +392,38 @@ fi
 # Clean up empty tmp directories (no value keeping them)
 find "$RUN_DIR" -type d -name "tmp" -empty -delete 2>/dev/null || true
 
+# Kill any remaining bridge processes for this test run
+cleanup_bridges() {
+  local home_dir="$1"
+  local sessions_file="$home_dir/sessions.json"
+
+  if [[ -f "$sessions_file" ]]; then
+    # Close each session properly
+    for session in $(jq -r '.sessions | keys[]' "$sessions_file" 2>/dev/null); do
+      MCPC_HOME_DIR="$home_dir" "$PROJECT_ROOT/dist/cli/index.js" "$session" close 2>/dev/null || true
+    done
+  fi
+
+  # Also kill any bridge processes that might have the home dir in their args
+  # (in case sessions.json is already deleted or corrupted)
+  pkill -f "mcpc-bridge.*$home_dir" 2>/dev/null || true
+  pkill -f "mcpc/dist/bridge.*$home_dir" 2>/dev/null || true
+
+  # Give processes a moment to terminate
+  sleep 0.5
+}
+
+# Kill any remaining test server processes
+cleanup_test_servers() {
+  # Kill any tsx/node processes running the test server
+  pkill -f "test/e2e/server/index.ts" 2>/dev/null || true
+  sleep 0.2
+}
+
 # Cleanup or preserve run directory
 if [[ "$KEEP_RUNS" != "true" && $FAILED -eq 0 ]]; then
+  cleanup_bridges "$E2E_SHARED_HOME"
+  cleanup_test_servers
   rm -rf "$RUN_DIR"
   rm -rf "$E2E_SHARED_HOME"
   echo ""

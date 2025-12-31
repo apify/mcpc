@@ -12,6 +12,9 @@ REMOTE_SERVER="mcp.apify.com"
 PROFILE1="e2e-test1"
 PROFILE2="e2e-test2"
 
+# Set to "true" to test with only one profile (for debugging interference issues)
+SINGLE_PROFILE_MODE="${SINGLE_PROFILE_MODE:-false}"
+
 # =============================================================================
 # Helper: Check if OAuth profile exists
 # =============================================================================
@@ -65,7 +68,9 @@ fi
 test_pass
 
 test_case "prerequisite: check OAuth profile $PROFILE2 exists"
-if ! check_profile_exists "$PROFILE2"; then
+if [[ "$SINGLE_PROFILE_MODE" == "true" ]]; then
+  test_skip "Single profile mode enabled"
+elif ! check_profile_exists "$PROFILE2"; then
   # Write setup reminder file for the test runner to display
   mkdir -p "$_TEST_RUN_DIR"
   cat > "$_TEST_RUN_DIR/.setup_required" << EOF
@@ -80,8 +85,9 @@ EOF
 
   test_skip "OAuth profile '$PROFILE2' not configured"
   test_done
+else
+  test_pass
 fi
-test_pass
 
 # =============================================================================
 # Setup: Copy user's OAuth profiles to test environment
@@ -170,11 +176,15 @@ assert_contains "$STDOUT" "Available commands:"
 test_pass
 
 test_case "one-shot: different profile works independently"
-# Verify that using a different profile also works
-run_mcpc "$REMOTE_SERVER" ping --profile "$PROFILE2"
-assert_success
-assert_contains "$STDOUT" "Ping successful"
-test_pass
+if [[ "$SINGLE_PROFILE_MODE" == "true" ]]; then
+  test_skip "Single profile mode enabled"
+else
+  # Verify that using a different profile also works
+  run_mcpc "$REMOTE_SERVER" ping --profile "$PROFILE2"
+  assert_success
+  assert_contains "$STDOUT" "Ping successful"
+  test_pass
+fi
 
 # =============================================================================
 # Test: Session with OAuth profile
@@ -233,60 +243,72 @@ test_pass
 # =============================================================================
 
 test_case "create second session with different profile (verbose)"
-SESSION2=$(session_name "oauth2")
-# Create session with verbose mode to check for credential leaks
-run_mcpc --verbose "$REMOTE_SERVER" session "$SESSION2" --profile "$PROFILE2"
-assert_success
-_SESSIONS_CREATED+=("$SESSION2")
+if [[ "$SINGLE_PROFILE_MODE" == "true" ]]; then
+  test_skip "Single profile mode enabled"
+else
+  SESSION2=$(session_name "oauth2")
+  # Create session with verbose mode to check for credential leaks
+  run_mcpc --verbose "$REMOTE_SERVER" session "$SESSION2" --profile "$PROFILE2"
+  assert_success
+  _SESSIONS_CREATED+=("$SESSION2")
 
-# Check that verbose session creation doesn't leak OAuth tokens
-ALL_OUTPUT="$STDOUT$STDERR"
+  # Check that verbose session creation doesn't leak OAuth tokens
+  ALL_OUTPUT="$STDOUT$STDERR"
 
-if echo "$ALL_OUTPUT" | grep -iE 'Bearer [A-Za-z0-9_-]{20,}' >/dev/null 2>&1; then
-  test_fail "Verbose session creation (profile2) contains Bearer token"
-  exit 1
+  if echo "$ALL_OUTPUT" | grep -iE 'Bearer [A-Za-z0-9_-]{20,}' >/dev/null 2>&1; then
+    test_fail "Verbose session creation (profile2) contains Bearer token"
+    exit 1
+  fi
+
+  if echo "$ALL_OUTPUT" | grep -iE '"access_token"\s*:\s*"[^"]{20,}"' >/dev/null 2>&1; then
+    test_fail "Verbose session creation (profile2) contains access_token"
+    exit 1
+  fi
+
+  if echo "$ALL_OUTPUT" | grep -iE 'Authorization:\s*[A-Za-z]+\s+[A-Za-z0-9_-]{20,}' >/dev/null 2>&1; then
+    test_fail "Verbose session creation (profile2) contains Authorization header"
+    exit 1
+  fi
+  test_pass
 fi
-
-if echo "$ALL_OUTPUT" | grep -iE '"access_token"\s*:\s*"[^"]{20,}"' >/dev/null 2>&1; then
-  test_fail "Verbose session creation (profile2) contains access_token"
-  exit 1
-fi
-
-if echo "$ALL_OUTPUT" | grep -iE 'Authorization:\s*[A-Za-z]+\s+[A-Za-z0-9_-]{20,}' >/dev/null 2>&1; then
-  test_fail "Verbose session creation (profile2) contains Authorization header"
-  exit 1
-fi
-test_pass
 
 test_case "both sessions work independently"
-# Session 1
-run_mcpc "$SESSION1" ping
-assert_success
+if [[ "$SINGLE_PROFILE_MODE" == "true" ]]; then
+  test_skip "Single profile mode enabled"
+else
+  # Session 1
+  run_mcpc "$SESSION1" ping
+  assert_success
 
-# Session 2
-run_mcpc "$SESSION2" ping
-assert_success
-test_pass
+  # Session 2
+  run_mcpc "$SESSION2" ping
+  assert_success
+  test_pass
+fi
 
 test_case "session list shows both sessions"
-run_mcpc --json
-assert_success
-assert_json_valid "$STDOUT"
+if [[ "$SINGLE_PROFILE_MODE" == "true" ]]; then
+  test_skip "Single profile mode enabled"
+else
+  run_mcpc --json
+  assert_success
+  assert_json_valid "$STDOUT"
 
-# Check both sessions exist
-sessions_json="$STDOUT"
-session1_exists=$(echo "$sessions_json" | jq -r ".sessions[] | select(.name == \"$SESSION1\") | .name")
-session2_exists=$(echo "$sessions_json" | jq -r ".sessions[] | select(.name == \"$SESSION2\") | .name")
+  # Check both sessions exist
+  sessions_json="$STDOUT"
+  session1_exists=$(echo "$sessions_json" | jq -r ".sessions[] | select(.name == \"$SESSION1\") | .name")
+  session2_exists=$(echo "$sessions_json" | jq -r ".sessions[] | select(.name == \"$SESSION2\") | .name")
 
-if [[ "$session1_exists" != "$SESSION1" ]]; then
-  test_fail "Session $SESSION1 not found in session list"
-  exit 1
+  if [[ "$session1_exists" != "$SESSION1" ]]; then
+    test_fail "Session $SESSION1 not found in session list"
+    exit 1
+  fi
+  if [[ "$session2_exists" != "$SESSION2" ]]; then
+    test_fail "Session $SESSION2 not found in session list"
+    exit 1
+  fi
+  test_pass
 fi
-if [[ "$session2_exists" != "$SESSION2" ]]; then
-  test_fail "Session $SESSION2 not found in session list"
-  exit 1
-fi
-test_pass
 
 # =============================================================================
 # Test: Session shows profile information
@@ -407,10 +429,14 @@ _SESSIONS_CREATED=("${_SESSIONS_CREATED[@]/$SESSION1}")
 test_pass
 
 test_case "close second session"
-run_mcpc "$SESSION2" close
-assert_success
-_SESSIONS_CREATED=("${_SESSIONS_CREATED[@]/$SESSION2}")
-test_pass
+if [[ "$SINGLE_PROFILE_MODE" == "true" ]]; then
+  test_skip "Single profile mode enabled"
+else
+  run_mcpc "$SESSION2" close
+  assert_success
+  _SESSIONS_CREATED=("${_SESSIONS_CREATED[@]/$SESSION2}")
+  test_pass
+fi
 
 test_case "sessions no longer in list after close"
 run_mcpc --json
@@ -422,9 +448,11 @@ if echo "$STDOUT" | jq -e ".sessions[] | select(.name == \"$SESSION1\")" >/dev/n
   test_fail "Session $SESSION1 still exists after close"
   exit 1
 fi
-if echo "$STDOUT" | jq -e ".sessions[] | select(.name == \"$SESSION2\")" >/dev/null 2>&1; then
-  test_fail "Session $SESSION2 still exists after close"
-  exit 1
+if [[ "$SINGLE_PROFILE_MODE" != "true" ]]; then
+  if echo "$STDOUT" | jq -e ".sessions[] | select(.name == \"$SESSION2\")" >/dev/null 2>&1; then
+    test_fail "Session $SESSION2 still exists after close"
+    exit 1
+  fi
 fi
 test_pass
 
