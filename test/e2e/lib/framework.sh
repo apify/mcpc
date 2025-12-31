@@ -616,7 +616,7 @@ _create_test_auth_profile() {
   done
 
   # Ensure lock is released on function exit
-  trap 'rm -f "$lock_file"' RETURN
+  trap "rm -f '$lock_file'" RETURN
 
   # Create or update profiles.json with a dummy profile for this host
   if [[ -f "$profiles_file" && -s "$profiles_file" ]]; then
