@@ -54,4 +54,39 @@ run_xmcpc "$TEST_SERVER_URL" prompts-list
 assert_failure
 test_pass
 
+# =============================================================================
+# Test: OAuth-enabled remote server without profile hints at login
+# =============================================================================
+
+# Use mcp.sentry.dev which requires OAuth authentication
+OAUTH_SERVER="https://mcp.sentry.dev/mcp"
+
+test_case "OAuth server without profile shows login hint"
+run_mcpc "$OAUTH_SERVER" tools-list
+assert_failure
+# Should hint at login command
+assert_contains "$STDERR" "login"
+assert_contains "$STDERR" "authenticate"
+test_pass
+
+test_case "OAuth server without profile (JSON) shows login hint"
+run_mcpc --json "$OAUTH_SERVER" tools-list
+assert_failure
+assert_json_valid "$STDERR"
+# JSON error should also contain login hint
+error_msg=$(echo "$STDERR" | jq -r '.error // empty')
+if [[ -z "$error_msg" ]] || ! echo "$error_msg" | grep -qi "login"; then
+  test_fail "JSON error should contain login hint"
+  exit 1
+fi
+test_pass
+
+test_case "OAuth server session creation without profile shows login hint"
+SESSION=$(session_name "oauth-noprof")
+run_mcpc "$OAUTH_SERVER" session "$SESSION"
+assert_failure
+# Should hint at login command
+assert_contains "$STDERR" "login"
+test_pass
+
 test_done

@@ -26,8 +26,6 @@
 
 - Add support for MCP elicitations, and potentially for sampling (e.g. via shell interface?)
 
-- Implement "mcpc @session restart" .. and maybe also "mcpc <server> connect @session" ?
-
 - nit: Cooler OAuth flow finish web page with CSS animation, add Apify example there, show mcpc info. E.g. next step - check Apify rather than close
 - nit: For auth profiles, fetch the detailed user info via http, ensure the info is up-to-date
 - nit: add more shortcuts, e.g. --profile => -p
@@ -42,10 +40,3 @@ Later
 - Test auth profiles work long-term and sessions too - basically when running some tests the
   next day they should use old saved auths and sessions.
   We could have some special dir for long-term testing...
-
-- Testing servers we can use:
-  - https://mcp.apify.com (for testing real OAuth login, we can create various accounts, both OAuth and API tokens)
-  - https://mcp.apify.com/tools=docs (anonymous, no auth needed)
-  - https://mcp.sentry.dev/mcp (for testing if no auth profile available)
-  - ideally get some on non-standard port, maybe localhost
-
