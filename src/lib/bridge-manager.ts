@@ -186,7 +186,7 @@ export async function stopBridge(sessionName: string): Promise<void> {
       logger.warn('Error killing bridge process:', error);
     }
 
-    logger.info(`Bridge stopped for ${sessionName}`);
+    logger.debug(`Bridge stopped for ${sessionName}`);
   }
 
   // Note: Session record and headers are NOT deleted here.

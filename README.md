@@ -48,7 +48,11 @@ Note that `mcpc` does not use LLMs on its own; that's job for the higher layer.
 - [Sessions](#sessions)
   - [Managing sessions](#managing-sessions)
   - [Piping between sessions](#piping-between-sessions)
+  - [Output format](#output-format)
+    - [Human-readable (default)](#human-readable-default)
+    - [JSON mode](#json-mode)
   - [Scripting](#scripting)
+    - [MCP server schema changes](#mcp-server-schema-changes)
   - [Session failover](#session-failover)
 - [Logging](#logging)
 - [Cleanup](#cleanup)
@@ -56,10 +60,8 @@ Note that `mcpc` does not use LLMs on its own; that's job for the higher layer.
   - [MCP config JSON file](#mcp-config-json-file)
   - [Environment variables](#environment-variables)
 - [MCP protocol notes](#mcp-protocol-notes)
-- [Output format](#output-format)
-  - [Human-readable (default)](#human-readable-default)
-  - [JSON mode (`--json`)](#json-mode---json)
 - [Security](#security)
+  - [Authentication](#authentication-1)
   - [Credential storage](#credential-storage)
   - [Bridge process authentication](#bridge-process-authentication)
   - [File permissions](#file-permissions)
@@ -149,6 +151,7 @@ mcpc <target> shell
 # Persistent sessions
 mcpc <server> session @<session-name> [--profile <name>]
 mcpc @<session-name> <command...>
+mcpc @<session-name> restart
 mcpc @<session-name> close
 
 # Saved OAuth profiles for remote MCP servers
@@ -451,6 +454,9 @@ mcpc
 # Use the session
 mcpc @apify tools-list
 mcpc @apify shell
+
+# Restart the session (kills and restarts the bridge process)
+mcpc @apify restart
 
 # Close the session (terminates bridge process, but keeps authentication profile)
 mcpc @apify close

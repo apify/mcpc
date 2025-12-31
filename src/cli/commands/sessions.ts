@@ -12,6 +12,7 @@ import {
   saveSession,
   updateSession,
   consolidateSessions,
+  getSession,
 } from '../../lib/sessions.js';
 import { startBridge, StartBridgeOptions, stopBridge } from '../../lib/bridge-manager.js';
 import { storeKeychainSessionHeaders } from '../../lib/auth/keychain.js';
@@ -46,7 +47,7 @@ export async function connectSession(
     }
 
     // Check if session already exists
-    const existingSession = await import('../../lib/sessions.js').then((m) => m.getSession(name));
+    const existingSession = await getSession(name);
     if (existingSession) {
       const bridgeStatus = getBridgeStatus(existingSession);
 
@@ -475,6 +476,92 @@ export async function showServerDetails(
       );
     }
   });
+}
+
+/**
+ * Restart a session by stopping and restarting the bridge process
+ */
+export async function restartSession(
+  name: string,
+  options: { outputMode: OutputMode; verbose?: boolean }
+): Promise<void> {
+  try {
+    // Get existing session
+    const session = await getSession(name);
+
+    if (!session) {
+      throw new ClientError(`Session not found: ${name}`);
+    }
+
+    if (options.outputMode === 'human') {
+      console.log(chalk.yellow(`Restarting session ${name}...`));
+    }
+
+    // Stop the bridge (even if it's alive)
+    try {
+      await stopBridge(name);
+    } catch {
+      // Bridge may already be stopped
+    }
+
+    // Get server config from session
+    const serverConfig = session.server;
+    if (!serverConfig) {
+      throw new ClientError(`Session ${name} has no server configuration`);
+    }
+
+    // Load headers from keychain if present
+    const { readKeychainSessionHeaders } = await import('../../lib/auth/keychain.js');
+    const headers = await readKeychainSessionHeaders(name);
+
+    // Start bridge process
+    const bridgeOptions: StartBridgeOptions = {
+      sessionName: name,
+      serverConfig: { ...serverConfig, ...(headers && { headers }) },
+      verbose: options.verbose || false,
+    };
+
+    if (headers) {
+      bridgeOptions.headers = headers;
+    }
+
+    if (session.profileName) {
+      bridgeOptions.profileName = session.profileName;
+    }
+
+    const { pid } = await startBridge(bridgeOptions);
+
+    // Update session with new bridge PID
+    await updateSession(name, { pid });
+    logger.debug(`Session ${name} restarted with bridge PID: ${pid}`);
+
+    // Success message
+    if (options.outputMode === 'human') {
+      console.log(formatSuccess(`Session ${name} restarted`));
+    }
+
+    // Show server details (like when creating a session)
+    await showServerDetails(name, {
+      ...options,
+      hideTarget: false,
+    });
+  } catch (error) {
+    if (options.outputMode === 'human') {
+      console.error(formatError((error as Error).message));
+    } else {
+      console.log(
+        formatOutput(
+          {
+            sessionName: name,
+            restarted: false,
+            error: (error as Error).message,
+          },
+          'json'
+        )
+      );
+    }
+    throw error;
+  }
 }
 
 /**

@@ -278,6 +278,14 @@ async function handleCommands(target: string, args: string[]): Promise<void> {
       await sessions.closeSession(target, getOptionsFromCommand(command));
     });
 
+  // Restart command
+  program
+    .command('restart')
+    .description('Restart the session (stop and start the bridge)')
+    .action(async (_options, command) => {
+      await sessions.restartSession(target, getOptionsFromCommand(command));
+    });
+
   // Session command: mcpc <target> session @<name>
   // Creates a new session or reconnects if session exists but bridge is dead
   program
