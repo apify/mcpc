@@ -187,7 +187,7 @@ export function validateToolSchema(
 
           if (expectedProp && actualProp && expectedProp.type && actualProp.type !== expectedProp.type) {
             result.errors.push(
-              `Argument "${argName}" type changed: expected "${expectedProp.type}", got "${actualProp.type}"`
+              `Argument "${argName}" type changed: expected ${JSON.stringify(expectedProp.type)}, got ${JSON.stringify(actualProp.type)}`
             );
             result.valid = false;
           }
@@ -203,7 +203,7 @@ export function validateToolSchema(
             const expProp = expectedProp as Record<string, unknown>;
             if (actualProp && expProp.type && actualProp.type !== expProp.type) {
               result.errors.push(
-                `Property "${propName}" type changed: expected "${expProp.type}", got "${actualProp.type}"`
+                `Property "${propName}" type changed: expected ${JSON.stringify(expProp.type)}, got ${JSON.stringify(actualProp.type)}`
               );
               result.valid = false;
             }
