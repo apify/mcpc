@@ -437,7 +437,7 @@ export async function showServerDetails(
       const availableCommands: string[] = [];
 
       if (capabilities?.tools) {
-        availableCommands.push('tools-list', 'tools-schema', 'tools-call');
+        availableCommands.push('tools-list', 'tools-get', 'tools-call');
       }
 
       if (capabilities?.resources) {

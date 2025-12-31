@@ -24,7 +24,7 @@ test_pass
 
 # Save the echo tool schema
 test_case "setup: save echo tool schema"
-run_mcpc --json "$SESSION" tools-schema echo
+run_mcpc --json "$SESSION" tools-get echo
 assert_success
 echo "$STDOUT" > "$TEST_TMP/echo-schema.json"
 test_pass
@@ -53,11 +53,11 @@ assert_json_valid "$STDOUT"
 test_pass
 
 # =============================================================================
-# Test: tools-schema with --schema validation
+# Test: tools-get with --schema validation
 # =============================================================================
 
-test_case "tools-schema with valid schema passes"
-run_mcpc "$SESSION" tools-schema echo --schema "$TEST_TMP/echo-schema.json"
+test_case "tools-get with valid schema passes"
+run_mcpc "$SESSION" tools-get echo --schema "$TEST_TMP/echo-schema.json"
 assert_success
 test_pass
 

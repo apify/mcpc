@@ -555,7 +555,7 @@ Bridge logs location: `~/.mcpc/logs/bridge-<session>.log`
 - **Logging**: Structured logging with verbose mode support, per-session bridge logs with rotation
 - **Environment Variables**: MCPC_HOME_DIR, MCPC_VERBOSE, MCPC_JSON support
 - **Command Handlers**: All MCP commands fully functional
-  - `tools-list`, `tools-schema`, `tools-call`
+  - `tools-list`, `tools-get`, `tools-call`
   - `resources-list`, `resources-read`, `resources-subscribe`, `resources-unsubscribe`, `resources-templates-list`
   - `prompts-list`, `prompts-get`
   - `logging-set-level`

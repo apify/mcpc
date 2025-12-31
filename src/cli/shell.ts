@@ -147,7 +147,7 @@ function showShellHelp(): void {
   console.log('');
   console.log(chalk.cyan('  MCP commands:'));
   console.log('    tools-list');
-  console.log('    tools-schema <name>');
+  console.log('    tools-get <name>');
   console.log('    tools-call <name> [--args ...]');
   console.log('    resources-list');
   console.log('    resources-read <uri>');
@@ -208,10 +208,10 @@ async function executeCommand(ctx: ShellContext, line: string): Promise<void> {
         await tools.listTools(ctx.target, options);
         break;
 
-      case 'tools-schema': {
+      case 'tools-get': {
         if (args.length === 0) {
-          console.log(chalk.red('Error: tools-schema requires a tool name'));
-          console.log('Usage: tools-schema <name>');
+          console.log(chalk.red('Error: tools-get requires a tool name'));
+          console.log('Usage: tools-get <name>');
           return;
         }
         await tools.getTool(ctx.target, args[0] as string, options);

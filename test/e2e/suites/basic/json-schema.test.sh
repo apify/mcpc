@@ -93,12 +93,12 @@ assert_json "$STDOUT" '.[0].description' "tool should have description"
 test_pass
 
 # =============================================================================
-# Test: tools-schema --json
+# Test: tools-get --json
 # Should return the same tool structure as tools-list
 # =============================================================================
 
-test_case "tools-schema JSON matches tool structure"
-run_mcpc "$SESSION" tools-schema echo --json
+test_case "tools-get JSON matches tool structure"
+run_mcpc "$SESSION" tools-get echo --json
 assert_success
 assert_json_valid "$STDOUT"
 assert_json "$STDOUT" '.name' "should have name"

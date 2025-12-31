@@ -793,7 +793,7 @@ export function formatServerDetails(details: ServerDetails, target: string): str
 
   if (capabilities?.tools) {
     commands.push(`${bullet} ${bt}mcpc ${target} tools-list${bt}`);
-    commands.push(`${bullet} ${bt}mcpc ${target} tools-schema <name>${bt}`);
+    commands.push(`${bullet} ${bt}mcpc ${target} tools-get <name>${bt}`);
     commands.push(`${bullet} ${bt}mcpc ${target} tools-call <name> [--args key=val ...] [--args-file <file>]${bt}`);
   }
 

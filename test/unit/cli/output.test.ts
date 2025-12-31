@@ -568,7 +568,7 @@ describe('formatServerDetails', () => {
 
     // Should show tools commands
     expect(output).toContain('mcpc @tools tools-list');
-    expect(output).toContain('mcpc @tools tools-schema');
+    expect(output).toContain('mcpc @tools tools-get');
     expect(output).toContain('mcpc @tools tools-call');
 
     // Should NOT show other commands

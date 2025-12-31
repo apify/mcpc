@@ -346,7 +346,7 @@ async function handleCommands(target: string, args: string[]): Promise<void> {
     });
 
   program
-    .command('tools-schema <name>')
+    .command('tools-get <name>')
     .description('Get information about a specific tool')
     .action(async (name, _options, command) => {
       await tools.getTool(target, name, getOptionsFromCommand(command));

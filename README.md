@@ -128,7 +128,7 @@ mcpc <target>
 # MCP commands
 mcpc <target> tools
 mcpc <target> tools-list
-mcpc <target> tools-schema <tool-name> [--schema <file>]
+mcpc <target> tools-get <tool-name> [--schema <file>]
 mcpc <target> tools-call <tool-name> [--args key=val key2:=json ...] [--args-file <file>] [--schema <file>]
 
 mcpc <target> prompts
@@ -512,7 +512,7 @@ If the MCP server's current schema is incompatible, the command returns an error
 
 ```bash
 # Save tool schema for future validation
-mcpc --json @apify tools-schema search-actors > search-actors-schema.json
+mcpc --json @apify tools-get search-actors > search-actors-schema.json
 
 # Use schema to ensure compatibility (fails if schema changed)
 mcpc @apify tools-call search-actors \

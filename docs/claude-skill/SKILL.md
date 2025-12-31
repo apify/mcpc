@@ -21,7 +21,7 @@ mcpc @<session>
 
 # Tools
 mcpc <target> tools-list
-mcpc <target> tools-schema <tool-name>
+mcpc <target> tools-get <tool-name>
 mcpc <target> tools-call <tool-name> --args '{"key":"value"}'
 
 # Resources
@@ -125,7 +125,7 @@ mcpc -H "Authorization: Bearer $TOKEN" mcp.apify.com session @myserver
 **List and inspect tools**:
 ```bash
 mcpc @s tools-list
-mcpc @s tools-schema tool-name
+mcpc @s tools-get tool-name
 ```
 
 **Call tool and extract text result**:
