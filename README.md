@@ -728,12 +728,25 @@ Config files support environment variable substitution using `${VAR_NAME}` synta
 
 ## Security
 
-MCP enables arbitrary tool execution and data access; treat servers like you treat shells:
+`mcpc` implements the [MCP security best practices](https://modelcontextprotocol.io/specification/2025-11-25/basic/security_best_practices) specification. MCP enables arbitrary tool execution and data access; treat servers like you treat shells:
 
 * Use least-privilege tokens/headers
 * Prefer trusted endpoints
 * Audit what tools do before running them
 * Review server permissions in interactive mode
+
+### Authentication
+
+**OAuth 2.1 with PKCE:**
+- Full OAuth 2.1 flow with PKCE (Proof Key for Code Exchange) via the MCP SDK
+- OAuth callback server binds to `127.0.0.1` only (not `0.0.0.0`)
+- Warning displayed for OAuth over plain HTTP (except localhost)
+- Dynamic client registration supported
+
+**Input validation:**
+- Session names validated: `^@[a-zA-Z0-9_-]{1,64}$`
+- Profile names validated: `^[a-zA-Z0-9_-]{1,64}$`
+- URLs normalized and validated (HTTPS enforced, credentials stripped)
 
 ### Credential storage
 
@@ -744,8 +757,8 @@ MCP enables arbitrary tool execution and data access; treat servers like you tre
 - The `~/.mcpc/profiles.json` file only contains metadata (server URL, scopes, timestamps) - never tokens
 
 **Keychain entries:**
-- OAuth tokens: `mcpc:auth:<serverUrl>:<profileName>:oauth-tokens`
-- OAuth client: `mcpc:auth:<serverUrl>:<profileName>:oauth-client`
+- OAuth tokens: `mcpc:auth-profile:<host>:<profileName>:tokens`
+- OAuth client: `mcpc:auth-profile:<host>:<profileName>:client`
 - HTTP headers: `mcpc:session:<sessionName>:headers`
 
 ### Bridge process authentication
@@ -776,17 +789,20 @@ This architecture ensures:
 
 ### File permissions
 
-- `~/.mcpc/sessions.json` is set to `0600` (user-only read/write)
-- `~/.mcpc/profiles.json` is set to `0600` (user-only read/write)
-- Bridge sockets in `~/.mcpc/bridges/` are created with `0700` permissions
-- Log files in `~/.mcpc/logs/` are created with `0600` permissions
+- `~/.mcpc/sessions.json` is created with `0600` permissions (user-only read/write)
+- `~/.mcpc/profiles.json` is created with `0600` permissions (user-only read/write)
+- Bridge sockets in `~/.mcpc/bridges/` use default umask (typically user-only)
+- File locking via `proper-lockfile` prevents race conditions on concurrent access
 
 ### Network security
 
-- HTTPS enforced for remote servers (HTTP auto-upgraded)
-- `Origin` header validation to prevent DNS rebinding attacks
-- Local servers bind to localhost (127.0.0.1) only
+- HTTPS enforced for remote servers (HTTP auto-upgraded when no scheme provided)
+- URL normalization removes username, password, and hash from URLs
+- Local OAuth callback server binds to `127.0.0.1` only
 - No credentials logged even in verbose mode
+- `MCP-Protocol-Version` and `MCP-Session-Id` headers handled per MCP spec
+
+**Note:** Origin header validation for DNS rebinding protection is a server-side responsibility per the MCP spec.
 
 ## Error handling
 

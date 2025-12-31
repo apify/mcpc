@@ -237,13 +237,19 @@ mcpc/
 
 ### Security Considerations
 
+Implements [MCP security best practices](https://modelcontextprotocol.io/specification/2025-11-25/basic/security_best_practices):
+
+- OAuth 2.1 with PKCE via MCP SDK
 - Credentials stored in OS keychain (encrypted by system)
-- `sessions.json` file permissions: `0600` (user-only)
-- Bridge socket permissions: `0700`
-- HTTPS enforced (HTTP auto-upgraded)
-- Certificate validation enabled by default
+- `sessions.json` and `profiles.json` file permissions: `0600` (user-only)
+- Bridge sockets use default umask (typically user-only)
+- HTTPS enforced (HTTP auto-upgraded when no scheme provided)
+- URL normalization strips username, password, and hash
+- OAuth callback server binds to `127.0.0.1` only
+- Input validation for session names, profile names, and URLs
 - No credentials logged even in verbose mode
 - File locking (`proper-lockfile`) for concurrent access safety
+- Headers sent to bridge via IPC, not command-line arguments
 
 ## MCP Protocol Implementation
 

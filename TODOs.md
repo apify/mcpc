@@ -22,10 +22,6 @@
     In theory, we could add limit of capabilities to normal sessions, but the LLM could still break out of it, so what's the point.
   Explain this is useful for AI sandboxing!
 
-  
-## Security
-- Double-check the MCP security guidelines
-- OAuth issuer - maybe save it and double-check it to ensure domain is not spoofed?
 
 ## Later
 
@@ -46,17 +42,19 @@
 
 Let's add more e2e test scenarios:
 - Test that output from "mcpc @test --json" is consistent with MCP server handshake "results" (see https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle) - additional properties are fine
-- Test that output from "mcpc @test tools-list --json" and "mcpc @test tools-schema xxx --json" are consistent with MCP specs
+- Test that output from "mcpc @test tools-list --json" and "mcpc @test tools-schema xxx --json" 
+  are consistent with MCP tool schema
 
-- Test auth profiles work long-term and sessions too - basically when running some tests the 
-  next day they should use old saved auths and sessions.
-  We could have some special dir for long-term testing...
 
 - test env var substitution works for config files (unit +e2e)
 
 - test that all headers for HTTP server do not leak in process list (e.g. use --header to pass 
   something, and ensure it's not present in "ps aux"), and that <redacted> works
 
+Later
+- Test auth profiles work long-term and sessions too - basically when running some tests the
+  next day they should use old saved auths and sessions.
+  We could have some special dir for long-term testing...
 
 - Testing servers we can use:
   - https://mcp.apify.com (for testing real OAuth login, we can create various accounts, both OAuth and API tokens)

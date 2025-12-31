@@ -66,7 +66,7 @@ async function saveSessionsInternal(storage: SessionsStorage): Promise<void> {
 
   try {
     const content = JSON.stringify(storage, null, 2);
-    await writeFile(tempFile, content, 'utf-8');
+    await writeFile(tempFile, content, { encoding: 'utf-8', mode: 0o600 });
 
     // Atomic rename
     await rename(tempFile, filePath);
