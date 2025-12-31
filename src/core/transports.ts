@@ -37,7 +37,7 @@ import {
   type StreamableHTTPClientTransportOptions,
 } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { createLogger, getVerbose } from '../lib/logger.js';
-import type { TransportConfig } from '../lib/types.js';
+import type { ServerConfig } from '../lib/types.js';
 import { ClientError } from '../lib/errors.js';
 
 /**
@@ -119,10 +119,10 @@ export interface CreateTransportOptions {
  * Create a transport from a generic transport configuration
  */
 export function createTransportFromConfig(
-  config: TransportConfig,
+  config: ServerConfig,
   options: CreateTransportOptions = {}
 ): Transport {
-  switch (config.type) {
+  switch (config.transportType) {
     case 'stdio': {
       if (!config.command) {
         throw new ClientError('stdio transport requires a command');
@@ -166,10 +166,10 @@ export function createTransportFromConfig(
         };
       }
 
-      if (config.timeoutMs !== undefined) {
+      if (config.timeout !== undefined) {
         transportOptions.requestInit = {
           ...transportOptions.requestInit,
-          signal: AbortSignal.timeout(config.timeoutMs),
+          signal: AbortSignal.timeout(config.timeout * 1000),
         };
       }
 
@@ -178,6 +178,6 @@ export function createTransportFromConfig(
 
     default:
       // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-      throw new ClientError(`Unknown transport type: ${config.type}`);
+      throw new ClientError(`Unknown transport type: ${config.transportType}`);
   }
 }

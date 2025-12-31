@@ -3,7 +3,7 @@
  */
 
 import { McpClient } from '../../../src/core/mcp-client.js';
-import { createMcpClient, createStdioClient, createHttpClient } from '../../../src/core/factory.js';
+import { createMcpClient } from '../../../src/core/factory.js';
 
 // Mock the transports
 jest.mock('../../../src/core/transports', () => ({
@@ -35,7 +35,7 @@ describe('createMcpClient', () => {
     const client = await createMcpClient({
       clientInfo: { name: 'test-client', version: '1.0.0' },
       transportConfig: {
-        type: 'stdio',
+        transportType: 'stdio',
         command: 'node',
         args: ['server.js'],
       },
@@ -48,7 +48,7 @@ describe('createMcpClient', () => {
     const client = await createMcpClient({
       clientInfo: { name: 'test-client', version: '1.0.0' },
       transportConfig: {
-        type: 'http',
+        transportType: 'http',
         url: 'https://mcp.example.com',
       },
     });
@@ -60,7 +60,7 @@ describe('createMcpClient', () => {
     const client = await createMcpClient({
       clientInfo: { name: 'test-client', version: '1.0.0' },
       transportConfig: {
-        type: 'http',
+        transportType: 'http',
         url: 'https://mcp.example.com',
       },
       autoConnect: false,
@@ -77,7 +77,7 @@ describe('createMcpClient', () => {
     const client = await createMcpClient({
       clientInfo: { name: 'test-client', version: '1.0.0' },
       transportConfig: {
-        type: 'http',
+        transportType: 'http',
         url: 'https://mcp.example.com',
       },
       capabilities,
@@ -87,57 +87,3 @@ describe('createMcpClient', () => {
   });
 });
 
-describe('createStdioClient', () => {
-  it('should create a stdio client with command and args', async () => {
-    const client = await createStdioClient(
-      { name: 'mcpc', version: '0.0.1' },
-      'node',
-      ['server.js']
-    );
-
-    expect(client).toBeInstanceOf(McpClient);
-  });
-
-  it('should create a stdio client with environment variables', async () => {
-    const client = await createStdioClient(
-      { name: 'mcpc', version: '0.1.0' },
-      'node',
-      ['server.js'],
-      { DEBUG: '1' }
-    );
-
-    expect(client).toBeInstanceOf(McpClient);
-  });
-});
-
-describe('createHttpClient', () => {
-  it('should create an http client with URL', async () => {
-    const client = await createHttpClient(
-      { name: 'mcpc', version: '0.1.0' },
-      'https://mcp.example.com'
-    );
-
-    expect(client).toBeInstanceOf(McpClient);
-  });
-
-  it('should create an http client with headers', async () => {
-    const client = await createHttpClient(
-      { name: 'mcpc', version: '0.1.0' },
-      'https://mcp.example.com',
-      { Authorization: 'Bearer token' }
-    );
-
-    expect(client).toBeInstanceOf(McpClient);
-  });
-
-  it('should create an http client with timeout', async () => {
-    const client = await createHttpClient(
-      { name: 'mcpc', version: '0.1.0' },
-      'https://mcp.example.com',
-      undefined,
-      30000
-    );
-
-    expect(client).toBeInstanceOf(McpClient);
-  });
-});

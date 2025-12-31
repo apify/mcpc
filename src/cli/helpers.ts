@@ -4,7 +4,7 @@
  */
 
 import { createMcpClient } from '../core/factory.js';
-import type { IMcpClient, OutputMode, TransportConfig } from '../lib/types.js';
+import type { IMcpClient, OutputMode, ServerConfig } from '../lib/types.js';
 import { ClientError, NetworkError, AuthError } from '../lib/errors.js';
 import { normalizeServerUrl, isValidSessionName, getServerHost } from '../lib/utils.js';
 import { setVerbose, createLogger } from '../lib/logger.js';
@@ -169,7 +169,7 @@ export async function resolveTarget(
     verbose?: boolean;
     profile?: string;
   } = {}
-): Promise<TransportConfig> {
+): Promise<ServerConfig> {
   if (options.verbose) {
     setVerbose(true);
   }
@@ -201,8 +201,8 @@ export async function resolveTarget(
         ...parseHeaderFlags(options.headers),
       };
 
-      const transportConfig: TransportConfig = {
-        type: 'http',
+      const transportConfig: ServerConfig = {
+        transportType: 'http',
         url: serverConfig.url,
       };
 
@@ -212,16 +212,16 @@ export async function resolveTarget(
 
       // Timeout: CLI flag > config file > default
       if (options.timeout) {
-        transportConfig.timeoutMs = options.timeout * 1000;
+        transportConfig.timeout = options.timeout;
       } else if (serverConfig.timeout) {
-        transportConfig.timeoutMs = serverConfig.timeout * 1000;
+        transportConfig.timeout = serverConfig.timeout;
       }
 
       return transportConfig;
     } else if (serverConfig.command) {
       // Stdio server
-      const transportConfig: TransportConfig = {
-        type: 'stdio',
+      const transportConfig: ServerConfig = {
+        transportType: 'stdio',
         command: serverConfig.command,
       };
 
@@ -259,8 +259,8 @@ export async function resolveTarget(
   // Parse --header flags (auth is handled via authProvider in withMcpClient)
   const headers = parseHeaderFlags(options.headers);
 
-  const config: TransportConfig = {
-    type: 'http',
+  const config: ServerConfig = {
+    transportType: 'http',
     url,
   };
 
@@ -270,7 +270,7 @@ export async function resolveTarget(
 
   // Only include timeout if it's provided
   if (options.timeout) {
-    config.timeoutMs = options.timeout * 1000;
+    config.timeout = options.timeout;
   }
 
   return config;
@@ -341,7 +341,7 @@ export async function withMcpClient<T>(
 
   // For HTTP transports, resolve auth profile and create authProvider
   let profileName: string | undefined;
-  if (transportConfig.type === 'http' && transportConfig.url) {
+  if (transportConfig.transportType === 'http' && transportConfig.url) {
     profileName = await resolveAuthProfile(transportConfig.url, target, options.profile);
     const authProvider = await createAuthProviderForServer(transportConfig.url, profileName);
     if (authProvider) {

@@ -3,7 +3,7 @@
  */
 
 import { OutputMode, isValidSessionName, validateProfileName, isProcessAlive, getServerHost, redactHeaders } from '../../lib/index.js';
-import type { TransportConfig } from '../../lib/types.js';
+import type { ServerConfig } from '../../lib/types.js';
 import { formatOutput, formatSuccess, formatError, formatSessionLine, formatServerDetails } from '../output.js';
 import { listAuthProfiles } from '../../lib/auth/profiles.js';
 import {
@@ -77,7 +77,7 @@ export async function connectSession(
 
     // For HTTP targets, resolve auth profile (with helpful errors if none available)
     let profileName: string | undefined;
-    if (transportConfig.type === 'http' && transportConfig.url) {
+    if (transportConfig.transportType === 'http' && transportConfig.url) {
       profileName = await resolveAuthProfile(
         transportConfig.url,
         target,
@@ -91,7 +91,7 @@ export async function connectSession(
     // because it comes from the OAuth profile and may expire.
     // The bridge will get fresh tokens via the profile mechanism instead.
     let headers: Record<string, string> | undefined;
-    if (transportConfig.type === 'http' && Object.keys(transportConfig.headers || {}).length > 0) {
+    if (transportConfig.transportType === 'http' && Object.keys(transportConfig.headers || {}).length > 0) {
       headers = { ...transportConfig.headers };
 
       // Remove OAuth-derived Authorization header - it will be handled via the profile
@@ -113,7 +113,7 @@ export async function connectSession(
     // Store transportConfig with headers redacted (actual values in keychain)
     const isReconnect = !!existingSession;
     const { headers: _originalHeaders, ...baseTransportConfig } = transportConfig;
-    const sessionTransportConfig: TransportConfig = {
+    const sessionTransportConfig: ServerConfig = {
       ...baseTransportConfig,
       ...(headers && Object.keys(headers).length > 0 && { headers: redactHeaders(headers) }),
     };

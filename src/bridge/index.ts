@@ -9,7 +9,7 @@ import { createServer, type Server as NetServer, type Socket } from 'net';
 import { unlink } from 'fs/promises';
 import { createMcpClient, CreateMcpClientOptions } from '../core/index.js';
 import type { McpClient } from '../core/index.js';
-import type { TransportConfig, IpcMessage, LoggingLevel } from '../lib/index.js';
+import type { ServerConfig, IpcMessage, LoggingLevel } from '../lib/index.js';
 import { createLogger, setVerbose, initFileLogger, closeFileLogger } from '../lib/index.js';
 import { fileExists, getBridgesDir, getSocketPath, ensureDir, cleanupOrphanedLogFiles } from '../lib/index.js';
 import { ClientError, NetworkError } from '../lib/index.js';
@@ -29,7 +29,7 @@ const logger = createLogger('bridge');
 
 interface BridgeOptions {
   sessionName: string;
-  transportConfig: TransportConfig;
+  transportConfig: ServerConfig;
   verbose?: boolean;
   profileName?: string; // Auth profile name for token refresh
 }
@@ -181,11 +181,11 @@ class BridgeProcess {
    * 1. OAuth token manager (uses refresh token to get fresh access token)
    * 2. HTTP headers (static headers from --header flags)
    */
-  private async updateTransportAuth(): Promise<TransportConfig> {
+  private async updateTransportAuth(): Promise<ServerConfig> {
     const config = { ...this.options.transportConfig };
 
     // Only update auth for HTTP transport
-    if (config.type !== 'http') {
+    if (config.transportType !== 'http') {
       return config;
     }
 
@@ -357,14 +357,14 @@ class BridgeProcess {
     logger.debug(`  headers: ${this.headers ? Object.keys(this.headers).length : 0}`);
 
     // Get transport config
-    let transportConfig: TransportConfig;
+    let transportConfig: ServerConfig;
     if (this.authProvider) {
       // TODO: feels like this code should (is?) be handled by updateTransportAuth
       // If we have an authProvider, DON'T add Authorization header to transport
       // Let the SDK's authProvider handle token refresh automatically
       // Only add non-OAuth headers (from --header flags) to transport
       transportConfig = { ...this.options.transportConfig };
-      if (transportConfig.type === 'http' && this.headers) {
+      if (transportConfig.transportType === 'http' && this.headers) {
         transportConfig.headers = { ...transportConfig.headers, ...this.headers };
         logger.debug(`Added ${Object.keys(this.headers).length} non-OAuth headers to transport`);
       }
@@ -915,7 +915,7 @@ async function main(): Promise<void> {
   try {
     const bridgeOptions: BridgeOptions = {
       sessionName,
-      transportConfig: JSON.parse(transportConfigJson) as TransportConfig,
+      transportConfig: JSON.parse(transportConfigJson) as ServerConfig,
       verbose,
     };
     if (profileName) {

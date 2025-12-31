@@ -27,7 +27,7 @@ jest.mock('@modelcontextprotocol/sdk/client/streamableHttp.js', () => ({
 describe('createTransportFromConfig', () => {
   it('should create stdio transport from config', () => {
     const transport = createTransportFromConfig({
-      type: 'stdio',
+      transportType: 'stdio',
       command: 'node',
       args: ['server.js'],
     });
@@ -37,7 +37,7 @@ describe('createTransportFromConfig', () => {
 
   it('should create http transport from config', () => {
     const transport = createTransportFromConfig({
-      type: 'http',
+      transportType: 'http',
       url: 'https://mcp.example.com',
     });
 
@@ -70,7 +70,7 @@ describe('createTransportFromConfig', () => {
 
   it('should pass headers to http transport', () => {
     const transport = createTransportFromConfig({
-      type: 'http',
+      transportType: 'http',
       url: 'https://mcp.example.com',
       headers: {
         Authorization: 'Bearer token',
@@ -82,7 +82,7 @@ describe('createTransportFromConfig', () => {
 
   it('should pass environment variables to stdio transport', () => {
     const transport = createTransportFromConfig({
-      type: 'stdio',
+      transportType: 'stdio',
       command: 'node',
       args: ['server.js'],
       env: {

@@ -6,7 +6,7 @@ import type { ClientCapabilities, ListChangedHandlers } from '@modelcontextproto
 import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
 import { McpClient, type McpClientOptions } from './mcp-client.js';
 import { createTransportFromConfig } from './transports.js';
-import type { TransportConfig } from '../lib/types.js';
+import type { ServerConfig } from '../lib/types.js';
 import { createLogger } from '../lib/logger.js';
 
 /**
@@ -29,7 +29,7 @@ export interface CreateMcpClientOptions {
   /**
    * Transport configuration
    */
-  transportConfig: TransportConfig;
+  transportConfig: ServerConfig;
 
   /**
    * Client capabilities to advertise
@@ -95,7 +95,7 @@ export async function createMcpClient(options: CreateMcpClientOptions): Promise<
 
   factoryLogger.debug('Creating MCP client', {
     clientName: options.clientInfo.name,
-    transportType: options.transportConfig.type,
+    transportType: options.transportConfig.transportType,
     hasAuthProvider: !!options.authProvider,
   });
 
@@ -122,68 +122,3 @@ export async function createMcpClient(options: CreateMcpClientOptions): Promise<
   return client;
 }
 
-/**
- * Create a client for a stdio-based MCP server
- *
- * @param clientInfo - Client identification
- * @param command - Command to execute
- * @param args - Command arguments
- * @param env - Environment variables
- * @returns Connected MCP client
- */
-export async function createStdioClient(
-  clientInfo: ClientInfo,
-  command: string,
-  args?: string[],
-  env?: Record<string, string>
-): Promise<McpClient> {
-  const transportConfig: TransportConfig = {
-    type: 'stdio',
-    command,
-  };
-
-  if (args !== undefined) {
-    transportConfig.args = args;
-  }
-  if (env !== undefined) {
-    transportConfig.env = env;
-  }
-
-  return createMcpClient({
-    clientInfo,
-    transportConfig,
-  });
-}
-
-/**
- * Create a client for an HTTP-based MCP server
- *
- * @param clientInfo - Client identification
- * @param url - Server URL
- * @param headers - Optional HTTP headers
- * @param timeoutMs - Optional request timeoutMs in milliseconds
- * @returns Connected MCP client
- */
-export async function createHttpClient(
-  clientInfo: ClientInfo,
-  url: string,
-  headers?: Record<string, string>,
-  timeoutMs?: number
-): Promise<McpClient> {
-  const transportConfig: TransportConfig = {
-    type: 'http',
-    url,
-  };
-
-  if (headers) {
-    transportConfig.headers = headers;
-  }
-  if (timeoutMs) {
-    transportConfig.timeoutMs = timeoutMs;
-  }
-
-  return createMcpClient({
-    clientInfo,
-    transportConfig,
-  });
-}

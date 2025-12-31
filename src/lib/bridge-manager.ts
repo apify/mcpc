@@ -16,7 +16,7 @@ import { spawn, type ChildProcess } from 'child_process';
 import { unlink } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import type { TransportConfig, AuthCredentials } from './types.js';
+import type { ServerConfig, AuthCredentials } from './types.js';
 import { getSocketPath, waitForFile, isProcessAlive, fileExists, getLogsDir } from './utils.js';
 import { updateSession, getSession } from './sessions.js';
 import { createLogger } from './logger.js';
@@ -40,7 +40,7 @@ function getBridgeExecutable(): string {
 
 export interface StartBridgeOptions {
   sessionName: string;
-  transportConfig: TransportConfig;
+  transportConfig: ServerConfig;
   verbose?: boolean;
   profileName?: string; // Auth profile name for token refresh
   headers?: Record<string, string>; // Headers to send via IPC (caller stores in keychain)
@@ -83,8 +83,8 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
 
   // Create a sanitized transport config without any headers
   // Headers will be sent to the bridge via IPC instead
-  const sanitizedTarget: TransportConfig = { ...transportConfig };
-  if (sanitizedTarget.type === 'http') {
+  const sanitizedTarget: ServerConfig = { ...transportConfig };
+  if (sanitizedTarget.transportType === 'http') {
     delete sanitizedTarget.headers;
   }
 
@@ -220,7 +220,7 @@ export async function restartBridge(sessionName: string): Promise<StartBridgeRes
   }
 
   // Build transport config from session data (exclude redacted headers)
-  const transportConfig: TransportConfig = { ...session.transportConfig };
+  const transportConfig: ServerConfig = { ...session.transportConfig };
   delete transportConfig.headers;
 
   // Retrieve transport headers from keychain for failover, and cross-check them

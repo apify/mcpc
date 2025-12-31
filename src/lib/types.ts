@@ -71,14 +71,14 @@ export type TransportType = 'stdio' | 'http';
 /**
  * Configuration for a connection to MCP server
  */
-export interface TransportConfig {
-  type: TransportType;
+export interface ServerConfig {
+  transportType: TransportType;
   url?: string; // For http transport
   headers?: Record<string, string>; // For http transport
   command?: string; // For stdio transport
   args?: string[]; // For stdio transport
   env?: Record<string, string>; // Environment variables for stdio transport
-  timeoutMs?: number; // Timeout in milliseconds
+  timeout?: number; // Connection timeout in seconds
 }
 
 /**
@@ -94,7 +94,7 @@ export type SessionStatus = 'active' | 'expired' | 'dead';
  */
 export interface SessionData {
   name: string;
-  transportConfig: TransportConfig; // Transport configuration (header values redacted to "<redacted>")
+  transportConfig: ServerConfig; // Transport configuration (header values redacted to "<redacted>")
   profileName?: string; // Name of auth profile (for OAuth servers)
   pid?: number; // Bridge process PID
   protocolVersion?: string; // Negotiated MCP version

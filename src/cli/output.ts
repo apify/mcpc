@@ -6,7 +6,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 
 import chalk from 'chalk';
-import type { OutputMode, TransportConfig } from '../lib/index.js';
+import type { OutputMode, ServerConfig } from '../lib/index.js';
 import type { Tool, Resource, Prompt, SessionData, ServerDetails } from '../lib/types.js';
 import { extractSingleTextContent } from './tool-result.js';
 import { isValidSessionName } from '../lib/utils.js';
@@ -520,7 +520,7 @@ export function formatSessionLine(session: SessionData): string {
 
   // Format target
   let target: string;
-  if (session.transportConfig.type === 'http') {
+  if (session.transportConfig.transportType === 'http') {
     // For http: show full URL as there might be different MCP servers on different paths
     target = session.transportConfig.url || 'unknown';
   } else {
@@ -534,7 +534,7 @@ export function formatSessionLine(session: SessionData): string {
 
   // Format transport/auth info
   let authStr: string;
-  if (session.transportConfig.type === 'stdio') {
+  if (session.transportConfig.transportType === 'stdio') {
     authStr = chalk.dim('(stdio)');
   } else if (session.profileName) {
     authStr = chalk.dim('(http, oauth: ') + chalk.magenta(session.profileName) + chalk.dim(')');
@@ -552,7 +552,7 @@ export interface LogTargetOptions {
   outputMode: OutputMode;
   hide?: boolean | undefined;
   profileName?: string | undefined; // Auth profile being used (for http targets)
-  transportConfig?: TransportConfig | undefined; // Resolved transport config (for non-session targets)
+  transportConfig?: ServerConfig | undefined; // Resolved transport config (for non-session targets)
 }
 
 /**
@@ -576,7 +576,7 @@ export async function logTarget(target: string, options: LogTargetOptions): Prom
 
   // For direct connections, use transportConfig if available
   const tc = options.transportConfig;
-  if (tc?.type === 'stdio' && tc.command) {
+  if (tc?.transportType === 'stdio' && tc.command) {
     // Stdio transport: show command + args
     let targetStr = tc.command;
     if (tc.args && tc.args.length > 0) {
