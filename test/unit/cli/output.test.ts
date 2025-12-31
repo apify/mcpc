@@ -31,8 +31,19 @@ jest.mock('chalk', () => ({
 }));
 
 // Import after mock is set up
-import { formatSchemaType, formatSimplifiedArgs, formatToolDetail, formatServerDetails } from '../../../src/cli/output.js';
-import type { Tool, ServerDetails } from '../../../src/lib/types.js';
+import {
+  formatSchemaType,
+  formatSimplifiedArgs,
+  formatToolDetail,
+  formatServerDetails,
+  formatResources,
+  formatResourceDetail,
+  formatResourceTemplates,
+  formatResourceTemplateDetail,
+  formatPrompts,
+  formatPromptDetail,
+} from '../../../src/cli/output.js';
+import type { Tool, Resource, ResourceTemplate, Prompt, ServerDetails } from '../../../src/lib/types.js';
 
 describe('extractSingleTextContent', () => {
   it('should return text for single text content item', () => {
@@ -628,5 +639,261 @@ describe('formatServerDetails', () => {
     expect(output).toContain('prompts (dynamic list)');
     expect(output).toContain('prompts-list');
     expect(output).toContain('prompts-get');
+  });
+});
+
+describe('formatResources', () => {
+  it('should format resource list with header and summary', () => {
+    const resources: Resource[] = [
+      {
+        uri: 'file:///home/user/data.json',
+        name: 'User Data',
+        description: 'User configuration file',
+        mimeType: 'application/json',
+      },
+      {
+        uri: 'https://api.example.com/config',
+        name: 'Remote Config',
+      },
+    ];
+
+    const output = formatResources(resources);
+
+    // Should have header with count
+    expect(output).toContain('Available resources (2):');
+
+    // Should have summary list
+    expect(output).toContain('* `file:///home/user/data.json`');
+    expect(output).toContain('* `https://api.example.com/config`');
+
+    // Should have separators
+    expect(output).toContain('---');
+
+    // Should have detailed sections
+    expect(output).toContain('Resource:');
+  });
+
+  it('should show empty list message for no resources', () => {
+    const resources: Resource[] = [];
+    const output = formatResources(resources);
+    expect(output).toContain('Available resources (0):');
+  });
+});
+
+describe('formatResourceDetail', () => {
+  it('should format resource with all fields', () => {
+    const resource: Resource = {
+      uri: 'file:///data/config.json',
+      name: 'Configuration',
+      description: 'Application configuration file',
+      mimeType: 'application/json',
+    };
+
+    const output = formatResourceDetail(resource);
+
+    // Should contain URI in backticks
+    expect(output).toContain('Resource:');
+    expect(output).toContain('`file:///data/config.json`');
+
+    // Should contain name
+    expect(output).toContain('Name:');
+    expect(output).toContain('Configuration');
+
+    // Should contain MIME type
+    expect(output).toContain('MIME type:');
+    expect(output).toContain('application/json');
+
+    // Should contain description in code block
+    expect(output).toContain('Description:');
+    expect(output).toContain('````');
+    expect(output).toContain('Application configuration file');
+  });
+
+  it('should format resource with minimal fields', () => {
+    const resource: Resource = {
+      uri: 'test://minimal',
+    };
+
+    const output = formatResourceDetail(resource);
+
+    expect(output).toContain('Resource:');
+    expect(output).toContain('`test://minimal`');
+    expect(output).not.toContain('Name:');
+    expect(output).not.toContain('MIME type:');
+    expect(output).toContain('(no description)');
+  });
+});
+
+describe('formatResourceTemplates', () => {
+  it('should format template list with header and summary', () => {
+    const templates: ResourceTemplate[] = [
+      {
+        uriTemplate: 'file:///{path}',
+        name: 'File Access',
+        description: 'Access local files',
+        mimeType: 'application/octet-stream',
+      },
+      {
+        uriTemplate: 'https://api.example.com/{endpoint}',
+        name: 'API Access',
+      },
+    ];
+
+    const output = formatResourceTemplates(templates);
+
+    // Should have header with count
+    expect(output).toContain('Available resource templates (2):');
+
+    // Should have summary list
+    expect(output).toContain('* `file:///{path}`');
+    expect(output).toContain('* `https://api.example.com/{endpoint}`');
+
+    // Should have separators
+    expect(output).toContain('---');
+
+    // Should have detailed sections
+    expect(output).toContain('Template:');
+  });
+});
+
+describe('formatResourceTemplateDetail', () => {
+  it('should format template with all fields', () => {
+    const template: ResourceTemplate = {
+      uriTemplate: 'test://file/{path}',
+      name: 'File Template',
+      description: 'Access files by path',
+      mimeType: 'text/plain',
+    };
+
+    const output = formatResourceTemplateDetail(template);
+
+    // Should contain URI template in backticks
+    expect(output).toContain('Template:');
+    expect(output).toContain('`test://file/{path}`');
+
+    // Should contain name
+    expect(output).toContain('Name:');
+    expect(output).toContain('File Template');
+
+    // Should contain MIME type
+    expect(output).toContain('MIME type:');
+    expect(output).toContain('text/plain');
+
+    // Should contain description
+    expect(output).toContain('Description:');
+    expect(output).toContain('Access files by path');
+  });
+});
+
+describe('formatPrompts', () => {
+  it('should format prompt list with header and summary', () => {
+    const prompts: Prompt[] = [
+      {
+        name: 'greeting',
+        description: 'Generate a greeting',
+        arguments: [
+          { name: 'name', description: 'Name to greet', required: true },
+        ],
+      },
+      {
+        name: 'farewell',
+        description: 'Generate a farewell',
+      },
+    ];
+
+    const output = formatPrompts(prompts);
+
+    // Should have header with count
+    expect(output).toContain('Available prompts (2):');
+
+    // Should have summary list
+    expect(output).toContain('* `greeting`');
+    expect(output).toContain('* `farewell`');
+
+    // Should have separators
+    expect(output).toContain('---');
+
+    // Should have detailed sections
+    expect(output).toContain('Prompt:');
+  });
+});
+
+describe('formatPromptDetail', () => {
+  it('should format prompt with arguments', () => {
+    const prompt: Prompt = {
+      name: 'greeting',
+      description: 'Generate a personalized greeting',
+      arguments: [
+        { name: 'name', description: 'Name to greet', required: true },
+        { name: 'style', description: 'Greeting style', required: false },
+      ],
+    };
+
+    const output = formatPromptDetail(prompt);
+
+    // Should contain prompt name
+    expect(output).toContain('Prompt:');
+    expect(output).toContain('`greeting`');
+
+    // Should contain arguments section
+    expect(output).toContain('Arguments:');
+    expect(output).toContain('`name`');
+    expect(output).toContain('string');
+    expect(output).toContain('[required]');
+    expect(output).toContain('Name to greet');
+
+    expect(output).toContain('`style`');
+    expect(output).not.toMatch(/`style`.*\[required\]/);
+
+    // Should contain description
+    expect(output).toContain('Description:');
+    expect(output).toContain('Generate a personalized greeting');
+  });
+
+  it('should format prompt with no arguments', () => {
+    const prompt: Prompt = {
+      name: 'simple',
+      description: 'A simple prompt',
+    };
+
+    const output = formatPromptDetail(prompt);
+
+    expect(output).toContain('Prompt:');
+    expect(output).toContain('`simple`');
+    expect(output).toContain('Arguments:');
+    expect(output).toContain('(no arguments)');
+    expect(output).toContain('Description:');
+    expect(output).toContain('A simple prompt');
+  });
+
+  it('should format prompt with no description', () => {
+    const prompt: Prompt = {
+      name: 'undocumented',
+    };
+
+    const output = formatPromptDetail(prompt);
+
+    expect(output).toContain('Prompt:');
+    expect(output).toContain('`undocumented`');
+    expect(output).toContain('Description:');
+    expect(output).toContain('(no description)');
+  });
+
+  it('should format prompt argument with required indicator in correct style', () => {
+    const prompt: Prompt = {
+      name: 'test',
+      arguments: [
+        { name: 'required_arg', required: true },
+        { name: 'optional_arg', required: false },
+      ],
+    };
+
+    const output = formatPromptDetail(prompt);
+
+    // Required should show [required] in same format as tools
+    expect(output).toContain('`required_arg`: string [required]');
+    // Optional should NOT have [required]
+    expect(output).toContain('`optional_arg`: string');
+    expect(output).not.toMatch(/`optional_arg`.*\[required\]/);
   });
 });

@@ -1,9 +1,6 @@
 
 # TODOs
 
-## Bugs
-
-
 ## Next
 
 - Simplify README - there are too many top-level sections, and then show just the second level ones
@@ -21,10 +18,11 @@
     (what if tools have ":" or "," in their names?)
     In theory, we could add limit of capabilities to normal sessions, but the LLM could still break out of it, so what's the point.
   Explain this is useful for AI sandboxing!
-
+- Add support for asynchronous tasks
 
 ## Later
 
+- Check how we deal with connection and command timeouts
 
 - Add support for MCP elicitations, and potentially for sampling (e.g. via shell interface?)
 
@@ -40,14 +38,13 @@
 
 ## E2E test scenarios
 
-Let's add more e2e test scenarios:
+Let's add more tests (some e2e, some unit, some both):
 - Test that output from "mcpc @test --json" is consistent with MCP server handshake "results" (see https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle) - additional properties are fine
 - Test that output from "mcpc @test tools-list --json" and "mcpc @test tools-schema xxx --json" 
-  are consistent with MCP tool schema
-
-
+  are consistent with MCP tool schema. And same for prompts and resources!
+- Add unit tests to ensure that human output for tools, resources, and prompts contain all the 
+  important information. Add a simple e2e test that the output works also end to end.
 - test env var substitution works for config files (unit +e2e)
-
 - test that all headers for HTTP server do not leak in process list (e.g. use --header to pass 
   something, and ensure it's not present in "ps aux"), and that <redacted> works
 
