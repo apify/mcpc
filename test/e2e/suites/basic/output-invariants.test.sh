@@ -1,29 +1,46 @@
 #!/bin/bash
 # Test: Output invariants (--verbose, --json behavior)
+# Uses isolated home directory to avoid interference from parallel tests
 
 source "$(dirname "$0")/../../lib/framework.sh"
-test_init "basic/output-invariants"
+test_init "basic/output-invariants" --isolated
 
 # Test: --verbose doesn't change stdout for --help
+# Note: --help ignores --json flag, so we test manually instead of using run_xmcpc
 test_case "--verbose doesn't change stdout for --help"
 run_mcpc --help
 stdout_normal="$STDOUT"
-
 run_mcpc --help --verbose
 stdout_verbose="$STDOUT"
-
 assert_eq "$stdout_normal" "$stdout_verbose" "--verbose should not change stdout"
 test_pass
 
-# Test: --verbose doesn't change stdout for session list
+# Test: --verbose doesn't change stdout for session list (human mode)
 test_case "--verbose doesn't change stdout for session list"
-run_mcpc
-stdout_normal="$STDOUT"
+# Create a session first so we have something to list
+INVARIANT_SESSION=$(session_name "invariant")
+run_mcpc --config "$(create_fs_config "$TEST_TMP")" fs session "$INVARIANT_SESSION" >/dev/null 2>&1
+_SESSIONS_CREATED+=("$INVARIANT_SESSION")
 
-run_mcpc --verbose
-stdout_verbose="$STDOUT"
+# Test the invariant - with isolated home, this is deterministic
+run_xmcpc
+# Clean up
+run_mcpc "$INVARIANT_SESSION" close >/dev/null 2>&1
+_SESSIONS_CREATED=("${_SESSIONS_CREATED[@]/$INVARIANT_SESSION}")
+test_pass
 
-assert_eq "$stdout_normal" "$stdout_verbose" "--verbose should not change stdout"
+# Test: --verbose doesn't change stdout for session list (JSON mode)
+test_case "--verbose doesn't change stdout for mcpc --json"
+# Create a session for this test
+INVARIANT_SESSION2=$(session_name "inv-json")
+run_mcpc --config "$(create_fs_config "$TEST_TMP")" fs session "$INVARIANT_SESSION2" >/dev/null 2>&1
+_SESSIONS_CREATED+=("$INVARIANT_SESSION2")
+
+# Test the invariant with JSON mode
+run_xmcpc --json
+# Clean up
+run_mcpc "$INVARIANT_SESSION2" close >/dev/null 2>&1
+_SESSIONS_CREATED=("${_SESSIONS_CREATED[@]/$INVARIANT_SESSION2}")
 test_pass
 
 # Test: --json returns valid JSON for session list

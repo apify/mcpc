@@ -174,6 +174,8 @@ The framework enforces these invariants via `run_xmcpc`:
 - `--verbose` only adds to stderr, never changes stdout (checked for both bare and `--json` modes)
 - `--json` always returns valid JSON (on success to stdout, otherwise to stderr)
 
+Note that the invariants don't apply on invalid argument errors, as those take precedence.
+
 ### Writing a new test
 
 1. Create a file in the appropriate suite directory with `.test.sh` extension:
