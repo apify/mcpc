@@ -417,32 +417,64 @@ export function formatResources(resources: Resource[]): string {
 }
 
 /**
- * Format a list of prompts as Markdown
+ * Format a list of prompts with Markdown-like display
  */
 export function formatPrompts(prompts: Prompt[]): string {
   const lines: string[] = [];
 
-  lines.push(chalk.bold(`Prompts (${prompts.length}):`));
-  lines.push('');
+  // Header with prompt count
+  lines.push(chalk.bold(`Available prompts (${prompts.length}):`));
 
+  // Summary list of prompts
+  const bullet = chalk.dim('*');
   for (const prompt of prompts) {
-    lines.push(`## \`${prompt.name}\``);
+    lines.push(`${bullet} ${inBackticks(prompt.name)}`);
+  }
 
-    if (prompt.description) {
-      lines.push(prompt.description);
-    }
-
-    if (prompt.arguments && prompt.arguments.length > 0) {
-      lines.push('');
-      lines.push('**Arguments:**');
-      for (const arg of prompt.arguments) {
-        const required = arg.required ? ' (required)' : '';
-        const description = arg.description ? ` - ${arg.description}` : '';
-        lines.push(`- \`${arg.name}\`${required}${description}`);
-      }
-    }
-
+  // Detailed view for each prompt with separators
+  for (const prompt of prompts) {
     lines.push('');
+    lines.push(chalk.dim('---'));
+    lines.push(formatPromptDetail(prompt));
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Format a single prompt with details (Markdown-like display)
+ */
+export function formatPromptDetail(prompt: Prompt): string {
+  const lines: string[] = [];
+
+  // Prompt header: Prompt: `name`
+  lines.push(`${chalk.bold('Prompt:')} ${inBackticks(prompt.name)}`);
+
+  // Arguments
+  lines.push('');
+  lines.push(chalk.bold('Arguments:'));
+  if (prompt.arguments && prompt.arguments.length > 0) {
+    for (const arg of prompt.arguments) {
+      const typePart = chalk.yellow('string'); // Prompt arguments are always strings
+      const requiredPart = arg.required ? ` ${chalk.red('[required]')}` : '';
+      const description = arg.description ? ` ${chalk.dim('-')} ${arg.description}` : '';
+      lines.push(`  ${inBackticks(arg.name)}: ${typePart}${requiredPart}${description}`);
+    }
+  } else {
+    lines.push(chalk.gray('  (no arguments)'));
+  }
+
+  // Description in code block
+  lines.push('');
+  lines.push(chalk.bold('Description:'));
+  if (prompt.description) {
+    lines.push(chalk.gray('````'));
+    lines.push(prompt.description);
+    lines.push(chalk.gray('````'));
+  } else {
+    lines.push(chalk.gray('````'));
+    lines.push(chalk.gray('(no description)'));
+    lines.push(chalk.gray('````'));
   }
 
   return lines.join('\n');
