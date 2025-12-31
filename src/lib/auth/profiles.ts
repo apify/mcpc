@@ -248,8 +248,8 @@ export async function deleteAuthProfiles(
     const affectedSessions: string[] = [];
 
     for (const session of Object.values(sessionsStorage.sessions)) {
-      if (session.profileName) {
-        const sessionHost = getServerHost(session.target);
+      if (session.profileName && session.transportConfig.url) {
+        const sessionHost = getServerHost(session.transportConfig.url);
         for (const profile of profilesToDelete) {
           const profileHost = getServerHost(profile.serverUrl);
           if (sessionHost === profileHost && session.profileName === profile.name) {

@@ -5,3 +5,5 @@ mcpc --config ./test/fixtures/mcp-config.json fs session @fs
 
 
 mcpc --config ./test/fixtures/mcp-config.json fs tools-list
+
+mcpc mcp.apify.com --headers "Blah: Test" session @test5

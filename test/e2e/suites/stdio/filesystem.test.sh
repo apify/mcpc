@@ -20,7 +20,7 @@ test_pass
 # Test: session shows stdio transport
 test_case "session shows stdio transport"
 run_xmcpc --json
-transport=$(json_get ".sessions[] | select(.name == \"$SESSION\") | .transport")
+transport=$(json_get ".sessions[] | select(.name == \"$SESSION\") | .transportConfig.type")
 assert_eq "$transport" "stdio" "transport should be stdio"
 test_pass
 

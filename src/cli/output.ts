@@ -22,7 +22,7 @@ function hslToHex(h: number, s: number, l: number): string {
   s /= 100;
   l /= 100;
   const a = s * Math.min(l, 1 - l);
-  const f = (n: number) => {
+  const f = (n: number): string => {
     const k = (n + h / 30) % 12;
     const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
     return Math.round(255 * color).toString(16).padStart(2, '0');
@@ -520,21 +520,21 @@ export function formatSessionLine(session: SessionData): string {
 
   // Format target
   let target: string;
-  if (session.transport === 'http') {
+  if (session.transportConfig.type === 'http') {
     // For http: show full URL as there might be different MCP servers on different paths
-    target = session.target; // getServerHost(session.target);
+    target = session.transportConfig.url || 'unknown';
   } else {
     // For stdio: show command + args
-    target = session.target;
-    if (session.stdioArgs && session.stdioArgs.length > 0) {
-      target += ' ' + session.stdioArgs.join(' ');
+    target = session.transportConfig.command || 'unknown';
+    if (session.transportConfig.args && session.transportConfig.args.length > 0) {
+      target += ' ' + session.transportConfig.args.join(' ');
     }
   }
   const targetStr = truncateWithEllipsis(target, 80);
 
   // Format transport/auth info
   let authStr: string;
-  if (session.transport === 'stdio') {
+  if (session.transportConfig.type === 'stdio') {
     authStr = chalk.dim('(stdio)');
   } else if (session.profileName) {
     authStr = chalk.dim('(http, oauth: ') + chalk.magenta(session.profileName) + chalk.dim(')');

@@ -219,30 +219,24 @@ export async function restartBridge(sessionName: string): Promise<StartBridgeRes
     // Ignore errors, we're restarting anyway
   }
 
-  // Determine target from session data
-  // For stdio transport, include args if present (they contain the actual command parameters)
-  let transportConfig: TransportConfig;
-  if (session.transport === 'http') {
-    transportConfig = { type: 'http', url: session.target };
-  } else {
-    transportConfig = { type: 'stdio', command: session.target };
-    if (session.stdioArgs && session.stdioArgs.length > 0) {
-      transportConfig.args = session.stdioArgs;
-    }
-  }
+  // Build transport config from session data (exclude redacted headers)
+  const transportConfig: TransportConfig = { ...session.transportConfig };
+  delete transportConfig.headers;
 
-  // Retrieve transport headers from keychain for failover, and check their number
+  // Retrieve transport headers from keychain for failover, and cross-check them
   let headers: Record<string, string> | undefined;
-  if (session.transport === 'http' && session.httpHeaderCount && session.httpHeaderCount > 0) {
+  const expectedHeaderKeys = session.transportConfig.headers ? Object.keys(session.transportConfig.headers) : [];
+  if (expectedHeaderKeys.length > 0) {
     headers = await readKeychainSessionHeaders(sessionName);
-    const retrievedCount = Object.keys(headers || {}).length;
-    if (retrievedCount !== session.httpHeaderCount) {
+    const retrievedHeaderKeys = new Set(Object.keys(headers || {}));
+    const missingKeys = expectedHeaderKeys.filter(key => !retrievedHeaderKeys.has(key));
+    if (missingKeys.length > 0) {
       throw new ClientError(
-        `Failed to retrieve ${session.httpHeaderCount} HTTP header(s) from keychain for session ${sessionName}. ` +
+        `Missing HTTP header(s) in keychain for session ${sessionName}: ${missingKeys.join(', ')}. ` +
           `The session may need to be recreated with "mcpc ${sessionName} close" followed by a new connect.`
       );
     }
-    logger.debug(`Retrieved ${retrievedCount} headers from keychain for failover`);
+    logger.debug(`Retrieved ${expectedHeaderKeys.length} headers from keychain for failover`);
   }
 
   // Start a new bridge, preserving auth profile

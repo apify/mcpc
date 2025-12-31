@@ -2,7 +2,8 @@
  * Sessions command handlers
  */
 
-import { OutputMode, isValidSessionName, validateProfileName, isProcessAlive, getServerHost } from '../../lib/index.js';
+import { OutputMode, isValidSessionName, validateProfileName, isProcessAlive, getServerHost, redactHeaders } from '../../lib/index.js';
+import type { TransportConfig } from '../../lib/types.js';
 import { formatOutput, formatSuccess, formatError, formatSessionLine, formatServerDetails } from '../output.js';
 import { listAuthProfiles } from '../../lib/auth/profiles.js';
 import {
@@ -109,21 +110,24 @@ export async function connectSession(
     }
 
     // Create or update session record (without pid - that comes from startBridge)
+    // Store transportConfig with headers redacted (actual values in keychain)
     const isReconnect = !!existingSession;
-    const sessionTarget = transportConfig.url || transportConfig.command || 'unknown';
+    const { headers: _originalHeaders, ...baseTransportConfig } = transportConfig;
+    const sessionTransportConfig: TransportConfig = {
+      ...baseTransportConfig,
+      ...(headers && Object.keys(headers).length > 0 && { headers: redactHeaders(headers) }),
+    };
+
     const sessionUpdate: Parameters<typeof updateSession>[1] = {
-      target: sessionTarget,
-      transport: transportConfig.type,
+      transportConfig: sessionTransportConfig,
       ...(profileName && { profileName }),
-      ...(transportConfig.args?.length && { stdioArgs: transportConfig.args }),
-      ...(transportConfig.type === 'http' && { httpHeaderCount: Object.keys(headers || {}).length }),
     };
 
     if (isReconnect) {
       await updateSession(name, sessionUpdate);
       logger.debug(`Session record updated for reconnect: ${name}`);
     } else {
-      await saveSession(name, { target: sessionTarget, transport: transportConfig.type, createdAt: new Date().toISOString(), ...sessionUpdate });
+      await saveSession(name, { transportConfig: sessionTransportConfig, createdAt: new Date().toISOString(), ...sessionUpdate });
       logger.debug(`Initial session record created for: ${name}`);
     }
 

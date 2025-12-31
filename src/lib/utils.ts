@@ -337,3 +337,21 @@ let requestIdCounter = 0;
 export function generateRequestId(): string {
   return `req_${Date.now()}_${++requestIdCounter}`;
 }
+
+/**
+ * Sentinel value used to replace sensitive header values when storing in sessions.json
+ */
+export const REDACTED_HEADER_VALUE = '<redacted>';
+
+/**
+ * Redact header values for secure storage
+ * Replaces all header values with "<redacted>" sentinel
+ */
+export function redactHeaders(headers: Record<string, string>): Record<string, string> {
+  const redacted: Record<string, string> = {};
+  for (const key of Object.keys(headers)) {
+    redacted[key] = REDACTED_HEADER_VALUE;
+  }
+  return redacted;
+}
+

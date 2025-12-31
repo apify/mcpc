@@ -250,3 +250,23 @@ export function loadArgsFromFile(filePath: string): Record<string, unknown> {
     throw new ClientError(`Invalid JSON in arguments file: ${(error as Error).message}`);
   }
 }
+
+/**
+ * Parse --header CLI flags into a headers object
+ * Format: "Key: Value" (colon-separated)
+ */
+export function parseHeaderFlags(headerFlags: string[] | undefined): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (headerFlags) {
+    for (const header of headerFlags) {
+      const colonIndex = header.indexOf(':');
+      if (colonIndex < 1) {
+        throw new ClientError(`Invalid header format: ${header}. Use "Key: Value"`);
+      }
+      const key = header.substring(0, colonIndex).trim();
+      const value = header.substring(colonIndex + 1).trim();
+      headers[key] = value;
+    }
+  }
+  return headers;
+}

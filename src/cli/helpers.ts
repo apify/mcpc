@@ -16,28 +16,9 @@ import { readKeychainOAuthTokenInfo, readKeychainOAuthClientInfo } from '../lib/
 import { logTarget } from './output.js';
 import packageJson from '../../package.json' with { type: 'json' };
 import { DEFAULT_AUTH_PROFILE } from '../lib/auth/oauth-utils.js';
+import { parseHeaderFlags } from './parser.js';
 
 const logger = createLogger('cli');
-
-/**
- * Parse --header CLI flags into a headers object
- * Format: "Key: Value" (colon-separated)
- */
-function parseHeaderFlags(headerFlags: string[] | undefined): Record<string, string> {
-  const headers: Record<string, string> = {};
-  if (headerFlags) {
-    for (const header of headerFlags) {
-      const colonIndex = header.indexOf(':');
-      if (colonIndex < 1) {
-        throw new ClientError(`Invalid header format: ${header}. Use "Key: Value"`);
-      }
-      const key = header.substring(0, colonIndex).trim();
-      const value = header.substring(colonIndex + 1).trim();
-      headers[key] = value;
-    }
-  }
-  return headers;
-}
 
 /**
  * Create an OAuthProvider for a server URL if auth profile exists

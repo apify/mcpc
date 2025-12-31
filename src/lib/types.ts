@@ -94,10 +94,7 @@ export type SessionStatus = 'active' | 'expired' | 'dead';
  */
 export interface SessionData {
   name: string;
-  target: string; // URL or command
-  transport: TransportType;
-  stdioArgs?: string[]; // Command arguments (for stdio transport)
-  httpHeaderCount?: number; // Number of http transport headers stored in keychain (for validation on retrieval)
+  transportConfig: TransportConfig; // Transport configuration (header values redacted to "<redacted>")
   profileName?: string; // Name of auth profile (for OAuth servers)
   pid?: number; // Bridge process PID
   protocolVersion?: string; // Negotiated MCP version
