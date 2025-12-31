@@ -119,7 +119,7 @@ export async function connectSession(
     };
 
     const sessionUpdate: Parameters<typeof updateSession>[1] = {
-      serverConfig: sessionTransportConfig,
+      server: sessionTransportConfig,
       ...(profileName && { profileName }),
     };
 
@@ -127,7 +127,7 @@ export async function connectSession(
       await updateSession(name, sessionUpdate);
       logger.debug(`Session record updated for reconnect: ${name}`);
     } else {
-      await saveSession(name, { serverConfig: sessionTransportConfig, createdAt: new Date().toISOString(), ...sessionUpdate });
+      await saveSession(name, { server: sessionTransportConfig, createdAt: new Date().toISOString(), ...sessionUpdate });
       logger.debug(`Initial session record created for: ${name}`);
     }
 

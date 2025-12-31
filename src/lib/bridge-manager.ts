@@ -218,12 +218,12 @@ export async function restartBridge(sessionName: string): Promise<StartBridgeRes
   }
 
   // Build transport config from session data (exclude redacted headers)
-  const serverConfig: ServerConfig = { ...session.serverConfig };
+  const serverConfig: ServerConfig = { ...session.server };
   delete serverConfig.headers;
 
   // Retrieve transport headers from keychain for failover, and cross-check them
   let headers: Record<string, string> | undefined;
-  const expectedHeaderKeys = session.serverConfig.headers ? Object.keys(session.serverConfig.headers) : [];
+  const expectedHeaderKeys = session.server.headers ? Object.keys(session.server.headers) : [];
   if (expectedHeaderKeys.length > 0) {
     headers = await readKeychainSessionHeaders(sessionName);
     const retrievedHeaderKeys = new Set(Object.keys(headers || {}));

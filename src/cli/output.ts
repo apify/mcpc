@@ -520,21 +520,21 @@ export function formatSessionLine(session: SessionData): string {
 
   // Format target
   let target: string;
-  if (session.serverConfig.url) {
+  if (session.server.url) {
     // For http: show full URL as there might be different MCP servers on different paths
-    target = session.serverConfig.url;
+    target = session.server.url;
   } else {
     // For stdio: show command + args
-    target = session.serverConfig.command || 'unknown';
-    if (session.serverConfig.args && session.serverConfig.args.length > 0) {
-      target += ' ' + session.serverConfig.args.join(' ');
+    target = session.server.command || 'unknown';
+    if (session.server.args && session.server.args.length > 0) {
+      target += ' ' + session.server.args.join(' ');
     }
   }
   const targetStr = truncateWithEllipsis(target, 80);
 
   // Format transport/auth info
   let authStr: string;
-  if (session.serverConfig.command) {
+  if (session.server.command) {
     authStr = chalk.dim('(stdio)');
   } else if (session.profileName) {
     authStr = chalk.dim('(http, oauth: ') + chalk.magenta(session.profileName) + chalk.dim(')');

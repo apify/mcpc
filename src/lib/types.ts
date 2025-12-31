@@ -89,7 +89,7 @@ export type SessionStatus = 'active' | 'expired' | 'dead';
  */
 export interface SessionData {
   name: string;
-  serverConfig: ServerConfig; // Transport configuration (header values redacted to "<redacted>")
+  server: ServerConfig; // Transport configuration (header values redacted to "<redacted>")
   profileName?: string; // Name of auth profile (for OAuth servers)
   pid?: number; // Bridge process PID
   protocolVersion?: string; // Negotiated MCP version
