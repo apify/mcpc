@@ -223,6 +223,15 @@ export async function resolveTarget(
 }
 
 /**
+ * Context passed to the withMcpClient callback
+ */
+export interface McpClientContext {
+  sessionName?: string | undefined;
+  profileName?: string | undefined;
+  serverConfig?: ServerConfig | undefined;
+}
+
+/**
  * Execute an operation with an MCP client
  * Handles connection, execution, and cleanup
  * Automatically detects and uses sessions (targets starting with @)
@@ -230,7 +239,7 @@ export async function resolveTarget(
  *
  * @param target - Target string (URL, @session, package, etc.)
  * @param options - CLI options (verbose, config, headers, etc.)
- * @param callback - Async function that receives the connected client
+ * @param callback - Async function that receives the connected client and context
  */
 export async function withMcpClient<T>(
   target: string,
@@ -243,13 +252,24 @@ export async function withMcpClient<T>(
     hideTarget?: boolean;
     profile?: string;
   },
-  callback: (client: IMcpClient) => Promise<T>
+  callback: (client: IMcpClient, context: McpClientContext) => Promise<T>
 ): Promise<T> {
   // Check if this is a session target (@name, not @scope/package)
   if (isValidSessionName(target)) {
     const { withSessionClient } = await import('../lib/session-client.js');
+    const { getSession } = await import('../lib/sessions.js');
 
     logger.debug('Using session:', target);
+
+    // Get session data to include in context
+    // TODO: getSession() is called also in withSessionClient() => createSessionClient() => ensureBridgeReady()
+    //  if we could reuse it, we'd save extra file lock and read operation
+    const session = await getSession(target);
+    const context: McpClientContext = {
+      sessionName: session?.name,
+      profileName: session?.profileName,
+      serverConfig: session?.server,
+    };
 
     // Log target prefix (unless hidden)
     if (options.outputMode) {
@@ -260,7 +280,7 @@ export async function withMcpClient<T>(
     }
 
     // Use session client (SessionClient implements IMcpClient interface)
-    return await withSessionClient(target, callback);
+    return await withSessionClient(target, (client) => callback(client, context));
   }
 
   // Regular direct connection
@@ -309,13 +329,14 @@ export async function withMcpClient<T>(
         outputMode: options.outputMode,
         hide: options.hideTarget,
         profileName,
-        serverConfig: serverConfig,
+        serverConfig,
         protocolVersion: serverDetails.protocolVersion,
       });
     }
 
-    // Execute callback with connected client
-    const result = await callback(client);
+    // Execute callback with connected client and context
+    const context: McpClientContext = { serverConfig, profileName };
+    const result = await callback(client, context);
 
     return result;
   } catch (error) {

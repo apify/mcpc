@@ -40,7 +40,12 @@
 
 ## E2E test scenarios
 
-Later
+- Add unit test the logTarget() doesn't leak serverConfig.headers
+- Test that "mcpc <remote-server> --json --header "X-Test: Blah" redacts the header
+
+- Later
 - Test auth profiles work long-term and sessions too - basically when running some tests the
   next day they should use old saved auths and sessions.
   We could have some special dir for long-term testing...
+
+

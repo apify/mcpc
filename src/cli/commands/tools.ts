@@ -21,7 +21,7 @@ import {
  * Automatically fetches all pages if pagination is present
  */
 export async function listTools(target: string, options: CommandOptions): Promise<void> {
-  await withMcpClient(target, options, async (client) => {
+  await withMcpClient(target, options, async (client, _context) => {
     // Fetch all tools across all pages
     const allTools = [];
     let cursor: string | undefined = undefined;
@@ -46,7 +46,7 @@ export async function getTool(target: string, name: string, options: CommandOpti
     expectedSchema = (await loadSchemaFromFile(options.schema)) as ToolSchema;
   }
 
-  await withMcpClient(target, options, async (client) => {
+  await withMcpClient(target, options, async (client, _context) => {
     // List all tools and find the matching one
     // TODO: It is wasteful to always re-fetch the full list (applies also to prompts),
     //  especially considering that MCP SDK client caches these.
@@ -113,7 +113,7 @@ export async function callTool(
     expectedSchema = (await loadSchemaFromFile(options.schema)) as ToolSchema;
   }
 
-  await withMcpClient(target, options, async (client) => {
+  await withMcpClient(target, options, async (client, _context) => {
     // Validate schema if provided (skip entirely in ignore mode)
     const schemaMode: SchemaMode = options.schemaMode || 'compatible';
     if (expectedSchema && schemaMode !== 'ignore') {

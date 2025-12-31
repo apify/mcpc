@@ -20,7 +20,7 @@ export async function setLogLevel(target: string, level: string, options: Comman
     );
   }
 
-  await withMcpClient(target, options, async (client) => {
+  await withMcpClient(target, options, async (client, _context) => {
     // After validation above, we know level is a valid LoggingLevel
     await client.setLoggingLevel(level as LoggingLevel);
 

@@ -348,6 +348,7 @@ export const REDACTED_HEADER_VALUE = '<redacted>';
  * Replaces all header values with "<redacted>" sentinel
  */
 export function redactHeaders(headers: Record<string, string>): Record<string, string> {
+  if (Object.keys(headers).length === 0) return headers;
   const redacted: Record<string, string> = {};
   for (const key of Object.keys(headers)) {
     redacted[key] = REDACTED_HEADER_VALUE;

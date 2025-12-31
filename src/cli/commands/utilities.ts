@@ -10,7 +10,7 @@ import type { CommandOptions } from '../../lib/types.js';
  * Ping the MCP server to check if it's alive
  */
 export async function ping(target: string, options: CommandOptions): Promise<void> {
-  await withMcpClient(target, options, async (client) => {
+  await withMcpClient(target, options, async (client, _context) => {
     const startTime = performance.now();
     await client.ping();
     const endTime = performance.now();

@@ -20,7 +20,7 @@ import {
  * Automatically fetches all pages if pagination is present
  */
 export async function listPrompts(target: string, options: CommandOptions): Promise<void> {
-  await withMcpClient(target, options, async (client) => {
+  await withMcpClient(target, options, async (client, _context) => {
     // Fetch all prompts across all pages
     const allPrompts = [];
     let cursor: string | undefined = undefined;
@@ -60,7 +60,7 @@ export async function getPrompt(
     expectedSchema = (await loadSchemaFromFile(options.schema)) as PromptSchema;
   }
 
-  await withMcpClient(target, options, async (client) => {
+  await withMcpClient(target, options, async (client, _context) => {
     // Validate schema if provided (skip entirely in ignore mode)
     const schemaMode: SchemaMode = options.schemaMode || 'compatible';
     if (expectedSchema && schemaMode !== 'ignore') {

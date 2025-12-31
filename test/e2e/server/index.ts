@@ -209,6 +209,7 @@ function createMcpServer(): Server {
         prompts: { listChanged: true },
         logging: {},
       },
+      instructions: 'E2E test server for mcpc. Provides sample tools, resources, and prompts for testing.',
     }
   );
 

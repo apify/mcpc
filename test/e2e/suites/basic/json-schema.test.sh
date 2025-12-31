@@ -52,7 +52,34 @@ test_case "server details JSON serverInfo matches test server"
 run_mcpc "$SESSION" --json
 assert_success
 server_name=$(json_get '.serverInfo.name')
-assert_eq "$server_name" "mcpc-test-server" "server name should be mcpc-test-server"
+assert_eq "$server_name" "e2e-test-server" "server name should be e2e-test-server"
+test_pass
+
+# TODO: change this to check: if instructions field is present, it is a string!
+test_case "server details JSON has instructions field"
+run_mcpc "$SESSION" --json
+assert_success
+# instructions is optional per MCP spec but if present, must be named correctly
+# This test catches typos like "instructionsX"
+assert_json "$STDOUT" '.instructions' "should have instructions field (check for typos)"
+test_pass
+
+test_case "server details JSON has exact expected fields"
+run_mcpc "$SESSION" --json
+assert_success
+# MCP InitializeResult - validate exact top-level fields (no more, no less)
+expected_fields="_meta,capabilities,instructions,protocolVersion,serverInfo"
+actual_fields=$(echo "$STDOUT" | jq -r 'keys | sort | join(",")')
+if [[ "$actual_fields" != "$expected_fields" ]]; then
+  test_fail "unexpected top-level fields: expected [$expected_fields], got [$actual_fields]"
+fi
+# _meta.server.url must be present
+assert_json "$STDOUT" '._meta.server.url' "_meta.server should have url field"
+# Verify url contains localhost (our test server)
+server_url=$(json_get '._meta.server.url')
+if [[ "$server_url" != *"localhost"* ]]; then
+  test_fail "_meta.server.url should contain localhost, got: $server_url"
+fi
 test_pass
 
 # =============================================================================

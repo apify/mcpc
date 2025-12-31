@@ -124,7 +124,7 @@ Options:
   -H, --header <header>   Add HTTP header (can be repeated)
   --timeout <seconds>     Request timeout in seconds (default: 300)
   --profile <name>        Authentication profile to use (default: "default")
-  --schema <file>         Validate against expected tool/prompt schema
+  --schema <file>         Validate tool/prompt schema against expected schema
   --schema-mode <mode>    Schema validation mode: strict, compatible (default), ignore
   --clean[=types]         Clean up mcpc data (types: sessions, logs, profiles, all)
   -h, --help              Display general help
@@ -134,14 +134,28 @@ Targets:
   <config-entry>          Entry from MCP config file specified in --config (e.g. "fs")
   @<session>              Named persistent session (e.g. "@apify")
 
-Commands:
+General commands:
   help                    Show server info, instructions, and capabilities
   shell                   Open interactive shell to run MCP commands)
   login                   Create OAuth profile with credentials to access remote server
   logout                  Remove OAuth profile
-  session @<session>      Create a named persistent session
+  session @<session>      Connect to server and create named persistent session
   restart @<session>      Kill and restart a session  
   close @<session>        Close a session
+  
+MCP commands: 
+  tools-list
+  tools-get <tool-name>  
+  tools-call <tool-name> [--args key=val key2:=json ...] [--args-file <file>]
+  prompts-list
+  prompts-get <prompt-name> [--args key=val key2:=json ...] [--args-file <file>]
+  resources
+  resources-list
+  resources-read <uri>
+  resources-subscribe <uri>
+  resources-unsubscribe <uri>
+  resources-templates-list
+  logging-set-level <level>  
 ```
 
 where `<target>` can be one of (in this order of precedence):

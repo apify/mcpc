@@ -5,6 +5,7 @@
 import { OutputMode, isValidSessionName, validateProfileName, isProcessAlive, getServerHost, redactHeaders } from '../../lib/index.js';
 import type { ServerConfig } from '../../lib/types.js';
 import { formatOutput, formatSuccess, formatError, formatSessionLine, formatServerDetails } from '../output.js';
+import { withMcpClient, resolveTarget, resolveAuthProfile } from '../helpers.js';
 import { listAuthProfiles } from '../../lib/auth/profiles.js';
 import {
   sessionExists,
@@ -16,7 +17,6 @@ import {
 } from '../../lib/sessions.js';
 import { startBridge, StartBridgeOptions, stopBridge } from '../../lib/bridge-manager.js';
 import { storeKeychainSessionHeaders } from '../../lib/auth/keychain.js';
-import { resolveTarget, resolveAuthProfile } from '../helpers.js';
 import { ClientError } from '../../lib/index.js';
 import chalk from 'chalk';
 import { createLogger } from '../../lib/logger.js';
@@ -116,7 +116,7 @@ export async function connectSession(
     const { headers: _originalHeaders, ...baseTransportConfig } = serverConfig;
     const sessionTransportConfig: ServerConfig = {
       ...baseTransportConfig,
-      ...(headers && Object.keys(headers).length > 0 && { headers: redactHeaders(headers) }),
+      ...(headers && { headers: redactHeaders(headers) }),
     };
 
     const sessionUpdate: Parameters<typeof updateSession>[1] = {
@@ -393,84 +393,33 @@ export async function showServerDetails(
     hideTarget?: boolean;
   }
 ): Promise<void> {
-  const { withMcpClient } = await import('../helpers.js');
-
-  await withMcpClient(target, options, async (client) => {
+  await withMcpClient(target, options, async (client, context) => {
     const serverDetails = await client.getServerDetails();
     const { serverInfo, capabilities, instructions, protocolVersion } = serverDetails;
 
     if (options.outputMode === 'human') {
       console.log(formatServerDetails(serverDetails, target));
     } else {
-      // JSON output - structure matches MCP InitializeResult for consistency
-      // Only include capabilities that are present
-      const jsonCapabilities: Record<string, unknown> = {};
+      // JSON output MUST match MCP InitializeResult structure!
+      // See https://modelcontextprotocol.io/specification/2025-11-25/schema#initializeresult
+      // Build _meta.server with redacted headers for security
+      const server: ServerConfig = {
+        ...context.serverConfig,
+        ...(context.serverConfig?.headers && { headers: redactHeaders(context.serverConfig.headers) }),
+      };
 
-      if (capabilities?.tools) {
-        jsonCapabilities.tools = {
-          listChanged: capabilities.tools.listChanged || false,
-        };
-      }
-
-      if (capabilities?.resources) {
-        jsonCapabilities.resources = {
-          subscribe: capabilities.resources.subscribe || false,
-          listChanged: capabilities.resources.listChanged || false,
-        };
-      }
-
-      if (capabilities?.prompts) {
-        jsonCapabilities.prompts = {
-          listChanged: capabilities.prompts.listChanged || false,
-        };
-      }
-
-      if (capabilities?.logging) {
-        jsonCapabilities.logging = {};
-      }
-
-      if (capabilities?.completions) {
-        jsonCapabilities.completions = {};
-      }
-
-      // Build available commands list based on capabilities
-      const availableCommands: string[] = [];
-
-      if (capabilities?.tools) {
-        availableCommands.push('tools-list', 'tools-get', 'tools-call');
-      }
-
-      if (capabilities?.resources) {
-        availableCommands.push('resources-list', 'resources-read');
-        if (capabilities.resources.subscribe) {
-          availableCommands.push('resources-subscribe', 'resources-unsubscribe');
-        }
-      }
-
-      if (capabilities?.prompts) {
-        availableCommands.push('prompts-list', 'prompts-get');
-      }
-
-      if (capabilities?.logging) {
-        availableCommands.push('logging-set-level');
-      }
-
-      availableCommands.push('shell');
-
-      // Output matches MCP InitializeResult structure
       console.log(
         formatOutput(
           {
-            // mcpc-specific additions
-            // TODO: Perhaps we should prefix these with "mcpc", or "x-", or use "_meta"
-            //  (see https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/draft/basic/index.mdx#_meta)
-            target,
-            availableCommands,
-            // MCP specs fields
-            protocolVersion: protocolVersion || null,
-            capabilities: jsonCapabilities,
-            serverInfo: serverInfo || null,
-            instructions: instructions || null,
+            _meta: {
+              sessionName: context.sessionName,
+              profileName: context.profileName,
+              server,
+            },
+            protocolVersion,
+            capabilities,
+            serverInfo,
+            instructions,
           },
           'json'
         )
