@@ -144,7 +144,7 @@ test_pass
 test_case "server info contains server name"
 run_mcpc "$SESSION"
 assert_success
-assert_contains "$STDOUT" "mcpc-test-server"
+assert_contains "$STDOUT" "e2e-test-server"
 test_pass
 
 test_case "server info contains capabilities"

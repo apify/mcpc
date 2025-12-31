@@ -34,8 +34,8 @@ test_pass
 test_case "tools-list --json returns all tools"
 run_xmcpc "$SESSION" tools-list --json
 assert_success
-# Count tools in JSON output
-tool_count=$(echo "$STDOUT" | jq '.tools | length')
+# Count tools in JSON output (returns array directly)
+tool_count=$(echo "$STDOUT" | jq 'length')
 assert_eq "$tool_count" "5" "should have all 5 tools"
 test_pass
 
@@ -53,7 +53,8 @@ test_pass
 test_case "resources-list --json returns all resources"
 run_xmcpc "$SESSION" resources-list --json
 assert_success
-resource_count=$(echo "$STDOUT" | jq '.resources | length')
+# Returns array directly
+resource_count=$(echo "$STDOUT" | jq 'length')
 assert_eq "$resource_count" "3" "should have all 3 resources"
 test_pass
 
@@ -70,7 +71,8 @@ test_pass
 test_case "prompts-list --json returns all prompts"
 run_xmcpc "$SESSION" prompts-list --json
 assert_success
-prompt_count=$(echo "$STDOUT" | jq '.prompts | length')
+# Returns array directly
+prompt_count=$(echo "$STDOUT" | jq 'length')
 assert_eq "$prompt_count" "2" "should have all 2 prompts"
 test_pass
 

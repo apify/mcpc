@@ -83,7 +83,8 @@ assert_contains "$STDOUT" "42"
 test_pass
 
 test_case "resources-read dynamic resource"
-run_xmcpc "$SESSION" resources-read "test://dynamic/time"
+# Use run_mcpc (not run_xmcpc) because dynamic resource changes between runs
+run_mcpc "$SESSION" resources-read "test://dynamic/time"
 assert_success
 # Should contain a timestamp (ISO format)
 assert_contains "$STDOUT" "T"

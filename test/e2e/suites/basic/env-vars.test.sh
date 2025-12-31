@@ -13,6 +13,9 @@ test_case "MCPC_HOME_DIR changes home directory"
 CUSTOM_HOME="$TEST_TMP/custom-home"
 mkdir -p "$CUSTOM_HOME"
 
+# Copy the auth profile to custom home (needed for HTTP server auth)
+cp "$MCPC_HOME_DIR/profiles.json" "$CUSTOM_HOME/profiles.json"
+
 # Create a session with custom home
 SESSION=$(session_name "env-home")
 MCPC_HOME_DIR="$CUSTOM_HOME" run_mcpc "$TEST_SERVER_URL" session "$SESSION"

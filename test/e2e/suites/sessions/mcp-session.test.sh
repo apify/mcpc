@@ -45,8 +45,9 @@ test_pass
 # Test: bridge restart creates new MCP session
 test_case "bridge restart creates new MCP session"
 
-# Get bridge PID
-run_xmcpc --json
+# Get bridge PID (use run_mcpc, not run_xmcpc, because session list output
+# can change between runs when other tests run in parallel with shared home)
+run_mcpc --json
 bridge_pid=$(json_get ".sessions[] | select(.name == \"$SESSION\") | .pid")
 assert_not_empty "$bridge_pid" "should have bridge PID"
 
