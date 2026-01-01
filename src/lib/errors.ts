@@ -136,7 +136,7 @@ export function toMcpError(error: unknown): McpError {
 /**
  * Format error for display to user
  */
-export function formatError(error: unknown, verbose = false): string {
+export function formatHumanError(error: unknown, verbose = false): string {
   const mcpError = toMcpError(error);
 
   let output = `Error: ${mcpError.message}`;

@@ -59,7 +59,7 @@ tools-call <tool-name> [<args-json> | arg1=val arg2:=json ... | <stdin>]
 
 
 This error is wrong - we should attempt to connect and only claim auth error if the server 
-requires it, otherwise fail with "host not found" or something similar error
+requires it, otherwise fail with "host not found" or some similar error
 > mcpc xxxx tools-list
 Error: No authentication profile found for xxxx.
 
@@ -69,13 +69,7 @@ mcpc xxxx login
 Then run your command again.
 
 
-
-Add logTarget to "shell" command too!
-> mcpc @test shell
-Welcome to mcpc shell for @test
-Type "help" for available commands, "exit" to quit
-
-
+When running "shell" command in shell
 
 
 mcpc mcp.apify.com shell --- do we also open session?

@@ -7,7 +7,7 @@ import * as readline from 'readline';
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { fileExists, getMcpcHome } from '../lib/utils.js';
-import { formatError as formatErrorOutput } from './output.js';
+import { formatError, logTarget } from './output.js';
 import chalk from 'chalk';
 import type { OutputMode, CommandOptions, NotificationData } from '../lib/types.js';
 import * as tools from './commands/tools.js';
@@ -296,7 +296,7 @@ async function executeCommand(ctx: ShellContext, line: string): Promise<void> {
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error(formatErrorOutput(errorMessage));
+    console.error(formatError(errorMessage));
   }
 }
 
@@ -359,8 +359,9 @@ export async function startShell(target: string): Promise<void> {
     running: true,
   };
 
-  // Show welcome message
-  console.log(chalk.bold(`\nWelcome to mcpc shell for ${chalk.cyan(target)}`));
+  // Show target info and welcome message
+  await logTarget(target, { outputMode: 'human' });
+  console.log(chalk.bold(`Welcome to mcpc shell`));
   console.log(chalk.dim('Type "help" for available commands, "exit" to quit\n'));
 
   // Set up notification listener for session targets

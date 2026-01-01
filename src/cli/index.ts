@@ -12,7 +12,7 @@
 
 import { Command } from 'commander';
 import { setVerbose, setJsonMode, closeFileLogger } from '../lib/index.js';
-import { isMcpError, formatError } from '../lib/index.js';
+import { isMcpError, formatHumanError } from '../lib/index.js';
 import { formatJson, formatJsonError, rainbow } from './output.js';
 import * as tools from './commands/tools.js';
 import * as resources from './commands/resources.js';
@@ -124,7 +124,7 @@ async function main(): Promise<void> {
     validateOptions(args);
     validateArgValues(args);
   } catch (error) {
-    console.error(formatError(error as Error, false));
+    console.error(formatHumanError(error as Error, false));
     process.exit(1);
   }
 
@@ -143,7 +143,7 @@ async function main(): Promise<void> {
     try {
       validateCleanTypes(cleanTypes);
     } catch (error) {
-      console.error(formatError(error as Error, false));
+      console.error(formatHumanError(error as Error, false));
       process.exit(1);
     }
 
@@ -472,7 +472,7 @@ async function handleCommands(target: string, args: string[]): Promise<void> {
       if (outputMode === 'json') {
         console.error(formatJsonError(error, error.code));
       } else {
-        console.error(formatError(error, opts.verbose));
+        console.error(formatHumanError(error, opts.verbose));
       }
       process.exit(error.code);
     }
@@ -481,7 +481,7 @@ async function handleCommands(target: string, args: string[]): Promise<void> {
     console.error(
       outputMode === 'json'
         ? formatJsonError(error as Error, 1)
-        : formatError(error as Error, opts.verbose)
+        : formatHumanError(error as Error, opts.verbose)
     );
     process.exit(1);
   }

@@ -10,7 +10,7 @@ import {
   AuthError,
   isMcpError,
   toMcpError,
-  formatError,
+  formatHumanError,
 } from '../../../src/lib/errors';
 
 describe('McpError', () => {
@@ -131,13 +131,13 @@ describe('toMcpError', () => {
 describe('formatError', () => {
   it('should format error message without verbose mode', () => {
     const error = new ClientError('test error');
-    const formatted = formatError(error, false);
+    const formatted = formatHumanError(error, false);
     expect(formatted).toBe('Error: test error');
   });
 
   it('should format error with details in verbose mode', () => {
     const error = new ClientError('test error', { foo: 'bar' });
-    const formatted = formatError(error, true);
+    const formatted = formatHumanError(error, true);
     expect(formatted).toContain('Error: test error');
     expect(formatted).toContain('Details:');
     expect(formatted).toContain('"foo": "bar"');
@@ -145,14 +145,14 @@ describe('formatError', () => {
 
   it('should format error with stack trace in verbose mode', () => {
     const error = new ClientError('test error');
-    const formatted = formatError(error, true);
+    const formatted = formatHumanError(error, true);
     expect(formatted).toContain('Error: test error');
     expect(formatted).toContain('Stack trace:');
     expect(formatted).toContain('ClientError');
   });
 
   it('should format non-McpError values', () => {
-    const formatted = formatError('simple string', false);
+    const formatted = formatHumanError('simple string', false);
     expect(formatted).toBe('Error: simple string');
   });
 });
