@@ -63,12 +63,14 @@ Note that `mcpc` does not use LLMs on its own; that's a job for the higher layer
   - [Authorization](#authorization)
   - [Session lifecycle](#session-lifecycle)
   - [Feature support](#feature-support)
+  - [Server instructions](#server-instructions)
   - [Tools](#tools)
   - [Prompts](#prompts)
   - [Resources](#resources)
   - [List change notifications](#list-change-notifications)
   - [Server logs](#server-logs)
   - [Pagination](#pagination)
+  - [Ping](#ping)
 - [Security](#security)
   - [Credential protection](#credential-protection)
   - [Network security](#network-security)
@@ -136,16 +138,16 @@ Targets:
   <config-entry>          Entry in MCP config file specified by --config (e.g. "fs")
   <server-url>            Remote MCP server URL (e.g. "mcp.apify.com")
  
-General commands:
-  help                    Show server info, instructions, and capabilities
-  shell                   Open interactive shell to run MCP commands)
+Management commands (without <target>):
   login                   Create OAuth profile with credentials to access remote server
   logout                  Remove OAuth profile for remote server
   session @<session>      Connect to server and create named persistent session
   restart @<session>      Kill and restart a session  
   close @<session>        Close a session
   
-MCP commands: 
+MCP commands (<target> provided): 
+  help                    Show server info ("help" can be ommitted)                    
+  shell                   Open interactive shell
   tools-list
   tools-get <tool-name>  
   tools-call <tool-name> [<args-json> | arg1:=val1 arg2:=val2 ...]
@@ -157,45 +159,71 @@ MCP commands:
   resources-subscribe <uri>
   resources-unsubscribe <uri>
   resources-templates-list
-  logging-set-level <level>  
+  logging-set-level <level>
+  ping
 ```
 
-### General commands
+### Management commands
 
-Basic operations not related to any specific MCP server.
+When `<target>` is missing, `mcpc` provides general management commands.
 
 ```bash
-# List all sessions and OAuth profiles (supports also JSON format)
+# List all sessions and OAuth profiles (also in JSON mode)
 mcpc
 mcpc --json
 
-# Show help
+# Show command help or version
 mcpc --help
-
-# Show command version
 mcpc --version
 
 # Clean expired sessions and old log files
 mcpc --clean
 ```
 
-See also [OAuth profiles](#oauth-profiles) and [Cleanup](#cleanup) commands.
+For additional management commands, see [OAuth profiles](#oauth-profiles) and [Cleanup](#cleanup).
 
 ### MCP commands
 
-To interact with an MCP server, you need to specify `<target>`, which can be one of (in this order of precedence):
-- **Named entry** in a config file when used with `--config` (e.g. `filesystem`) - see [Configuration](#configuration) for details.
+To connecto to MCP server you need to specify `<target>`, which can be one of (in this order of precedence):
+- **Entry in a config file** (e.g. `--config .vscode/mcp.json filesystem`) - see [Config file](#mcp-server-config-file)
 - **Remote MCP server URL** (e.g. `https://mcp.apify.com`)
-- **Named session** prefixed with `@` (e.g. `@apify`) - see [Sessions](#sessions)
+- **Named session** (e.g. `@apify`) - see [Sessions](#sessions)
 
-`mcpc` automatically selects the transport protocol based on the server (stdio or Streamable HTTP).
+`mcpc` automatically selects the transport protocol based on the server (stdio or Streamable HTTP),
+connects to the server, and enables interaction with it. 
 
-One-shot commands are useful for simple stateless interaction with MCP server.
+```bash
+# Entry in config file / one-shot command
+mcpc --config .vscode/mcp.json filesystem 
+mcpc --config .vscode/mcp.json filesystem tools-list
+mcpc --config .vscode/mcp.json filesystem tools-call --args key:=value
 
+# Remote MCP server / one-shot command
+mcpc mcp.apify.com\?tools=docs
+mcpc mcp.apify.com\?tools=docs tools-list
+mcpc mcp.apify.com\?tools=docs tools-call search-apify-docs --args query="What are Actors?"
 
-#### Tool/prompt arguments
+# Entry in config file / session
+mcpc mcp.apify.com\?tools=docs session @test
+mcpc @test tools-list
 
-`mcpc` supports multiple ways to pass arguments to `tools-call` and `prompts-get` commands:
+....
+
+mcpc @test tools-list`
+* `mcpc @test tools-get <name>`
+* `mcpc @test tools-call <name> [--args key=val ...] [--args-file <file>]`
+* `mcpc @test resources-list`
+* `mcpc @test resources-read <uri>`
+* `mcpc @test prompts-list`
+* `mcpc @test prompts-get <name>`
+* `mcpc @test logging-set-level <lvl>`
+* `mcpc @test shell`
+```
+
+#### MCP command arguments
+
+The `tools-call` and `prompts-get` commands accept arguments that are passed to MCP server.
+THere are several ways to provide them:
 
 ```bash
 # Inline JSON object (most convenient)
@@ -641,7 +669,7 @@ When `--config` is provided, you can reference servers by name:
 
 ```bash
 # With config file, use server names directly
-mcpc --config .vscode/mcp.json filesystem resources-list
+mcpc --config .vscode/mcp.json filesystem tools-list
 
 # Create a named session from server in config
 mcpc --config .vscode/mcp.json filesystem session @fs
@@ -697,15 +725,13 @@ mcpc --clean=all           # Delete all sessions, profiles, logs, and sockets
 
 ### Transport
 
-| Transport | Status                                                       |
-|-----------|--------------------------------------------------------------|
-| **Streamable HTTP** | ✅ Fully supported                                            |
-| **stdio** | ✅ Fully supported via [config file](#mcp-server-config-file) |
-| **HTTP with SSE** | ❌ Deprecated, not supported                                  |
+- **stdio**: Direct bidirectional JSON-RPC communication over
+  standard input/output, fully supported via [config file](#mcp-server-config-file).
+- **Streamable HTTP**: Fully supported.
+- **HTTP with SSE** (deprecated): Legacy mode, not supported.
 
 ### Authorization
 
-All standard MCP authorization mechanisms are supported:
 - [Anonymous access](#anonymous-access)
 - [HTTP header authorization](#bearer-token-authentication)
 - [OAuth 2.1](#oauth-profiles)
@@ -722,20 +748,62 @@ The bridge process manages the full MCP session lifecycle:
 
 ### Feature support
 
-| Feature                                             | Status                           |
-|-----------------------------------------------------|----------------------------------|
-| 🔧 [**Tools**](#tools)                              | ✅ Supported                      |
-| 💬 [**Prompts**](#prompts)                          | ✅ Supported                      |
-| 📦 [**Resources**](#resources)                      | ✅ Supported                      |
-| 📝 [**Logging**](#server-logs)                      | ✅ Supported                      |
-| 🔔 [**Notifications**](#list-change-notifications)  | ✅ Supported                      |
-| 📄 [**Pagination**](#pagination)                    | ✅ Supported                      |
-| 🏓 [**Ping**](#session-failover)                    | ✅ Supported                      |
+| Feature                                            | Status                           |
+|----------------------------------------------------|----------------------------------|
+| 📖 [**Instructions**](#server-instructions)        | ✅ Supported                      |
+| 🔧 [**Tools**](#tools)                             | ✅ Supported                      |
+| 💬 [**Prompts**](#prompts)                         | ✅ Supported                      |
+| 📦 [**Resources**](#resources)                     | ✅ Supported                      |
+| 📝 [**Logging**](#server-logs)                     | ✅ Supported                      |
+| 🔔 [**Notifications**](#list-change-notifications) | ✅ Supported                      |
+| 📄 [**Pagination**](#pagination)                   | ✅ Supported                      |
+| 🏓 [**Ping**](#ping)                               | ✅ Supported                      |
 | ⏳ **Async tasks**                                  | 🚧 Planned                       |
-| 📁 **Roots**                                        | 🚧 Planned                       |
+| 📁 **Roots**                                       | 🚧 Planned                       |
 | ❓ **Elicitation**                                  | 🚧 Planned                       |
-| 🔤 **Completion**                                   | 🚧 Planned                       |
-| 🤖 **Sampling**                                     | ❌ Not applicable (no LLM access) |
+| 🔤 **Completion**                                  | 🚧 Planned                       |
+| 🤖 **Sampling**                                    | ❌ Not applicable (no LLM access) |
+
+### Server instructions
+
+MCP servers can provide instructions describing their capabilities and usage. These are displayed when you connect to a server or run the `help` command:
+
+```bash
+# Show server info, capabilities, and instructions (both commands behave the same)
+mcpc @apify
+mcpc @apify help
+
+# JSON mode
+mcpc @apify --json
+```
+
+In [JSON mode](#json-mode), the resulting object adheres
+to [InitializeResult](https://modelcontextprotocol.io/specification/latest/schema#initializeresult) schema,
+including `_meta` field to provide additional server metadata.
+
+```json
+{
+  "_meta": {
+    "sessionName": "@apify",
+    "profileName": "default",
+    "server": {
+      "url": "https://mcp.apify.com"
+    }
+  },
+  "protocolVersion": "2025-06-18",
+  "capabilities": {
+    "logging": {},
+    "prompts": {},
+    "resources": {},
+    "tools": { "listChanged": true }
+  },
+  "serverInfo": {
+    "name": "apify-mcp-server",
+    "version": "1.0.0"
+  },
+  "instructions": "Apify is the largest marketplace of tools for web scraping..."
+}
+```
 
 ### Tools
 
@@ -832,6 +900,17 @@ MCP servers may return paginated results for list operations
 (`tools-list`, `resources-list`, `prompts-list`, `resources-templates-list`).
 `mcpc` handles this transparently by automatically fetching all pages using the `nextCursor`
 token - you always get the complete list without manual iteration.
+
+### Ping
+
+Sessions automatically send periodic pings to keep the [connection alive](#session-failover) and detect failures early.
+You can send ping manually to check if a server connection is alive:
+
+```bash
+# Ping a session and measure round-trip time
+mcpc @apify ping
+```
+
 
 ## Security
 
