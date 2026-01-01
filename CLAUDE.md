@@ -68,7 +68,7 @@ mcpc --json mcp.apify.com tools-list
 
 # Create a persistent session (or reconnect if it exists but bridge is dead)
 mcpc mcp.apify.com session @test
-mcpc @test tools-call search-actors --args query="web crawler"
+mcpc @test tools-call search-actors query:="web crawler"
 mcpc @test shell
 ```
 
@@ -283,24 +283,29 @@ Implements [MCP security best practices](https://modelcontextprotocol.io/specifi
 
 **Argument Passing:**
 
-Tools and prompts accept arguments via `--args` flag in three formats:
+Tools and prompts accept arguments as positional parameters after the tool/prompt name:
 
-1. **Inline JSON** (recommended for complex objects):
+1. **Key:=value pairs** (auto-parsed: tries JSON, falls back to string):
    ```bash
-   mcpc @apify tools-call search --args '{"query":"hello","limit":10}'
+   mcpc @apify tools-call search query:=hello limit:=10 enabled:=true
+   mcpc @apify tools-call search config:='{"key":"value"}' items:='[1,2,3]'
    ```
 
-2. **Key=value pairs** (for simple strings):
+2. **Inline JSON** (if first arg starts with `{` or `[`):
    ```bash
-   mcpc @apify tools-call search --args query=hello limit=world
+   mcpc @apify tools-call search '{"query":"hello","limit":10}'
    ```
 
-3. **Key:=json pairs** (for typed values):
+3. **Stdin** (when no positional args and input is piped):
    ```bash
-   mcpc @apify tools-call search --args query="hello" limit:=10 enabled:=true
+   echo '{"query":"hello"}' | mcpc @apify tools-call search
    ```
 
-Detection logic: If first argument starts with `{` or `[`, it's parsed as inline JSON. Otherwise, key=value/key:=json pairs are parsed.
+Auto-parsing rules: Values are parsed as JSON if valid, otherwise treated as string.
+- `count:=10` → number `10`
+- `enabled:=true` → boolean `true`
+- `query:=hello` → string `"hello"` (not valid JSON)
+- `id:='"123"'` → string `"123"` (JSON string literal)
 
 ## Configuration Format
 
@@ -548,7 +553,7 @@ Bridge logs location: `~/.mcpc/logs/bridge-<session>.log`
 ### ✅ Completed
 - **CLI Structure**: Complete command parsing and routing with Commander.js
 - **Output Formatting**: Human-readable (tables, colors) and JSON modes
-- **Argument Parsing**: Inline JSON, key=value, and key:=json formats, `--args-file` support
+- **Argument Parsing**: Positional args with key:=value (auto-parsed), inline JSON, and stdin support
 - **Core MCP Client**: Wrapper around official SDK with error handling
 - **Transport Layer**: HTTP and stdio transport creation and management
 - **Error Handling**: Typed errors with appropriate exit codes

@@ -109,7 +109,7 @@ mcpc mcp.apify.com tools-list --json
 
 # Create and use persistent MCP session
 mcpc mcp.apify.com session @test
-mcpc @test tools-call search-actors --args keywords="web crawler"
+mcpc @test tools-call search-actors keywords:="web crawler"
 mcpc @test shell
 
 # Interact with a local MCP server package (stdio) referenced from config file
@@ -200,55 +200,52 @@ Examples of sending MCP commands to various targets:
 
 ```bash
 # Server from config file (stdio)
-mcpc --config .vscode/mcp.json fileSystem 
+mcpc --config .vscode/mcp.json fileSystem
 mcpc --config .vscode/mcp.json fileSystem tools-list
-mcpc --config .vscode/mcp.json fileSystem tools-call --args key:=value
-mcpc --config .vscode/mcp.json fileSystem tools-call list_directory --args path="/"
+mcpc --config .vscode/mcp.json fileSystem tools-call list_directory path:=/
 
 # Remote server (Streamable HTTP)
 mcpc mcp.apify.com\?tools=docs
 mcpc mcp.apify.com\?tools=docs tools-list
-mcpc mcp.apify.com\?tools=docs tools-call search-apify-docs --args query="What are Actors?"
+mcpc mcp.apify.com\?tools=docs tools-call search-apify-docs query:="What are Actors?"
 
 # Session
 mcpc mcp.apify.com\?tools=docs session @apify
 mcpc @apify tools-list
-mcpc @apify tools-call search-apify-docs --args query="What are Actors?"
+mcpc @apify tools-call search-apify-docs query:="What are Actors?"
 ```
 
 See [MCP feature support](#mcp-feature-support) for details about all supported MCP features and commands.
 
 #### Command arguments
 
-The `tools-call` and `prompts-get` commands accept arguments to pass to the MCP server:
+The `tools-call` and `prompts-get` commands accept arguments as positional parameters after the tool/prompt name:
 
 ```bash
-# Inline JSON object (most convenient)
+# Key:=value pairs (auto-parsed: tries JSON, falls back to string)
+mcpc <target> tools-call <tool-name> query:=hello count:=10 enabled:=true
+mcpc <target> tools-call <tool-name> config:='{"key":"value"}' items:='[1,2,3]'
+
+# Force string type with JSON quotes
+mcpc <target> tools-call <tool-name> id:='"123"' flag:='"true"'
+
+# Inline JSON object (if first arg starts with { or [)
 mcpc <target> tools-call <tool-name> '{"query":"hello","count":10}'
 
-# String values (default) - use = for strings
-mcpc <target> tools-call --args name=value query="hello world"
-
-# JSON literals - use := for JSON types
-mcpc <target> tools-call --args count:=123 enabled:=true value:=null
-mcpc <target> tools-call --args config:='{"key":"value"}' items:='[1,2,3]'
-
-# Mixed strings and JSON
-mcpc <target> tools-call --args query="search term" limit:=10 verbose:=true
-
-# Load all arguments from JSON file
-mcpc <target> tools-call --args-file tool-arguments.json
-
-# Read from stdin (automatic when piped, no flag needed)
-echo '{"query":"hello","count":10}' | mcpc @server tools-call my-tool
+# Read from stdin (automatic when no positional args and input is piped)
+echo '{"query":"hello","count":10}' | mcpc <target> tools-call <tool-name>
+cat args.json | mcpc <target> tools-call <tool-name>
 ```
 
 **Rules:**
-- Use only one method: `--args` (inline JSON or key=value pairs), `--args-file`, or stdin (piped input)
-- Inline JSON: If first argument starts with `{` or `[`, it's parsed as JSON object/array
-- Key=value pairs: After `--args`, all `key=value` or `key:=json` pairs are consumed until next flag
-- `=` assigns as string, `:=` parses as JSON
-- Stdin is automatically detected when input is piped (not interactive terminal)
+- All arguments use `:=` syntax: `key:=value`
+- Values are auto-parsed: valid JSON becomes that type, otherwise treated as string
+  - `count:=10` → number `10`
+  - `enabled:=true` → boolean `true`
+  - `query:=hello` → string `"hello"` (not valid JSON, so string)
+  - `id:='"123"'` → string `"123"` (JSON string literal)
+- Inline JSON: If first argument starts with `{` or `[`, it's parsed as a JSON object/array
+- Stdin: When no positional args are provided and input is piped, reads JSON from stdin
 
 ### JSON mode
 
@@ -512,7 +509,7 @@ will not break over time.
 **Piping between sessions:**
 
 ```bash
-mcpc --json @apify tools-call search-actors --args query="tiktok scraper" \
+mcpc --json @apify tools-call search-actors query:="tiktok scraper" \
   | jq '.data.results[0]' \
   | mcpc @playwright tools-call run-browser
 ```
@@ -532,7 +529,7 @@ mcpc --json @apify tools-get search-actors > search-actors-schema.json
 mcpc @apify tools-call search-actors \
   --schema search-actors-schema.json \
   --schema-mode strict \
-  --args keywords="tiktok scraper"
+  keywords:="tiktok scraper"
 ```
 
 The `--schema-mode <mode>` parameter determines how `mcpc` validates the schema:
@@ -801,13 +798,13 @@ mcpc @apify tools-list
 mcpc @apify tools-get search-actors
 
 # Call a tool with arguments
-mcpc @apify tools-call search-actors --args query="web scraper"
+mcpc @apify tools-call search-actors query:="web scraper"
 
 # Pass complex JSON arguments
-mcpc @apify tools-call create-task --args '{"name": "my-task", "options": {"memory": 1024}}'
+mcpc @apify tools-call create-task '{"name": "my-task", "options": {"memory": 1024}}'
 
-# Load arguments from file
-mcpc @apify tools-call bulk-import --args-file data.json
+# Load arguments from stdin
+cat data.json | mcpc @apify tools-call bulk-import
 ```
 
 #### Prompts
@@ -819,7 +816,7 @@ List and retrieve server-defined prompt templates:
 mcpc @apify prompts-list
 
 # Get a prompt with arguments
-mcpc @apify prompts-get analyze-website --args url="https://example.com"
+mcpc @apify prompts-get analyze-website url:=https://example.com
 ```
 
 <!-- TODO: Add example of prompt templates -->
