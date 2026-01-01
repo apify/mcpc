@@ -531,7 +531,7 @@ Make no harm!
 
 #### Claude Code skill
 
-For [Claude Code](https://claude.ai/code), install our skill for optimized mcpc usage:
+Install [Claude Skill](./docs/claude-skill/README.md) for optimized `mcpc` usage:
 
 ```bash
 mkdir -p ~/.claude/skills/mcpc && cp claude-skill/SKILL.md ~/.claude/skills/mcpc/

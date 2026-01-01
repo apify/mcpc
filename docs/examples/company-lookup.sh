@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Example auto-generated "code mode" script by Claude Code + Opus 4.5
+# Example AI-generated "code mode" script by Claude Code + Opus 4.5
 # Company Lookup Script using mcpc + Apify RAG Web Browser
 # Usage: ./company-lookup.sh "Company Name"
 

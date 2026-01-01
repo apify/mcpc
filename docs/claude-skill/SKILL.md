@@ -22,7 +22,7 @@ mcpc @<session>
 # Tools
 mcpc <target> tools-list
 mcpc <target> tools-get <tool-name>
-mcpc <target> tools-call <tool-name> --args '{"key":"value"}'
+mcpc <target> tools-call <tool-name> key:=value key2:="string value"
 
 # Resources
 mcpc <target> resources-list
@@ -30,10 +30,10 @@ mcpc <target> resources-read <uri>
 
 # Prompts
 mcpc <target> prompts-list
-mcpc <target> prompts-get <prompt-name> --args key=value
+mcpc <target> prompts-get <prompt-name> arg1:=value1
 
 # Sessions (persistent connections)
-mcpc <server> session @<name>
+mcpc <server> connect @<name>
 mcpc @<name> <command>
 mcpc @<name> close
 
@@ -44,34 +44,32 @@ mcpc <server> logout
 
 ## Target types
 
-- `mcp.example.com` - Direct HTTP connection to remote server
+- `mcp.example.com` - Direct HTTPS connection to remote server
+- `localhost:8080` or `127.0.0.1:8080` - Local HTTP server (http:// is default for localhost)
 - `@session-name` - Named persistent session (faster, maintains state)
 - `config-entry` - Entry from config file (with `--config`)
 
 ## Passing arguments
 
-**Inline JSON** (recommended for complex data):
-```bash
-mcpc @s tools-call search --args '{"query":"hello","limit":10}'
-```
+Arguments use `key:=value` syntax. Values are auto-parsed as JSON when valid:
 
-**Key=value pairs** (strings):
 ```bash
-mcpc @s tools-call search --args query="hello world" filter=active
-```
+# String values
+mcpc @s tools-call search query:="hello world"
 
-**Key:=json pairs** (typed values):
-```bash
-mcpc @s tools-call search --args query="hello" limit:=10 enabled:=true
-```
+# Numbers, booleans, null (auto-parsed as JSON)
+mcpc @s tools-call search query:="hello" limit:=10 enabled:=true
 
-**From file**:
-```bash
-mcpc @s tools-call search --args-file params.json
-```
+# Complex JSON values
+mcpc @s tools-call search config:='{"nested":"value"}' items:='[1,2,3]'
 
-**From stdin** (auto-detected when piped):
-```bash
+# Force string type with JSON quotes
+mcpc @s tools-call search id:='"123"'
+
+# Inline JSON object (if first arg starts with { or [)
+mcpc @s tools-call search '{"query":"hello","limit":10}'
+
+# From stdin (auto-detected when piped)
 echo '{"query":"hello"}' | mcpc @s tools-call search
 ```
 
@@ -84,7 +82,7 @@ Always use `--json` flag for machine-readable output:
 mcpc --json @apify tools-list
 
 # Call tool and parse result with jq
-mcpc --json @apify tools-call search --args query="test" | jq '.content[0].text'
+mcpc --json @apify tools-call search query:="test" | jq '.content[0].text'
 
 # Chain commands
 mcpc --json @server1 tools-call get-data | mcpc @server2 tools-call process
@@ -96,11 +94,14 @@ Create sessions for repeated interactions:
 
 ```bash
 # Create session (or reconnect if exists)
-mcpc mcp.apify.com session @apify
+mcpc mcp.apify.com connect @apify
 
 # Use session (faster - no reconnection overhead)
 mcpc @apify tools-list
-mcpc @apify tools-call search --args query="test"
+mcpc @apify tools-call search query:="test"
+
+# Restart session (useful after server updates)
+mcpc @apify restart
 
 # Close when done
 mcpc @apify close
@@ -111,13 +112,27 @@ mcpc @apify close
 **OAuth (interactive login)**:
 ```bash
 mcpc mcp.apify.com login
-mcpc mcp.apify.com session @apify
+mcpc mcp.apify.com connect @apify
 ```
 
 **Bearer token**:
 ```bash
 mcpc -H "Authorization: Bearer $TOKEN" mcp.apify.com tools-list
-mcpc -H "Authorization: Bearer $TOKEN" mcp.apify.com session @myserver
+mcpc -H "Authorization: Bearer $TOKEN" mcp.apify.com connect @myserver
+```
+
+## Proxy server for AI isolation
+
+Create a proxy MCP server that hides authentication tokens:
+
+```bash
+# Human creates authenticated session with proxy
+mcpc mcp.apify.com connect @ai-proxy --proxy 8080
+
+# AI agent connects to proxy (no access to original tokens)
+# Note: localhost defaults to http://
+mcpc localhost:8080 tools-list
+mcpc 127.0.0.1:8080 connect @sandboxed
 ```
 
 ## Common patterns
@@ -130,7 +145,7 @@ mcpc @s tools-get tool-name
 
 **Call tool and extract text result**:
 ```bash
-mcpc --json @s tools-call my-tool --args '{}' | jq -r '.content[0].text'
+mcpc --json @s tools-call my-tool | jq -r '.content[0].text'
 ```
 
 **Read resource content**:
@@ -155,5 +170,5 @@ mcpc --config .vscode/mcp.json filesystem resources-list
 
 ```bash
 # Verbose output shows protocol details
-mcpc --verbose @s tools-call my-tool --args '{}'
+mcpc --verbose @s tools-call my-tool
 ```

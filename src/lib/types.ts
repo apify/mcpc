@@ -110,7 +110,7 @@ export interface SessionData {
     version: string;
   };
   status?: SessionStatus; // Session health status (default: active)
-  proxyConfig?: ProxyConfig; // Proxy server configuration (if enabled)
+  proxy?: ProxyConfig; // Proxy server configuration (if enabled)
   // Timestamps (ISO 8601 strings)
   createdAt: string; // When the session was created
   lastSeenAt?: string; // Last successful server response (ping, command, etc.)

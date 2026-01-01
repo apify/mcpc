@@ -511,8 +511,8 @@ export async function restartSession(
       bridgeOptions.profileName = session.profileName;
     }
 
-    if (session.proxyConfig) {
-      bridgeOptions.proxyConfig = session.proxyConfig;
+    if (session.proxy) {
+      bridgeOptions.proxyConfig = session.proxy;
     }
 
     const { pid } = await startBridge(bridgeOptions);

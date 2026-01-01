@@ -255,8 +255,8 @@ export async function restartBridge(sessionName: string): Promise<StartBridgeRes
   if (session.profileName) {
     bridgeOptions.profileName = session.profileName;
   }
-  if (session.proxyConfig) {
-    bridgeOptions.proxyConfig = session.proxyConfig;
+  if (session.proxy) {
+    bridgeOptions.proxyConfig = session.proxy;
   }
 
   const { pid } = await startBridge(bridgeOptions);

@@ -681,8 +681,8 @@ export function formatSessionLine(session: SessionData): string {
 
   // Add proxy info separately (not dimmed, for visibility)
   let proxyStr = '';
-  if (session.proxyConfig) {
-    proxyStr = ' ' + chalk.green('[proxy: ') + chalk.greenBright(`${session.proxyConfig.host}:${session.proxyConfig.port}`) + chalk.green(']');
+  if (session.proxy) {
+    proxyStr = ' ' + chalk.green('[proxy: ') + chalk.greenBright(`${session.proxy.host}:${session.proxy.port}`) + chalk.green(']');
   }
 
   return `${nameStr} → ${targetStr} ${infoStr}${proxyStr}`;

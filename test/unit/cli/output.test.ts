@@ -947,7 +947,7 @@ describe('formatSessionLine', () => {
     const session: SessionData = {
       name: '@proxy-test',
       server: { url: 'https://mcp.example.com' },
-      proxyConfig: { host: '127.0.0.1', port: 8080 },
+      proxy: { host: '127.0.0.1', port: 8080 },
       createdAt: '2025-01-01T00:00:00Z',
     };
 
@@ -962,7 +962,7 @@ describe('formatSessionLine', () => {
     const session: SessionData = {
       name: '@proxy-custom',
       server: { url: 'https://mcp.example.com' },
-      proxyConfig: { host: '0.0.0.0', port: 3000 },
+      proxy: { host: '0.0.0.0', port: 3000 },
       createdAt: '2025-01-01T00:00:00Z',
     };
 
