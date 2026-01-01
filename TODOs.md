@@ -7,18 +7,13 @@
 
 - Pass `--timeout` to both connection and command timeout (if MCP supports this). Ensure we obey both --timeout and timeout from config.
 
-- `--schema-mode` - we need to check the outputSchema more. In strict mode, any even tiny outputSchema change should fail (incl. description).
-  in `compatible`, we can ignore changes in descriptions, but we need to ensure the new outputSchema is superset of the expected outputSchema,
-  i.e. all required output fields are still required. Optional fields can disappear, that's fine. New fields can appear to, and it's okay.
-  Change of optional field to required field is also fine.
-  Basically only changes to expected outputSchema fields that could negatively affect the caller, in what they expect to receive, should be 
-  flagged as errors. Other changes are just warnings.
-
-
 ## MCP features
 
-- Add `--proxy [HOST:]PORT` feature to `connect` command to enable MCP proxy:
-  - `--proxy-bearer-token X` for proxy to require auth token for better security
+- Add `--proxy [HOST:]PORT` feature to `connect` command, to make bridge launch a new MCP server, which will map commands 
+  and request 1:1 to the remote or local MCP server, but without having access to original authentication tokens. It will be like a layer of 
+  security.
+- Once this is done, we could add these enhancements"
+  - `--proxy-bearer-token X` for proxy to require auth token for more security
   - `--proxy-capabilities tools:TOOL_NAME,TOOL_NAME2,...,prompts[:...],...` to limit access to selected MCP features and tools
     (what if tools have ":" or "," in their names?)
     In theory, we could add limit of capabilities to normal sessions, but the LLM could still break out of it, so what's the point.

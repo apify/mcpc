@@ -205,18 +205,15 @@ function createProgram(): Command {
       `${rainbow('Universal')} command-line client for the Model Context Protocol (MCP).`
     )
     .usage('[options] <target> [command]')
-    .version(packageJson.version, '-v, --version', 'Output the version number')
     .helpOption('-h, --help', 'Display general help')
     .option('-j, --json', 'Output in JSON format for scripting')
-    .option('--verbose', 'Enable verbose logging')
     .option('-c, --config <file>', 'Path to MCP config JSON file (e.g. ".vscode/mcp.json")')
-    .option('-H, --header <header>', 'Add HTTP header (can be repeated)')
-    .option('--profile <name>', 'Authentication profile to use (default: "default")')
+    .option('-H, --header <header>', 'HTTP header for remote MCP server (can be repeated)')
+    .version(packageJson.version, '-v, --version', 'Output the version number')
+    .option('--verbose', 'Enable debug logging')
+    .option('--profile <name>', 'OAuth authentication profile to use (default: "default")')
     .option('--schema <file>', 'Validate tool/prompt schema against expected schema')
-    .option(
-      '--schema-mode <mode>',
-      'Schema validation mode: strict, compatible (default), ignore'
-    )
+    .option('--schema-mode <mode>', 'Schema validation mode: strict, compatible (default), ignore')
     .option('--timeout <seconds>', 'Request timeout in seconds (default: 300)')
     .option('--clean[=types]', 'Clean up mcpc data (types: sessions, logs, profiles, all)');
 

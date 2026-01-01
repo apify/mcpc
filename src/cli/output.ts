@@ -31,19 +31,24 @@ function hslToHex(h: number, s: number, l: number): string {
 }
 
 /**
- * Apply subtle rainbow gradient to a string (red to magenta)
+ * Apply a soft, fog-filtered rainbow gradient to a string
+ * Inspired by SF's coastal aesthetic: Golden Gate Bridge emerging from mist,
+ * pride flags through ocean fog, prismatic light against grays and blues
  */
 export function rainbow(text: string): string {
   const len = text.length;
   if (len === 0) return text;
 
-  // Interpolate hue from 0 (red) to 300 (magenta)
-  // Use moderate saturation (70%) and lightness (55%) for subtlety
+  // SF rainbow: softened like a prism seen through coastal haze
+  // Starts with Golden Gate Bridge vermillion (hue ~12°)
+  // Lower saturation (45%) for fog-filtered look
+  // Higher lightness (62%) for pastel softness
   return text
     .split('')
     .map((char, i) => {
-      const hue = (i / (len - 1)) * 300; // 0 to 300
-      const hex = hslToHex(hue, 70, 55);
+      // Start at Golden Gate orange-vermillion, flow through to soft violet
+      const hue = 12 + (i / (len - 1)) * 270;
+      const hex = hslToHex(hue, 45, 62);
       return chalk.hex(hex)(char);
     })
     .join('');
