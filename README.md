@@ -685,42 +685,76 @@ mcpc --clean=sessions,logs # Clean multiple resource types
 mcpc --clean=all           # Delete all sessions, profiles, logs, and sockets
 ```
 
-## MCP protocol notes
+## MCP protocol support
 
-TODO: explain in detail how MCP concepts work in mcpc
+`mcpc` relies on the official [MCP SDK for TypeScript](https://github.com/modelcontextprotocol/typescript-sdk) for
+protocol implementation, and provides strong support for most [protocol features](https://modelcontextprotocol.io/specification/latest). 
 
-**Protocol initialization:**
+### Transport
+- **stdio**: Direct bidirectional JSON-RPC communication over
+  standard input/output, fully supported via [`--config` option](#mcp-server-config-file).
+- **Streamable HTTP**: Fully supported.
+- **HTTP with SSE** (deprecated): Legacy mode, not supported.
+
+### Authorization
+- `mcpc` supports all standard MCP [authorization](https://modelcontextprotocol.io/specification/latest/basic/authorization) mechanisms:
+  - [Anonymous access](#anonymous-access)
+  - [HTTP header authorization](#bearer-token-authentication)
+  - [OAuth 2.1](#oauth-profiles)
+
+### Session lifecycle
 - `mcpc` follows the MCP initialization handshake: sends `initialize` request with protocol version and capabilities, receives server capabilities and instructions, then sends `initialized` notification
 - Protocol version negotiation: client proposes latest supported version (currently `2025-11-25`), server responds with version to use
-
-**Transport handling:**
-- **Streamable HTTP**: `mcpc` supports only the Streamable HTTP transport (the current standard). The deprecated HTTP with SSE transport is not supported. The bridge manages persistent HTTP connections with bidirectional streaming for server-to-client communication, with automatic reconnection using exponential backoff (1s → 30s max)
-  - Includes `MCP-Protocol-Version` header on all HTTP requests (per MCP spec)
+- **Instructions**: Fetches and stores MCP server-provided `instructions`
+- The bridge process manages persistent HTTP connections with bidirectional streaming for server-to-client communication:
+  - Includes `MCP-Protocol-Version` header on all HTTP requests
   - Handles `MCP-Session-Id` for stateful server sessions
-- During reconnection, new requests are queued (fails after 3 minutes of disconnection)
-- **Stdio**: Direct bidirectional JSON-RPC communication over standard input/output
+  - Transparently handles failovers on network disconnection
 
-**Protocol features:**
-- `mcpc` supports all MCP primitives in both Streamable HTTP and stdio transports:
-  - **Instructions**: Fetches and stores MCP server-provided `instructions`
-  - **Tools**: Executable functions with JSON Schema-validated arguments. 
-  - **Resources**: Data sources identified by URIs (e.g., `file:///path/to/file`, `https://example.com/data`), with optional subscriptions for change notifications
-  - **Prompts**: Reusable message templates with customizable arguments
-  - **Completion**: Provides access to Completion API for tools and resources
-  - **Asynchronous tasks**: Not implemented yet
-  - **Roots**: Not implemented yet
-- Supports server logging settings (`logging/setLevel`) and messages (`notifications/message`), and prints them to stderr or stdout based on verbosity level.
-- Handles server notifications: progress tracking, logging, and change notifications (`notifications/tools/list_changed`, `notifications/resources/list_changed`, `notifications/prompts/list_changed`)
-- Request multiplexing: supports up to 10 concurrent requests, queues up to 100 additional requests
-- Pagination: List operations automatically fetch all pages when the server returns paginated results
-- Pings: `mcpc` periodically issues the MCP `ping` request to keep the connection alive
-- Sampling is not supported as `mcpc` has no access to an LLM
+### MCP feature support
 
+- [**Tools**](#tools): Fully supported
+  - **Asynchronous tasks**: Not implemented (planned)
+- [**Prompts**](#prompts): Fully supported
+- [**Resources**](#resources): Fully supported, including subscribe/unsubscribe
+- **Sampling**: Not supported and likely never will be, because `mcpc` has no direct access to an LLM.
+- **Roots**: Not implemented (planned)
+- **Elicitation**: Not implemented (planned)
+- **Utilities**
+  - **Completion**: Not implemented (planned)
+  - [**Logging**](#server-logs): Supported
+  - [**List change notifications**](#list-change-notifications): Supported
+  - [**Pagination**](#pagination): Supported - all list operations automatically fetch all pages
+  - **Pings**: Supported - `mcpc` periodically sends the MCP `ping` request to keep the [session alive](#session-lifecycle).
+
+### Initialization
+
+TODO: write info how to get server info and instructions
+
+### Tools
+
+TODO: Explain how to use tools with mcpc, show examples of passing args
+
+### Prompts
+
+TODO: Explain how to use prompts with mcpc, show examples of passing args
+
+### Resources
+
+Data sources identified by URIs (e.g., `file:///path/to/file`, `https://example.com/data`), with optional subscriptions for
+change notifications
+
+TODO: Explain how to use prompts with mcpc, show examples of passing args
+
+### List change notifications
+
+(`notifications/(tools|resources|prompts)/list_changed`): Supported, printed
+to shell and/or saved to session record.
 
 ### Server logs
 
-TODO: Move this to MPC features section
-
+Supports server logging settings (`logging/setLevel`) and messages (`notifications/message`),
+and prints them to log or stderr, subject to [verbosity level](#verbose-mode).
 
 MCP servers can be instructed to adjust their [logging level](https://modelcontextprotocol.io/specification/latest/server/utilities/logging)
 using the `logging/setLevel` command:
@@ -743,8 +777,12 @@ mcpc @apify logging-set-level error
 - `alert` - Action must be taken immediately
 - `emergency` - System is unusable
 
-**Note:** This sets the logging level on the **server side**. The actual log output depends on the server's implementation.
+**Note:** This sets the logging level on the **server side**.
+The actual log output depends on the server's implementation.
 
+### Pagination
+
+...
 
 ## Security
 
