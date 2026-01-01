@@ -25,31 +25,31 @@ describe('parseShellCommand', () => {
   });
 
   it('parses command with multiple arguments', () => {
-    expect(parseShellCommand('tools-call search --args query=hello')).toEqual({
+    expect(parseShellCommand('tools-call search --dummy query=hello')).toEqual({
       command: 'tools-call',
-      args: ['search', '--args', 'query=hello'],
+      args: ['search', '--dummy', 'query=hello'],
     });
   });
 
   it('handles double-quoted arguments', () => {
-    expect(parseShellCommand('tools-call search --args "hello world"')).toEqual({
+    expect(parseShellCommand('tools-call search --dummy "hello world"')).toEqual({
       command: 'tools-call',
-      args: ['search', '--args', 'hello world'],
+      args: ['search', '--dummy', 'hello world'],
     });
   });
 
   it('handles single-quoted arguments', () => {
-    expect(parseShellCommand("tools-call search --args 'hello world'")).toEqual({
+    expect(parseShellCommand("tools-call search --dummy 'hello world'")).toEqual({
       command: 'tools-call',
-      args: ['search', '--args', 'hello world'],
+      args: ['search', '--dummy', 'hello world'],
     });
   });
 
   it('handles JSON in quotes', () => {
-    expect(parseShellCommand('tools-call search --args \'{"query":"test"}\''))
+    expect(parseShellCommand('tools-call search --dummy \'{"query":"test"}\''))
       .toEqual({
         command: 'tools-call',
-        args: ['search', '--args', '{"query":"test"}'],
+        args: ['search', '--dummy', '{"query":"test"}'],
       });
   });
 
@@ -58,9 +58,9 @@ describe('parseShellCommand', () => {
   });
 
   it('handles multiple spaces between arguments', () => {
-    expect(parseShellCommand('tools-call   search   --args')).toEqual({
+    expect(parseShellCommand('tools-call   search   --dummy')).toEqual({
       command: 'tools-call',
-      args: ['search', '--args'],
+      args: ['search', '--dummy'],
     });
   });
 });

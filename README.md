@@ -118,39 +118,43 @@ mcpc --config ~/.vscode/mcp.json filesystem tools-list
 
 ## Usage
 
+<!-- TODO: generate this automatically from "mcpc --help" (skip "Documentation:" link and below) -->
+
 ```
 Usage: mcpc [options] <target> [command]
 
+Universal command-line client for the Model Context Protocol (MCP).
+
 Options:
-  -v, --version           Output the version number
-  -j, --json              Output in JSON format for scripting
-  -c, --config <file>     Path to MCP config JSON file (e.g. ".vscode/mcp.json")
-  -H, --header <header>   Add HTTP header (can be repeated)
-  --verbose               Enable verbose logging  
-  --profile <name>        Authentication profile to use (default: "default")
-  --schema <file>         Validate tool/prompt schema against expected schema
-  --schema-mode <mode>    Schema validation mode: strict, compatible (default), ignore
-  --timeout <seconds>     Request timeout in seconds (default: 300)
-  --clean[=types]         Clean up mcpc data (types: sessions, logs, profiles, all)
-  -h, --help              Display general help
+  -j, --json             Output in JSON format for scripting
+  -c, --config <file>    Path to MCP config JSON file (e.g. ".vscode/mcp.json")
+  -H, --header <header>  HTTP header for remote MCP server (can be repeated)
+  -v, --version          Output the version number
+  --verbose              Enable debug logging
+  --profile <name>       OAuth authentication profile to use (default: "default")
+  --schema <file>        Validate tool/prompt schema against expected schema
+  --schema-mode <mode>   Schema validation mode: strict, compatible (default), ignore
+  --timeout <seconds>    Request timeout in seconds (default: 300)
+  --clean[=types]        Clean up mcpc data (types: sessions, logs, profiles, all)
+  -h, --help             Display general help
 
 Targets:
   @<session>              Named persistent session (e.g. "@apify")
   <config-entry>          Entry in MCP config file specified by --config (e.g. "fs")
   <server-url>            Remote MCP server URL (e.g. "mcp.apify.com")
- 
-Management commands (without <target>):
+
+Management commands (<target> missing):
   login                   Create OAuth profile with credentials to access remote server
   logout                  Remove OAuth profile for remote server
   connect @<session>      Connect to server and create named persistent session
-  restart @<session>      Kill and restart a session  
+  restart @<session>      Kill and restart a session
   close @<session>        Close a session
-  
-MCP commands (<target> provided): 
-  help                    Show server info ("help" can be omitted)                    
+
+MCP commands (<target> provided):
+  help                    Show server info ("help" can be omitted)
   shell                   Open interactive shell
   tools-list
-  tools-get <tool-name>  
+  tools-get <tool-name>
   tools-call <tool-name> [<args-json> | arg1:=val1 arg2:=val2 ...]
   prompts-list
   prompts-get <prompt-name> [<args-json> | arg1:=val1 arg2:=val2 ...]

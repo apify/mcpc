@@ -148,12 +148,12 @@ function showShellHelp(): void {
   console.log(chalk.cyan('  MCP commands:'));
   console.log('    tools-list');
   console.log('    tools-get <name>');
-  console.log('    tools-call <name> [--args ...]');
+  console.log('    tools-call <name> [key:=value ...]');
   console.log('    resources-list');
   console.log('    resources-read <uri>');
   console.log('    resources-templates-list');
   console.log('    prompts-list');
-  console.log('    prompts-get <name> [--args ...]');
+  console.log('    prompts-get <name> [key:=value ...]');
   console.log('    logging-set-level <level>');
   console.log('    ping');
   console.log('');
@@ -221,18 +221,17 @@ async function executeCommand(ctx: ShellContext, line: string): Promise<void> {
       case 'tools-call': {
         if (args.length === 0) {
           console.log(chalk.red('Error: tools-call requires a tool name'));
-          console.log('Usage: tools-call <name> [--args ...]');
+          console.log('Usage: tools-call <name> [key:=value ...]');
           return;
         }
 
-        // Parse --args flag
+        // First arg is tool name, rest are positional arguments
         const toolName = args[0] as string;
-        const argsIndex = args.indexOf('--args');
-        const toolArgs = argsIndex !== -1 ? args.slice(argsIndex + 1) : undefined;
+        const toolArgs = args.slice(1);
 
         await tools.callTool(ctx.target, toolName, {
           ...options,
-          ...(toolArgs ? { args: toolArgs } : {}),
+          ...(toolArgs.length > 0 ? { args: toolArgs } : {}),
         });
         break;
       }
@@ -264,18 +263,17 @@ async function executeCommand(ctx: ShellContext, line: string): Promise<void> {
       case 'prompts-get': {
         if (args.length === 0) {
           console.log(chalk.red('Error: prompts-get requires a prompt name'));
-          console.log('Usage: prompts-get <name> [--args ...]');
+          console.log('Usage: prompts-get <name> [key:=value ...]');
           return;
         }
 
-        // Parse --args flag
+        // First arg is prompt name, rest are positional arguments
         const promptName = args[0] as string;
-        const argsIndex = args.indexOf('--args');
-        const promptArgs = argsIndex !== -1 ? args.slice(argsIndex + 1) : undefined;
+        const promptArgs = args.slice(1);
 
         await prompts.getPrompt(ctx.target, promptName, {
           ...options,
-          ...(promptArgs ? { args: promptArgs } : {}),
+          ...(promptArgs.length > 0 ? { args: promptArgs } : {}),
         });
         break;
       }
