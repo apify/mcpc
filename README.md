@@ -14,9 +14,9 @@ for better accuracy and lower token usage compared to traditional tool function 
 After all, UNIX-compatible shell script is THE most universal coding language, for people and LLMs alike.
 
 Note that `mcpc` does not invoke LLMs itself; that's the job of the higher layer.
+![mcpc screenshot](./docs/images/mcpc-screenshot.png)
 
-**Key features**
-
+**Key features:**
 - 🌎 **Highly compatible** - Works with any MCP server over Streamable HTTP or stdio.
 - 🔄 **Persistent sessions** - Keep multiple server connections alive simultaneously.
 - 🚀 **Zero setup** - Connect to remote servers instantly with just a URL.
@@ -52,6 +52,21 @@ Note that `mcpc` does not invoke LLMs itself; that's the job of the higher layer
 
 ```bash
 npm install -g @apify/mcpc
+```
+
+**Linux users:** `mcpc` uses the OS keychain for secure credential storage, which requires the [Libsecret](https://wiki.gnome.org/Projects/Libsecret) 
+library. Install it with:
+
+```bash
+# Debian/Ubuntu
+sudo apt-get update
+sudo apt-get install libsecret-1-0
+
+# Fedora/RHEL/CentOS
+sudo dnf install libsecret
+
+# Arch Linux
+sudo pacman -S libsecret
 ```
 
 ## Quickstart

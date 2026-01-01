@@ -366,6 +366,7 @@ Environment variable substitution supported: `${VAR_NAME}`
 - **Node.js:** ≥18.0.0 (for native `fetch` API)
 - **Bun:** ≥1.0.0 (alternative runtime)
 - **OS support:** macOS, Linux, Windows
+- **Linux dependency:** `libsecret` (for OS keychain access via `keytar`)
 
 ## Authentication Architecture
 

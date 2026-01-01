@@ -14,8 +14,10 @@
 
 ## Later
 
+- perf: make the libsecret dependency soft - only load it when using keychain, but skip
+  for auth-less (AI sandbox) use
 - ux: Be even more forgiving with `args:=x`, when we know from tools/prompt schema the text is compatible with `x` even if the exact type is not - 
-  just retype it dynamically to make it work.
+  just re-type it dynamically to make it work.
 - nit: Cooler OAuth flow finish web page with CSS animation, add Apify example there, show mcpc info. E.g. next step - check Apify rather than close
 - security: For auth profiles, fetch the detailed user info via http, save to profiles.json and show in 'mcpc', ensure the info is up-to-date
 - later: Add unique Session.id and Profile.id and use it for OS keychain keys, to truly enable using multiple independent mcpc profiles. Use cry
@@ -30,9 +32,10 @@
   next day they should use old saved auths and sessions.
   We could have some special dir for long-term testing...
 
-  
-When running "shell" command in shell, let's show some easter egg - we can rotate couple of funny messages,
-e.g. "Ha, good try!", "Shell in shell, lol", "Good luck with this", "Success-ish", etc.
+
+When I run "mcpc mcp.apify.com\?tools=docs tools-list" on new system, it fails even though it should work - the server is open and doesn't require OAuth. Add unit test for that, in isolated home dir to ensure we don't interfere
+with local auth profiles. Here's the error I got:
+
 
 
 # Questions
