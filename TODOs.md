@@ -3,8 +3,6 @@
 
 ## Next
 
-- Ensure we pass `--timeout` to both connection and command timeout (if MCP supports this). Ensure we obey both --timeout and timeout from config 
-  in the right precedence, as mentioned in README.
 
 ## MCP features
 
@@ -35,37 +33,17 @@
 
 ## E2E test scenarios
 
-- Add unit test the logTarget() doesn't leak serverConfig.headers
-- Test that "mcpc <remote-server> --json --header "X-Test: Blah" redacts the header
+- Test that "mcpc <remote-server> --json --header "X-Test: Blah" redacts the header in --verbose
 
-- Later
 - Test auth profiles work long-term and sessions too - basically when running some tests the
   next day they should use old saved auths and sessions.
   We could have some special dir for long-term testing...
 
-
-Now a big change.
-I want to get rid of:
---args ...
---args-file ...
-
-And replace it with:
-- `mcpc <target> tools-call <tool-name> [<args-json> | arg1:=val arg2:=json ...]`
-- `mcpc <target> tools-call <tool-name> < file.txt`
-
-We'll only support `arg1:=val` syntax, not `arg1=val`, to avoid conflict with `--clean=x`.
-All JSON parseable values will parsed as respective types, or treated as string if not number, boolean, ...
-Another option is to provide full JSON string as ` <args-json>`.
-And third option is to support stdin for piping args - the piped object must be JSON.
-
-This means a big rewrite of parsing logic, adding/updating unit and e2e tests. For now, keep the README and command help intact.
-
-
-
-
+  
 When running "shell" command in shell, let's show some easter egg - we can rotate couple of funny messages,
 e.g. "Ha, good try!", "Shell in shell, lol", "Good luck with this", "Success-ish", etc.
 
 
 # Questions
+
 mcpc mcp.apify.com shell --- do we also open session, how does it work? Let's mention this in readme.

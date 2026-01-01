@@ -862,16 +862,6 @@ mcpc @apify logging-set-level debug
 mcpc @apify logging-set-level error
 ```
 
-**Available log levels** (from most to least verbose):
-- `debug` - Detailed debugging information
-- `info` - General informational messages
-- `notice` - Normal but significant events
-- `warning` - Warning messages
-- `error` - Error messages
-- `critical` - Critical conditions
-- `alert` - Action must be taken immediately
-- `emergency` - System is unusable
-
 Note that this sets the logging level on the **server side**.
 The actual log output depends on the server's implementation.
 
@@ -879,19 +869,19 @@ The actual log output depends on the server's implementation.
 
 MCP servers may return paginated results for list operations
 (`tools-list`, `resources-list`, `prompts-list`, `resources-templates-list`).
-`mcpc` handles this transparently by automatically fetching all pages using the `nextCursor`
-token - you always get the complete list without manual iteration.
+`mcpc` handles this automatically and always fetches all available pages using the `nextCursor`
+token - you always get the complete list without manual iteration. Keep it simple.
 
 #### Ping
 
 Sessions automatically send periodic pings to keep the [connection alive](#session-failover) and detect failures early.
-You can also send a ping manually to check if a server connection is alive:
+Send a ping to check if a server connection is alive:
 
 ```bash
 # Ping a session and measure round-trip time
 mcpc @apify ping
+mcpc @apify ping --json
 ```
-
 
 ## Security
 

@@ -290,6 +290,23 @@ async function executeCommand(ctx: ShellContext, line: string): Promise<void> {
         break;
       }
 
+      case 'shell': {
+        // Easter egg: shell inside shell
+        const shellMessages = [
+          '🐚 Shell-ception! You\'re already in a shell.',
+          '🪆 It\'s shells all the way down...',
+          '🎭 Ha, nice try!',
+          '🔄 Yo dawg, I heard you like shells...',
+          '🌀 Recursion limit reached. Just kidding.',
+          '🐢 A shell inside a shell? How very turtles-all-the-way-down of you.',
+          '🎪 Welcome to shell² — same great shell, same great location!',
+          '🪞 *shell stares back at you*',
+        ];
+        const message = shellMessages[Math.floor(Math.random() * shellMessages.length)];
+        console.log(chalk.yellow(message));
+        break;
+      }
+
       default:
         console.log(chalk.red(`Unknown command: ${command}`));
         console.log(chalk.dim('Type "help" for available commands'));

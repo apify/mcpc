@@ -35,6 +35,12 @@ export interface McpClientOptions extends ClientOptions {
    * Logger to use for client operations
    */
   logger?: Logger;
+
+  /**
+   * Request timeout in milliseconds for MCP operations
+   * If not specified, uses SDK default (60 seconds)
+   */
+  requestTimeout?: number;
 }
 
 /**
@@ -55,9 +61,13 @@ export class McpClient implements IMcpClient {
   private negotiatedProtocolVersion?: string;
   private transport?: TransportWithTermination;
   private hasConnected = false;
+  private requestTimeout?: number;
 
   constructor(clientInfo: Implementation, options: McpClientOptions = {}) {
     this.logger = options.logger || createNoOpLogger();
+    if (options.requestTimeout !== undefined) {
+      this.requestTimeout = options.requestTimeout;
+    }
 
     this.client = new SDKClient(clientInfo, {
       capabilities: options.capabilities || {},
@@ -73,7 +83,14 @@ export class McpClient implements IMcpClient {
       }
       // Don't duplicate logging of errors on initial connection
       this.logger.log(this.hasConnected ? 'error' : 'debug', 'Client error:', error);
-    };;
+    };
+  }
+
+  /**
+   * Get request options with timeout if configured
+   */
+  private getRequestOptions(): { timeout?: number } | undefined {
+    return this.requestTimeout ? { timeout: this.requestTimeout } : undefined;
   }
 
   /**
@@ -188,7 +205,7 @@ export class McpClient implements IMcpClient {
   async ping(): Promise<void> {
     try {
       this.logger.debug('Sending ping...');
-      await this.client.ping();
+      await this.client.ping(this.getRequestOptions());
       this.logger.debug('Ping successful');
     } catch (error) {
       this.logger.error('Ping failed:', error);
@@ -202,7 +219,7 @@ export class McpClient implements IMcpClient {
   async listTools(cursor?: string): Promise<ListToolsResult> {
     try {
       this.logger.debug('Listing tools...', cursor ? { cursor } : {});
-      const result = await this.client.listTools({ cursor });
+      const result = await this.client.listTools({ cursor }, this.getRequestOptions());
       this.logger.debug(`Found ${result.tools.length} tools`);
       return result;
     } catch (error) {
@@ -219,10 +236,14 @@ export class McpClient implements IMcpClient {
   async callTool(name: string, args?: Record<string, unknown>): Promise<CallToolResult> {
     try {
       this.logger.debug(`Calling tool: ${name}`, args);
-      const result = (await this.client.callTool({
-        name,
-        arguments: args || {},
-      })) as CallToolResult;
+      const result = (await this.client.callTool(
+        {
+          name,
+          arguments: args || {},
+        },
+        undefined, // resultSchema - use default
+        this.getRequestOptions()
+      )) as CallToolResult;
       this.logger.debug(`Tool ${name} completed`);
       return result;
     } catch (error) {
@@ -239,7 +260,7 @@ export class McpClient implements IMcpClient {
   async listResources(cursor?: string): Promise<ListResourcesResult> {
     try {
       this.logger.debug('Listing resources...', cursor ? { cursor } : {});
-      const result = await this.client.listResources({ cursor });
+      const result = await this.client.listResources({ cursor }, this.getRequestOptions());
       this.logger.debug(`Found ${result.resources.length} resources`);
       return result;
     } catch (error) {
@@ -256,7 +277,7 @@ export class McpClient implements IMcpClient {
   async listResourceTemplates(cursor?: string): Promise<ListResourceTemplatesResult> {
     try {
       this.logger.debug('Listing resource templates...', cursor ? { cursor } : {});
-      const result = await this.client.listResourceTemplates({ cursor });
+      const result = await this.client.listResourceTemplates({ cursor }, this.getRequestOptions());
       this.logger.debug(`Found ${result.resourceTemplates.length} resource templates`);
       return result;
     } catch (error) {
@@ -273,7 +294,7 @@ export class McpClient implements IMcpClient {
   async readResource(uri: string): Promise<ReadResourceResult> {
     try {
       this.logger.debug(`Reading resource: ${uri}`);
-      const result = await this.client.readResource({ uri });
+      const result = await this.client.readResource({ uri }, this.getRequestOptions());
       this.logger.debug(`Resource ${uri} read successfully`);
       return result;
     } catch (error) {
@@ -290,7 +311,7 @@ export class McpClient implements IMcpClient {
   async subscribeResource(uri: string): Promise<void> {
     try {
       this.logger.debug(`Subscribing to resource: ${uri}`);
-      await this.client.subscribeResource({ uri });
+      await this.client.subscribeResource({ uri }, this.getRequestOptions());
       this.logger.debug(`Subscribed to resource ${uri}`);
     } catch (error) {
       this.logger.error(`Failed to subscribe to resource ${uri}:`, error);
@@ -306,7 +327,7 @@ export class McpClient implements IMcpClient {
   async unsubscribeResource(uri: string): Promise<void> {
     try {
       this.logger.debug(`Unsubscribing from resource: ${uri}`);
-      await this.client.unsubscribeResource({ uri });
+      await this.client.unsubscribeResource({ uri }, this.getRequestOptions());
       this.logger.debug(`Unsubscribed from resource ${uri}`);
     } catch (error) {
       this.logger.error(`Failed to unsubscribe from resource ${uri}:`, error);
@@ -323,7 +344,7 @@ export class McpClient implements IMcpClient {
   async listPrompts(cursor?: string): Promise<ListPromptsResult> {
     try {
       this.logger.debug('Listing prompts...', cursor ? { cursor } : {});
-      const result = await this.client.listPrompts({ cursor });
+      const result = await this.client.listPrompts({ cursor }, this.getRequestOptions());
       this.logger.debug(`Found ${result.prompts.length} prompts`);
       return result;
     } catch (error) {
@@ -340,10 +361,13 @@ export class McpClient implements IMcpClient {
   async getPrompt(name: string, args?: Record<string, string>): Promise<GetPromptResult> {
     try {
       this.logger.debug(`Getting prompt: ${name}`, args);
-      const result = (await this.client.getPrompt({
-        name,
-        arguments: args,
-      })) as GetPromptResult;
+      const result = (await this.client.getPrompt(
+        {
+          name,
+          arguments: args,
+        },
+        this.getRequestOptions()
+      )) as GetPromptResult;
       this.logger.debug(`Prompt ${name} retrieved`);
       return result;
     } catch (error) {
@@ -360,7 +384,7 @@ export class McpClient implements IMcpClient {
   async setLoggingLevel(level: LoggingLevel): Promise<void> {
     try {
       this.logger.debug(`Setting log level to: ${level}`);
-      await this.client.setLoggingLevel(level);
+      await this.client.setLoggingLevel(level, this.getRequestOptions());
       this.logger.debug('Log level set successfully');
     } catch (error) {
       this.logger.error(`Failed to set log level:`, error);

@@ -105,6 +105,8 @@ export async function createMcpClient(options: CreateMcpClientOptions): Promise<
     capabilities: options.capabilities || {},
     ...(options.listChanged && { listChanged: options.listChanged }),
     logger: createLogger(`McpClient:${options.clientInfo.name}`),
+    // Pass timeout from serverConfig (in seconds) to client (in milliseconds)
+    ...(options.serverConfig.timeout && { requestTimeout: options.serverConfig.timeout * 1000 }),
   };
 
   const client = new McpClient(options.clientInfo, clientOptions);

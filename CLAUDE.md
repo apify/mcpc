@@ -67,7 +67,7 @@ mcpc mcp.apify.com shell
 mcpc --json mcp.apify.com tools-list
 
 # Create a persistent session (or reconnect if it exists but bridge is dead)
-mcpc mcp.apify.com session @test
+mcpc mcp.apify.com connect @test
 mcpc @test tools-call search-actors query:="web crawler"
 mcpc @test shell
 ```
@@ -147,7 +147,7 @@ mcpc/
 - `mcpc @<session>` - Show session info, server capabilities, and authentication details
 - `mcpc <target> help` - Alias for `mcpc <target>`
 - `mcpc <target> <command>` - Execute MCP command
-- Session creation: `mcpc <target> session @<session-name> [--profile <name>]`
+- Session creation: `mcpc <target> connect @<session-name> [--profile <name>]`
 - Authentication: `mcpc <server> login [--profile <name>]` and `mcpc <server> logout [--profile <name>]`
 
 **Target Types:**
@@ -164,7 +164,7 @@ mcpc/
 
 ### Session Lifecycle
 
-1. User creates session: `mcpc mcp.apify.com session @apify`
+1. User creates session: `mcpc mcp.apify.com connect @apify`
 2. CLI creates entry in `sessions.json`, spawns bridge process
 3. Bridge creates Unix socket at `~/.mcpc/bridges/apify.sock`
 4. Bridge performs MCP initialization:
@@ -390,7 +390,7 @@ mcpc <server> login [--profile <name>]
 mcpc <server> logout [--profile <name>]
 
 # Create session with specific profile
-mcpc <server> session @<name> --profile <profile>
+mcpc <server> connect @<name> --profile <profile>
 ```
 
 **Authentication Behavior:**
@@ -565,7 +565,7 @@ Bridge logs location: `~/.mcpc/logs/bridge-<session>.log`
   - `prompts-list`, `prompts-get`
   - `logging-set-level`
   - `ping` (with roundtrip timing)
-  - `session`, `close`, `help` (session management)
+  - `connect`, `close`, `help` (session management)
   - `login`, `logout` (authentication management)
 - **Bridge Process**: Persistent MCP connections with Unix domain socket IPC
 - **Session Management**: Complete `sessions.json` persistence with file locking
