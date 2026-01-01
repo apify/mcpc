@@ -267,7 +267,7 @@ mcpc @server tools-call search "query:=hello world"
 
 ### Interactive shell
 
-`mcpc` provides interactive shell for discovery and testing of MCP servers.
+`mcpc` provides an interactive shell for discovery and testing of MCP servers.
 
 ```bash
 mcpc mcp.apify.com shell    # Direct connection
@@ -611,13 +611,13 @@ Schema modes (`--schema-mode`):
 and "[code mode](https://blog.cloudflare.com/code-mode/)".
 
 - **Tool calling mode** - CLI-based AI agents can dynamically explore and interact with the MCP server, thanks to the default Markdown-ish output.
-  Think MCP connectors in ChatGPT or Claude, just in CLI and with much longer command timeouts.  
+  Similar to MCP connectors in ChatGPT or Claude, but via CLI and with much longer command timeouts.  
 - **Code mode** - AI coding agents can write and execute shell [scripts](#scripting) composing multiple MCP server operations,
-  thanks to the `--json` output mode and access to MCP servers schemas.
+  thanks to the `--json` output mode and access to MCP server schemas.
   For well-defined workflow scenarios, this approach can be [more accurate](https://www.anthropic.com/engineering/code-execution-with-mcp)
   and use fewer tokens.
 
-AI agent can discover and use tools via shell commands
+AI agents can discover and use tools via shell commands:
 
 ```bash
 mcpc @server tools-list
@@ -648,7 +648,7 @@ The human controls which servers the AI can access and with what permissions (OA
 
 **IMPORTANT:** Beware that MCP proxy will not make an insecure MCP server secure.
 Local stdio servers will still have access to your local system, and HTTP servers to provided auth credentials,
-and both can easily perform destructive actions or leak credentials on their own, or let MCP client to do such actions.
+and both can easily perform destructive actions or leak credentials on their own, or let MCP clients do such actions.
 **Always use only trusted local and remote MCP servers and limit their access to the necessary minimum.**
 
 #### Agent skills
@@ -1050,8 +1050,8 @@ The main `mcpc` process doesn't save log files, but supports [verbose mode](#ver
 
 ## Development
 
-`mcpc` was built by [Jan Curn](https://x.com/jancurn) of [Apify](https://apify.com) in late nights of the 
-Xmas holidays of 2025, in North Beach, San Francisco.
+`mcpc` was built by [Jan Curn](https://x.com/jancurn) of [Apify](https://apify.com) with the help of Claude Code during the late nights of Xmas 
+2025 in North Beach, San Francisco.
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for development setup, architecture overview, and contribution guidelines.
 
