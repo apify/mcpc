@@ -45,7 +45,7 @@
     "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\"",
     "clean": "rm -rf dist",
     "prebuild": "npm run clean",
-    "prepublishOnly": "npm run lint && npm run build && npm test",
+    "prepublishOnly": "npm run lint && npm run build:toc && npm run build && npm test",
     "release": "bash scripts/publish.sh",
     "release:minor": "bash scripts/publish.sh minor",
     "release:major": "bash scripts/publish.sh major"
