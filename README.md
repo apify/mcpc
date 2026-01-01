@@ -34,9 +34,10 @@ Note that `mcpc` does not use LLMs on its own; that's a job for the higher layer
 - [Install](#install)
 - [Quickstart](#quickstart)
 - [Usage](#usage)
-  - [General commands](#general-commands)
+  - [Management commands](#management-commands)
+  - [Targets](#targets)
   - [MCP commands](#mcp-commands)
-    - [Tool/prompt arguments](#toolprompt-arguments)
+    - [MCP commands arguments](#mcp-commands-arguments)
   - [JSON mode](#json-mode)
 - [Sessions](#sessions)
   - [Session management](#session-management)
@@ -182,61 +183,66 @@ mcpc --clean
 
 For additional management commands, see [OAuth profiles](#oauth-profiles) and [Cleanup](#cleanup).
 
-### MCP commands
+### Targets
 
-To connecto to MCP server you need to specify `<target>`, which can be one of (in this order of precedence):
+To connect to MCP serve, you need to specify `<target>`, which can be one of (in this order of precedence):
+
 - **Entry in a config file** (e.g. `--config .vscode/mcp.json filesystem`) - see [Config file](#mcp-server-config-file)
 - **Remote MCP server URL** (e.g. `https://mcp.apify.com`)
 - **Named session** (e.g. `@apify`) - see [Sessions](#sessions)
 
 `mcpc` automatically selects the transport protocol based on the server (stdio or Streamable HTTP),
-connects to the server, and enables interaction with it. 
+connects to the server, and enables you to interact with it. 
+
+### MCP commands
 
 ```bash
-# Server from config file (stdio), one-shot interaction
+# Server from config file (stdio)
+#  One-shot command
 mcpc --config .vscode/mcp.json fs 
 mcpc --config .vscode/mcp.json fs tools-list
 mcpc --config .vscode/mcp.json fs tools-call --args key:=value
 mcpc --config .vscode/mcp.json fs tools-call list_directory --args path="/"
 
-# Remote server (Streamable HTTP), one-shot interaction
-mcpc mcp.apify.com\?tools=docs
-mcpc mcp.apify.com\?tools=docs tools-list
-mcpc mcp.apify.com\?tools=docs tools-call search-apify-docs --args query="What are Actors?"
-
-# Entry in config file, session interaction
+#  Session
 mcpc --config .vscode/mcp.json fs session @fs 
 mcpc @fs tools-list
 mcpc @fs tools-call --args key:=value
 mcpc @fs tools-call list_directory --args path="/"
 
-# Remote server (Streamable HTTP), session interaction
+# Remote server (Streamable HTTP)
+#  One-shot command
+mcpc mcp.apify.com\?tools=docs
+mcpc mcp.apify.com\?tools=docs tools-list
+mcpc mcp.apify.com\?tools=docs tools-call search-apify-docs --args query="What are Actors?"
+
+#  Session
 mcpc mcp.apify.com\?tools=docs session @apify
 mcpc @apify tools-list
 mcpc @apify tools-call search-apify-docs --args query="What are Actors?"
 ```
 
-#### Arguments
+#### MCP commands arguments
 
 The `tools-call` and `prompts-get` commands enable passing arguments to MCP server.
 There are several ways to do so:
 
 ```bash
 # Inline JSON object (most convenient)
-mcpc @fs tools-call <tool-name> '{"query":"hello","count":10}'
+mcpc <target> tools-call <tool-name> '{"query":"hello","count":10}'
 
 # String values (default) - use = for strings
-... --args name=value query="hello world"
+mcpc <target> tools-call --args name=value query="hello world"
 
 # JSON literals - use := for JSON types
-... --args count:=123 enabled:=true value:=null
-... --args config:='{"key":"value"}' items:='[1,2,3]'
+mcpc <target> tools-call --args count:=123 enabled:=true value:=null
+mcpc <target> tools-call --args config:='{"key":"value"}' items:='[1,2,3]'
 
 # Mixed strings and JSON
-... --args query="search term" limit:=10 verbose:=true
+mcpc <target> tools-call --args query="search term" limit:=10 verbose:=true
 
 # Load all arguments from JSON file
-... --args-file tool-arguments.json
+mcpc <target> tools-call --args-file tool-arguments.json
 
 # Read from stdin (automatic when piped, no flag needed)
 echo '{"query":"hello","count":10}' | mcpc @server tools-call my-tool
