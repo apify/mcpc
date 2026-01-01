@@ -47,30 +47,36 @@ Note that `mcpc` does not use LLMs on its own; that's a job for the higher layer
   - [OAuth profiles](#oauth-profiles)
   - [Authentication precedence](#authentication-precedence)
 - [Interaction](#interaction)
-  - [CLI](#cli)
   - [Interactive shell](#interactive-shell)
   - [Scripting](#scripting)
     - [Schema validation](#schema-validation)
   - [AI agents](#ai-agents)
+    - [Code mode](#code-mode)
     - [Claude Code skill](#claude-code-skill)
     - [Sandboxing](#sandboxing)
 - [Configuration](#configuration)
   - [MCP server config file](#mcp-server-config-file)
   - [Environment variables](#environment-variables)
   - [Cleanup](#cleanup)
-- [MCP protocol notes](#mcp-protocol-notes)
+- [MCP protocol support](#mcp-protocol-support)
+  - [Transport](#transport)
+  - [Authorization](#authorization)
+  - [Session lifecycle](#session-lifecycle)
+  - [Feature support](#feature-support)
+  - [Tools](#tools)
+  - [Prompts](#prompts)
+  - [Resources](#resources)
+  - [List change notifications](#list-change-notifications)
   - [Server logs](#server-logs)
+  - [Pagination](#pagination)
 - [Security](#security)
-  - [Authentication](#authentication-1)
-  - [Credential storage](#credential-storage)
-  - [Bridge process authentication](#bridge-process-authentication)
-  - [File permissions](#file-permissions)
+  - [Credential protection](#credential-protection)
   - [Network security](#network-security)
 - [Error handling](#error-handling)
   - [Exit codes](#exit-codes)
   - [Verbose mode](#verbose-mode)
   - [Logs](#logs)
-  - [Troubleshooting common issues](#troubleshooting-common-issues)
+  - [Troubleshooting](#troubleshooting)
 - [Development](#development)
 - [License](#license)
 
@@ -341,7 +347,7 @@ mcpc @test tools-list
 
 For remote servers that require a Bearer token (but not OAuth), use the `--header` flag to pass the token.
 All headers are stored securely in the OS keychain for the session, but they are **not** saved as reusable
-[authentication profiles](#authentication-profiles). This means `--header` needs to be provided whenever
+[OAuth profiles](#oauth-profiles). This means `--header` needs to be provided whenever
 running a one-shot command or connecting new session.
 
 ```bash
@@ -529,7 +535,7 @@ The `--schema-mode <mode>` parameter determines how `mcpc` validates the schema:
 - `compatible` (default) - Backwards compatible (new optional fields OK, types of required
   fields and passed arguments must match, descriptions are ignored). For tools, the output schema
   is ignored.
-- `strict` - Exact schema match required (all fields, their types and descriptions must be
+- `strict` - Exact schema match required (all fields, their types, and descriptions must be
   identical). For tools, the output schema must match exactly.
 - `ignore` - Skip schema validation altogether
 
@@ -687,74 +693,114 @@ mcpc --clean=all           # Delete all sessions, profiles, logs, and sockets
 
 ## MCP protocol support
 
-`mcpc` relies on the official [MCP SDK for TypeScript](https://github.com/modelcontextprotocol/typescript-sdk) for
-protocol implementation, and provides strong support for most [protocol features](https://modelcontextprotocol.io/specification/latest). 
+`mcpc` is built on the official [MCP SDK for TypeScript](https://github.com/modelcontextprotocol/typescript-sdk) and supports most [MCP protocol features](https://modelcontextprotocol.io/specification/latest).
 
 ### Transport
-- **stdio**: Direct bidirectional JSON-RPC communication over
-  standard input/output, fully supported via [`--config` option](#mcp-server-config-file).
-- **Streamable HTTP**: Fully supported.
-- **HTTP with SSE** (deprecated): Legacy mode, not supported.
+
+| Transport | Status                                                       |
+|-----------|--------------------------------------------------------------|
+| **Streamable HTTP** | ✅ Fully supported                                            |
+| **stdio** | ✅ Fully supported via [config file](#mcp-server-config-file) |
+| **HTTP with SSE** | ❌ Deprecated, not supported                                  |
 
 ### Authorization
-- `mcpc` supports all standard MCP [authorization](https://modelcontextprotocol.io/specification/latest/basic/authorization) mechanisms:
-  - [Anonymous access](#anonymous-access)
-  - [HTTP header authorization](#bearer-token-authentication)
-  - [OAuth 2.1](#oauth-profiles)
+
+All standard MCP authorization mechanisms are supported:
+- [Anonymous access](#anonymous-access)
+- [HTTP header authorization](#bearer-token-authentication)
+- [OAuth 2.1](#oauth-profiles)
 
 ### Session lifecycle
-- `mcpc` follows the MCP initialization handshake: sends `initialize` request with protocol version and capabilities, receives server capabilities and instructions, then sends `initialized` notification
-- Protocol version negotiation: client proposes latest supported version (currently `2025-11-25`), server responds with version to use
-- **Instructions**: Fetches and stores MCP server-provided `instructions`
-- The bridge process manages persistent HTTP connections with bidirectional streaming for server-to-client communication:
-  - Includes `MCP-Protocol-Version` header on all HTTP requests
-  - Handles `MCP-Session-Id` for stateful server sessions
-  - Transparently handles failovers on network disconnection
 
-### MCP feature support
+The bridge process manages the full MCP session lifecycle:
+- Performs initialization handshake (`initialize` → `initialized`)
+- Negotiates protocol version (currently `2025-11-25`)
+- Fetches server-provided `instructions`
+- Maintains persistent HTTP connections with bidirectional streaming
+- Handles `MCP-Protocol-Version` and `MCP-Session-Id` headers automatically
+- Recovers transparently from network disconnections and bridge process crashes
 
-- [**Tools**](#tools): Fully supported
-  - **Asynchronous tasks**: Not implemented (planned)
-- [**Prompts**](#prompts): Fully supported
-- [**Resources**](#resources): Fully supported, including subscribe/unsubscribe
-- **Sampling**: Not supported and likely never will be, because `mcpc` has no direct access to an LLM.
-- **Roots**: Not implemented (planned)
-- **Elicitation**: Not implemented (planned)
-- **Utilities**
-  - **Completion**: Not implemented (planned)
-  - [**Logging**](#server-logs): Supported
-  - [**List change notifications**](#list-change-notifications): Supported
-  - [**Pagination**](#pagination): Supported - all list operations automatically fetch all pages
-  - **Pings**: Supported - `mcpc` periodically sends the MCP `ping` request to keep the [session alive](#session-lifecycle).
+### Feature support
 
-### Initialization
-
-TODO: write info how to get server info and instructions
+| Feature                                             | Status                           |
+|-----------------------------------------------------|----------------------------------|
+| 🔧 [**Tools**](#tools)                              | ✅ Supported                      |
+| 💬 [**Prompts**](#prompts)                          | ✅ Supported                      |
+| 📦 [**Resources**](#resources)                      | ✅ Supported                      |
+| 📝 [**Logging**](#server-logs)                      | ✅ Supported                      |
+| 🔔 [**Notifications**](#list-change-notifications)  | ✅ Supported                      |
+| 📄 [**Pagination**](#pagination)                    | ✅ Supported                      |
+| 🏓 [**Ping**](#session-failover)                    | ✅ Supported                      |
+| ⏳ **Async tasks**                                  | 🚧 Planned                       |
+| 📁 **Roots**                                        | 🚧 Planned                       |
+| ❓ **Elicitation**                                  | 🚧 Planned                       |
+| 🔤 **Completion**                                   | 🚧 Planned                       |
+| 🤖 **Sampling**                                     | ❌ Not applicable (no LLM access) |
 
 ### Tools
 
-TODO: Explain how to use tools with mcpc, show examples of passing args
+List, inspect, and call server-provided tools:
+
+```bash
+# List available tools
+mcpc @apify tools-list
+
+# Get tool schema details
+mcpc @apify tools-get search-actors
+
+# Call a tool with arguments
+mcpc @apify tools-call search-actors --args query="web scraper"
+
+# Pass complex JSON arguments
+mcpc @apify tools-call create-task --args '{"name": "my-task", "options": {"memory": 1024}}'
+
+# Load arguments from file
+mcpc @apify tools-call bulk-import --args-file data.json
+```
 
 ### Prompts
 
-TODO: Explain how to use prompts with mcpc, show examples of passing args
+List and retrieve server-defined prompt templates:
+
+```bash
+# List available prompts
+mcpc @apify prompts-list
+
+# Get a prompt with arguments
+mcpc @apify prompts-get analyze-website --args url="https://example.com"
+```
+
+TODO: Add example of prompt templates
 
 ### Resources
 
-Data sources identified by URIs (e.g., `file:///path/to/file`, `https://example.com/data`), with optional subscriptions for
-change notifications
+Access server-provided data sources by URI:
 
-TODO: Explain how to use prompts with mcpc, show examples of passing args
+```bash
+# List available resources
+mcpc @apify resources-list
+
+# Read a resource
+mcpc @apify resources-read "file:///config.json"
+
+# Subscribe to resource changes (in shell mode)
+mcpc @apify resources-subscribe "https://api.example.com/data"
+
+# List resource templates
+mcpc @apify resources-templates-list
+```
 
 ### List change notifications
 
-(`notifications/(tools|resources|prompts)/list_changed`): Supported, printed
-to shell and/or saved to session record.
+When connected via a [session](#sessions), `mcpc` automatically handles `list_changed`
+notifications for tools, resources, and prompts.
+The bridge process updates the session record so the caller can detect and react on these notifications.
+In [shell mode](#interactive-shell), notifications are displayed in real-time.
 
 ### Server logs
 
 Supports server logging settings (`logging/setLevel`) and messages (`notifications/message`),
-and prints them to log or stderr, subject to [verbosity level](#verbose-mode).
+and prints them to bridge log or stderr, subject to [verbosity level](#verbose-mode).
 
 MCP servers can be instructed to adjust their [logging level](https://modelcontextprotocol.io/specification/latest/server/utilities/logging)
 using the `logging/setLevel` command:
@@ -777,89 +823,41 @@ mcpc @apify logging-set-level error
 - `alert` - Action must be taken immediately
 - `emergency` - System is unusable
 
-**Note:** This sets the logging level on the **server side**.
+Note that this sets the logging level on the **server side**.
 The actual log output depends on the server's implementation.
 
 ### Pagination
 
-...
+MCP servers may return paginated results for list operations
+(`tools-list`, `resources-list`, `prompts-list`, `resources-templates-list`).
+`mcpc` handles this transparently by automatically fetching all pages using the `nextCursor`
+token - you always get the complete list without manual iteration.
 
 ## Security
 
-TODO: Simplify this section
+`mcpc` follows [MCP security best practices](https://modelcontextprotocol.io/specification/2025-11-25/basic/security_best_practices).
+MCP enables arbitrary tool execution and data access - treat servers like you treat shells:
 
-`mcpc` implements the [MCP security best practices](https://modelcontextprotocol.io/specification/2025-11-25/basic/security_best_practices) specification. MCP enables arbitrary tool execution and data access; treat servers like you treat shells:
+- Use least-privilege tokens/headers
+- Prefer trusted endpoints
+- Audit tools before running them
 
-* Use least-privilege tokens/headers
-* Prefer trusted endpoints
-* Audit what tools do before running them
-* Review server permissions in interactive mode
+### Credential protection
 
-### Authentication
-
-**OAuth 2.1 with PKCE:**
-- Full OAuth 2.1 flow with PKCE (Proof Key for Code Exchange) via the MCP SDK
-- OAuth callback server binds to `127.0.0.1` only (not `0.0.0.0`)
-- Warning displayed for OAuth over plain HTTP (except localhost)
-- Dynamic client registration supported
-
-**Input validation:**
-- Session names validated: `^@[a-zA-Z0-9_-]{1,64}$`
-- Profile names validated: `^[a-zA-Z0-9_-]{1,64}$`
-- URLs normalized and validated (HTTPS enforced, credentials stripped)
-
-### Credential storage
-
-**OS keychain integration:**
-- OAuth refresh tokens are stored in the OS keychain (access tokens are kept in memory only)
-- OAuth client credentials (client_id, client_secret from dynamic registration) are stored in the keychain
-- All HTTP headers from `--header` flags are stored per-session in the keychain (as JSON)
-- The `~/.mcpc/profiles.json` file only contains metadata (server URL, scopes, timestamps) - never tokens
-
-**Keychain entries:**
-- OAuth tokens: `mcpc:auth-profile:<host>:<profileName>:tokens`
-- OAuth client: `mcpc:auth-profile:<host>:<profileName>:client`
-- HTTP headers: `mcpc:session:<sessionName>:headers`
-
-### Bridge process authentication
-
-Background bridge processes need access to credentials for making authenticated requests. To maintain security while allowing token refresh:
-
-**For OAuth profiles:**
-1. **CLI retrieves refresh token** from OS keychain when creating or restarting a session
-2. **CLI sends refresh token to bridge** via Unix socket IPC (not command line arguments)
-3. **Bridge stores refresh token in memory only** - never written to disk
-4. **Bridge refreshes access tokens** periodically using the refresh token
-5. **Access tokens are kept in bridge memory** - never persisted to disk
-
-**For HTTP headers (from `--header` flags):**
-1. **All headers are treated as potentially sensitive** - not just `Authorization`
-2. **CLI stores all headers in OS keychain** per-session (as JSON)
-3. **CLI sends headers to bridge** via Unix socket IPC (not command line arguments)
-4. **Bridge stores headers in memory only** - never written to disk
-5. **Headers are deleted from keychain** when session is closed
-6. **On bridge crash/restart**, CLI retrieves headers from keychain and resends via IPC
-
-This architecture ensures:
-- Credentials are never stored in plaintext on disk
-- Headers are not visible in process arguments (`ps aux`)
-- Bridge processes don't need direct keychain access (which may require user interaction)
-- Credentials are securely transmitted via Unix socket (local IPC only)
-- Failover works correctly - headers are preserved across bridge restarts
-
-### File permissions
-
-- `~/.mcpc/sessions.json` is created with `0600` permissions (user-only read/write)
-- `~/.mcpc/profiles.json` is created with `0600` permissions (user-only read/write)
-- Bridge sockets in `~/.mcpc/bridges/` use default umask (typically user-only)
-- File locking via `proper-lockfile` prevents race conditions on concurrent access
+| What | How |
+|------|-----|
+| **OAuth tokens** | Stored in OS keychain, never on disk |
+| **HTTP headers** | Stored in OS keychain per-session |
+| **Bridge credentials** | Passed via Unix socket IPC, kept in memory only |
+| **Process arguments** | No secrets visible in `ps aux` |
+| **Config files** | Contain only metadata, never tokens |
+| **File permissions** | `0600` (user-only) for all config files |
 
 ### Network security
 
-- HTTPS enforced for remote servers (HTTP auto-upgraded when no scheme provided)
-- URL normalization removes username, password, and hash from URLs
-- Local OAuth callback server binds to `127.0.0.1` only
-- No credentials logged even in verbose mode
+- HTTPS enforced for remote servers (auto-upgraded from HTTP)
+- OAuth callback binds to `127.0.0.1` only
+- Credentials never logged, even in verbose mode
 
 ## Error handling
 
@@ -891,12 +889,11 @@ This causes `mcpc` to print detailed debug messages to stderr.
 
 ### Logs
 
-The background bridge processes log to `~/.mcpc/logs/bridge-<session-name>.log`.
-The main `mcpc` process doesn't save log files.
+The background bridge processes log to `~/.mcpc/logs/bridge-@<session>.log`.
+The main `mcpc` process doesn't save log files, but supports [verbose mode](#verbose-mode).
+`mcpc` automatically rotates log files: keep last 10MB per session, max 5 files.
 
-Log rotation: Keep last 10MB per session, max 5 files.
-
-### Troubleshooting common issues
+### Troubleshooting
 
 **"Cannot connect to bridge"**
 - Bridge may have crashed. Try: `mcpc @<session-name> tools-list` to restart the bridge
