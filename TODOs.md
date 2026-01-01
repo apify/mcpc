@@ -57,19 +57,9 @@ TODO: new variant:
 tools-call <tool-name> [<args-json> | arg1=val arg2:=json ... | <stdin>]
 
 
-
-This error is wrong - we should attempt to connect and only claim auth error if the server 
-requires it, otherwise fail with "host not found" or some similar error
-> mcpc xxxx tools-list
-Error: No authentication profile found for xxxx.
-
-To authenticate, run:
-mcpc xxxx login
-
-Then run your command again.
+When running "shell" command in shell, let's show some easter egg - we can rotate couple of funny messages,
+e.g. "Ha, good try!", "Shell in shell, lol", "Good luck with this", "Success-ish", etc.
 
 
-When running "shell" command in shell
-
-
-mcpc mcp.apify.com shell --- do we also open session?
+# Questions
+mcpc mcp.apify.com shell --- do we also open session, how does it work? Let's mention this in readme.

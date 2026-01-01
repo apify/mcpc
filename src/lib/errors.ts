@@ -83,6 +83,37 @@ export class AuthError extends McpError {
 }
 
 /**
+ * Check if an error message indicates an authentication error from the server
+ */
+export function isAuthenticationError(errorMessage: string): boolean {
+  return /invalid_token|unauthorized|missing.*token|access.*token|authentication|401|403/i.test(errorMessage);
+}
+
+/**
+ * Create an AuthError with helpful login guidance for server auth failures
+ *
+ * @param target - Server URL or target for login command
+ * @param options - Optional session name for session-specific guidance
+ * @param originalError - Original error for debugging
+ */
+export function createServerAuthError(
+  target: string,
+  options?: { sessionName?: string; originalError?: Error }
+): AuthError {
+  const sessionHint = options?.sessionName
+    ? `Then recreate the session:\n  mcpc ${target} session ${options.sessionName}`
+    : `Then run your command again.`;
+
+  return new AuthError(
+    `Authentication required by server.\n\n` +
+    `To authenticate, run:\n` +
+    `  mcpc ${target} login\n\n` +
+    sessionHint,
+    options?.originalError ? { originalError: options.originalError } : undefined
+  );
+}
+
+/**
  * Type guard to check if an error is McpError
  */
 export function isMcpError(error: unknown): error is McpError {

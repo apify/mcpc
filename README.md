@@ -37,7 +37,7 @@ Note that `mcpc` does not use LLMs on its own; that's a job for the higher layer
   - [Management commands](#management-commands)
   - [Targets](#targets)
   - [MCP commands](#mcp-commands)
-    - [MCP commands arguments](#mcp-commands-arguments)
+    - [MCP command arguments](#mcp-command-arguments)
   - [JSON mode](#json-mode)
 - [Sessions](#sessions)
   - [Session management](#session-management)
@@ -63,15 +63,15 @@ Note that `mcpc` does not use LLMs on its own; that's a job for the higher layer
   - [Transport](#transport)
   - [Authorization](#authorization)
   - [Session lifecycle](#session-lifecycle)
-  - [Feature support](#feature-support)
-  - [Server instructions](#server-instructions)
-  - [Tools](#tools)
-  - [Prompts](#prompts)
-  - [Resources](#resources)
-  - [List change notifications](#list-change-notifications)
-  - [Server logs](#server-logs)
-  - [Pagination](#pagination)
-  - [Ping](#ping)
+  - [MCP feature support](#mcp-feature-support)
+    - [Server instructions](#server-instructions)
+    - [Tools](#tools)
+    - [Prompts](#prompts)
+    - [Resources](#resources)
+    - [List change notifications](#list-change-notifications)
+    - [Server logs](#server-logs)
+    - [Pagination](#pagination)
+    - [Ping](#ping)
 - [Security](#security)
   - [Credential protection](#credential-protection)
   - [Network security](#network-security)
@@ -196,36 +196,31 @@ connects to the server, and enables you to interact with it.
 
 ### MCP commands
 
+Examples of sending MCP commands to various targets:
+
 ```bash
 # Server from config file (stdio)
-#  One-shot command
-mcpc --config .vscode/mcp.json fs 
-mcpc --config .vscode/mcp.json fs tools-list
-mcpc --config .vscode/mcp.json fs tools-call --args key:=value
-mcpc --config .vscode/mcp.json fs tools-call list_directory --args path="/"
-
-#  Session
-mcpc --config .vscode/mcp.json fs session @fs 
-mcpc @fs tools-list
-mcpc @fs tools-call --args key:=value
-mcpc @fs tools-call list_directory --args path="/"
+mcpc --config .vscode/mcp.json fileSystem 
+mcpc --config .vscode/mcp.json fileSystem tools-list
+mcpc --config .vscode/mcp.json fileSystem tools-call --args key:=value
+mcpc --config .vscode/mcp.json fileSystem tools-call list_directory --args path="/"
 
 # Remote server (Streamable HTTP)
-#  One-shot command
 mcpc mcp.apify.com\?tools=docs
 mcpc mcp.apify.com\?tools=docs tools-list
 mcpc mcp.apify.com\?tools=docs tools-call search-apify-docs --args query="What are Actors?"
 
-#  Session
+# Session
 mcpc mcp.apify.com\?tools=docs session @apify
 mcpc @apify tools-list
 mcpc @apify tools-call search-apify-docs --args query="What are Actors?"
 ```
 
-#### MCP commands arguments
+See [MCP feature support](#mcp-feature-support) for details about all supported MCP features and commands
 
-The `tools-call` and `prompts-get` commands enable passing arguments to MCP server.
-There are several ways to do so:
+#### MCP command arguments
+
+The `tools-call` and `prompts-get` commands enable passing arguments to MCP server:
 
 ```bash
 # Inline JSON object (most convenient)
@@ -265,30 +260,24 @@ With `--json` option, `mcpc` always emits only a single JSON object (or array), 
 On success, the JSON object is printed to stdout, on error to stderr.
 For details, see [Scripting](#scripting).
 
+Note that `--json` is not available for `shell`, `login`, and `mcpc --help` commands.
+
 ## Sessions
 
-MCP is a [stateful protocol](https://modelcontextprotocol.io/specification/latest/basic/lifecycle): clients and servers perform an initialization handshake
+MCP is a [stateful protocol](https://modelcontextprotocol.io/specification/latest/basic/lifecycle):
+clients and servers perform an initialization handshake
 to negotiate protocol version and capabilities, then communicate within a persistent session.
 Each session maintains:
-- Negotiated protocol version and capabilities (which tools/resources/prompts/notifications are supported)
+- Unique `MCP-Session-Id`, negotiated protocol version and capabilities
 - For Streamable HTTP transport: persistent connection with bidirectional streaming, with automatic reconnection
 - For stdio transport: persistent bidirectional pipe to subprocess
 
-Instead of forcing every command to reconnect and reinitialize (which is slow and loses state),
-`mcpc` uses a lightweight **bridge process** per session that:
+Instead of forcing every command to reconnect and reinitialize,
+`mcpc` starts a lightweight **bridge process** per session that:
 
 - Maintains the MCP session (protocol version, capabilities, connection state)
 - For Streamable HTTP: Manages persistent connections with automatic reconnection and resumption
-- Multiplexes multiple concurrent requests (up to 10 concurrent, 100 queued)
-- Enables piping data between multiple MCP servers simultaneously
-
-`mcpc` saves its state to `~/.mcpc/` directory (unless overridden by `MCPC_HOME_DIR`), in the following files:
-
-- `~/.mcpc/sessions.json` - Active sessions with references to authentication profiles (file-locked for concurrent access)
-- `~/.mcpc/profiles.json` - Authentication profiles (OAuth metadata, scopes, expiry)
-- `~/.mcpc/bridges/` - Unix domain socket files for each bridge process
-- `~/.mcpc/logs/bridge-*.log` - Log files for each bridge process
-- OS keychain - Sensitive credentials (OAuth tokens, bearer tokens, client secrets)
+- Handles multiple concurrent requests
 
 ### Session management
 
@@ -694,12 +683,21 @@ Config files support environment variable substitution using `${VAR_NAME}` synta
 }
 ```
 
+### Saved state
+
+`mcpc` saves its state to `~/.mcpc/` directory (unless overridden by `MCPC_HOME_DIR`), in the following files:
+
+- `~/.mcpc/sessions.json` - Active sessions with references to authentication profiles (file-locked for concurrent access)
+- `~/.mcpc/profiles.json` - Authentication profiles (OAuth metadata, scopes, expiry)
+- `~/.mcpc/bridges/` - Unix domain socket files for each bridge process
+- `~/.mcpc/logs/bridge-*.log` - Log files for each bridge process
+- OS keychain - Sensitive credentials (OAuth tokens, bearer tokens, client secrets)
+
 ### Environment variables
 
 - `MCPC_HOME_DIR` - Directory for session and authentication profiles data (default is `~/.mcpc`)
 - `MCPC_VERBOSE` - Enable verbose logging (set to `1`, `true`, or `yes`, case-insensitive)
 - `MCPC_JSON` - Enable JSON output (set to `1`, `true`, or `yes`, case-insensitive)
-
 
 ### Cleanup
 
@@ -746,9 +744,9 @@ The bridge process manages the full MCP session lifecycle:
 - Handles `MCP-Protocol-Version` and `MCP-Session-Id` headers automatically
 - Recovers transparently from network disconnections and bridge process crashes
 
-### Feature support
+### MCP feature support
 
-| Feature                                            | Status                           |
+| **Feature**                                        | **Status**                       |
 |----------------------------------------------------|----------------------------------|
 | 📖 [**Instructions**](#server-instructions)        | ✅ Supported                      |
 | 🔧 [**Tools**](#tools)                             | ✅ Supported                      |
@@ -764,7 +762,7 @@ The bridge process manages the full MCP session lifecycle:
 | 🔤 **Completion**                                  | 🚧 Planned                       |
 | 🤖 **Sampling**                                    | ❌ Not applicable (no LLM access) |
 
-### Server instructions
+#### Server instructions
 
 MCP servers can provide instructions describing their capabilities and usage. These are displayed when you connect to a server or run the `help` command:
 
@@ -805,7 +803,7 @@ including `_meta` field to provide additional server metadata.
 }
 ```
 
-### Tools
+#### Tools
 
 List, inspect, and call server-provided tools:
 
@@ -826,7 +824,7 @@ mcpc @apify tools-call create-task --args '{"name": "my-task", "options": {"memo
 mcpc @apify tools-call bulk-import --args-file data.json
 ```
 
-### Prompts
+#### Prompts
 
 List and retrieve server-defined prompt templates:
 
@@ -840,7 +838,7 @@ mcpc @apify prompts-get analyze-website --args url="https://example.com"
 
 TODO: Add example of prompt templates
 
-### Resources
+#### Resources
 
 Access server-provided data sources by URI:
 
@@ -858,14 +856,14 @@ mcpc @apify resources-subscribe "https://api.example.com/data"
 mcpc @apify resources-templates-list
 ```
 
-### List change notifications
+#### List change notifications
 
 When connected via a [session](#sessions), `mcpc` automatically handles `list_changed`
 notifications for tools, resources, and prompts.
 The bridge process updates the session record so the caller can detect and react on these notifications.
 In [shell mode](#interactive-shell), notifications are displayed in real-time.
 
-### Server logs
+#### Server logs
 
 Supports server logging settings (`logging/setLevel`) and messages (`notifications/message`),
 and prints them to bridge log or stderr, subject to [verbosity level](#verbose-mode).
@@ -894,14 +892,14 @@ mcpc @apify logging-set-level error
 Note that this sets the logging level on the **server side**.
 The actual log output depends on the server's implementation.
 
-### Pagination
+#### Pagination
 
 MCP servers may return paginated results for list operations
 (`tools-list`, `resources-list`, `prompts-list`, `resources-templates-list`).
 `mcpc` handles this transparently by automatically fetching all pages using the `nextCursor`
 token - you always get the complete list without manual iteration.
 
-### Ping
+#### Ping
 
 Sessions automatically send periodic pings to keep the [connection alive](#session-failover) and detect failures early.
 You can send ping manually to check if a server connection is alive:

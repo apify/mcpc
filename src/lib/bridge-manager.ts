@@ -20,7 +20,7 @@ import type { ServerConfig, AuthCredentials } from './types.js';
 import { getSocketPath, waitForFile, isProcessAlive, fileExists, getLogsDir } from './utils.js';
 import { updateSession, getSession } from './sessions.js';
 import { createLogger } from './logger.js';
-import { ClientError, NetworkError } from './errors.js';
+import { ClientError, NetworkError, isAuthenticationError, createServerAuthError } from './errors.js';
 import { BridgeClient } from './bridge-client.js';
 import { readKeychainOAuthTokenInfo, readKeychainOAuthClientInfo, readKeychainSessionHeaders } from './auth/keychain.js';
 import { getAuthProfile } from './auth/profiles.js';
@@ -409,7 +409,13 @@ export async function ensureBridgeReady(sessionName: string): Promise<string> {
     if (result.error instanceof NetworkError) {
       logger.warn(`Bridge process alive but socket not responding for ${sessionName}`);
     } else if (result.error) {
-      // MCP connection error (auth, server error, etc.) - propagate
+      // MCP connection error - check if it's an auth error
+      const errorMessage = result.error.message || '';
+      if (isAuthenticationError(errorMessage)) {
+        const target = session.server.url || session.server.command || sessionName;
+        throw createServerAuthError(target, { sessionName, originalError: result.error });
+      }
+      // Other MCP errors - propagate
       throw new ClientError(
         `Bridge for ${sessionName} failed to connect to MCP server: ${result.error.message}`
       );
@@ -428,8 +434,17 @@ export async function ensureBridgeReady(sessionName: string): Promise<string> {
     return socketPath;
   }
 
-  // Not healthy after restart - provide detailed error
+  // Not healthy after restart - check if it's an auth error
   const errorMsg = result.error?.message || 'unknown error';
+  if (isAuthenticationError(errorMsg)) {
+    const target = session.server.url || session.server.command || sessionName;
+    throw createServerAuthError(target, {
+      sessionName,
+      ...(result.error && { originalError: result.error }),
+    });
+  }
+
+  // Other errors - provide detailed error with log path
   const logPath = `${getLogsDir()}/bridge-${sessionName}.log`;
   throw new ClientError(
     `Bridge for ${sessionName} failed after restart: ${errorMsg}. ` +

@@ -5,7 +5,7 @@
 
 import { createMcpClient } from '../core/factory.js';
 import type { IMcpClient, OutputMode, ServerConfig } from '../lib/types.js';
-import { ClientError, NetworkError, AuthError } from '../lib/errors.js';
+import { ClientError, NetworkError, AuthError, isAuthenticationError, createServerAuthError } from '../lib/errors.js';
 import { normalizeServerUrl, isValidSessionName, getServerHost } from '../lib/utils.js';
 import { setVerbose, createLogger } from '../lib/logger.js';
 import { loadConfig, getServerConfig, validateServerConfig } from '../lib/config.js';
@@ -84,21 +84,22 @@ async function createAuthProviderForServer(
 
 /**
  * Resolve which auth profile to use for an HTTP server
- * Returns the profile name to use, or throws with helpful error if none available
+ * Returns the profile name to use, or undefined if no profile is available
  *
  * @param serverUrl - The server URL
  * @param target - Original target string (for error messages)
  * @param specifiedProfile - Profile name from --profile flag (optional)
  * @param context - Additional context for error messages (e.g., session name)
- * @returns The profile name to use
- * @throws ClientError with helpful guidance if no profile available
+ * @returns The profile name to use, or undefined for unauthenticated connection
+ * @throws ClientError only when --profile is specified but profile doesn't exist,
+ *         or when profiles exist for server but no default (user likely forgot --profile)
  */
 export async function resolveAuthProfile(
   serverUrl: string,
   target: string,
   specifiedProfile?: string,
   context?: { sessionName?: string }
-): Promise<string> {
+): Promise<string | undefined> {
   const host = getServerHost(serverUrl);
 
   if (specifiedProfile) {
@@ -126,16 +127,10 @@ export async function resolveAuthProfile(
   const serverProfiles = allProfiles.filter(p => getServerHost(p.serverUrl) === host);
 
   if (serverProfiles.length === 0) {
-    // No profiles at all - error with guidance
-    const sessionHint = context?.sessionName
-      ? `Then create the session:\n  mcpc ${target} session ${context.sessionName}`
-      : `Then run your command again.`;
-    throw new ClientError(
-      `No authentication profile found for ${host}.\n\n` +
-      `To authenticate, run:\n` +
-      `  mcpc ${target} login\n\n` +
-      sessionHint
-    );
+    // No profiles at all - allow unauthenticated connection attempt
+    // If server requires auth, the connection error will provide guidance
+    logger.debug(`No auth profiles for ${host}, attempting unauthenticated connection`);
+    return undefined;
   } else {
     // Profiles exist but no default - suggest using --profile
     const profileNames = serverProfiles.map(p => p.name).join(', ');
@@ -316,7 +311,21 @@ export async function withMcpClient<T>(
     }
   }
 
-  const client = await createMcpClient(clientConfig);
+  let client: IMcpClient;
+  try {
+    client = await createMcpClient(clientConfig);
+  } catch (error) {
+    // Check if this is an authentication error from the server
+    const errorMessage = (error as Error).message || '';
+    if (isAuthenticationError(errorMessage)) {
+      throw createServerAuthError(target, { originalError: error as Error });
+    }
+
+    throw new NetworkError(
+      `Failed to connect to MCP server: ${errorMessage}`,
+      { originalError: error }
+    );
+  }
 
   try {
     logger.debug('Connected successfully');
@@ -342,8 +351,14 @@ export async function withMcpClient<T>(
   } catch (error) {
     logger.error('MCP operation failed:', error);
 
-    if (error instanceof NetworkError || error instanceof ClientError) {
+    if (error instanceof NetworkError || error instanceof ClientError || error instanceof AuthError) {
       throw error;
+    }
+
+    // Check if this is an authentication error from the server
+    const errorMessage = (error as Error).message || '';
+    if (isAuthenticationError(errorMessage)) {
+      throw createServerAuthError(target, { originalError: error as Error });
     }
 
     throw new NetworkError(

@@ -54,6 +54,7 @@ export class McpClient implements IMcpClient {
   private logger: Logger;
   private negotiatedProtocolVersion?: string;
   private transport?: TransportWithTermination;
+  private hasConnected = false;
 
   constructor(clientInfo: Implementation, options: McpClientOptions = {}) {
     this.logger = options.logger || createNoOpLogger();
@@ -70,8 +71,9 @@ export class McpClient implements IMcpClient {
         this.logger.debug('Client aborted (expected during close)');
         return;
       }
-      this.logger.error('Client error:', error);
-    };
+      // Don't duplicate logging of errors on initial connection
+      this.logger.log(this.hasConnected ? 'error' : 'debug', 'Client error:', error);
+    };;
   }
 
   /**
@@ -91,7 +93,8 @@ export class McpClient implements IMcpClient {
           this.logger.debug('Transport aborted (expected during close)');
           return;
         }
-        this.logger.error('Transport error:', error);
+        // Don't duplicate logging of errors on initial connection
+        this.logger.log(this.hasConnected ? 'error' : 'debug', 'Transport error:', error);
       };
 
       transport.onclose = () => {
@@ -99,6 +102,8 @@ export class McpClient implements IMcpClient {
       };
 
       await this.client.connect(transport);
+
+      this.hasConnected = true;
 
       // Capture negotiated protocol version from transport if available
       // StreamableHTTPClientTransport exposes protocolVersion after initialization
@@ -117,10 +122,9 @@ export class McpClient implements IMcpClient {
       this.logger.debug('Server capabilities:', serverCapabilities);
     } catch (error) {
       this.logger.error('Failed to connect:', error);
-      throw new NetworkError(
-        `Failed to connect to MCP server: ${(error as Error).message}`,
-        { originalError: error }
-      );
+      throw new NetworkError(`Failed to connect to MCP server: ${(error as Error).message}`, {
+        originalError: error,
+      });
     }
   }
 
@@ -188,10 +192,7 @@ export class McpClient implements IMcpClient {
       this.logger.debug('Ping successful');
     } catch (error) {
       this.logger.error('Ping failed:', error);
-      throw new NetworkError(
-        `Ping failed: ${(error as Error).message}`,
-        { originalError: error }
-      );
+      throw new NetworkError(`Ping failed: ${(error as Error).message}`, { originalError: error });
     }
   }
 
@@ -206,10 +207,9 @@ export class McpClient implements IMcpClient {
       return result;
     } catch (error) {
       this.logger.error('Failed to list tools:', error);
-      throw new ServerError(
-        `Failed to list tools: ${(error as Error).message}`,
-        { originalError: error }
-      );
+      throw new ServerError(`Failed to list tools: ${(error as Error).message}`, {
+        originalError: error,
+      });
     }
   }
 
@@ -227,10 +227,9 @@ export class McpClient implements IMcpClient {
       return result;
     } catch (error) {
       this.logger.error(`Failed to call tool ${name}:`, error);
-      throw new ServerError(
-        `Failed to call tool ${name}: ${(error as Error).message}`,
-        { originalError: error }
-      );
+      throw new ServerError(`Failed to call tool ${name}: ${(error as Error).message}`, {
+        originalError: error,
+      });
     }
   }
 
@@ -245,10 +244,9 @@ export class McpClient implements IMcpClient {
       return result;
     } catch (error) {
       this.logger.error('Failed to list resources:', error);
-      throw new ServerError(
-        `Failed to list resources: ${(error as Error).message}`,
-        { originalError: error }
-      );
+      throw new ServerError(`Failed to list resources: ${(error as Error).message}`, {
+        originalError: error,
+      });
     }
   }
 
@@ -263,10 +261,9 @@ export class McpClient implements IMcpClient {
       return result;
     } catch (error) {
       this.logger.error('Failed to list resource templates:', error);
-      throw new ServerError(
-        `Failed to list resource templates: ${(error as Error).message}`,
-        { originalError: error }
-      );
+      throw new ServerError(`Failed to list resource templates: ${(error as Error).message}`, {
+        originalError: error,
+      });
     }
   }
 
@@ -281,10 +278,9 @@ export class McpClient implements IMcpClient {
       return result;
     } catch (error) {
       this.logger.error(`Failed to read resource ${uri}:`, error);
-      throw new ServerError(
-        `Failed to read resource ${uri}: ${(error as Error).message}`,
-        { originalError: error }
-      );
+      throw new ServerError(`Failed to read resource ${uri}: ${(error as Error).message}`, {
+        originalError: error,
+      });
     }
   }
 
@@ -298,10 +294,9 @@ export class McpClient implements IMcpClient {
       this.logger.debug(`Subscribed to resource ${uri}`);
     } catch (error) {
       this.logger.error(`Failed to subscribe to resource ${uri}:`, error);
-      throw new ServerError(
-        `Failed to subscribe to resource ${uri}: ${(error as Error).message}`,
-        { originalError: error }
-      );
+      throw new ServerError(`Failed to subscribe to resource ${uri}: ${(error as Error).message}`, {
+        originalError: error,
+      });
     }
   }
 
@@ -333,10 +328,9 @@ export class McpClient implements IMcpClient {
       return result;
     } catch (error) {
       this.logger.error('Failed to list prompts:', error);
-      throw new ServerError(
-        `Failed to list prompts: ${(error as Error).message}`,
-        { originalError: error }
-      );
+      throw new ServerError(`Failed to list prompts: ${(error as Error).message}`, {
+        originalError: error,
+      });
     }
   }
 
@@ -354,10 +348,9 @@ export class McpClient implements IMcpClient {
       return result;
     } catch (error) {
       this.logger.error(`Failed to get prompt ${name}:`, error);
-      throw new ServerError(
-        `Failed to get prompt ${name}: ${(error as Error).message}`,
-        { originalError: error }
-      );
+      throw new ServerError(`Failed to get prompt ${name}: ${(error as Error).message}`, {
+        originalError: error,
+      });
     }
   }
 
@@ -371,10 +364,9 @@ export class McpClient implements IMcpClient {
       this.logger.debug('Log level set successfully');
     } catch (error) {
       this.logger.error(`Failed to set log level:`, error);
-      throw new ServerError(
-        `Failed to set log level: ${(error as Error).message}`,
-        { originalError: error }
-      );
+      throw new ServerError(`Failed to set log level: ${(error as Error).message}`, {
+        originalError: error,
+      });
     }
   }
 
