@@ -468,114 +468,91 @@ mcpc mcp.apify.com\?tools=docs tools-list
 
 ## Interaction
 
-`mcpc` supports multiple interaction modes: interactive shell for exploration, scripting for automation, and direct integration with AI agents.
+`mcpc` supports multiple interaction modes: interactive shell, scripting, and AI agent integration.
 
 ### Interactive shell
 
-The interactive shell provides a REPL-style interface for MCP servers:
-
 ```bash
-# Open shell to server without explicit session
-mcpc mcp.apify.com shell
-
-# Use existing session
-mcpc @apify shell
+mcpc mcp.apify.com shell    # Direct connection
+mcpc @apify shell           # Use existing session
 ```
 
-In shell, you can use the same [MCP commands](#mcp-commands) as in CLI,
-and the following additional commands:
-- `help` - Show available commands
-- `exit` or `quit` or Ctrl+D - Exit shell
-- Ctrl+C - Cancel current operation
-- Arrow keys for command history navigation (saved to `~/.mcpc/history`, last 1,000 commands)
+Shell commands: `help`, `exit`/`quit`/Ctrl+D, Ctrl+C to cancel.
+Arrow keys navigate history (saved to `~/.mcpc/history`).
 
 ### Scripting
 
-`mcpc` is designed for use in (AI-generated) scripts.
-With the `--json` option, `mcpc` returns a single JSON object (object or array) as follows:
-
-- On success, the JSON object is printed to stdout
-- On error, the JSON object is printed to stderr
-
-You can use tools like `jq` to process the output.
-
-Note that `--json` option has no effect on `--help` command,
-or if there are invalid arguments, as those take precedence.
-
-For all MCP operations, the **returned JSON is and always will be strictly consistent
-with the [MCP specification](https://modelcontextprotocol.io/specification/latest)**,
-based on the protocol version negotiated between client and server in the initial handshake.
-
-Additionally, one of the core [design principles](CONTRIBUTING.md#design-principles) of `mcpc`
-is to maintain backwards compatibility to the maximum extent possible, ensuring your scripts
-will not break over time.
-
-**Piping between sessions:**
+Use `--json` for machine-readable output (stdout on success, stderr on error).
+JSON output of all MCP commands follows the [MCP specification](https://modelcontextprotocol.io/specification/latest) strictly.
 
 ```bash
-mcpc --json @apify tools-call search-actors query:="tiktok scraper" \
-  | jq '.data.results[0]' \
-  | mcpc @playwright tools-call run-browser
+# Chain tools across sessions
+mcpc --json @apify tools-call search-actors keywords:="scraper" \
+  | jq '.content[0].text | fromjson | .items[0].id' \
+  | xargs -I {} mcpc @apify tools-call get-actor actorId:="{}"
+
+# Batch operations
+for tool in $(mcpc --json @server tools-list | jq -r '.[].name'); do
+  mcpc --json @server tools-get "$tool" > "schemas/$tool.json"
+done
 ```
 
-#### Schema validation
+### Schema validation
 
-MCP is a fluid protocol, and MCP servers can change operations and their schema at any time.
-To ensure your scripts fail fast whenever such schema change occurs, rather than fail silently later,
-you can use the `--schema <file>` option to pass `mcpc` the expected operation schema.
-If the MCP server's current schema is incompatible, the command returns an error.
+Validate tool/prompt schemas to detect breaking changes early:
 
 ```bash
-# Save tool schema for future validation
-mcpc --json @apify tools-get search-actors > search-actors-schema.json
+# Save expected schema
+mcpc --json @apify tools-get search-actors > expected.json
 
-# Use schema to ensure compatibility (fails if schema changed)
-mcpc @apify tools-call search-actors \
-  --schema search-actors-schema.json \
-  --schema-mode strict \
-  keywords:="tiktok scraper"
+# Validate before calling (fails if schema changed incompatibly)
+mcpc @apify tools-call search-actors --schema expected.json query:="test"
 ```
 
-The `--schema-mode <mode>` parameter determines how `mcpc` validates the schema:
-
-- `compatible` (default) - Backwards compatible (new optional fields OK, types of required
-  fields and passed arguments must match, descriptions are ignored). For tools, the output schema
-  is ignored.
-- `strict` - Exact schema match required (all fields, their types, and descriptions must be
-  identical). For tools, the output schema must match exactly.
-- `ignore` - Skip schema validation altogether
+Schema modes (`--schema-mode`):
+- `compatible` (default) - New optional fields OK, required fields must match. Output schema validated (new output fields OK, removed fields cause error).
+- `strict` - Exact match required for all fields, types, and descriptions
+- `ignore` - Skip validation
 
 
 ### AI agents
 
-`mcpc` is [designed](CONTRIBUTING.md#design-principles) for AI agent use:
-commands and messages are concise, intuitive, and avoid unnecessary interaction loops.
-Your AI coding agents can readily interact with `mcpc` in text mode.
+`mcpc` is designed for MCP "[code mode](https://www.anthropic.com/engineering/code-execution-with-mcp)" -
+AI agents that write and execute code rather than using function calling.
+This approach is more accurate and uses fewer tokens.
 
-#### Code mode
+AI agent can discover and use tools via shell commands
 
-<!-- TODO: Explain that scripting can be used for this,
-link to https://www.anthropic.com/engineering/code-execution-with-mcp
-and https://blog.cloudflare.com/code-mode/ -->
+```bash
+mcpc @server tools-list
+mcpc --json @server tools-get search | jq '.inputSchema'
+mcpc @server tools-call search query:="hello world"
+```
+
+and then generate shell scripts to execute sequences of actions,
+with `--schema` checks to ensure stability of integrations and faster failure recovery.
+Make no harm!
 
 #### Claude Code skill
 
-For AI coding agents using [Claude Code](https://claude.ai/code), we provide a skill that teaches Claude how to use mcpc effectively.
+For [Claude Code](https://claude.ai/code), install our skill for optimized mcpc usage:
 
-**Installation:**
 ```bash
-mkdir -p ~/.claude/skills/mcpc
-cp claude-skill/SKILL.md ~/.claude/skills/mcpc/
+mkdir -p ~/.claude/skills/mcpc && cp claude-skill/SKILL.md ~/.claude/skills/mcpc/
 ```
-
-Then restart Claude Code. The skill enables Claude to interact with MCP servers via mcpc commands instead of function calling, which is more efficient and uses fewer tokens.
 
 See [`claude-skill/README.md`](./claude-skill/README.md) for details.
 
+#### Sandboxing AI access
 
-#### Sandboxing
+Authentication profiles provide a security boundary for AI agents:
 
-<!-- TODO: explain auth profiles need to be created by person before -->
+1. **Human creates profile**: `mcpc mcp.apify.com login --profile ai-sandbox`
+2. **Human creates session**: `mcpc mcp.apify.com connect @ai-session --profile ai-sandbox`
+3. **AI uses session**: The agent can only use `@ai-session` - it cannot create new profiles or sessions
+
+This ensures AI agents operate only with pre-authorized credentials, preventing unauthorized access to MCP servers.
+The human controls which servers the AI can access and with what permissions (OAuth scopes)
 
 ## Configuration
 
@@ -703,7 +680,7 @@ mcpc --clean=sessions,logs # Clean multiple resource types
 mcpc --clean=all           # Delete all sessions, profiles, logs, and sockets
 ```
 
-## MCP protocol support
+## MCP support
 
 `mcpc` is built on the official [MCP SDK for TypeScript](https://github.com/modelcontextprotocol/typescript-sdk) and supports most [MCP protocol features](https://modelcontextprotocol.io/specification/latest).
 
