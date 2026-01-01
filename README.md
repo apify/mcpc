@@ -17,7 +17,7 @@ Note that `mcpc` does not use LLMs on its own; that's a job for the higher layer
 
 **Key features**
 
-- 🔌 **Super compatible** - Works with any MCP server over Streamable HTTP or stdio.
+- 🔌 **Highly compatible** - Works with any MCP server over Streamable HTTP or stdio.
 - 🔄 **Persistent sessions** - Keep multiple server connections alive simultaneously.
 - 🚀 **Zero setup** - Connect to remote servers instantly with just a URL.
 - 🔧 **Full protocol support** - Tools, resources, prompts, dynamic discovery, and async notifications.
@@ -34,32 +34,32 @@ Note that `mcpc` does not use LLMs on its own; that's a job for the higher layer
 - [Install](#install)
 - [Quickstart](#quickstart)
 - [Usage](#usage)
-  - [MCP command arguments](#mcp-command-arguments)
-  - [Global flags](#global-flags)
-- [Authentication](#authentication)
-  - [No authentication](#no-authentication)
-  - [Bearer token authentication](#bearer-token-authentication)
-  - [OAuth authentication](#oauth-authentication)
-    - [Authentication profiles](#authentication-profiles)
-    - [Authentication behavior](#authentication-behavior)
-    - [Multiple accounts for the same server](#multiple-accounts-for-the-same-server)
-  - [Authentication precedence](#authentication-precedence)
-  - [Authentication profiles storage format](#authentication-profiles-storage-format)
+  - [General commands](#general-commands)
+  - [MCP commands](#mcp-commands)
+    - [Tool/prompt arguments](#toolprompt-arguments)
+  - [JSON mode](#json-mode)
 - [Sessions](#sessions)
-  - [Managing sessions](#managing-sessions)
-  - [Piping between sessions](#piping-between-sessions)
-  - [Output format](#output-format)
-    - [Human-readable (default)](#human-readable-default)
-    - [JSON mode](#json-mode)
-  - [Scripting](#scripting)
-    - [MCP server schema changes](#mcp-server-schema-changes)
+  - [Session management](#session-management)
   - [Session failover](#session-failover)
-- [Logging](#logging)
-- [Cleanup](#cleanup)
+- [Authentication](#authentication)
+  - [Anonymous access](#anonymous-access)
+  - [Bearer token authentication](#bearer-token-authentication)
+  - [OAuth profiles](#oauth-profiles)
+  - [Authentication precedence](#authentication-precedence)
+- [Interaction](#interaction)
+  - [CLI](#cli)
+  - [Interactive shell](#interactive-shell)
+  - [Scripting](#scripting)
+    - [Schema validation](#schema-validation)
+  - [AI agents](#ai-agents)
+    - [Claude Code skill](#claude-code-skill)
+    - [Sandboxing](#sandboxing)
 - [Configuration](#configuration)
-  - [MCP config JSON file](#mcp-config-json-file)
+  - [MCP server config file](#mcp-server-config-file)
   - [Environment variables](#environment-variables)
+  - [Cleanup](#cleanup)
 - [MCP protocol notes](#mcp-protocol-notes)
+  - [Server logs](#server-logs)
 - [Security](#security)
   - [Authentication](#authentication-1)
   - [Credential storage](#credential-storage)
@@ -68,14 +68,10 @@ Note that `mcpc` does not use LLMs on its own; that's a job for the higher layer
   - [Network security](#network-security)
 - [Error handling](#error-handling)
   - [Exit codes](#exit-codes)
-  - [Retry strategy](#retry-strategy)
-- [Interactive shell](#interactive-shell)
-- [Claude Code skill](#claude-code-skill)
-- [Troubleshooting](#troubleshooting)
+  - [Verbose mode](#verbose-mode)
   - [Logs](#logs)
-  - [Common issues](#common-issues)
-- [Contributing](#contributing)
-- [Authors](#authors)
+  - [Troubleshooting common issues](#troubleshooting-common-issues)
+- [Development](#development)
 - [License](#license)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
@@ -114,7 +110,7 @@ mcpc --config ~/.vscode/mcp.json filesystem tools-list
 ## Usage
 
 ```bash
-Usage: mcpc [options] [target] [command]
+Usage: mcpc [options] <target> [command]
 
 Options:
   -v, --version           Output the version number
@@ -130,15 +126,15 @@ Options:
   -h, --help              Display general help
 
 Targets:
-  <server-url>            Remote MCP server URL (e.g. "mcp.apify.com")
-  <config-entry>          Entry from MCP config file specified in --config (e.g. "fs")
   @<session>              Named persistent session (e.g. "@apify")
-
+  <config-entry>          Entry in MCP config file specified by --config (e.g. "fs")
+  <server-url>            Remote MCP server URL (e.g. "mcp.apify.com")
+ 
 General commands:
   help                    Show server info, instructions, and capabilities
   shell                   Open interactive shell to run MCP commands)
   login                   Create OAuth profile with credentials to access remote server
-  logout                  Remove OAuth profile
+  logout                  Remove OAuth profile for remote server
   session @<session>      Connect to server and create named persistent session
   restart @<session>      Kill and restart a session  
   close @<session>        Close a session
@@ -146,9 +142,9 @@ General commands:
 MCP commands: 
   tools-list
   tools-get <tool-name>  
-  tools-call <tool-name> [--args key=val key2:=json ...] [--args-file <file>]
+  tools-call <tool-name> [<args-json> | arg1:=val1 arg2:=val2 ...]
   prompts-list
-  prompts-get <prompt-name> [--args key=val key2:=json ...] [--args-file <file>]
+  prompts-get <prompt-name> [<args-json> | arg1:=val1 arg2:=val2 ...]
   resources
   resources-list
   resources-read <uri>
@@ -158,25 +154,46 @@ MCP commands:
   logging-set-level <level>  
 ```
 
-where `<target>` can be one of (in this order of precedence):
+### General commands
 
-- **Named session** prefixed with `@` (e.g. `@apify`) - persisted connection via bridge process
-- **Named entry** in a config file, when used with `--config` (e.g. `filesystem`) - local or remote server
-- **Remote MCP endpoint** URL (e.g. `mcp.apify.com` or `https://mcp.apify.com`) - direct HTTP connection
+Basic operations not related to any specific MCP server.
 
-For local MCP servers (stdio transport), use a config file to specify the command, arguments, and environment variables. See [Configuration](#configuration) below.
+```bash
+# List all sessions and OAuth profiles (supports also JSON format)
+mcpc
+mcpc --json
 
-`mcpc` automatically selects the transport protocol:
-- HTTP/HTTPS URLs use the MCP Streamable HTTP transport (current standard; HTTP with SSE is not supported)
-- Config file entries use the transport specified in the config (stdio for local servers, HTTP for remote)
+# Show help
+mcpc --help
 
-### MCP command arguments
+# Show command version
+mcpc --version
+
+# Clean expired sessions and old log files
+mcpc --clean
+```
+
+See also [OAuth profiles](#oauth-profiles) and [Cleanup](#cleanup) commands.
+
+### MCP commands
+
+To interact with an MCP server, you need to specify `<target>`, which can be one of (in this order of precedence):
+- **Named entry** in a config file when used with `--config` (e.g. `filesystem`) - see [Configuration](#configuration) for details.
+- **Remote MCP server URL** (e.g. `https://mcp.apify.com`)
+- **Named session** prefixed with `@` (e.g. `@apify`) - see [Sessions](#sessions)
+
+`mcpc` automatically selects the transport protocol based on the server (stdio or Streamable HTTP).
+
+One-shot commands are useful for simple stateless interaction with MCP server.
+
+
+#### Tool/prompt arguments
 
 `mcpc` supports multiple ways to pass arguments to `tools-call` and `prompts-get` commands:
 
 ```bash
 # Inline JSON object (most convenient)
-... --args '{"query":"hello","count":10}'
+mcpc @fs tools-call <tool-name> '{"query":"hello","count":10}'
 
 # String values (default) - use = for strings
 ... --args name=value query="hello world"
@@ -202,198 +219,17 @@ echo '{"query":"hello","count":10}' | mcpc @server tools-call my-tool
 - `=` assigns as string, `:=` parses as JSON
 - Stdin is automatically detected when input is piped (not interactive terminal)
 
-## Authentication
 
-`mcpc` supports all standard [authentication methods](https://modelcontextprotocol.io/specification/latest/basic/authorization) for MCP servers,
-including the `WWW-Authenticate` discovery mechanism and OAuth 2.1 with PKCE.
 
-### No authentication
+### JSON mode
 
-For local servers (stdio) or remote servers (Streamable HTTP) which do not require credentials,
-`mcpc` can be used without authentication:
+By default, `mcpc` prints output in Markdown-ish text format with colors, to make easy to read by both humands and AIs.
 
-```bash
-# Remote server which enables anonymous access
-mcpc https://mcp.apify.com\?tools=docs tools-list
-```
-
-### Bearer token authentication
-
-For remote servers that require a bearer token (but not OAuth), use the `--header` flag.
-All headers are stored securely in the OS keychain for the session, but **not** saved as a reusable authentication profile:
-
-```bash
-# One-time command with bearer token
-mcpc --header "Authorization: Bearer ${APIFY_TOKEN}" https://mcp.apify.com tools-list
-
-# Create session with bearer token (saved to keychain for this session only)
-mcpc --header "Authorization: Bearer ${APIFY_TOKEN}" https://mcp.apify.com session @apify
-
-# Use the session (token loaded from keychain automatically)
-mcpc @apify tools-list
-```
-
-### OAuth authentication
-
-For OAuth-enabled remote MCP servers, `mcpc` implements the full OAuth 2.1 flow with PKCE, including:
-- `WWW-Authenticate` header discovery
-- Authorization server metadata discovery (RFC 8414)
-- Client ID metadata documents (SEP-991)
-- Dynamic client registration (RFC 7591)
-- Automatic token refresh
-
-The OAuth authentication is **always** initiated by the user calling the `login` command,
-which opens a web browser with login screen. `mcpc` doesn't open web browser in any other case.
-
-`mcpc` uses OS keychain to securely store OAuth authentication tokens.
-
-#### Authentication profiles
-
-For OAuth-enabled servers, `mcpc` uses **authentication profiles** - reusable credentials that can be shared across multiple sessions.
-This allows you to:
-- Authenticate once, create multiple sessions
-- Use different accounts (profiles) with the same server
-- Manage credentials independently from sessions
-
-**Key concepts:**
-- **Authentication profile**: Named set of OAuth credentials for a specific server (stored in `~/.mcpc/profiles.json` + OS keychain)
-- **Session**: Active connection to a server that may reference an authentication profile (stored in `~/.mcpc/sessions.json`)
-- **Default profile**: When `--profile` is not specified, `mcpc` uses the authentication profile named `default`
-
-**Example:**
-
-```bash
-# Login to server and save 'default' authentication profile for future use
-mcpc https://mcp.apify.com login
-
-# Use named authentication profile instead of 'default'
-mcpc https://mcp.apify.com login --profile personal
-
-# Re-authenticate existing profile (e.g., to refresh or change scopes)
-mcpc https://mcp.apify.com login --profile personal
-
-# Delete an authentication profile
-mcpc https://mcp.apify.com logout --profile personal
-
-```
-
-#### Authentication behavior
-
-`mcpc` automatically handles authentication based on whether you specify a profile:
-
-**When `--profile <name>` is specified:**
-
-1. **Profile exists for the server**: Use its stored credentials
-   - If authentication succeeds → Continue with command/session
-   - If authentication fails (expired/invalid) → Fail with an error
-2. **Profile doesn't exist**: Fail with an error
-
-**When no `--profile` is specified:**
-
-1. **`default` profile exists for the server**: Use its stored credentials
-   - If authentication succeeds → Continue with command/session
-   - If authentication fails (expired/invalid) → Fail with an error
-2. **`default` profile doesn't exist**: Attempt unauthenticated connection
-   - If server accepts (no auth required) → Continue without creating profile
-   - If server rejects with 401 + `WWW-Authenticate` → Fail with an error
-
-On failure, the error message includes instructions on how to login and save the profile, so the users know what to do.
-
-**This flow ensures:**
-- You only authenticate when necessary
-- Credentials are never silently mixed up (personal → work) or downgraded (authenticated → unauthenticated)
-- You can mix authenticated sessions (with named profiles) and public access on the same server
-
-**Examples:**
-
-```bash
-# With specific profile - always authenticated:
-# - Uses 'personal' if it exists
-# - Fails if it doesn't exist
-mcpc https://mcp.apify.com session @apify1 --profile personal
-
-# Without profile - opportunistic authentication:
-# - Uses 'default' if it exists
-# - Tries unauthenticated if 'default' doesn't exist
-# - Fails if the server requires authentication
-mcpc https://mcp.apify.com session @apify2
-
-# Public server - no authentication needed:
-mcpc https://mcp.apify.com\?tools=docs tools-list
-```
-
-#### Multiple accounts for the same server
-
-Authentication profiles enable using multiple accounts with the same MCP server:
-
-```bash
-# Authenticate with personal account
-mcpc https://mcp.apify.com login --profile personal
-
-# Authenticate with work account
-mcpc https://mcp.apify.com login --profile work
-
-# Create sessions using the two different credentials
-mcpc https://mcp.apify.com session @apify-personal --profile personal
-mcpc https://mcp.apify.com session @apify-work --profile work
-
-# Both sessions work independently
-mcpc @apify-personal tools-list  # Uses personal account
-mcpc @apify-work tools-list      # Uses work account
-```
-
-### Authentication precedence
-
-When multiple authentication methods are available, `mcpc` uses this precedence order:
-
-1. **Command-line `--header` flag** (highest priority) - Always used if provided
-2. **Session's stored credentials** - Bearer tokens or OAuth tokens from profile
-3. **Config file headers** - Headers from `--config` file for the server
-4. **No authentication** - Attempts unauthenticated connection
-
-**Example:**
-```bash
-# Config file has: "headers": {"Authorization": "Bearer ${TOKEN1}"}
-# Session uses profile with different OAuth token
-# Command provides: --header "Authorization: Bearer ${TOKEN2}"
-# Result: Uses TOKEN2 (command-line flag wins)
-```
-
-### Authentication profiles storage format
-
-By default, authentication profiles are stored in the `~/.mcpc/profiles.json` file with the following structure:
-
-```json
-{
-  "profiles": {
-    "https://mcp.apify.com": {
-      "personal": {
-        "name": "personal",
-        "serverUrl": "https://mcp.apify.com",
-        "authType": "oauth",
-        "oauthIssuer": "https://auth.apify.com",
-        "scopes": ["tools:read", "tools:write", "resources:read"],
-        "createdAt": "2025-12-14T10:00:00Z",
-        "authenticatedAt": "2025-12-14T10:00:00Z"
-      },
-      "work": {
-        "name": "work",
-        "serverUrl": "https://mcp.apify.com",
-        "authType": "oauth",
-        "oauthIssuer": "https://auth.apify.com",
-        "scopes": ["tools:read"],
-        "createdAt": "2025-12-10T15:30:00Z",
-        "authenticatedAt": "2025-12-10T15:30:00Z"
-      }
-    }
-  }
-}
-```
-
-**OS Keychain entries:**
-- OAuth tokens: `mcpc:auth:https://mcp.apify.com:personal:tokens`
-- OAuth client info: `mcpc:auth:https://mcp.apify.com:personal:client`
-- HTTP headers (per-session): `mcpc:session:apify:headers`
+With `--json` option, `mcpc` always emits only a single JSON object (or array), to enable scripting.
+**For all MCP commands, the returned objects are always consistent with the
+[MCP specification](https://modelcontextprotocol.io/specification/latest).**
+On success, the JSON object is printed to stdout, on error to stderr.
+For details, see [Scripting](#scripting).
 
 ## Sessions
 
@@ -420,14 +256,14 @@ Instead of forcing every command to reconnect and reinitialize (which is slow an
 - `~/.mcpc/logs/bridge-*.log` - Log files for each bridge process
 - OS keychain - Sensitive credentials (OAuth tokens, bearer tokens, client secrets)
 
-### Managing sessions
+### Session management
 
 ```bash
 # Create a persistent session (with default authentication profile, if available)
-mcpc https://mcp.apify.com session @apify
+mcpc mcp.apify.com\?tools=docs session @apify1
 
 # Create session with specific authentication profile
-mcpc https://mcp.apify.com session @apify --profile personal
+mcpc mcp.apify.com session @apify --profile personal
 
 # List all active sessions and saved authentication profiles
 mcpc
@@ -451,26 +287,195 @@ mcpc @apify restart
 mcpc @apify close
 ```
 
-### Piping between sessions
+### Session failover
+
+`mcpc` bridge process attempts to keep sessions alive by sending periodic ping messages to the MCP server.
+But even then, the session can fail for a number of reasons:
+
+- Network disconnects
+- Server drops the session for inactivity or other reasons
+- Bridge process crashes
+
+Here's how `mcpc` handles these situations:
+
+- If the bridge process is running, it will automatically try to reconnect to the server if the connection fails
+  and establish the keep-alive pings.
+- If the server response indicates the `MCP-Session-Id` is no longer valid or authentication permanently failed (HTTP error 401 or 402),
+  the bridge process will flag the session as **expired** in `~/.mcpc/sessions.json` and terminate.
+- If the bridge process crashes, `mcpc` attempts to restart it next time you use the specific session.
+
+Note that `mcpc` never automatically removes sessions from the list, but rather flags the session as **expired**,
+and any attempts to use it will fail.
+To remove the session from the list, you need to explicitly close it:
 
 ```bash
-mcpc --json @apify tools-call search-actors --args query="tiktok scraper" \
-  | jq '.data.results[0]' \
-  | mcpc @playwright tools-call run-browser
+mcpc @apify close
 ```
 
-### Output format
+or reconnect it using the `session` command (if the session exists but bridge is dead, it will be automatically reconnected):
 
-#### Human-readable (default)
+```bash
+mcpc https://mcp.apify.com session @apify
+```
 
-Default output is formatted for human and AI readability with plain text, colors, and Markdown-like formatting.
-The text is formatted in Markdown-compatible format for AIs with colors for easy human readability.
 
-#### JSON mode
+## Authentication
 
-If `--json` option is provided, `mcpc` always emits only a single JSON object, in order to enable scripting.
-For MCP commands, the returned objects are always consistent with the [MCP protocol specification](https://modelcontextprotocol.io/specification/latest).
-On success, the JSON object is printed to stdout, otherwise to stderr.
+`mcpc` supports all standard [MCP authorization methods](https://modelcontextprotocol.io/specification/latest/basic/authorization).
+
+### Anonymous access
+
+For local servers (stdio) or remote servers (Streamable HTTP) which do not require credentials,
+`mcpc` can be used without authentication:
+
+```bash
+# One-shot command
+mcpc mcp.apify.com\?tools=docs tools-list
+
+# Session command
+mcpc mcp.apify.com\?tools=docs session @test
+mcpc @test tools-list
+```
+
+### Bearer token authentication
+
+For remote servers that require a Bearer token (but not OAuth), use the `--header` flag to pass the token.
+All headers are stored securely in the OS keychain for the session, but they are **not** saved as reusable
+[authentication profiles](#authentication-profiles). This means `--header` needs to be provided whenever
+running a one-shot command or connecting new session.
+
+```bash
+# One-time command with Bearer token
+mcpc --header "Authorization: Bearer ${APIFY_TOKEN}" https://mcp.apify.com tools-list
+
+# Create session with Bearer token (saved to keychain for this session only)
+mcpc --header "Authorization: Bearer ${APIFY_TOKEN}" https://mcp.apify.com session @apify
+
+# Use the session (Bearer token is loaded from keychain automatically)
+mcpc @apify tools-list
+```
+
+### OAuth profiles
+
+For OAuth-enabled remote MCP servers, `mcpc` implements the full OAuth 2.1 flow with PKCE, 
+including `WWW-Authenticate` header discovery, server metadata discovery, client ID metadata documents, 
+dynamic client registration, and automatic token refresh.
+
+The OAuth authentication **always** needs to be initiated by the user calling the `login` command,
+which opens a web browser with login screen. `mcpc` never opens the web browser on its own.
+
+The OAuth credentials to specific servers are securely stored as **authentication profiles** - reusable
+credentials that allow you to:
+- Authenticate once, use credentials across multiple commands or sessions
+- Use different accounts (profiles) with the same server
+- Manage credentials independently from sessions
+
+Key concepts:
+- **Authentication profile**: Named set of OAuth credentials for a specific server (stored in `~/.mcpc/profiles.json` + OS keychain)
+- **Session**: Active connection to a server that may reference an authentication profile (stored in `~/.mcpc/sessions.json`)
+- **Default profile**: When `--profile` is not specified, `mcpc` uses the authentication profile named `default`
+
+**Example:**
+
+```bash
+# Login to server and save 'default' authentication profile for future use
+mcpc mcp.apify.com login
+
+# Use named authentication profile instead of 'default'
+mcpc mcp.apify.com login --profile work
+
+# Create two sessions using the two different credentials
+mcpc https://mcp.apify.com session @apify-personal
+mcpc https://mcp.apify.com session @apify-work --profile work
+
+# Both sessions now work independently
+mcpc @apify-personal tools-list  # Uses personal account
+mcpc @apify-work tools-list      # Uses work account
+
+# Re-authenticate existing profile (e.g., to refresh or change scopes)
+mcpc mcp.apify.com login --profile work
+
+# Delete "default" and "work" authentication profiles
+mcpc mcp.apify.com logout
+mcpc mcp.apify.com logout --profile work
+```
+
+### Authentication precedence
+
+When multiple authentication methods are available, `mcpc` uses this precedence order:
+
+1. **Command-line `--header` flag** (highest priority) - Always used if provided
+2. **Saved authentication profiles** - OAuth tokens from saved profile
+3. **Config file headers** - Headers from `--config` file for the server
+4. **No authentication** - Attempts unauthenticated connection
+
+
+`mcpc` automatically handles authentication based on whether you specify a profile:
+
+**When `--profile <name>` is specified:**
+
+1. **Profile exists for the server**: Use its stored credentials
+   - If authentication succeeds → Continue with command/session
+   - If authentication fails (expired/invalid) → Fail with an error
+2. **Profile doesn't exist**: Fail with an error
+
+**When no `--profile` is specified:**
+
+1. **`default` profile exists for the server**: Use its stored credentials
+   - If authentication succeeds → Continue with command/session
+   - If authentication fails (expired/invalid) → Fail with an error
+2. **`default` profile doesn't exist**: Attempt unauthenticated connection
+   - If server accepts (no auth required) → Continue without creating profile
+   - If server rejects with 401 + `WWW-Authenticate` → Fail with an error
+
+On failure, the error message includes instructions on how to login and save the profile, so the users know what to do.
+
+This flow ensures:
+- You only authenticate when necessary
+- Credentials are never silently mixed up (personal → work) or downgraded (authenticated → unauthenticated)
+- You can mix authenticated sessions (with named profiles) and public access on the same server
+
+**Examples:**
+
+```bash
+# With specific profile - always authenticated:
+# - Uses 'work' if it exists
+# - Fails if it doesn't exist
+mcpc mcp.apify.com session @apify-work --profile work
+
+# Without profile - opportunistic authentication:
+# - Uses 'default' if it exists
+# - Tries unauthenticated if 'default' doesn't exist
+# - Fails if the server requires authentication
+mcpc mcp.apify.com session @apify-personal
+
+# Public server - no authentication needed:
+mcpc mcp.apify.com\?tools=docs tools-list
+```
+
+
+## Interaction
+
+`mcpc` is designed to  
+
+### Interactive shell
+
+The interactive shell provides a REPL-style interface for MCP servers:
+
+```bash
+# Open shell to server without explicit session
+mcpc mcp.apify.com shell
+
+# Use existing session
+mcpc @apify shell
+```
+
+In shell, you can use the same [MCP commands](#mcp-commands) as in CLI,
+and the following additional commands:
+- `help` - Show available commands
+- `exit` or `quit` or Ctrl+D - Exit shell
+- Ctrl+C - Cancel current operation
+- Arrow keys for command history navigation (saved to `~/.mcpc/history`, last 1,000 commands)
 
 ### Scripting
 
@@ -493,9 +498,17 @@ Additionally, one of the core [design principles](CONTRIBUTING.md#design-princip
 is to keep backwards compatibility to maximum extent possible, to ensure the scripts using `mcpc`
 will not break over time.
 
-#### MCP server schema changes
+Piping between sessions
 
-MCP is a fluid protocol, and MCP servers can change operations and their schema at any time. 
+```bash
+mcpc --json @apify tools-call search-actors --args query="tiktok scraper" \
+  | jq '.data.results[0]' \
+  | mcpc @playwright tools-call run-browser
+```
+
+#### Schema validation
+
+MCP is a fluid protocol, and MCP servers can change operations and their schema at any time.
 To ensure your scripts fail fast whenever such schema change occurs, rather than fail silently later,
 you can use the `--schema <file>` option to pass `mcpc` the expected operation schema.
 If the MCP server's current schema is incompatible, the command returns an error.
@@ -513,92 +526,47 @@ mcpc @apify tools-call search-actors \
 
 The `--schema-mode <mode>` parameter determines how `mcpc` validates the schema:
 
-- `compatible` (default) - Backwards compatible (new optional fields OK, types of required 
+- `compatible` (default) - Backwards compatible (new optional fields OK, types of required
   fields and passed arguments must match, descriptions are ignored). For tools, the output schema
   is ignored.
-- `strict` - Exact schema match required (all fields, their types and descriptions must be 
+- `strict` - Exact schema match required (all fields, their types and descriptions must be
   identical). For tools, the output schema must match exactly.
 - `ignore` - Skip schema validation altogether
 
-### Session failover
 
-`mcpc` bridge process attempts to keep sessions alive by sending periodic ping messages to the MCP server.
-But even then, the session can fail for a number of reasons:
+### AI agents
 
-- Network disconnects
-- Server drops the session for inactivity or other reasons
-- Bridge process crashes
+`mcpc` is [designed](CONTRIBUTING.md#design-principles) for AI agent use: 
+the commands and messages are consise, intuitive, and avoid unnecessary interaction loops.
+You AI coding agents can readily interact with `mcpc` in text mode
 
-Here's how `mcpc` handles these situations:
+#### Code mode
 
-- If the bridge process is running, it will automatically try to reconnect to the server if the connection fails
-and establish the keep-alive pings.
-- If the server response indicates the `MCP-Session-Id` is no longer valid or authentication permanently failed (HTTP error 401 or 402),
-the bridge process will flag the session as **expired** in `~/.mcpc/sessions.json` and terminate.
-- If the bridge process crashes, `mcpc` attempts to restart it next time you use the specific session.
+TODO: Explain that scripting can be used for this,
+link to https://www.anthropic.com/engineering/code-execution-with-mcp
+and https://blog.cloudflare.com/code-mode/ 
 
-Note that `mcpc` never automatically removes sessions from the list, but rather flags the session as **expired**,
-and any attempts to use it will fail.
-To remove the session from the list, you need to explicitly close it:
+#### Claude Code skill
 
+For AI coding agents using [Claude Code](https://claude.ai/code), we provide a skill that teaches Claude how to use mcpc effectively.
+
+**Installation:**
 ```bash
-mcpc @apify close
+mkdir -p ~/.claude/skills/mcpc
+cp claude-skill/SKILL.md ~/.claude/skills/mcpc/
 ```
 
-or reconnect it using the `session` command (if the session exists but bridge is dead, it will be automatically reconnected):
+Then restart Claude Code. The skill enables Claude to interact with MCP servers via mcpc commands instead of function calling, which is more efficient and uses fewer tokens.
 
-```bash
-mcpc https://mcp.apify.com session @apify
-```
-
-## Logging
-
-TODO: Move this to MPC features section
-
-The background bridge process logs to `~/.mcpc/logs/bridge-<session-name>.log`.
-The main `mcpc` process doesn't save log files, but you can use `--verbose` flag to print all logs to stderr.
-
-MCP servers can be instructed to adjust their [logging level](https://modelcontextprotocol.io/specification/latest/server/utilities/logging)
-using the `logging/setLevel` command:
-
-```bash
-# Set server log level to debug for detailed output
-mcpc @apify logging-set-level debug
-
-# Reduce server logging to only errors
-mcpc @apify logging-set-level error
-```
-
-**Available log levels** (from most to least verbose):
-- `debug` - Detailed debugging information
-- `info` - General informational messages
-- `notice` - Normal but significant events
-- `warning` - Warning messages
-- `error` - Error messages
-- `critical` - Critical conditions
-- `alert` - Action must be taken immediately
-- `emergency` - System is unusable
-
-**Note:** This sets the logging level on the **server side**. The actual log output depends on the server's implementation.
+See [`claude-skill/README.md`](./claude-skill/README.md) for details.
 
 
-## Cleanup
+#### Sandboxing
 
-You can clean up the `mcpc` state and data using the `--clean` option:
+TODO: explain auth profiles need to be created by person before
 
-```bash
-# Safe non-destructive cleanup: remove expired sessions, delete old orphaned logs
-mcpc --clean
+Future: sharing with 
 
-# Clean specific resources (comma-separated)
-mcpc --clean=sessions      # Kill bridges, delete all sessions
-mcpc --clean=profiles      # Delete all authentication profiles
-mcpc --clean=logs          # Delete all log files
-mcpc --clean=sessions,logs # Clean multiple resource types
-
-# Nuclear option: remove everything
-mcpc --clean=all           # Delete all sessions, profiles, logs, and sockets
-```
 
 ## Configuration
 
@@ -609,7 +577,7 @@ Configuration can be provided via file, environment variables, or command-line f
 2. Environment variables
 3. Built-in defaults
 
-### MCP config JSON file
+### MCP server config file
 
 `mcpc` supports the ["standard"](https://gofastmcp.com/integrations/mcp-json-configuration)
 MCP server JSON config file, compatible with Claude Desktop, VS Code, and other MCP clients.
@@ -698,6 +666,25 @@ Config files support environment variable substitution using `${VAR_NAME}` synta
 - `MCPC_VERBOSE` - Enable verbose logging (set to `1`, `true`, or `yes`, case-insensitive)
 - `MCPC_JSON` - Enable JSON output (set to `1`, `true`, or `yes`, case-insensitive)
 
+
+### Cleanup
+
+You can clean up the `mcpc` state and data using the `--clean` option:
+
+```bash
+# Safe non-destructive cleanup: remove expired sessions, delete old orphaned logs
+mcpc --clean
+
+# Clean specific resources (comma-separated)
+mcpc --clean=sessions      # Kill bridges, delete all sessions
+mcpc --clean=profiles      # Delete all authentication profiles
+mcpc --clean=logs          # Delete all log files
+mcpc --clean=sessions,logs # Clean multiple resource types
+
+# Nuclear option: remove everything
+mcpc --clean=all           # Delete all sessions, profiles, logs, and sockets
+```
+
 ## MCP protocol notes
 
 TODO: explain in detail how MCP concepts work in mcpc
@@ -729,7 +716,39 @@ TODO: explain in detail how MCP concepts work in mcpc
 - Pings: `mcpc` periodically issues the MCP `ping` request to keep the connection alive
 - Sampling is not supported as `mcpc` has no access to an LLM
 
+
+### Server logs
+
+TODO: Move this to MPC features section
+
+
+MCP servers can be instructed to adjust their [logging level](https://modelcontextprotocol.io/specification/latest/server/utilities/logging)
+using the `logging/setLevel` command:
+
+```bash
+# Set server log level to debug for detailed output
+mcpc @apify logging-set-level debug
+
+# Reduce server logging to only errors
+mcpc @apify logging-set-level error
+```
+
+**Available log levels** (from most to least verbose):
+- `debug` - Detailed debugging information
+- `info` - General informational messages
+- `notice` - Normal but significant events
+- `warning` - Warning messages
+- `error` - Error messages
+- `critical` - Critical conditions
+- `alert` - Action must be taken immediately
+- `emergency` - System is unusable
+
+**Note:** This sets the logging level on the **server side**. The actual log output depends on the server's implementation.
+
+
 ## Security
+
+TODO: Simplify this section
 
 `mcpc` implements the [MCP security best practices](https://modelcontextprotocol.io/specification/2025-11-25/basic/security_best_practices) specification. MCP enables arbitrary tool execution and data access; treat servers like you treat shells:
 
@@ -803,7 +822,6 @@ This architecture ensures:
 - URL normalization removes username, password, and hash from URLs
 - Local OAuth callback server binds to `127.0.0.1` only
 - No credentials logged even in verbose mode
-- `MCP-Protocol-Version` and `MCP-Session-Id` headers handled per MCP spec
 
 ## Error handling
 
@@ -815,8 +833,6 @@ This architecture ensures:
 - **Tool execution errors**: Returns server error messages with context
 - **Bridge crashes**: Detects and cleans up orphaned processes, offers restart
 
-Use `--verbose` to print detailed debugging information to stderr (includes JSON-RPC messages, streaming events, and protocol negotiation).
-
 ### Exit codes
 
 - `0` - Success
@@ -825,88 +841,24 @@ Use `--verbose` to print detailed debugging information to stderr (includes JSON
 - `3` - Network error (connection failed, timeout, etc.)
 - `4` - Authentication error (invalid credentials, forbidden, etc.)
 
-### Retry strategy
+### Verbose mode
 
-- **Network errors**: Automatic retry with exponential backoff (3 attempts)
-- **Stream reconnection**: Starts at 1s, doubles to max 30s
-- **Bridge restart**: Automatic on crash detection (recreates session on next command)
-- **Timeouts**: Configurable per-request timeout (default: 5 minutes)
-
-## Interactive shell
-
-The interactive shell provides a REPL-style interface for MCP servers:
-
-```bash
-mcpc @apify shell
-```
-
-**Features:**
-- Command history with arrow key navigation (saved to `~/.mcpc/history`, last 1000 commands)
-- Real-time server notifications displayed during session
-- Prompt shows session name: `mcpc(@apify)> `
-
-**Shell-specific commands:**
-- `help` - Show available commands
-- `exit` or `quit` or Ctrl+D - Exit shell
-- Ctrl+C - Cancel current operation
-
-**Example session:**
-```
-$ mcpc @apify shell
-Connected to apify (https://mcp.apify.com)
-MCP version: 2025-11-25
-
-mcpc(@apify)> tools-list
-Available tools:
-  - search-actors
-  - get-actor
-  - run-actor
-
-mcpc(@apify)> tools-call search-actors --args query="tiktok scraper"
-[results...]
-
-mcpc(@apify)> exit
-```
-
-## Claude Code skill
-
-For AI coding agents using [Claude Code](https://claude.ai/code), we provide a skill that teaches Claude how to use mcpc effectively.
-
-**Installation:**
-```bash
-mkdir -p ~/.claude/skills/mcpc
-cp claude-skill/SKILL.md ~/.claude/skills/mcpc/
-```
-
-Then restart Claude Code. The skill enables Claude to interact with MCP servers via mcpc commands instead of function calling, which is more efficient and uses fewer tokens.
-
-See [`claude-skill/README.md`](./claude-skill/README.md) for details.
-
-
-## Troubleshooting
-
-To see what's happening, enable detailed logging with `--verbose`:
+To see what's happening, enable detailed logging with `--verbose`.
 
 ```bash
 mcpc --verbose @apify tools-list
 ```
 
-This shows:
-- Protocol negotiation details
-- JSON-RPC request/response messages
-- Streaming events and reconnection attempts
-- Bridge communication (socket messages)
-- File locking operations
-- Prints server log messages with severity `debug`, `info`, and `notice` to standard output
+This causes `mcpc` to print detailed debug messages to stderr.
 
 ### Logs
 
-Bridge processes log to:
-- `~/.mcpc/logs/bridge-<session-name>.log`
+The background bridge processes log to `~/.mcpc/logs/bridge-<session-name>.log`.
+The main `mcpc` process doesn't save log files.
 
 Log rotation: Keep last 10MB per session, max 5 files.
 
-### Common issues
+### Troubleshooting common issues
 
 **"Cannot connect to bridge"**
 - Bridge may have crashed. Try: `mcpc @<session-name> tools-list` to restart the bridge

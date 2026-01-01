@@ -9,6 +9,8 @@
 
 - We support "prompts", "tools" etc commands ... do we need to?
 
+- Rename "session" command to "connect"
+
 ## MCP features
 
 - Add `--proxy [HOST:]PORT` feature to `connect` command to enable MCP proxy:
@@ -49,3 +51,31 @@
   We could have some special dir for long-term testing...
 
 
+
+
+TODO: new variant:
+tools-call <tool-name> [<args-json> | arg1=val arg2:=json ... | <stdin>]
+
+
+
+This error is wrong - we should attempt to connect and only claim auth error if the server 
+requires it, otherwise fail with "host not found" or something similar error
+> mcpc xxxx tools-list
+Error: No authentication profile found for xxxx.
+
+To authenticate, run:
+mcpc xxxx login
+
+Then run your command again.
+
+
+
+Add logTarget to "shell" command too!
+> mcpc @test shell
+Welcome to mcpc shell for @test
+Type "help" for available commands, "exit" to quit
+
+
+
+
+mcpc mcp.apify.com shell --- do we also open session?
