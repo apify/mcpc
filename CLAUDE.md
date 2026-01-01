@@ -178,6 +178,11 @@ mcpc/
    - Bridge forwards to MCP server, returns response
    - CLI formats and displays output
 
+**Session States:**
+- 🟢 **live** - Bridge process running; server might or might not be responding
+- 🟡 **dead** - Bridge process crashed or killed; auto-restarts on next use
+- 🔴 **expired** - Server rejected session (auth failed, session ID invalid); requires `close` and reconnect
+
 ### Transport Implementation
 
 **Streamable HTTP:**

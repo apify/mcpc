@@ -22,8 +22,8 @@ Note that `mcpc` does not invoke LLMs itself; that's the job of the higher layer
 - 🚀 **Zero setup** - Connect to remote servers instantly with just a URL.
 - 🔧 **Strong MCP support** - Instructions, tools, resources, prompts, dynamic discovery.
 - 📊 **JSON output** - Easy integration with `jq`, scripts, and other CLI tools.
-- 🤖 **AI-friendly** - Designed for code generation, enables MCP proxy for sandboxing.
-- 🔒 **Secure** - Full OAuth support, OS keychain for credentials storage.
+- 🤖 **AI-friendly** - Designed for both function calling and code mode with sandboxing.
+- 🔒 **Secure** - Full OAuth 2.1 support, OS keychain for credentials storage.
 
 
 ## Table of contents
@@ -38,6 +38,7 @@ Note that `mcpc` does not invoke LLMs itself; that's the job of the higher layer
   - [Targets](#targets)
   - [MCP commands](#mcp-commands)
     - [Command arguments](#command-arguments)
+  - [Interactive shell](#interactive-shell)
   - [JSON mode](#json-mode)
 - [Sessions](#sessions)
   - [Session lifecycle](#session-lifecycle)
@@ -47,8 +48,7 @@ Note that `mcpc` does not invoke LLMs itself; that's the job of the higher layer
   - [OAuth profiles](#oauth-profiles)
   - [Authentication precedence](#authentication-precedence)
     - [Proxy MCP server](#proxy-mcp-server)
-- [Interaction](#interaction)
-  - [Interactive shell](#interactive-shell)
+- [Automation](#automation)
   - [Scripting](#scripting)
   - [Schema validation](#schema-validation)
   - [AI agents](#ai-agents)
@@ -110,7 +110,7 @@ mcpc mcp.apify.com tools-list --json
 
 # Create and use persistent MCP session
 mcpc mcp.apify.com connect @test
-mcpc @test tools-call search-actors keywords:="web crawler"
+mcpc @test tools-call search-actors keywords:="website crawler"
 mcpc @test shell
 
 # Interact with a local MCP server package (stdio) referenced from config file
@@ -288,6 +288,18 @@ mcpc @server tools-call search query := "hello world"
 mcpc @server tools-call search "query:=hello world"
 ```
 
+### Interactive shell
+
+`mcpc` provides interactive shell for discovery and testing of MCP servers.
+
+```bash
+mcpc mcp.apify.com shell    # Direct connection
+mcpc @apify shell           # Use existing session
+```
+
+Shell commands: `help`, `exit`/`quit`/Ctrl+D, Ctrl+C to cancel.
+Arrow keys navigate history (saved to `~/.mcpc/history`).
+
 ### JSON mode
 
 By default, `mcpc` prints output in Markdown-ish text format with colors, making it easy to read by both humans and AIs.
@@ -336,10 +348,19 @@ The sessions are persistent: metadata is saved in `~/.mcpc/sessions.json` file,
 [authentication tokens](#authentication) in OS keychain.
 The `mcpc` bridge process keeps the session alive by sending periodic [ping messages](#ping) to the MCP server.
 Still, sessions can fail due to network disconnects, bridge process crash, or server dropping it.
-Here's how `mcpc` handles these situations:
 
-- While the **bridge process is running**: 
-  - If **server positively responds** to pings, the session is marked 🟢 **`alive`**, and everything is fine.
+**Session states:**
+
+| State            | Meaning                                                                                       |
+|------------------|-----------------------------------------------------------------------------------------------|
+| 🟢 **`live`**    | Bridge process is running; server might or might not be operational                           |
+| 🟡 **`dead`**    | Bridge process crashed or was killed; will auto-restart on next use                           |
+| 🔴 **`expired`** | Server rejected the session (auth failed, session ID invalid); requires `close` and reconnect |
+
+Here's how `mcpc` handles various bridge process and server connection states:
+
+- While the **bridge process is running**:
+  - If **server positively responds** to pings, the session is marked 🟢 **`live`**, and everything is fine.
   - If **server stops responding**, the bridge will keep trying to reconnect in the background.
   - If **server negatively responds** to indicate `MCP-Session-Id` is no longer valid
     or authentication permanently failed (HTTP 401 or 403),
@@ -567,19 +588,9 @@ mcpc
 ```
 
 
-## Interaction
+## Automation
 
-`mcpc` supports multiple interaction modes: interactive shell, scripting, and AI agent integration.
-
-### Interactive shell
-
-```bash
-mcpc mcp.apify.com shell    # Direct connection
-mcpc @apify shell           # Use existing session
-```
-
-Shell commands: `help`, `exit`/`quit`/Ctrl+D, Ctrl+C to cancel.
-Arrow keys navigate history (saved to `~/.mcpc/history`).
+`mcpc` is designed for automation: shell scripting, schema validation for stable behavior, and AI agent integration.
 
 ### Scripting
 
@@ -618,7 +629,7 @@ Schema modes (`--schema-mode`):
 
 ### AI agents
 
-`mcpc` is designed for use AI agents, in both interactive MCP tool calling mode 
+`mcpc` is designed for use by AI agents, in both interactive MCP tool calling mode
 and "[code mode](https://blog.cloudflare.com/code-mode/)".
 
 - **Tool calling mode** - CLI-based AI agents can dynamically explore and interact with the MCP server, thanks to the default Markdown-ish output.

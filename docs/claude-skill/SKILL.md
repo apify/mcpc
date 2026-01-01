@@ -107,6 +107,11 @@ mcpc @apify restart
 mcpc @apify close
 ```
 
+**Session states:**
+- 🟢 **live** - Bridge running, server might or might not be responding
+- 🟡 **dead** - Bridge crashed; auto-restarts on next use
+- 🔴 **expired** - Server rejected session; needs `close` and reconnect
+
 ## Authentication
 
 **OAuth (interactive login)**:
