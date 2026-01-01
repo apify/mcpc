@@ -57,6 +57,7 @@ Note that `mcpc` does not invoke LLMs itself; that's the job of the higher layer
     - [Sandboxing](#sandboxing)
 - [Configuration](#configuration)
   - [MCP server config file](#mcp-server-config-file)
+  - [Saved state](#saved-state)
   - [Environment variables](#environment-variables)
   - [Cleanup](#cleanup)
 - [MCP protocol support](#mcp-protocol-support)
@@ -118,7 +119,7 @@ mcpc --config ~/.vscode/mcp.json filesystem tools-list
 
 ## Usage
 
-```bash
+```
 Usage: mcpc [options] <target> [command]
 
 Options:
@@ -218,7 +219,7 @@ mcpc @apify tools-call search-apify-docs --args query="What are Actors?"
 
 See [MCP feature support](#mcp-feature-support) for details about all supported MCP features and commands.
 
-#### MCP command arguments
+#### Command arguments
 
 The `tools-call` and `prompts-get` commands accept arguments to pass to the MCP server:
 
@@ -254,91 +255,79 @@ echo '{"query":"hello","count":10}' | mcpc @server tools-call my-tool
 
 By default, `mcpc` prints output in Markdown-ish text format with colors, making it easy to read by both humans and AIs.
 
-With `--json` option, `mcpc` always emits only a single JSON object (or array), to enable scripting.
+With `--json` option, `mcpc` always emits only a single JSON object (or array), to enable [scripting](#scripting).
 **For all MCP commands, the returned objects are always consistent with the
 [MCP specification](https://modelcontextprotocol.io/specification/latest).**
 On success, the JSON object is printed to stdout, on error to stderr.
-For details, see [Scripting](#scripting).
 
 Note that `--json` is not available for `shell`, `login`, and `mcpc --help` commands.
 
 ## Sessions
 
 MCP is a [stateful protocol](https://modelcontextprotocol.io/specification/latest/basic/lifecycle):
-clients and servers perform an initialization handshake
-to negotiate protocol version and capabilities, then communicate within a persistent session.
-Each session maintains:
-- Unique `MCP-Session-Id`, negotiated protocol version and capabilities
-- For Streamable HTTP transport: persistent connection with bidirectional streaming, with automatic reconnection
-- For stdio transport: persistent bidirectional pipe to subprocess
+clients and servers negotiate protocol version and capabilities, and then communicate within a persistent session.
+To support these sessions, `mcpc` can start a lightweight **bridge process** that maintains the connection and state.
+This is more efficient than forcing every MCP command to reconnect and reinitialize,
+and enables long-term stateful sessions.
 
-Instead of forcing every command to reconnect and reinitialize,
-`mcpc` starts a lightweight **bridge process** per session that:
-
-- Maintains the MCP session (protocol version, capabilities, connection state)
-- For Streamable HTTP: Manages persistent connections with automatic reconnection and resumption
-- Handles multiple concurrent requests
-
-### Session management
+The sessions are given names prefixed with `@` (e.g. `@apify`),
+which then serve as unique reference in commands.
 
 ```bash
-# Create a persistent session (with default authentication profile, if available)
-mcpc mcp.apify.com\?tools=docs session @apify1
+# Create a persistent session
+mcpc mcp.apify.com\?tools=docs session @apify
 
-# Create session with specific authentication profile
-mcpc mcp.apify.com session @apify --profile personal
-
-# List all active sessions and saved authentication profiles
+# List all sessions and OAuth profiles
 mcpc
 
-# Active sessions:
-#   @apify → https://mcp.apify.com (http, profile: personal)
-#
-# Saved authentication profiles:
-#   https://mcp.apify.com
-#     • personal (authenticated: 2 days ago)
-#     • work (authenticated: 1 week ago)
-
-# Use the session
+# Run MCP commands in the session
 mcpc @apify tools-list
 mcpc @apify shell
 
 # Restart the session (kills and restarts the bridge process)
 mcpc @apify restart
 
-# Close the session (terminates bridge process, but keeps authentication profile)
+# Close the session, terminates bridge process
 mcpc @apify close
+
+# ...now session name "@apify" is forgotten and available for future use
 ```
 
 ### Session failover
 
-The `mcpc` bridge process keeps sessions alive by sending periodic ping messages to the MCP server.
-However, sessions can still fail for several reasons:
-
-- Network disconnects
-- Server drops the session for inactivity or other reasons
-- Bridge process crashes
-
+The sessions are persistent: metadata is save in `~/.mcpc/sessions.json` file,
+[authentication tokens](#authentication) in OS keychain.
+The `mcpc` bridge process keeps the session alive by sending periodic [ping messages](#ping) to the MCP server.
+Still, sessions can still fail due to network disconnects, bridge process crash, or server dropping it.
 Here's how `mcpc` handles these situations:
 
-- If the bridge process is running, it will automatically try to reconnect to the server if the connection fails
-  and establish the keep-alive pings.
-- If the server response indicates the `MCP-Session-Id` is no longer valid or authentication permanently failed (HTTP 401 or 403),
-  the bridge process will flag the session as **expired** in `~/.mcpc/sessions.json` and terminate.
-- If the bridge process crashes, `mcpc` attempts to restart it next time you use the specific session.
+- While the **bridge process is running**: 
+  - If **server postively responds** to pings, the session is marked 🟢 **`alive`**, and everything is fine.
+  - If **server stops responding**, the bridge will keep trying to reconnect in the background.
+  - If **server negatively responds** to indicate `MCP-Session-Id` is no longer valid
+    or authentication permanently failed (HTTP 401 or 403),
+    the bridge process will flag the session as 🔴 **`expired`** and **terminate** to avoid wasting resources.
+    Any future attempt to use the session (`mcpc @my-session ...`) will fail.
+- If the **bridge process crashes**, `mcpc` will mark the session as 🟡 **`dead`** on first use.
+  Next time you run `mcpc @my-session ...`, it will attempt to restart the bridge process.
+  - If bridge **restart succeeds**, everything starts again (see above).
+  - If bridge **restart fails**, `mcpc @my-session ...` returns error, and session remains marked 🟡 **`dead`**.
 
-`mcpc` never automatically removes sessions from the list. Instead, it flags them as **expired**,
-and any attempts to use an expired session will fail.
-To remove the session from the list, you need to explicitly close it:
+Note that `mcpc` never automatically removes sessions from the list.
+Instead, it keeps them flagged as 🟡 **`dead`** or 🔴 **`expired`**,
+and any future attempts to use them will fail.
+
+To **remove the session from the list**, you need to explicitly close it:
 
 ```bash
 mcpc @apify close
 ```
 
-or reconnect it using the `session` command (if the session exists but bridge is dead, it will be automatically reconnected):
+You can restart session anytime, which kills the bridge process
+and opens new connection with new `MCP-Session-Id`, by running:
 
 ```bash
-mcpc https://mcp.apify.com session @apify
+mcpc @apify restart
 ```
 
 
@@ -721,7 +710,7 @@ mcpc --clean=all           # Delete all sessions, profiles, logs, and sockets
 ### Transport
 
 - **stdio**: Direct bidirectional JSON-RPC communication over
-  standard input/output, fully supported via [config file](#mcp-server-config-file).
+  stdio server from the [config file](#mcp-server-config-file).
 - **Streamable HTTP**: Fully supported.
 - **HTTP with SSE** (deprecated): Legacy mode, not supported.
 
@@ -735,10 +724,11 @@ mcpc --clean=all           # Delete all sessions, profiles, logs, and sockets
 
 The bridge process manages the full MCP session lifecycle:
 - Performs initialization handshake (`initialize` → `initialized`)
-- Negotiates protocol version (currently `2025-11-25`)
+- Negotiates protocol version (currently `2025-11-25`) and capabilities
 - Fetches server-provided `instructions`
-- Maintains persistent HTTP connections with bidirectional streaming
+- Maintains persistent HTTP connections with bidirectional streaming, or stdio bidirectional pipe to subprocess
 - Handles `MCP-Protocol-Version` and `MCP-Session-Id` headers automatically
+- Handles multiple concurrent requests
 - Recovers transparently from network disconnections and bridge process crashes
 
 ### MCP feature support
@@ -773,8 +763,8 @@ mcpc @apify --json
 ```
 
 In [JSON mode](#json-mode), the resulting object adheres
-to [InitializeResult](https://modelcontextprotocol.io/specification/latest/schema#initializeresult) schema,
-including `_meta` field to provide additional server metadata.
+to [`InitializeResult`](https://modelcontextprotocol.io/specification/latest/schema#initializeresult) object schema,
+and `mcpc` includes additional `_meta` fields to provide server metadata.
 
 ```json
 {
