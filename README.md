@@ -15,7 +15,7 @@ After all, UNIX-compatible shell script is THE most universal coding language, f
 
 Note that `mcpc` does not invoke LLMs itself; that's the job of the higher layer.
 
-![mcpc screenshot](./docs/images/mcpc-screenshot.png)
+![mcpc screenshot](https://raw.githubusercontent.com/apify/mcpc/main/docs/images/mcpc-screenshot.png)
 
 **Key features:**
 - 🌎 **Highly compatible** - Works with any MCP server over Streamable HTTP or stdio.
