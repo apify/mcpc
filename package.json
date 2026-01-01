@@ -30,7 +30,7 @@
   "scripts": {
     "build": "tsc",
     "build:watch": "tsc --watch",
-    "build:toc": "./scripts/update-readme-help.sh && doctoc README.md --github --notitle --maxlevel 2 && sed -i '' '/^- \\[mcpc:/d' README.md",
+    "build:readme": "./scripts/update-readme.sh",
     "test": "npm run build && npm run test:unit && ./test/e2e/run.sh --no-build",
     "test:unit": "jest",
     "test:watch": "jest --watch",
@@ -45,7 +45,7 @@
     "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\"",
     "clean": "rm -rf dist",
     "prebuild": "npm run clean",
-    "prepublishOnly": "npm run lint && npm run build:toc && npm run build && npm test",
+    "prepublishOnly": "npm run lint && npm run build:readme && npm run build && npm test",
     "release": "bash scripts/publish.sh",
     "release:minor": "bash scripts/publish.sh minor",
     "release:major": "bash scripts/publish.sh major"
@@ -72,6 +72,7 @@
     "doctoc": "^2.2.1",
     "eslint": "^8.57.1",
     "jest": "^30.2.0",
+    "markdown-link-check": "^3.14.2",
     "nyc": "^17.1.0",
     "prettier": "^3.7.4",
     "ts-jest": "^29.4.6",

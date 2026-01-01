@@ -14,6 +14,7 @@ for better accuracy and lower token usage compared to traditional tool function 
 After all, UNIX-compatible shell script is THE most universal coding language, for people and LLMs alike.
 
 Note that `mcpc` does not invoke LLMs itself; that's the job of the higher layer.
+
 ![mcpc screenshot](./docs/images/mcpc-screenshot.png)
 
 **Key features:**
@@ -95,7 +96,7 @@ mcpc --config ~/.vscode/mcp.json filesystem tools-list
 
 ## Usage
 
-<!-- Generate this automatically from "mcpc --help" (skip "Documentation:" link and below) -->
+<!-- AUTO-GENERATED: mcpc --help -->
 
 ```
 Usage: mcpc [options] <target> [command]
@@ -505,6 +506,7 @@ mcpc mcp.apify.com\?tools=docs tools-list
 For stronger isolation, `mcpc` can expose an MCP session under new local proxy MCP server using the `--proxy` option.
 The proxy forwards all MCP requests to the upstream server but **never exposes the original authentication tokens** to the client.
 This is useful when you want to give someone or something MCP access without revealing your credentials.
+See also [AI sandbox access](#ai-sandbox-access).
 
 ```bash
 # Human authenticates to a remote server
@@ -627,7 +629,7 @@ and then generate shell scripts to execute sequences of actions,
 with `--schema` checks to ensure stability of integrations and faster failure recovery.
 Agents, make no harm!
 
-#### Sandboxing AI access
+#### AI sandbox access
 
 To ensure AI coding agents don't perform destructive actions or leak credentials,
 it's always a good idea to run them in a code sandbox
@@ -993,7 +995,7 @@ MCP enables arbitrary tool execution and data access - treat servers like you tr
 
 ### AI security
 
-See [](#sandboxing-ai-access) for details.
+See [AI sandbox access](#ai-sandbox-access) for details.
 
 ## Errors
 
