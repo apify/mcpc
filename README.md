@@ -623,10 +623,12 @@ mcpc --json @apify tools-get search-actors > expected.json
 mcpc @apify tools-call search-actors --schema expected.json keywords:="test"
 ```
 
-Schema modes (`--schema-mode`):
-- `compatible` (default) - New optional fields OK, required fields must match. Output schema validated (new output fields OK, removed fields cause error).
-- `strict` - Exact match required for all fields, types, and descriptions
-- `ignore` - Skip validation
+Available schema validation modes (`--schema-mode`):
+- `compatible` (default)
+  - Input schema: new optional fields OK, required fields must have the same type.
+  - Output schema: new fields OK, removed required fields cause error.
+- `strict` - Both input and output schemas must match exactly, including all fields, types, and descriptions
+- `ignore` - Skip validation completely (YOLO)
 
 ### AI sandboxes
 
