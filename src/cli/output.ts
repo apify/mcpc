@@ -733,7 +733,7 @@ export function formatWarning(message: string): string {
  * Format an info message
  */
 export function formatInfo(message: string): string {
-  return chalk.blue(`ℹ ${message}`);
+  return chalk.cyan(`ℹ ${message}`);
 }
 
 /**

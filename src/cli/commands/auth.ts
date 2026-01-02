@@ -24,8 +24,8 @@ export async function login(
     validateProfileName(profileName);
 
     if (options.outputMode === 'human') {
-      console.log(formatInfo(`Starting OAuth authentication for ${chalk.cyan(normalizedUrl)}`));
-      console.log(formatInfo(`Profile: ${chalk.cyan(profileName)}`));
+      console.log(formatInfo(`Starting OAuth authentication for ${normalizedUrl}`));
+      console.log(formatInfo(`Profile: ${chalk.magenta(profileName)}`));
     }
 
     // Perform OAuth flow
@@ -33,7 +33,7 @@ export async function login(
 
     if (options.outputMode === 'human') {
       console.log(formatSuccess('Authentication successful!'));
-      console.log(formatInfo(`Profile ${chalk.cyan(profileName)} saved`));
+      console.log(formatInfo(`Profile ${chalk.magenta(profileName)} saved`));
 
       if (result.profile.scopes && result.profile.scopes.length > 0) {
         console.log(formatInfo(`Scopes: ${result.profile.scopes.join(', ')}`));
@@ -79,7 +79,7 @@ export async function logout(
     if (result.count === 0) {
       if (options.outputMode === 'human') {
         console.error(
-          formatError(`Profile ${chalk.cyan(profileName)} for ${normalizedUrl} not found`)
+          formatError(`Profile ${chalk.magenta(profileName)} for ${normalizedUrl} not found`)
         );
       } else {
         console.error(formatOutput({ error: 'Profile not found' }, 'json'));
@@ -89,7 +89,7 @@ export async function logout(
     }
 
     if (options.outputMode === 'human') {
-      console.log(formatSuccess(`Profile ${chalk.cyan(profileName)} for ${normalizedUrl} deleted`));
+      console.log(formatSuccess(`Profile ${chalk.magenta(profileName)} for ${normalizedUrl} deleted`));
 
       // Warn about affected sessions
       if (result.affectedSessions.length > 0) {

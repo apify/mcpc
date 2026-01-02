@@ -103,7 +103,7 @@ function displayNotification(notification: NotificationData): void {
       message = chalk.yellow(`[${timestamp}] Resource updated`);
       break;
     case 'progress':
-      message = chalk.blue(`[${timestamp}] Progress: ${JSON.stringify(notification.params)}`);
+      message = chalk.cyan(`[${timestamp}] Progress: ${JSON.stringify(notification.params)}`);
       break;
     case 'logging/message':
       message = chalk.gray(`[${timestamp}] Server log: ${JSON.stringify(notification.params)}`);
