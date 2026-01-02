@@ -138,7 +138,7 @@ echo -e "${GREEN}✓ Build succeeded${NC}"
 # Run tests
 echo ""
 echo "Running tests..."
-npm test
+npm run test:unit && ./test/e2e/run.sh --no-build --parallel 1
 echo -e "${GREEN}✓ Tests passed${NC}"
 
 # Get current version
