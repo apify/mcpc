@@ -13,6 +13,7 @@
 
 ## Later
 
+- nit: in "login", make profile color consistent with "mcpc"
 - nit: show also header / open auth statuses for HTTP servers?
 - ux: consider forking "alive" session state to "alive" and "diconnected", to indicate the remove server is not responding but bridge 
   runs fine. We can use lastSeenAt + ping interval info for that, or status of last ping.

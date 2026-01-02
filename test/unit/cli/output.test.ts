@@ -508,7 +508,7 @@ describe('formatServerDetails', () => {
 
     // Should contain server info
     expect(output).toContain('Server:');
-    expect(output).toContain('Test Server v1.2.3');
+    expect(output).toContain('Test Server (version: 1.2.3)');
 
     // Should contain capabilities section
     expect(output).toContain('Capabilities:');
@@ -544,7 +544,7 @@ describe('formatServerDetails', () => {
 
     // Should contain server version without protocol version
     expect(output).toContain('Server:');
-    expect(output).toContain('Minimal Server v0.1.0');
+    expect(output).toContain('Minimal Server (version: 0.1.0)');
     expect(output).not.toContain('MCP version');
 
     // Should show (none) for capabilities

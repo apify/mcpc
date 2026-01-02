@@ -872,7 +872,7 @@ export function formatServerDetails(details: ServerDetails, target: string): str
 
   // Server info
   if (serverInfo) {
-    lines.push(chalk.bold('Server:') + ` ${serverInfo.name} v${serverInfo.version}`);
+    lines.push(chalk.bold('Server:') + ` ${serverInfo.name} (version: ${serverInfo.version || "N/A"})`);
     lines.push('');
   }
 
