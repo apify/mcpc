@@ -109,7 +109,7 @@ Options:
   -H, --header <header>  HTTP header for remote MCP server (can be repeated)
   -v, --version          Output the version number
   --verbose              Enable debug logging
-  --profile <name>       OAuth authentication profile to use (default: "default")
+  --profile <name>       OAuth profile for the server (default: "default")
   --schema <file>        Validate tool/prompt schema against expected schema
   --schema-mode <mode>   Schema validation mode: strict, compatible (default), ignore
   --timeout <seconds>    Request timeout in seconds (default: 300)
@@ -717,15 +717,18 @@ mcpc @apify --json
 
 In [JSON mode](#json-mode), the resulting object adheres
 to [`InitializeResult`](https://modelcontextprotocol.io/specification/latest/schema#initializeresult) object schema,
-and `mcpc` includes additional `_meta` fields to provide server metadata.
+and includes the `_mcpc` field with relevant server/session metadata.
 
 ```json
 {
-  "_meta": {
+  "_mcpc": {
     "sessionName": "@apify",
     "profileName": "default",
     "server": {
       "url": "https://mcp.apify.com"
+    },
+    "notifications": {
+      "tools": { "listChangedAt": "2026-01-01T00:42:58.049Z" }
     }
   },
   "protocolVersion": "2025-06-18",
@@ -802,7 +805,8 @@ When connected via a [session](#sessions), `mcpc` automatically handles `list_ch
 notifications for tools, resources, and prompts.
 The bridge process tracks when each notification type was last received.
 In [shell mode](#interactive-shell), notifications are displayed in real-time.
-The timestamps are available in JSON output via `mcpc --json` for scripting.
+The timestamps are available in JSON output of `mcpc <target> --json` under the `_mcpc.notifications`
+field - see [Server instructions](#server-instructions).
 
 #### Server logs
 

@@ -15,10 +15,14 @@
     },
 
     "apify-bearer": {
-      "url": "mcp.apify.com/#blabla",
+      "url": "https://mcp.apify.com",
       "headers": {
         "Authorization": "Bearer ${APIFY_TOKEN}"
       }
+    },
+
+    "apify-oauth": {
+      "url": "https://mcp.apify.com"
     }
   }
 }

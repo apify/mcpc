@@ -68,17 +68,17 @@ test_case "server details JSON has exact expected fields"
 run_mcpc "$SESSION" --json
 assert_success
 # MCP InitializeResult - validate exact top-level fields (no more, no less)
-expected_fields="_meta,capabilities,instructions,protocolVersion,serverInfo"
+expected_fields="_mcpc,capabilities,instructions,protocolVersion,serverInfo"
 actual_fields=$(echo "$STDOUT" | jq -r 'keys | sort | join(",")')
 if [[ "$actual_fields" != "$expected_fields" ]]; then
   test_fail "unexpected top-level fields: expected [$expected_fields], got [$actual_fields]"
 fi
-# _meta.server.url must be present
-assert_json "$STDOUT" '._meta.server.url' "_meta.server should have url field"
+# _mcpc.server.url must be present
+assert_json "$STDOUT" '._mcpc.server.url' "_mcpc.server should have url field"
 # Verify url contains localhost (our test server)
-server_url=$(json_get '._meta.server.url')
+server_url=$(json_get '._mcpc.server.url')
 if [[ "$server_url" != *"localhost"* ]]; then
-  test_fail "_meta.server.url should contain localhost, got: $server_url"
+  test_fail "_mcpc.server.url should contain localhost, got: $server_url"
 fi
 test_pass
 

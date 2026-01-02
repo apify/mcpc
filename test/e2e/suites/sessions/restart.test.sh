@@ -84,7 +84,7 @@ test_case "restart --json returns valid JSON"
 run_mcpc --json "$SESSION" restart
 assert_success
 assert_json_valid "$STDOUT"
-assert_json "$STDOUT" '._meta.server.url'
+assert_json "$STDOUT" '._mcpc.server.url'
 assert_json "$STDOUT" '.capabilities'
 test_pass
 

@@ -218,7 +218,7 @@ function createProgram(): Command {
     .option('-H, --header <header>', 'HTTP header for remote MCP server (can be repeated)')
     .version(packageJson.version, '-v, --version', 'Output the version number')
     .option('--verbose', 'Enable debug logging')
-    .option('--profile <name>', 'OAuth authentication profile to use (default: "default")')
+    .option('--profile <name>', 'OAuth profile for the server (default: "default")')
     .option('--schema <file>', 'Validate tool/prompt schema against expected schema')
     .option('--schema-mode <mode>', 'Schema validation mode: strict, compatible (default), ignore')
     .option('--timeout <seconds>', 'Request timeout in seconds (default: 300)')
