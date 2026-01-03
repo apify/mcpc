@@ -3,7 +3,7 @@
 `mcpc` is a CLI for the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)
 that maps MCP operations to intuitive commands for interactive shell use, scripts, and AI coding agents.
 
-`mcpc` is useful for inspecting MCP servers, scripting,
+`mcpc` is a Swiss Army knife for MCP. It is useful for inspecting servers, scripting,
 and enabling AI coding agents to use MCP ["code mode"](#ai-agents) in shell.
 After all, UNIX-compatible shell script is THE most universal coding language.
 
@@ -101,31 +101,31 @@ Options:
   -H, --header <header>         HTTP header for remote MCP server (can be repeated)
   -v, --version                 Output the version number
   --verbose                     Enable debug logging
-  --profile <name>              OAuth profile for the server (default: "default")
+  --profile <name>              OAuth profile for the server ("default" if skipped)
   --schema <file>               Validate tool/prompt schema against expected schema
   --schema-mode <mode>          Schema validation mode: strict, compatible (default), ignore
   --timeout <seconds>           Request timeout in seconds (default: 300)
-  --proxy <[host:]port>         Start proxy MCP server (with "connect" command)
-  --proxy-bearer-token <token>  Require bearer token for proxy server
+  --proxy <[host:]port>         Start proxy MCP server for session (with "connect" command)
+  --proxy-bearer-token <token>  Require authentication for access to proxy server
   --clean[=types]               Clean up mcpc data (types: sessions, logs, profiles, all)
   -h, --help                    Display general help
 
 Targets:
-  @<session>             Named persistent session (e.g. "@apify")
-  <config-entry>         Entry in MCP config file specified by --config (e.g. "fs")
-  <server-url>           Remote MCP server URL (e.g. "mcp.apify.com")
+  @<session>                    Named persistent session (e.g. "@apify")
+  <config-entry>                Entry in MCP config file specified by --config (e.g. "fs")
+  <server-url>                  Remote MCP server URL (e.g. "mcp.apify.com")
 
 Management commands (<target> missing):
-  login                  Create OAuth profile with credentials to access remote server
-  logout                 Remove OAuth profile for remote server
-  connect @<session>     Connect to server and create named persistent session
-  restart @<session>     Kill and restart a session
-  close @<session>       Close a session
+  login                         Create OAuth profile with credentials to access remote server
+  logout                        Remove OAuth profile for remote server
+  connect @<session>            Connect to server and create named persistent session
+  restart @<session>            Kill and restart a session
+  close @<session>              Close a session
 
 MCP commands (<target> provided):
-  help                   Show server info ("help" can be omitted)
-  shell                  Open interactive shell
-  tools-list             Send "tools/list" MCP request...
+  help                          Show server info ("help" can be omitted)
+  shell                         Open interactive shell
+  tools-list                    Send "tools/list" MCP request...
   tools-get <tool-name>
   tools-call <tool-name> [<args-json> | arg1:=val1 arg2:=val2 ...]
   prompts-list
