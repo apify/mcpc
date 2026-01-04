@@ -10,13 +10,13 @@ After all, UNIX-compatible shell script is THE most universal coding language.
 ![mcpc screenshot](https://raw.githubusercontent.com/apify/mcpc/main/docs/images/mcpc-demo.gif)
 
 **Key features:**
-- 🌎 **Highly compatible** - Works with any MCP server over Streamable HTTP or stdio.
+- 🌎 **Compatible** - Works with any MCP server over Streamable HTTP or stdio.
 - 🔄 **Persistent sessions** - Keep multiple server connections alive simultaneously.
-- 🚀 **Zero setup** - Connect to remote servers instantly with just a URL.
 - 🔧 **Strong MCP support** - Instructions, tools, resources, prompts, dynamic discovery.
-- 🔌 **JSON output** - Easy integration with `jq`, scripts, and other CLI tools.
-- 🤖 **AI-friendly** - Designed for both function calling and code mode with sandboxing.
+- 🔌 **Code mode** - JSON output enables integration with CLI tools like `jq` and scripting.
+- 🤖 **AI sandboxing** - MCP proxy server to securely access authenticated sessions from AI-generated code.
 - 🔒 **Secure** - Full OAuth 2.1 support, OS keychain for credentials storage.
+- 🪶 **Lightweight** - Minimal dependencies, works on Mac/Win/Linux, doesn't use LLMs on its own.
 
 
 ## Table of contents
