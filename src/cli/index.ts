@@ -218,7 +218,7 @@ function createProgram(): Command {
     .option('-H, --header <header>', 'HTTP header for remote MCP server (can be repeated)')
     .version(packageJson.version, '-v, --version', 'Output the version number')
     .option('--verbose', 'Enable debug logging')
-    .option('--profile <name>', 'OAuth profile for the server ("default" if skipped)')
+    .option('--profile <name>', 'OAuth profile for the server ("default" if not provided)')
     .option('--schema <file>', 'Validate tool/prompt schema against expected schema')
     .option('--schema-mode <mode>', 'Schema validation mode: strict, compatible (default), ignore')
     .option('--timeout <seconds>', 'Request timeout in seconds (default: 300)')
@@ -227,7 +227,7 @@ function createProgram(): Command {
     .option('--clean[=types]', 'Clean up mcpc data (types: sessions, logs, profiles, all)');
 
   // Add help text to match README
-  // Use raw markdown URL for pipes (AI agents), GitHub UI for TTY (humans)
+  // Use raw Markdown URL for pipes (AI agents), GitHub UI for TTY (humans)
   const docsUrl = process.stdout.isTTY
     ? `https://github.com/apify/mcpc/tree/v${packageJson.version}`
     : `https://raw.githubusercontent.com/apify/mcpc/v${packageJson.version}/README.md`;
@@ -241,7 +241,7 @@ Targets:
   <server-url>                  Remote MCP server URL (e.g. "mcp.apify.com")
 
 Management commands (<target> missing):
-  login                         Create OAuth profile with credentials to access remote server
+  login                         Create OAuth profile with credentials for remote server
   logout                        Remove OAuth profile for remote server
   connect @<session>            Connect to server and create named persistent session
   restart @<session>            Kill and restart a session

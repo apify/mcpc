@@ -101,7 +101,7 @@ Options:
   -H, --header <header>         HTTP header for remote MCP server (can be repeated)
   -v, --version                 Output the version number
   --verbose                     Enable debug logging
-  --profile <name>              OAuth profile for the server ("default" if skipped)
+  --profile <name>              OAuth profile for the server ("default" if not provided)
   --schema <file>               Validate tool/prompt schema against expected schema
   --schema-mode <mode>          Schema validation mode: strict, compatible (default), ignore
   --timeout <seconds>           Request timeout in seconds (default: 300)
@@ -116,7 +116,7 @@ Targets:
   <server-url>                  Remote MCP server URL (e.g. "mcp.apify.com")
 
 Management commands (<target> missing):
-  login                         Create OAuth profile with credentials to access remote server
+  login                         Create OAuth profile with credentials for remote server
   logout                        Remove OAuth profile for remote server
   connect @<session>            Connect to server and create named persistent session
   restart @<session>            Kill and restart a session
