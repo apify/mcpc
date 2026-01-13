@@ -486,6 +486,21 @@ async function handleCommands(target: string, args: string[]): Promise<void> {
       await utilities.ping(target, getOptionsFromCommand(command));
     });
 
+  // Codegen command
+  program
+    .command('codegen <dir>')
+    .description('Generate typed TypeScript client for this MCP server')
+    .option('--language <lang>', 'Target language (default: ts)', 'ts')
+    .option('--force', 'Overwrite existing files')
+    .action(async (dir, options, command) => {
+      const { codegen } = await import('./commands/codegen.js');
+      await codegen(target, dir, {
+        ...getOptionsFromCommand(command),
+        language: options.language,
+        force: options.force,
+      });
+    });
+
   // Parse and execute
   try {
     await program.parseAsync(args);
