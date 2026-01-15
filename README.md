@@ -1062,6 +1062,16 @@ with the help of Claude Code, during late nights over Christmas 2025 in North Be
 
 See [CONTRIBUTING](./CONTRIBUTING.md) for development setup, architecture overview, and contribution guidelines.
 
+## Related work
+
+- https://github.com/steipete/mcporter
+- https://github.com/philschmid/mcp-cli
+- https://github.com/chrishayuk/mcp-cli
+- https://github.com/f/mcptools
+- https://github.com/mattzcarey/cloudflare-mcp 
+- https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool
+
+
 ## License
 
 Apache-2.0 - see [LICENSE](./LICENSE) for details.
