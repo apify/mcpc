@@ -36,6 +36,7 @@ After all, UNIX-compatible shell script is THE most universal coding language.
 - [Security](#security)
 - [Errors](#errors)
 - [Development](#development)
+- [Related work](#related-work)
 - [License](#license)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
@@ -115,14 +116,14 @@ Targets:
   <config-entry>                Entry in MCP config file specified by --config (e.g. "fs")
   <server-url>                  Remote MCP server URL (e.g. "mcp.apify.com")
 
-Management commands (<target> omitted):
+Management commands:
   login                         Create OAuth profile with credentials for remote server
   logout                        Remove OAuth profile for remote server
   connect @<session>            Connect to server and create named persistent session
-  restart @<session>            Kill and restart a session
-  close @<session>              Close a session
+  restart                       Kill and restart a session
+  close                         Close a session
 
-MCP commands (<target> provided):
+MCP server commands:
   help                          Show server info ("help" can be omitted)
   shell                         Open interactive shell
   tools-list                    Send "tools/list" MCP request...
@@ -138,12 +139,14 @@ MCP commands (<target> provided):
   resources-templates-list
   logging-set-level <level>
   ping
+  
+Run "mcpc" (without <target>) to show available sessions and profiles.
 
 ```
 
-### Management commands
+### General actions
 
-When `<target>` is omitted, `mcpc` provides general management commands:
+When `<target>` is omitted, `mcpc` provides general actions:
 
 ```bash
 # List all sessions and OAuth profiles (also in JSON mode)
@@ -154,15 +157,13 @@ mcpc --json
 mcpc --help
 mcpc --version
 
-# Clean expired sessions and old log files
+# Clean expired sessions and old log files (see below for details)
 mcpc --clean
 ```
 
-For additional commands, see [OAuth profiles](#oauth-profiles) and [Cleanup](#cleanup).
-
 ### Targets
 
-To connect and interact with an MCP server, you need to specify a `<target>`, which can be one of (in order of precedence):
+To connect and interact with an MCP server, you need to specify a `<target>`, which can be one of (in this order of precedence):
 
 - **Entry in a config file** (e.g. `--config .vscode/mcp.json filesystem`) - see [Config file](#mcp-server-config-file)
 - **Remote MCP server URL** (e.g. `https://mcp.apify.com`)
@@ -1067,7 +1068,9 @@ See [CONTRIBUTING](./CONTRIBUTING.md) for development setup, architecture overvi
 - https://github.com/steipete/mcporter
 - https://github.com/philschmid/mcp-cli
 - https://github.com/chrishayuk/mcp-cli
+- https://github.com/wong2/mcp-cli
 - https://github.com/f/mcptools
+- https://github.com/adhikasp/mcp-client-cli
 - https://github.com/mattzcarey/cloudflare-mcp 
 - https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool
 

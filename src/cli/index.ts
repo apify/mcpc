@@ -240,14 +240,14 @@ Targets:
   <config-entry>                Entry in MCP config file specified by --config (e.g. "fs")
   <server-url>                  Remote MCP server URL (e.g. "mcp.apify.com")
 
-Management commands (<target> omitted):
+Management commands:
   login                         Create OAuth profile with credentials for remote server
   logout                        Remove OAuth profile for remote server
   connect @<session>            Connect to server and create named persistent session
-  restart @<session>            Kill and restart a session
-  close @<session>              Close a session
+  restart                       Kill and restart a session
+  close                         Close a session
 
-MCP commands (<target> provided):
+MCP server commands:
   help                          Show server info ("help" can be omitted)
   shell                         Open interactive shell
   tools-list                    Send "tools/list" MCP request...
@@ -263,6 +263,8 @@ MCP commands (<target> provided):
   resources-templates-list
   logging-set-level <level>
   ping
+  
+Run "mcpc" (without <target>) to show available sessions and profiles.
 
 Full docs: ${docsUrl}`
   );
