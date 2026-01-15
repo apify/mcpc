@@ -25,8 +25,8 @@ fi
 TEMP_HELP=$(mktemp)
 TEMP_README=$(mktemp)
 
-# Get help output, remove the "Full docs:" line at the end
-mcpc --help | sed '/^Full docs:/d' > "$TEMP_HELP"
+# Get help output, remove the "Full docs:" line and trailing empty line
+mcpc --help | sed '/^Full docs:/d' | sed '${/^$/d;}' > "$TEMP_HELP"
 
 # Use awk to replace content in the code block following the marker
 awk -v marker="$HELP_MARKER" '

@@ -141,7 +141,6 @@ MCP server commands:
   ping
   
 Run "mcpc" (without <target>) to show available sessions and profiles.
-
 ```
 
 ### General actions
