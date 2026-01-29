@@ -27,6 +27,7 @@ export {
 export type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
 
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
+import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
 import {
   StdioClientTransport,
@@ -39,6 +40,45 @@ import {
 import { createLogger, getVerbose } from '../lib/logger.js';
 import type { ServerConfig } from '../lib/types.js';
 import { ClientError } from '../lib/errors.js';
+
+/**
+ * Create a proxy-aware fetch function if HTTPS_PROXY or https_proxy is set.
+ * This allows mcpc to work in environments where network access is routed through
+ * a proxy (e.g., Claude Code's sandbox, corporate proxies).
+ *
+ * Node.js native fetch (undici) does not respect proxy environment variables,
+ * so we need to explicitly configure a ProxyAgent dispatcher.
+ */
+async function createProxyAwareFetch(): Promise<FetchLike | undefined> {
+  const proxyUrl = process.env.https_proxy || process.env.HTTPS_PROXY;
+  if (!proxyUrl) {
+    return undefined;
+  }
+
+  const logger = createLogger('ProxyFetch');
+  logger.debug(`Configuring proxy-aware fetch with proxy: ${proxyUrl}`);
+
+  try {
+    // Dynamically import undici to create a ProxyAgent
+    // undici is the HTTP client that powers Node.js native fetch
+    const { ProxyAgent, fetch: undiciFetch } = await import('undici');
+    const proxyAgent = new ProxyAgent(proxyUrl);
+
+    // Return a fetch function that uses the proxy dispatcher
+    const proxyFetch: FetchLike = (input, init) => {
+      return undiciFetch(input, {
+        ...init,
+        dispatcher: proxyAgent,
+      }) as Promise<Response>;
+    };
+
+    logger.debug('Proxy-aware fetch configured successfully');
+    return proxyFetch;
+  } catch (error) {
+    logger.debug(`Failed to configure proxy-aware fetch: ${error}`);
+    return undefined;
+  }
+}
 
 /**
  * Create a stdio transport for a local MCP server
@@ -60,10 +100,10 @@ export function createStdioTransport(config: StdioServerParameters): Transport {
 /**
  * Create a Streamable HTTP transport for a remote MCP server
  */
-export function createStreamableHttpTransport(
+export async function createStreamableHttpTransport(
   url: string,
   options: Omit<StreamableHTTPClientTransportOptions, 'fetch'> = {}
-): Transport {
+): Promise<Transport> {
   const logger = createLogger('StreamableHttpTransport');
   logger.debug('Creating Streamable HTTP transport', { url });
   logger.debug('Transport options:', {
@@ -79,10 +119,21 @@ export function createStreamableHttpTransport(
     maxRetries: 10, // Max 10 reconnection attempts
   };
 
-  const transport = new StreamableHTTPClientTransport(new URL(url), {
+  // Create proxy-aware fetch if proxy environment variables are set
+  const proxyFetch = await createProxyAwareFetch();
+
+  const transportOptions: StreamableHTTPClientTransportOptions = {
     reconnectionOptions: defaultReconnectionOptions,
     ...options,
-  });
+  };
+
+  // Use proxy-aware fetch if available
+  if (proxyFetch) {
+    transportOptions.fetch = proxyFetch;
+    logger.debug('Using proxy-aware fetch for HTTP transport');
+  }
+
+  const transport = new StreamableHTTPClientTransport(new URL(url), transportOptions);
 
   // Verify authProvider is correctly attached
   // @ts-expect-error accessing private property for debugging
@@ -124,10 +175,10 @@ export interface CreateTransportOptions {
 /**
  * Create a transport from a generic transport configuration
  */
-export function createTransportFromConfig(
+export async function createTransportFromConfig(
   config: ServerConfig,
   options: CreateTransportOptions = {}
-): Transport {
+): Promise<Transport> {
   // Stdio transport
   if (config.command) {
     const stdioConfig: StdioServerParameters = {
@@ -178,7 +229,7 @@ export function createTransportFromConfig(
       };
     }
 
-    return createStreamableHttpTransport(config.url, transportOptions);
+    return await createStreamableHttpTransport(config.url, transportOptions);
   }
 
   throw new ClientError('Invalid ServerConfig: must have either url or command');

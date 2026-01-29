@@ -5,9 +5,9 @@
 import { McpClient } from '../../../src/core/mcp-client.js';
 import { createMcpClient } from '../../../src/core/factory.js';
 
-// Mock the transports
+// Mock the transports (now async)
 jest.mock('../../../src/core/transports', () => ({
-  createTransportFromConfig: jest.fn().mockReturnValue({
+  createTransportFromConfig: jest.fn().mockResolvedValue({
     start: jest.fn().mockResolvedValue(undefined),
     send: jest.fn().mockResolvedValue(undefined),
     close: jest.fn().mockResolvedValue(undefined),
