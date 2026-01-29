@@ -127,7 +127,7 @@ export async function createMcpClient(options: CreateMcpClientOptions): Promise<
     if (options.mcpSessionId) {
       transportOptions.mcpSessionId = options.mcpSessionId;
     }
-    const transport = createTransportFromConfig(options.serverConfig, transportOptions);
+    const transport = await createTransportFromConfig(options.serverConfig, transportOptions);
     await client.connect(transport);
   }
 
