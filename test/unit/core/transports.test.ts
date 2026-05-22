@@ -2,27 +2,32 @@
  * Unit tests for MCP transports
  */
 
+import type { Mock } from 'vitest';
 import { createTransportFromConfig } from '../../../src/core/transports.js';
 import { StreamableHTTPClientTransport } from '../../../src/core/transports.js';
 import { ClientError } from '../../../src/lib/errors.js';
 import { proxyFetch } from '../../../src/lib/proxy.js';
 
 // Mock the SDK transports
-jest.mock('@modelcontextprotocol/sdk/client/stdio.js', () => ({
-  StdioClientTransport: jest.fn().mockImplementation(() => ({
-    start: jest.fn().mockResolvedValue(undefined),
-    send: jest.fn().mockResolvedValue(undefined),
-    close: jest.fn().mockResolvedValue(undefined),
-  })),
-  getDefaultEnvironment: jest.fn().mockReturnValue({}),
+vi.mock('@modelcontextprotocol/sdk/client/stdio.js', () => ({
+  StdioClientTransport: vi.fn(function () {
+    return {
+      start: vi.fn().mockResolvedValue(undefined),
+      send: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+  }),
+  getDefaultEnvironment: vi.fn().mockReturnValue({}),
 }));
 
-jest.mock('@modelcontextprotocol/sdk/client/streamableHttp.js', () => ({
-  StreamableHTTPClientTransport: jest.fn().mockImplementation(() => ({
-    start: jest.fn().mockResolvedValue(undefined),
-    send: jest.fn().mockResolvedValue(undefined),
-    close: jest.fn().mockResolvedValue(undefined),
-  })),
+vi.mock('@modelcontextprotocol/sdk/client/streamableHttp.js', () => ({
+  StreamableHTTPClientTransport: vi.fn(function () {
+    return {
+      start: vi.fn().mockResolvedValue(undefined),
+      send: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+  }),
   StreamableHTTPError: class StreamableHTTPError extends Error {},
 }));
 
@@ -72,7 +77,7 @@ describe('createTransportFromConfig', () => {
   });
 
   it('should inject proxyFetch into HTTP transport when no custom fetch is provided', () => {
-    const mock = StreamableHTTPClientTransport as jest.Mock;
+    const mock = StreamableHTTPClientTransport as Mock;
     mock.mockClear();
     createTransportFromConfig({
       url: 'https://mcp.example.com',
@@ -84,9 +89,9 @@ describe('createTransportFromConfig', () => {
   });
 
   it('should preserve custom fetch when provided (e.g. x402 middleware)', () => {
-    const mock = StreamableHTTPClientTransport as jest.Mock;
+    const mock = StreamableHTTPClientTransport as Mock;
     mock.mockClear();
-    const customFetch = jest.fn();
+    const customFetch = vi.fn();
     createTransportFromConfig(
       { url: 'https://mcp.example.com' },
       { customFetch: customFetch as any }

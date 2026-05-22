@@ -19,9 +19,7 @@ export const DEFAULT_CLIENT_METADATA_URL = 'https://apify.github.io/mcpc/client-
  * the first available port is used. Non-contiguous values to reduce the
  * chance that a single unrelated process claims all of them.
  */
-export const MCPC_OAUTH_CALLBACK_PORTS: readonly number[] = [
-  13316, 13163, 31316, 31613, 16133, 16313,
-] as const;
+export const MCPC_OAUTH_CALLBACK_PORTS: readonly number[] = [13316, 31613, 16133] as const;
 
 /**
  * OAuth token endpoint response (per OAuth 2.0 spec - uses snake_case)

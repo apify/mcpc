@@ -2,7 +2,13 @@
  * Unit tests for OAuth utility functions
  */
 
-import { discoverTokenEndpoint } from '../../../../src/lib/auth/oauth-utils.js';
+import type { MockInstance } from 'vitest';
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
+import {
+  discoverTokenEndpoint,
+  MCPC_OAUTH_CALLBACK_PORTS,
+} from '../../../../src/lib/auth/oauth-utils.js';
 import * as proxyModule from '../../../../src/lib/proxy.js';
 
 // Helper to create a mock fetch Response
@@ -14,10 +20,10 @@ function mockResponse(body: object | null, ok = true): Response {
 }
 
 describe('discoverTokenEndpoint', () => {
-  let fetchSpy: jest.SpyInstance;
+  let fetchSpy: MockInstance;
 
   beforeEach(() => {
-    fetchSpy = jest.spyOn(proxyModule, 'proxyFetch');
+    fetchSpy = vi.spyOn(proxyModule, 'proxyFetch');
   });
 
   afterEach(() => {
@@ -145,5 +151,39 @@ describe('discoverTokenEndpoint', () => {
       'https://example.com/.well-known/oauth-authorization-server',
       'https://example.com/.well-known/openid-configuration',
     ]);
+  });
+});
+
+describe('MCPC_OAUTH_CALLBACK_PORTS / client-metadata.json consistency', () => {
+  const PROJECT_ROOT = resolve(__dirname, '../../../..');
+  const metadata = JSON.parse(
+    readFileSync(resolve(PROJECT_ROOT, 'client-metadata.json'), 'utf-8')
+  ) as { redirect_uris: string[] };
+
+  it('every callback port has a matching loopback redirect_uri in client-metadata.json', () => {
+    const expectedUris = MCPC_OAUTH_CALLBACK_PORTS.map(
+      (port) => `http://127.0.0.1:${port}/callback`
+    );
+    for (const uri of expectedUris) {
+      expect(metadata.redirect_uris).toContain(uri);
+    }
+  });
+
+  it('every redirect_uri in client-metadata.json corresponds to a callback port', () => {
+    const allowedUris = new Set(
+      MCPC_OAUTH_CALLBACK_PORTS.map((port) => `http://127.0.0.1:${port}/callback`)
+    );
+    for (const uri of metadata.redirect_uris) {
+      expect(allowedUris.has(uri)).toBe(true);
+    }
+  });
+
+  it('the count of redirect_uris matches the count of callback ports', () => {
+    expect(metadata.redirect_uris.length).toBe(MCPC_OAUTH_CALLBACK_PORTS.length);
+  });
+
+  it('callback ports are unique', () => {
+    const unique = new Set(MCPC_OAUTH_CALLBACK_PORTS);
+    expect(unique.size).toBe(MCPC_OAUTH_CALLBACK_PORTS.length);
   });
 });

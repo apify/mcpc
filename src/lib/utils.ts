@@ -7,7 +7,7 @@ import { createHash } from 'crypto';
 import { execFileSync } from 'child_process';
 import { homedir } from 'os';
 import { join, resolve, isAbsolute } from 'path';
-import { mkdir, access, constants } from 'fs/promises';
+import { mkdir, access, constants, rename } from 'fs/promises';
 import { ClientError } from './errors.js';
 
 /**
@@ -330,6 +330,36 @@ export function isValidResourceUri(uri: string): boolean {
  */
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Rename a file atomically with retry on transient Windows errors.
+ *
+ * On Windows, `rename()` can fail with EPERM/EBUSY/EACCES when the destination
+ * file is briefly held open by another process (antivirus scanner, a sibling
+ * mcpc bridge re-reading sessions.json, etc.). The failure window is short, so
+ * a few quick retries with a small backoff are enough to recover.
+ */
+export async function atomicRename(src: string, dest: string): Promise<void> {
+  const transientCodes = new Set(['EPERM', 'EBUSY', 'EACCES']);
+  const maxAttempts = process.platform === 'win32' ? 10 : 1;
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await rename(src, dest);
+      return;
+    } catch (error) {
+      lastError = error;
+      const code = (error as NodeJS.ErrnoException).code;
+      if (!code || !transientCodes.has(code) || attempt === maxAttempts) {
+        throw error;
+      }
+      await sleep(20 * attempt);
+    }
+  }
+
+  throw lastError;
 }
 
 /**

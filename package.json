@@ -1,6 +1,6 @@
 {
   "name": "@apify/mcpc",
-  "version": "0.2.6",
+  "version": "0.3.0",
   "description": "Universal command-line client for the Model Context Protocol (MCP).",
   "type": "module",
   "keywords": [
@@ -32,23 +32,23 @@
     "build": "tsc",
     "build:watch": "tsc --watch",
     "build:readme": "./scripts/update-readme.sh",
-    "test": "npm run build && npm run test:unit && ./test/e2e/run.sh --no-build --parallel 8 && ./test/e2e/run.sh --no-build --parallel 8 --runtime bun",
-    "test:unit": "jest",
-    "test:watch": "jest --watch",
-    "test:coverage": "npm run test:coverage:unit && npm run test:coverage:e2e && npm run test:coverage:merge",
-    "test:coverage:unit": "jest --coverage && find test/coverage/unit -name '*.html' -exec sed -i '' -e 's/Code coverage report for All files/mcpc Coverage (Unit Tests)/g' -e 's/<h1>All files<\\/h1>/<h1>Unit Test Coverage<\\/h1>/g' {} \\;",
+    "test": "pnpm run build && pnpm run test:unit && ./test/e2e/run.sh --no-build --parallel 8 && ./test/e2e/run.sh --no-build --parallel 8 --runtime bun",
+    "test:unit": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "pnpm run test:coverage:unit && pnpm run test:coverage:e2e && pnpm run test:coverage:merge",
+    "test:coverage:unit": "vitest run --coverage",
     "test:coverage:e2e": "./test/e2e/run.sh --coverage",
     "test:coverage:merge": "test/coverage/coverage-merge.sh",
     "test:e2e": "./test/e2e/run.sh --keep",
     "test:e2e:bun": "./test/e2e/run.sh --no-build --runtime bun",
-    "test:conformance": "npm run build && npx -y @modelcontextprotocol/conformance client --command \"node test/conformance/client.mjs\" --scenario initialize",
+    "test:conformance": "pnpm run build && npx -y @modelcontextprotocol/conformance client --command \"node test/conformance/client.mjs\" --scenario initialize",
     "lint": "eslint src/**/*.ts && prettier --check \"src/**/*.ts\" \"test/**/*.ts\"",
     "lint:fix": "eslint src/**/*.ts --fix && prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\"",
     "clean": "rm -rf dist",
-    "prebuild": "npm run clean",
-    "prepublishOnly": "if [ -z \"$MCPC_RELEASE\" ]; then echo '\\n❌ Direct npm publish is not allowed.\\n   Please use: npm run release\\n' && exit 1; fi",
+    "prebuild": "pnpm run clean",
+    "prepublishOnly": "if [ -z \"$MCPC_RELEASE\" ]; then echo '\\n❌ Direct publish is not allowed.\\n   Please use: pnpm run release\\n' && exit 1; fi",
     "release": "bash scripts/publish.sh",
     "release:minor": "bash scripts/publish.sh minor",
     "release:major": "bash scripts/publish.sh major",
@@ -69,23 +69,30 @@
     "viem": "^2.46.3"
   },
   "devDependencies": {
-    "@types/jest": "^30.0.0",
     "@types/node": "^25.0.3",
     "@types/proper-lockfile": "^4.1.4",
     "@types/qrcode-terminal": "^0.12.2",
     "@types/uuid": "^11.0.0",
-    "@typescript-eslint/eslint-plugin": "^8.50.0",
-    "@typescript-eslint/parser": "^8.50.0",
+    "@typescript-eslint/eslint-plugin": "8.57.2",
+    "@typescript-eslint/parser": "8.57.2",
+    "@vitest/coverage-v8": "4.1.5",
     "c8": "^11.0.0",
     "doctoc": "^2.2.1",
     "eslint": "^8.57.1",
-    "jest": "^30.2.0",
     "markdown-link-check": "^3.14.2",
     "nyc": "^18.0.0",
     "prettier": "^3.7.4",
     "proxy-chain": "^2.7.1",
-    "ts-jest": "^29.4.6",
     "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "4.1.5"
+  },
+  "packageManager": "pnpm@10.33.4",
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "10.33.4",
+      "onFail": "warn"
+    }
   }
 }

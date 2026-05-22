@@ -69,8 +69,8 @@ type EntryConstructor = new (service: string, account: string) => EntryLike;
 let keychainAvailable: boolean | null = null; // null = untested
 
 // Cache the import() result so the native addon is attempted only once per
-// module instance.  Using a promise (not top-level await) keeps this
-// compatible with CJS environments such as Jest/ts-jest.
+// module instance. Using a promise (not top-level await) avoids forcing every
+// consumer (including test runners) into top-level-await territory.
 // Rejects if the addon or its shared-library dependency (libsecret) is absent.
 let _entryPromise: Promise<EntryConstructor> | null = null;
 

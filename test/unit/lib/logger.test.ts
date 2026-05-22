@@ -2,6 +2,7 @@
  * Unit tests for logger
  */
 
+import type { MockInstance } from 'vitest';
 import {
   setVerbose,
   getVerbose,
@@ -39,12 +40,12 @@ describe('Log level', () => {
 });
 
 describe('Logging functions', () => {
-  let consoleLogSpy: jest.SpyInstance;
-  let consoleErrorSpy: jest.SpyInstance;
+  let consoleLogSpy: MockInstance;
+  let consoleErrorSpy: MockInstance;
 
   beforeEach(() => {
-    consoleLogSpy = jest.spyOn(console, 'log').mockImplementation();
-    consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
+    consoleLogSpy = vi.spyOn(console, 'log').mockImplementation();
+    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation();
     setVerbose(false);
     setLogLevel('debug');
   });
@@ -99,12 +100,12 @@ describe('Logging functions', () => {
 });
 
 describe('Logger class', () => {
-  let consoleLogSpy: jest.SpyInstance;
-  let consoleErrorSpy: jest.SpyInstance;
+  let consoleLogSpy: MockInstance;
+  let consoleErrorSpy: MockInstance;
 
   beforeEach(() => {
-    consoleLogSpy = jest.spyOn(console, 'log').mockImplementation();
-    consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
+    consoleLogSpy = vi.spyOn(console, 'log').mockImplementation();
+    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation();
     setVerbose(false);
     setLogLevel('debug');
   });

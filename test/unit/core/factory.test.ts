@@ -6,11 +6,11 @@ import { McpClient } from '../../../src/core/mcp-client.js';
 import { createMcpClient } from '../../../src/core/factory.js';
 
 // Mock the transports
-jest.mock('../../../src/core/transports', () => ({
-  createTransportFromConfig: jest.fn().mockReturnValue({
-    start: jest.fn().mockResolvedValue(undefined),
-    send: jest.fn().mockResolvedValue(undefined),
-    close: jest.fn().mockResolvedValue(undefined),
+vi.mock('../../../src/core/transports', () => ({
+  createTransportFromConfig: vi.fn().mockReturnValue({
+    start: vi.fn().mockResolvedValue(undefined),
+    send: vi.fn().mockResolvedValue(undefined),
+    close: vi.fn().mockResolvedValue(undefined),
     onclose: undefined,
     onerror: undefined,
     onmessage: undefined,
@@ -18,16 +18,18 @@ jest.mock('../../../src/core/transports', () => ({
 }));
 
 // Mock the SDK Client
-jest.mock('@modelcontextprotocol/sdk/client/index.js', () => ({
-  Client: jest.fn().mockImplementation(() => ({
-    connect: jest.fn().mockResolvedValue(undefined),
-    close: jest.fn().mockResolvedValue(undefined),
-    getServerVersion: jest.fn().mockReturnValue({ name: 'test-server', version: '1.0.0' }),
-    getServerCapabilities: jest.fn().mockReturnValue({}),
-    getInstructions: jest.fn().mockReturnValue(undefined),
-    ping: jest.fn().mockResolvedValue(undefined),
-    onerror: undefined,
-  })),
+vi.mock('@modelcontextprotocol/sdk/client/index.js', () => ({
+  Client: vi.fn(function () {
+    return {
+      connect: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+      getServerVersion: vi.fn().mockReturnValue({ name: 'test-server', version: '1.0.0' }),
+      getServerCapabilities: vi.fn().mockReturnValue({}),
+      getInstructions: vi.fn().mockReturnValue(undefined),
+      ping: vi.fn().mockResolvedValue(undefined),
+      onerror: undefined,
+    };
+  }),
 }));
 
 describe('createMcpClient', () => {

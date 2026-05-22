@@ -47,26 +47,42 @@ function hslToHex(h: number, s: number, l: number): string {
   return `#${f(0)}${f(8)}${f(4)}`;
 }
 
+// SF rainbow palette: softened like a prism seen through coastal haze.
+// Hues run from Golden Gate Bridge vermillion (12°) to soft violet (282°),
+// with lower saturation (45%) and higher lightness (62%) for a pastel feel.
+const RAINBOW_HUE_START = 12;
+const RAINBOW_HUE_SPAN = 270;
+const RAINBOW_SATURATION = 45;
+const RAINBOW_LIGHTNESS = 62;
+
+const themeHex = (hue: number): string => hslToHex(hue, RAINBOW_SATURATION, RAINBOW_LIGHTNESS);
+
 /**
- * Apply a soft, fog-filtered rainbow gradient to a string
- * Inspired by SF's coastal aesthetic: Golden Gate Bridge emerging from mist,
- * pride flags through ocean fog, prismatic light against grays and blues
+ * Themed colors sampled from the same gradient as `rainbow()` so all CLI
+ * output shares the soft, fog-filtered palette shown in `mcpc --help`.
+ */
+export const theme = {
+  red: chalk.hex(themeHex(12)), // vermillion (rainbow start)
+  yellow: chalk.hex(themeHex(60)),
+  // Green is bumped past the rainbow's pastel S/L so "● live" actually feels alive.
+  green: chalk.hex(hslToHex(135, 65, 52)),
+  cyan: chalk.hex(themeHex(190)),
+  blue: chalk.hex(themeHex(230)),
+  magenta: chalk.hex(themeHex(282)), // violet (rainbow end)
+};
+
+/**
+ * Apply the soft rainbow gradient across each character of a string.
  */
 export function rainbow(text: string): string {
   const len = text.length;
   if (len === 0) return text;
 
-  // SF rainbow: softened like a prism seen through coastal haze
-  // Starts with Golden Gate Bridge vermillion (hue ~12°)
-  // Lower saturation (45%) for fog-filtered look
-  // Higher lightness (62%) for pastel softness
   return text
     .split('')
     .map((char, i) => {
-      // Start at Golden Gate orange-vermillion, flow through to soft violet
-      const hue = 12 + (i / (len - 1)) * 270;
-      const hex = hslToHex(hue, 45, 62);
-      return chalk.hex(hex)(char);
+      const hue = RAINBOW_HUE_START + (i / (len - 1)) * RAINBOW_HUE_SPAN;
+      return chalk.hex(themeHex(hue))(char);
     })
     .join('');
 }
@@ -137,19 +153,19 @@ function highlightJson(json: string): string {
     ) => {
       if (key) {
         // Object key (includes the quotes and colon)
-        return chalk.cyan(key) + ':';
+        return theme.cyan(key) + ':';
       }
       if (str) {
         // String value
-        return chalk.green(str);
+        return theme.green(str);
       }
       if (bool) {
         // Boolean or null
-        return chalk.magenta(bool);
+        return theme.magenta(bool);
       }
       if (num) {
         // Number
-        return chalk.yellow(num);
+        return theme.yellow(num);
       }
       return match;
     }
@@ -230,7 +246,7 @@ export function formatToolAnnotations(annotations: Tool['annotations']): string 
   if (annotations.readOnlyHint === true) {
     parts.push('read-only');
   } else if (annotations.destructiveHint === true) {
-    parts.push(chalk.red('destructive'));
+    parts.push(theme.red('destructive'));
   }
 
   // idempotentHint
@@ -266,7 +282,7 @@ export function formatToolHints(tool: Tool): string | null {
   if (annotationsStr) parts.push(annotationsStr);
 
   const taskSupport = getToolTaskSupport(tool);
-  if (taskSupport) parts.push(`task:${taskSupport}`);
+  if (taskSupport && taskSupport !== 'forbidden') parts.push(`task:${taskSupport}`);
 
   return parts.length > 0 ? parts.join(', ') : null;
 }
@@ -340,7 +356,7 @@ export function grayBacktick(): string {
  * Used for tool names, argument names, and other identifiers
  */
 export function inBackticks(text: string): string {
-  return `${grayBacktick()}${chalk.cyan(text)}${grayBacktick()}`;
+  return `${grayBacktick()}${theme.cyan(text)}${grayBacktick()}`;
 }
 
 /**
@@ -377,10 +393,10 @@ export function formatSimplifiedArgs(
     const defaultValue = propSchema.default;
 
     // Build the line: * `name`: type [required] (default: value) - description
-    let line = `${indent}${bullet} ${inBackticks(name)}: ${chalk.yellow(typeStr)}`;
+    let line = `${indent}${bullet} ${inBackticks(name)}: ${theme.yellow(typeStr)}`;
 
     if (isRequired) {
-      line += ` ${chalk.red('[required]')}`;
+      line += ` ${theme.red('[required]')}`;
     }
 
     if (defaultValue !== undefined) {
@@ -502,7 +518,7 @@ export function formatToolLine(tool: Tool): string {
   const params = formatToolParamsInline(tool.inputSchema as Record<string, unknown>);
   const hintsStr = formatToolHints(tool);
   const suffix = hintsStr ? ` ${chalk.gray(`[${hintsStr}]`)}` : '';
-  return `${bullet} ${grayBacktick()}${chalk.cyan(tool.name)} ${params}${grayBacktick()}${suffix}`;
+  return `${bullet} ${grayBacktick()}${theme.cyan(tool.name)} ${params}${grayBacktick()}${suffix}`;
 }
 
 function formatToolsSummary(tools: Tool[]): string[] {
@@ -670,7 +686,7 @@ export function formatToolCallExample(tool: Tool, sessionName?: string): string 
   if (!properties || Object.keys(properties).length === 0) {
     // Tool takes no arguments — still show the simple call
     const cmd = `mcpc ${session} tools-call ${tool.name}${taskFlag}`;
-    return `${chalk.bold('Call example:')}\n${bullet} ${grayBacktick()}${chalk.cyan(cmd)}${grayBacktick()}`;
+    return `${chalk.bold('Call example:')}\n${bullet} ${grayBacktick()}${theme.cyan(cmd)}${grayBacktick()}`;
   }
 
   const requiredNames = (schema?.required as string[]) || [];
@@ -692,7 +708,7 @@ export function formatToolCallExample(tool: Tool, sessionName?: string): string 
   });
 
   const cmd = `mcpc ${session} tools-call ${tool.name} ${argParts.join(' ')}${taskFlag}`;
-  return `${chalk.bold('Call example:')}\n${bullet} ${grayBacktick()}${chalk.cyan(cmd)}${grayBacktick()}`;
+  return `${chalk.bold('Call example:')}\n${bullet} ${grayBacktick()}${theme.cyan(cmd)}${grayBacktick()}`;
 }
 
 /**
@@ -736,7 +752,7 @@ export function formatResourceDetail(resource: Resource): string {
 
   // MIME type
   if (resource.mimeType) {
-    lines.push(`${chalk.bold('MIME type:')} ${chalk.yellow(resource.mimeType)}`);
+    lines.push(`${chalk.bold('MIME type:')} ${theme.yellow(resource.mimeType)}`);
   }
 
   // Description in code block
@@ -793,7 +809,7 @@ export function formatResourceTemplateDetail(template: ResourceTemplate): string
 
   // MIME type
   if (template.mimeType) {
-    lines.push(`${chalk.bold('MIME type:')} ${chalk.yellow(template.mimeType)}`);
+    lines.push(`${chalk.bold('MIME type:')} ${theme.yellow(template.mimeType)}`);
   }
 
   // Description in code block
@@ -848,8 +864,8 @@ export function formatPromptDetail(prompt: Prompt): string {
   lines.push(chalk.bold('Arguments:'));
   if (prompt.arguments && prompt.arguments.length > 0) {
     for (const arg of prompt.arguments) {
-      const typePart = chalk.yellow('string'); // Prompt arguments are always strings
-      const requiredPart = arg.required ? ` ${chalk.red('[required]')}` : '';
+      const typePart = theme.yellow('string'); // Prompt arguments are always strings
+      const requiredPart = arg.required ? ` ${theme.red('[required]')}` : '';
       const description = arg.description ? ` ${chalk.dim('-')} ${arg.description}` : '';
       lines.push(`  ${inBackticks(arg.name)}: ${typePart}${requiredPart}${description}`);
     }
@@ -904,7 +920,7 @@ function formatPromptResult(result: GetPromptResult): string {
   // Format each message
   for (const message of result.messages) {
     lines.push('');
-    lines.push(`${chalk.bold('Role:')} ${chalk.cyan(message.role)}`);
+    lines.push(`${chalk.bold('Role:')} ${theme.cyan(message.role)}`);
     lines.push(formatPromptContent(message.content));
   }
 
@@ -978,13 +994,13 @@ function taskStatusLabel(status: string): string {
   const label = (icon: string): string => `${icon} ${status}`;
   switch (status) {
     case 'working':
-      return chalk.cyan(label('⟳'));
+      return theme.cyan(label('⟳'));
     case 'input_required':
-      return chalk.yellow(label('?'));
+      return theme.yellow(label('?'));
     case 'completed':
-      return chalk.green(label('✔'));
+      return theme.green(label('✔'));
     case 'failed':
-      return chalk.red(label('✖'));
+      return theme.red(label('✖'));
     case 'cancelled':
       return chalk.gray(label('⊘'));
     default:
@@ -1120,7 +1136,10 @@ function findDuplicateTextBlocks(
  * Sections (each printed only when present):
  * 1. **Content:** — each content block rendered per its type (text blocks
  *    that duplicate `structuredContent` are omitted)
- * 2. **Structured content:** — `structuredContent` as syntax-highlighted JSON
+ * 2. **Structured content:** — `structuredContent` as syntax-highlighted JSON,
+ *    shown only when there is no visible Content (otherwise it duplicates
+ *    information already present and adds noise for LLM consumers; use
+ *    `--json` to always get the full payload)
  * 3. **Metadata:** — `_meta` as syntax-highlighted JSON
  */
 export function formatCallToolResultHuman(result: CallToolResult): string {
@@ -1135,20 +1154,20 @@ export function formatCallToolResultHuman(result: CallToolResult): string {
     skipIndices = findDuplicateTextBlocks(content, sc);
   }
 
+  const visibleContent = content?.filter((_, i) => !skipIndices.has(i)) ?? [];
+
   // Content section — skip duplicate text blocks
-  if (content && content.length > 0) {
-    const visible = content.filter((_, i) => !skipIndices.has(i));
-    if (visible.length > 0) {
-      lines.push(chalk.bold('Content:'));
-      for (let i = 0; i < visible.length; i++) {
-        if (i > 0) lines.push('');
-        formatContentBlock(visible[i] as ContentBlock, lines);
-      }
+  if (visibleContent.length > 0) {
+    lines.push(chalk.bold('Content:'));
+    for (let i = 0; i < visibleContent.length; i++) {
+      if (i > 0) lines.push('');
+      formatContentBlock(visibleContent[i] as ContentBlock, lines);
     }
   }
 
-  // Structured content section — syntax-highlighted JSON
-  if (hasStructuredContent) {
+  // Structured content section — only when Content is empty, to avoid
+  // redundant verbose output for LLMs. Available via `--json` if needed.
+  if (hasStructuredContent && visibleContent.length === 0) {
     if (lines.length > 0) lines.push('');
     lines.push(chalk.bold('Structured content:'));
     const scJson = JSON.stringify(sc, null, 2);
@@ -1178,7 +1197,7 @@ export function formatObject(obj: Record<string, unknown>): string {
   const lines: string[] = [];
 
   for (const [key, value] of Object.entries(obj)) {
-    const formattedKey = chalk.cyan(`${key}:`);
+    const formattedKey = theme.cyan(`${key}:`);
     let formattedValue: string;
     if (value === null || value === undefined) {
       formattedValue = chalk.gray(String(value));
@@ -1204,28 +1223,28 @@ export function formatObject(obj: Record<string, unknown>): string {
  * Format a success message
  */
 export function formatSuccess(message: string): string {
-  return chalk.green(`✓ ${message}`);
+  return theme.green(`✓ ${message}`);
 }
 
 /**
  * Format an error message
  */
 export function formatError(message: string): string {
-  return chalk.red(`✗ ${message}`);
+  return theme.red(`✗ ${message}`);
 }
 
 /**
  * Format a warning message
  */
 export function formatWarning(message: string): string {
-  return chalk.yellow(`⚠ ${message}`);
+  return theme.yellow(`⚠ ${message}`);
 }
 
 /**
  * Format an info message
  */
 export function formatInfo(message: string): string {
-  return chalk.cyan(`ℹ ${message}`);
+  return theme.cyan(`ℹ ${message}`);
 }
 
 export function formatTaskCommandsHint(
@@ -1274,7 +1293,7 @@ function truncateWithEllipsis(str: string, maxLen: number): string {
  */
 export function formatSessionLine(session: SessionData): string {
   // Format session name (cyan)
-  const nameStr = chalk.cyan(session.name);
+  const nameStr = theme.cyan(session.name);
 
   // Format target
   let target: string;
@@ -1293,7 +1312,7 @@ export function formatSessionLine(session: SessionData): string {
   // Format auth info (transport type omitted — obvious from context)
   let infoStr = '';
   if (!session.server.command && session.profileName) {
-    infoStr = chalk.dim('(OAuth: ') + chalk.magenta(session.profileName) + chalk.dim(')');
+    infoStr = chalk.dim('(OAuth: ') + theme.magenta(session.profileName) + chalk.dim(')');
   }
 
   // Add proxy info separately (not dimmed, for visibility)
@@ -1301,9 +1320,9 @@ export function formatSessionLine(session: SessionData): string {
   if (session.proxy) {
     proxyStr =
       ' ' +
-      chalk.green('[proxy: ') +
+      theme.green('[proxy: ') +
       chalk.greenBright(`${session.proxy.host}:${session.proxy.port}`) +
-      chalk.green(']');
+      theme.green(']');
   }
 
   const suffix = [infoStr, proxyStr].filter(Boolean).join(' ');
@@ -1429,7 +1448,6 @@ export function formatServerDetails(
   }
 
   // Commands
-  lines.push(chalk.bold('Available commands:'));
   const commands: string[] = [];
 
   if (capabilities?.tools) {
@@ -1466,10 +1484,12 @@ export function formatServerDetails(
   if (target.startsWith('@')) {
     commands.push(`${bullet} ${bt}mcpc ${target} logs${bt}`);
   }
-  commands.push(`${bullet} ${bt}mcpc ${target} shell${bt}`);
 
-  lines.push(commands.join('\n'));
-  lines.push('');
+  if (commands.length > 0) {
+    lines.push(chalk.bold('Available commands:'));
+    lines.push(commands.join('\n'));
+    lines.push('');
+  }
 
   // Debugging hint: how to view logs (only shown for sessions, i.e. @name targets)
   if (target.startsWith('@')) {

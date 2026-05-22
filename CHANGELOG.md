@@ -10,30 +10,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `mcpc @<session> logs` command to show or follow the bridge log file. Supports `-n/--tail <n>` (default 50), `--follow` to stream new lines, and `--since <duration|iso>` (e.g. `1h`, `30m`, `2026-04-28T12:00:00Z`). Transparently spans rotated files (`.log.1` … `.log.5`) when more lines are needed. With `--json`, returns parsed `{ ts, level, context, message }` records (or `{ ts: null, raw }` for unparseable lines); combined with `--follow`, output is NDJSON. `mcpc @<session> --json` now also exposes `_mcpc.logPath` and `_mcpc.logSize`. Error messages that previously pointed users to a raw log file path now suggest `mcpc @<session> logs` instead (#205).
-- New `npm run test:conformance` script (and on-demand `Conformance` GitHub Actions workflow) that runs the `@modelcontextprotocol/conformance` framework against mcpc to verify adherence to the MCP specification. The conformance adapter now covers the `initialize`, `tools_call`, and `sse-retry` client scenarios and exercises a broader set of mcpc sub-commands (`tools-list`, `tools-get`, `tools-call` with and without `--task`, `ping`, `logging-set-level`, `resources-list`, `resources-templates-list`, `prompts-list`) against the conformance test server.
-- `mcpc connect` (with no arguments) now auto-discovers standard MCP config files (`.mcp.json`, `mcp.json`, `mcp_config.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, `.kiro/settings/mcp.json`, `~/.claude.json`, `~/.codeium/windsurf/mcp_config.json`, VS Code app config, Claude Desktop config, etc.) in the current directory and home directory, and connects every server defined across them. Entries with duplicate session names across files are deduplicated (project-scoped files win over global ones). Config files using VS Code's `"servers"` key (instead of `"mcpServers"`) are also supported.
+
+### Deprecated
+
+- The `shell` command (`mcpc shell @<session>` and `mcpc @<session> shell`) is deprecated and will be removed in a future release. It is now hidden from `--help` output and prints a deprecation warning when invoked
+
+## [0.3.0] - 2026-05-20
+
+### Added
+
+- `mcpc connect` (with no arguments) now auto-discovers standard MCP config files (`.mcp.json`, `mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, `~/.claude.json`, Claude Desktop, Windsurf, Kiro, etc.) in the current directory and home directory, and connects every server defined across them. Entries with duplicate session names are deduplicated (project-scoped files win over global ones). VS Code's `"servers"` key is also supported.
 - `mcpc connect` auto-connects to `mcp.apify.com` as `@apify` when the `APIFY_API_TOKEN` environment variable is set, using it as a Bearer token. Existing live sessions are reused without restart.
 
 ### Changed
 
-- OAuth callback ports for the hosted CIMD changed from the contiguous range 13316–13325 to 6 non-contiguous ports (13316, 13163, 31316, 31613, 16133, 16313) so one unrelated process is less likely to claim all of them. `localhost` variants dropped from the CIMD's `redirect_uris` in favor of `127.0.0.1` only (per RFC 8252 §8.3, which recommends the IP literal to avoid DNS resolution ambiguity).
 - Stdio (command-based) config entries are now skipped by default when connecting from a config file (`mcpc connect <file>`). Pass `--stdio` to include them. Single-entry connects (`mcpc connect file:entry @session`) are not affected.
-- `restart` success message now notes that previous session state (resource subscriptions, pending notifications, async tasks) was lost, since explicit restart always creates a fresh MCP session
-- `tasks-list` now shows a hint on how to start a new task (`mcpc @session tools-call <name> [args] --task`) when there are no active tasks
-- `mcpc help <command>` now shows a "Did you mean?" suggestion when the command is unknown (e.g., `mcpc help tasks-gfet` → suggests `tasks-get`)
+- **Breaking:** `mcpc connect --json` now always returns an array of `InitializeResult` objects (extended with `toolNames` and `_mcpc` metadata), regardless of whether you connect a single server, a config file, or auto-discover all configs. Skipped/failed entries carry `_mcpc.status` (`created` | `active` | `failed` | `skipped`) and `_mcpc.skipReason` / `_mcpc.error`. The previous wrapper-object shapes (`{configFile, results, skipped}` and `{discovered, results, skipped}`) have been removed.
 - `tools-call --task` now prints the task ID and recovery commands when interrupted with Ctrl+C, so you can fetch or cancel the server-side task later
-- `tasks-get` no longer suggests `tasks-cancel` when the task has already reached a terminal state (completed, failed, or cancelled)
+- Human-mode `tools-call` / `tasks-result` output no longer prints the **Structured content** section when **Content** already has at least one visible block. The JSON dump was redundant verbose output (especially for LLMs) whenever a server returned both. The section is still shown when `content` is empty or contains only a JSON-dump duplicate of `structuredContent`; use `--json` to always get the full payload
 
 ### Fixed
 
-- Sessions using a static bearer token (via `--header "Authorization: ..."`) no longer flip between `unauthorized` and `connecting` on every `mcpc` invocation — they stay `unauthorized` since retrying the same rejected token cannot succeed without `mcpc login` or reconnecting. OAuth-profile sessions still auto-retry because tokens may have been refreshed by another session
-- Server authentication errors now include the path to the bridge log file, so you can inspect it for more detail when investigating why a session was rejected
-- Stdio servers no longer fail silently: the bridge now captures the child's stderr, writes each line to `~/.mcpc/logs/bridge-<session>.log` with a `[server stderr]` prefix, and appends a tail of the most recent lines to `mcpc connect` errors. This makes it obvious when a stdio server crashes on startup due to e.g. missing TLS trust (`NODE_EXTRA_CA_CERTS`), missing proxy vars, or missing credentials, rather than "hanging silently" (#195)
-- `mcpc connect` now recognizes relative config-file paths with a `:entry` suffix (e.g. `docs/examples/mcp-config.json:fs`). Previously these were misinterpreted as HTTP URLs because `https://` + the path parses as a URL with the first segment as the host
+- `mcpc connect` and `mcpc restart` no longer fail with `ENOENT` when the macOS Keychain prompts for a password. Credentials are now read from the keychain *before* the bridge process is spawned, so the bridge's IPC startup timer no longer races a foreground password dialog (#55)
+- Background auto-reconnect now correctly marks sessions as `unauthorized` when the server returns 401/403, instead of leaving them stuck in `connecting` after the bridge crashed on an unhandled rejection
+- Sessions using a static bearer token (via `--header "Authorization: ..."`) no longer flip between `unauthorized` and `connecting` on every `mcpc` invocation — they stay `unauthorized` until you `mcpc login` or reconnect. OAuth-profile sessions still auto-retry because tokens may have been refreshed by another session
+- Stdio servers no longer fail silently: the bridge now captures the child's stderr, writes it to `~/.mcpc/logs/bridge-<session>.log`, and appends a tail of the most recent lines to `mcpc connect` errors. This makes it obvious when a stdio server crashes on startup due to e.g. missing TLS trust (`NODE_EXTRA_CA_CERTS`), missing proxy vars, or missing credentials (#195)
+- `mcpc connect` now recognizes relative config-file paths with a `:entry` suffix (e.g. `docs/examples/mcp-config.json:fs`). Previously these were misinterpreted as HTTP URLs
+- `mcpc login` now sends a random `state` parameter on the OAuth authorization URL. Some authorization servers (e.g. Ubersuggest) reject requests without `state` with a `missing_state` error, which previously made `login` fail before reaching the consent screen (#214)
+- `mcpc connect` no longer aborts on Windows with `Failed to save sessions: EPERM: operation not permitted, rename …` when antivirus or another mcpc process briefly holds `sessions.json` open. The atomic rename used to persist `sessions.json`, `profiles.json`, and `wallets.json` now retries transient Windows file-lock errors with a short backoff
 
 ### Removed
 
-- Removed `tools`, `resources`, and `prompts` shorthand commands — use the full names (`tools-list`, `resources-list`, `prompts-list`) instead
+- **Breaking:** Removed `tools`, `resources`, and `prompts` shorthand commands — use the full names (`tools-list`, `resources-list`, `prompts-list`) instead
+
+### Security
+
+- Migrated the dev/release toolchain to pnpm 10 with a 24-hour package quarantine (`minimumReleaseAge: 1440`) to reduce supply-chain attack risk. End-user installs from npm are unaffected
 
 ## [0.2.6] - 2026-04-15
 
@@ -268,7 +280,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Interactive shell mode
 - JSON output mode for scripting
 
-[Unreleased]: https://github.com/apify/mcpc/compare/v0.2.6...HEAD
+[Unreleased]: https://github.com/apify/mcpc/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/apify/mcpc/compare/v0.2.6...v0.3.0
 [0.2.6]: https://github.com/apify/mcpc/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/apify/mcpc/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/apify/mcpc/compare/v0.2.3...v0.2.4

@@ -8,7 +8,14 @@ import qrcode from 'qrcode-terminal';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import { createPublicClient, http, formatEther, formatUnits, erc20Abi, type Hex } from 'viem';
 import { base } from 'viem/chains';
-import { formatSuccess, formatError, formatInfo, formatWarning, formatJson } from '../output.js';
+import {
+  formatSuccess,
+  formatError,
+  formatInfo,
+  formatWarning,
+  formatJson,
+  theme,
+} from '../output.js';
 import { getWallet, saveWallet, removeWallet } from '../../lib/wallets.js';
 import { ClientError } from '../../lib/errors.js';
 import type { OutputMode } from '../../lib/types.js';
@@ -77,7 +84,7 @@ async function initWallet(options: { outputMode: OutputMode }): Promise<void> {
     );
     console.log('');
     console.log(formatSuccess('Wallet created'));
-    console.log(formatInfo(`Address: ${chalk.cyan(account.address)}`));
+    console.log(formatInfo(`Address: ${theme.cyan(account.address)}`));
     console.log(formatInfo('Fund this address with USDC on Base to use x402 payments.'));
     await printAddressQrCode(account.address);
   }
@@ -126,7 +133,7 @@ async function importWallet(options: {
     );
     console.log('');
     console.log(formatSuccess('Wallet imported'));
-    console.log(formatInfo(`Address: ${chalk.cyan(account.address)}`));
+    console.log(formatInfo(`Address: ${theme.cyan(account.address)}`));
     console.log(formatInfo('Fund this address with USDC on Base to use x402 payments.'));
     await printAddressQrCode(account.address);
   }
@@ -192,13 +199,13 @@ async function walletInfo(options: { outputMode: OutputMode }): Promise<void> {
     return;
   }
 
-  console.log(`  ${chalk.bold('Address')}        ${chalk.cyan(wallet.address)}`);
+  console.log(`  ${chalk.bold('Address')}        ${theme.cyan(wallet.address)}`);
   console.log(`  ${chalk.bold('Created')}        ${wallet.createdAt}`);
   if (!balanceError) {
     console.log(`  ${chalk.bold('ETH Balance')}    ${ethBalance}`);
     console.log(`  ${chalk.bold('USDC Balance')}   ${usdcBalance}`);
   } else {
-    console.log(`  ${chalk.bold('Balances')}       ${chalk.red('Failed to fetch')}`);
+    console.log(`  ${chalk.bold('Balances')}       ${theme.red('Failed to fetch')}`);
   }
   await printAddressQrCode(wallet.address);
 }
@@ -326,7 +333,7 @@ export async function handleX402Command(args: string[]): Promise<void> {
 
   program.configureHelp({
     styleTitle: (str) => chalk.bold(str),
-    styleSubcommandText: (str) => chalk.cyan(str),
+    styleSubcommandText: (str) => theme.cyan(str),
   });
 
   // Inherit global options so they parse correctly

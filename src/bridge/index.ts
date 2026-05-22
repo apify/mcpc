@@ -143,6 +143,11 @@ class BridgeProcess {
       this.mcpClientReadyResolver = resolve;
       this.mcpClientReadyRejecter = reject;
     });
+    // Mark the promise as handled so a rejection without a current awaiter
+    // (e.g. auto-restart bridge with no connected IPC client) doesn't crash
+    // the bridge before it can persist the failure status to sessions.json.
+    // Subsequent `await this.mcpClientReady` calls still see the rejection.
+    this.mcpClientReady.catch(() => {});
 
     if (options.verbose) {
       setVerbose(true);

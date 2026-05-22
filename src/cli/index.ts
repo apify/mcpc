@@ -15,7 +15,7 @@ import { Command, CommanderError, Help } from 'commander';
 import { setVerbose, setJsonMode, closeFileLogger } from '../lib/index.js';
 import { isMcpError, formatHumanError, ClientError } from '../lib/index.js';
 import chalk from 'chalk';
-import { formatJson, formatJsonError, rainbow } from './output.js';
+import { formatJson, formatJsonError, rainbow, theme } from './output.js';
 import * as tools from './commands/tools.js';
 import * as resources from './commands/resources.js';
 import * as prompts from './commands/prompts.js';
@@ -210,7 +210,7 @@ async function main(): Promise<void> {
     validateOptions(args);
     validateArgValues(args);
   } catch (error) {
-    console.error(chalk.red(formatHumanError(error as Error, false)));
+    console.error(theme.red(formatHumanError(error as Error, false)));
     process.exit(1);
   }
 
@@ -261,7 +261,7 @@ async function main(): Promise<void> {
         if (outputMode === 'json') {
           console.error(formatJsonError(error, error.code));
         } else {
-          console.error(chalk.red(formatHumanError(error, opts.verbose)));
+          console.error(theme.red(formatHumanError(error, opts.verbose)));
         }
         process.exit(error.code);
       }
@@ -295,7 +295,7 @@ async function main(): Promise<void> {
         if (outputMode === 'json') {
           console.error(formatJsonError(error, error.code));
         } else {
-          console.error(chalk.red(formatHumanError(error, opts.verbose)));
+          console.error(theme.red(formatHumanError(error, opts.verbose)));
         }
         process.exit(error.code);
       }
@@ -363,7 +363,7 @@ function createTopLevelProgram(): Command {
     subcommandTerm: (cmd) =>
       `${cmd.name()} ${cmd.usage()}`.replace(/^\[options\]\s*|\s*\[options\]/g, '').trim(),
     styleTitle: (str) => chalk.bold(str),
-    styleSubcommandText: (str) => chalk.cyan(str),
+    styleSubcommandText: (str) => theme.cyan(str),
     formatHelp: (cmd, helper) => {
       const output = Help.prototype.formatHelp.call(helper, cmd, helper);
       // Swap Options and Commands sections (separated by blank lines)
@@ -384,10 +384,7 @@ function createTopLevelProgram(): Command {
     },
   });
 
-  // Use raw Markdown URL for pipes (AI agents), GitHub UI for TTY (humans)
-  const docsUrl = process.stdout.isTTY
-    ? `https://github.com/apify/mcpc/tree/v${mcpcVersion}`
-    : `https://raw.githubusercontent.com/apify/mcpc/v${mcpcVersion}/README.md`;
+  const docsUrl = `https://github.com/apify/mcpc/raw/refs/tags/v${mcpcVersion}/README.md`;
 
   program
     .name('mcpc')
@@ -409,24 +406,24 @@ function createTopLevelProgram(): Command {
     `
 ${chalk.bold('MCP session commands (after connecting):')}
   <@session>                   Show MCP server info, capabilities, and tools overview
-  <@session> ${chalk.cyan('grep')} <pattern>    Search tools and instructions
-  <@session> ${chalk.cyan('tools-list')}        List all server tools
-  <@session> ${chalk.cyan('tools-get')} <name>  Get tool details and schema
-  <@session> ${chalk.cyan('tools-call')} <name> [arg:=val ... | <json> | <stdin]
-  <@session> ${chalk.cyan('prompts-list')}
-  <@session> ${chalk.cyan('prompts-get')} <name> [arg:=val ... | <json> | <stdin]
-  <@session> ${chalk.cyan('resources-list')}
-  <@session> ${chalk.cyan('resources-read')} <uri>
-  <@session> ${chalk.cyan('resources-subscribe')} <uri>
-  <@session> ${chalk.cyan('resources-unsubscribe')} <uri>
-  <@session> ${chalk.cyan('resources-templates-list')}
-  <@session> ${chalk.cyan('tasks-list')}
-  <@session> ${chalk.cyan('tasks-get')} <taskId>
-  <@session> ${chalk.cyan('tasks-result')} <taskId>
-  <@session> ${chalk.cyan('tasks-cancel')} <taskId>
-  <@session> ${chalk.cyan('logging-set-level')} <level>
-  <@session> ${chalk.cyan('ping')}
-  <@session> ${chalk.cyan('logs')} [-n N] [--follow] [--since 1h]
+  <@session> ${theme.cyan('grep')} <pattern>    Search tools and instructions
+  <@session> ${theme.cyan('tools-list')}        List all server tools
+  <@session> ${theme.cyan('tools-get')} <name>  Get tool details and schema
+  <@session> ${theme.cyan('tools-call')} <name> [arg:=val ... | <json> | <stdin]
+  <@session> ${theme.cyan('prompts-list')}
+  <@session> ${theme.cyan('prompts-get')} <name> [arg:=val ... | <json> | <stdin]
+  <@session> ${theme.cyan('resources-list')}
+  <@session> ${theme.cyan('resources-read')} <uri>
+  <@session> ${theme.cyan('resources-subscribe')} <uri>
+  <@session> ${theme.cyan('resources-unsubscribe')} <uri>
+  <@session> ${theme.cyan('resources-templates-list')}
+  <@session> ${theme.cyan('tasks-list')}
+  <@session> ${theme.cyan('tasks-get')} <taskId>
+  <@session> ${theme.cyan('tasks-result')} <taskId>
+  <@session> ${theme.cyan('tasks-cancel')} <taskId>
+  <@session> ${theme.cyan('logging-set-level')} <level>
+  <@session> ${theme.cyan('ping')}
+  <@session> ${theme.cyan('logs')} [-n N] [--follow] [--since 1h]
 
 Run "mcpc" without arguments to show active sessions and OAuth profiles.
 Run "mcpc --json" to get the same data as \`{ sessions: [...], profiles: [...] }\`.
@@ -438,51 +435,44 @@ Full docs: ${docsUrl}`
   program
     .command('connect [server] [@session]')
     .usage('<server> [@session]')
-    .description('Connect to an MCP server and start a named @session') // keep this short
+    .description('Connect to an MCP server and start a new named @session') // keep this short
     .option('-H, --header <header>', 'HTTP header (can be repeated)')
     .option('--profile <name>', 'OAuth profile to use ("default" if skipped)')
     .option('--no-profile', 'Skip OAuth profile (connect anonymously)')
     .option('--proxy <[host:]port>', 'Start proxy MCP server for session')
     .option('--proxy-bearer-token <token>', 'Require authentication for access to proxy server')
-    .option('--stdio', 'Include stdio (command-based) servers when connecting from config files')
+    .option('--stdio', 'Launch all local stdio servers from selected config files')
     .option('--x402', 'Enable x402 auto-payment using the configured wallet')
     .addHelpText(
       'after',
       `
 ${chalk.bold('Server formats:')}
-  mcp.apify.com                 Remote HTTP server (https:// added automatically)
+  mcp.apify.com                 Remote HTTP server (https:// auto-added)
   ~/.vscode/mcp.json:puppeteer  Config file entry (file:entry)
-  ~/.vscode/mcp.json            Config file — connect all servers in the file
-  ${chalk.dim('(no server)')}                  Discover standard MCP config files and connect every server
+  ~/.vscode/mcp.json            Config file — connect every entry
+  ${chalk.dim('(no server)')}                  Auto-discover configs and connect everything
 
-${chalk.bold('Auto-discovery locations:')}
-  Project: .mcp.json, mcp.json, mcp_config.json, .cursor/mcp.json, .vscode/mcp.json,
-           .kiro/settings/mcp.json
-  Global:  ~/.claude.json, ~/.cursor/mcp.json, ~/.vscode/mcp.json,
-           ~/.codeium/windsurf/mcp_config.json, ~/.kiro/settings/mcp.json,
-           VS Code app config, Claude Desktop (platform-specific paths)
-  Env var:  APIFY_API_TOKEN → auto-connects to mcp.apify.com as @apify
+${chalk.bold('Auto-discovery (no server arg):')}
+  Scans ./ and ~ for .mcp.json, mcp.json, mcp_config.json, .cursor/mcp.json,
+  .vscode/mcp.json, .kiro/settings/mcp.json, ~/.claude.json,
+  ~/.codeium/windsurf/mcp_config.json, plus VS Code & Claude Desktop configs.
+  Set APIFY_API_TOKEN to auto-connect mcp.apify.com as @apify.
 
 ${chalk.bold('Session name:')}
-  If @session is omitted, a name is auto-generated from the server hostname
-  (e.g. mcp.apify.com → @apify) or config entry name. If a matching session
-  already exists (same server URL, OAuth profile, and HTTP header names), it
-  is reused (restarted if not live). Header values are not compared — they
-  are stored securely in OS keychain.
-  When connecting all servers from a config file or via auto-discovery,
-  @session cannot be specified.
+  Omit @session to auto-generate from the server (mcp.apify.com → @apify)
+  or config entry. Matching sessions (same server, profile, header keys)
+  are reused. Bulk connects don't accept @session.
 
-${chalk.bold('Stdio servers:')}
-  Config entries execute the configured command locally on connect, even if
-  the MCP handshake later fails — only connect to configs you trust. Stdio
-  servers inherit a minimal env whitelist; forward extras (e.g.
-  NODE_EXTRA_CA_CERTS, HTTPS_PROXY) via the "env" block. Server stderr is
-  logged to ~/.mcpc/logs/bridge-<session>.log.
-
-  Bulk connects (\`mcpc connect <config-file>\` and \`mcpc connect\`) skip
-  stdio entries by default; pass --stdio to include them. Single-entry
-  connects are unaffected.
-${jsonHelp('`InitializeResult` object extended with `toolNames` and `_mcpc` metadata', '`{ protocolVersion, capabilities, serverInfo, instructions?, toolNames?, _mcpc }`', `${SCHEMA_BASE}#initializeresult`)}`
+${chalk.bold('Stdio servers (command-based, run locally):')}
+  Config entries spawn the command on connect, even if the handshake
+  later fails — only connect to configs you trust. Stderr is logged to
+  ~/.mcpc/logs/bridge-<session>.log. Bulk connects skip stdio by default;
+  pass --stdio to include them.
+${jsonHelp(
+  'Array of `InitializeResult` objects (one per session), extended with `toolNames` and `_mcpc` metadata',
+  '`[{ protocolVersion?, capabilities?, serverInfo?, instructions?, toolNames?, _mcpc: { sessionName, server?, ... }]`',
+  `${SCHEMA_BASE}#initializeresult`
+)}`
     )
     .action(async (server, sessionName, opts, command) => {
       const globalOpts = getOptionsFromCommand(command);
@@ -603,11 +593,11 @@ ${jsonHelp('`InitializeResult` object extended with `toolNames` and `_mcpc` meta
       await sessions.restartSession(sessionName, getOptionsFromCommand(command));
     });
 
-  // shell command: mcpc shell @<session>
+  // shell command: mcpc shell @<session> (deprecated, hidden from help)
   program
-    .command('shell [@session]')
+    .command('shell [@session]', { hidden: true })
     .usage('<@session>')
-    .description('Open interactive shell for a session')
+    .description('Open interactive shell for a session (deprecated)')
     .action(async (sessionName) => {
       if (!sessionName) {
         throw new ClientError('Missing required argument: @session\n\nExample: mcpc shell @myapp');
@@ -894,10 +884,10 @@ function registerSessionCommands(program: Command, session: string): void {
       command.parent.outputHelp();
     });
 
-  // Shell command
+  // Shell command (deprecated, hidden from help)
   program
-    .command('shell')
-    .description('Launch interactive MCP shell.')
+    .command('shell', { hidden: true })
+    .description('Launch interactive MCP shell (deprecated).')
     .action(async () => {
       await sessions.openShell(session);
     });
@@ -1310,7 +1300,7 @@ function createSessionProgram(): Command {
     subcommandTerm: (cmd) =>
       `${cmd.name()} ${cmd.usage()}`.replace(/^\[options\]\s*|\s*\[options\]/g, '').trim(),
     styleTitle: (str) => chalk.bold(str),
-    styleSubcommandText: (str) => chalk.cyan(str),
+    styleSubcommandText: (str) => theme.cyan(str),
   });
 
   program
@@ -1402,7 +1392,7 @@ async function handleSessionCommands(session: string, args: string[]): Promise<v
       if (outputMode === 'json') {
         console.error(formatJsonError(error, error.code));
       } else {
-        console.error(chalk.red(formatHumanError(error, opts.verbose)));
+        console.error(theme.red(formatHumanError(error, opts.verbose)));
       }
       process.exit(error.code);
     }
@@ -1411,7 +1401,7 @@ async function handleSessionCommands(session: string, args: string[]): Promise<v
     console.error(
       outputMode === 'json'
         ? formatJsonError(error as Error, 1)
-        : chalk.red(formatHumanError(error as Error, opts.verbose))
+        : theme.red(formatHumanError(error as Error, opts.verbose))
     );
     process.exit(1);
   }

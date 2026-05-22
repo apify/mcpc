@@ -3,10 +3,10 @@
  * Stores a single wallet in ~/.mcpc/wallets.json
  */
 
-import { readFile, writeFile, rename, unlink } from 'fs/promises';
+import { readFile, writeFile, unlink } from 'fs/promises';
 import { join } from 'path';
 import type { WalletData, WalletsStorage } from './types.js';
-import { getWalletsFilePath, fileExists, ensureDir, getMcpcHome } from './utils.js';
+import { getWalletsFilePath, fileExists, ensureDir, getMcpcHome, atomicRename } from './utils.js';
 import { withFileLock } from './file-lock.js';
 import { ClientError } from './errors.js';
 import {
@@ -48,7 +48,7 @@ async function saveStorageInternal(storage: WalletsStorage): Promise<void> {
   const tempFile = join(getMcpcHome(), `.wallets-${Date.now()}-${process.pid}.tmp`);
   try {
     await writeFile(tempFile, JSON.stringify(storage, null, 2), { encoding: 'utf-8', mode: 0o600 });
-    await rename(tempFile, filePath);
+    await atomicRename(tempFile, filePath);
   } catch (error) {
     try {
       await unlink(tempFile);

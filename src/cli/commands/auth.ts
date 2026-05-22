@@ -2,12 +2,18 @@
  * Authentication management commands
  */
 
-import { formatSuccess, formatError, formatOutput, formatInfo, formatWarning } from '../output.js';
+import {
+  formatSuccess,
+  formatError,
+  formatOutput,
+  formatInfo,
+  formatWarning,
+  theme,
+} from '../output.js';
 import type { CommandOptions } from '../../lib/types.js';
 import { deleteAuthProfiles } from '../../lib/auth/profiles.js';
 import { performOAuthFlow } from '../../lib/auth/oauth-flow.js';
-import { normalizeServerUrl, validateProfileName } from '../../lib/utils.js';
-import chalk from 'chalk';
+import { getServerHost, normalizeServerUrl, validateProfileName } from '../../lib/utils.js';
 import { DEFAULT_AUTH_PROFILE, DEFAULT_CLIENT_METADATA_URL } from '../../lib/auth/oauth-utils.js';
 
 /**
@@ -59,7 +65,7 @@ export async function login(
 
     if (options.outputMode === 'human') {
       console.log(formatInfo(`Starting OAuth authentication for ${normalizedUrl}`));
-      console.log(formatInfo(`Profile: ${chalk.magenta(profileName)}`));
+      console.log(formatInfo(`Profile: ${theme.magenta(profileName)}`));
     }
 
     // Perform OAuth flow
@@ -87,7 +93,7 @@ export async function login(
 
     if (options.outputMode === 'human') {
       console.log(formatSuccess('Authentication successful!'));
-      console.log(formatInfo(`Profile ${chalk.magenta(profileName)} saved`));
+      console.log(formatInfo(`Profile ${theme.magenta(profileName)} saved`));
 
       if (result.profile.scopes && result.profile.scopes.length > 0) {
         console.log(formatInfo(`Scopes: ${result.profile.scopes.join(', ')}`));
@@ -133,7 +139,7 @@ export async function logout(
     if (result.count === 0) {
       if (options.outputMode === 'human') {
         console.error(
-          formatError(`Profile ${chalk.magenta(profileName)} for ${normalizedUrl} not found`)
+          formatError(`Profile ${theme.magenta(profileName)} for ${normalizedUrl} not found`)
         );
       } else {
         console.error(formatOutput({ error: 'Profile not found' }, 'json'));
@@ -144,18 +150,24 @@ export async function logout(
 
     if (options.outputMode === 'human') {
       console.log(
-        formatSuccess(`Profile ${chalk.magenta(profileName)} for ${normalizedUrl} deleted`)
+        formatSuccess(`Profile ${theme.magenta(profileName)} for ${normalizedUrl} deleted`)
       );
 
       // Warn about affected sessions
       if (result.affectedSessions.length > 0) {
+        const loginCmd =
+          profileName === DEFAULT_AUTH_PROFILE
+            ? `mcpc login ${getServerHost(normalizedUrl)}`
+            : `mcpc login ${getServerHost(normalizedUrl)} --profile ${profileName}`;
         console.log(
           formatWarning(
             `Warning: ${result.affectedSessions.length} session(s) were using this profile: ${result.affectedSessions.join(', ')}`
           )
         );
         console.log(
-          formatWarning('These sessions may fail to authenticate. Recreate them or login again.')
+          formatWarning(
+            `These sessions may fail to authenticate. Recreate them or login again by running: ${loginCmd}`
+          )
         );
       }
     } else {

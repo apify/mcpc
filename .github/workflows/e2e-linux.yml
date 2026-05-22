@@ -1,41 +1,12 @@
-name: CI
+name: E2E Linux
 
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
+  workflow_call:
 
 jobs:
-  test:
-    name: Node.js ${{ matrix.node-version }}
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        node-version: [20, 22, 24]
-
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Set up Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v6
-        with:
-          node-version: ${{ matrix.node-version }}
-
-      - name: Install pnpm and dependencies
-        uses: apify/actions/pnpm-install@v1.1.2
-
-      - name: Lint
-        run: pnpm run lint
-
-      - name: Build
-        run: pnpm run build
-
-      - name: Unit tests
-        run: pnpm run test:unit
-
-  e2e-node:
-    name: E2E tests (Node.js)
+  e2e-linux-node:
+    name: E2E tests (Linux, Node.js)
     runs-on: ubuntu-latest
 
     steps:
@@ -60,8 +31,8 @@ jobs:
         # specific storage backend.
         run: ./test/e2e/run.sh --no-build --parallel 6
 
-  e2e-bun:
-    name: E2E tests (Bun)
+  e2e-linux-bun:
+    name: E2E tests (Linux, Bun)
     runs-on: ubuntu-latest
 
     steps:

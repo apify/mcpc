@@ -18,7 +18,7 @@ npm run test:coverage:e2e   # Run e2e tests with coverage
 
 ## Unit tests
 
-Unit tests use [Jest](https://jestjs.io/) with TypeScript and live in `test/unit/`. They test individual modules in isolation with mocked dependencies.
+Unit tests use [Vitest](https://vitest.dev/) with TypeScript and live in `test/unit/`. They test individual modules in isolation with mocked dependencies. Vitest's API is Jest-compatible (`describe`/`it`/`expect`/`vi.fn`/`vi.mock`) and runs ESM natively, so there are no `transformIgnorePatterns` for pure-ESM dependencies like `chalk` and `ora`.
 
 ### Running unit tests
 
@@ -36,7 +36,7 @@ Coverage reports are generated to `test/coverage/unit/`:
 
 Coverage thresholds are enforced at 70% for branches, functions, lines, and statements.
 
-Unit test coverage measures the TypeScript source files directly via Jest's instrumentation.
+Unit test coverage measures the TypeScript source files directly via Vitest's v8 coverage provider (`@vitest/coverage-v8`).
 
 ### Writing unit tests
 

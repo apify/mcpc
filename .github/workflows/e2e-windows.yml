@@ -19,13 +19,12 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: 24
-          cache: npm
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Install pnpm and dependencies
+        uses: apify/actions/pnpm-install@v1.1.2
 
       - name: Build
-        run: npm run build
+        run: pnpm run build
 
       - name: E2E tests
         run: ./test/e2e/run.sh --no-build --parallel 1
@@ -44,16 +43,15 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: 24
-          cache: npm
 
       - name: Install Bun
         uses: oven-sh/setup-bun@v2
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Install pnpm and dependencies
+        uses: apify/actions/pnpm-install@v1.1.2
 
       - name: Build
-        run: npm run build
+        run: pnpm run build
 
       - name: E2E tests
         run: ./test/e2e/run.sh --no-build --runtime bun --parallel 1

@@ -4,24 +4,32 @@
  * Drives the real handler against a tmp MCPC_HOME_DIR. Captures stdout/stderr.
  */
 
-// Mock chalk to plain strings (Jest can't handle chalk's ESM imports).
-const id = (s: string): string => s;
-jest.mock('chalk', () => {
-  const m = {
-    cyan: id,
-    yellow: id,
-    red: id,
-    dim: id,
-    gray: id,
-    bold: id,
-    green: id,
-    greenBright: id,
-    blue: id,
-    magenta: id,
-    white: id,
+// Mock chalk to plain strings. `vi.mock` is hoisted above local consts,
+// so identity helpers must come from `vi.hoisted`.
+const { chalkApi } = vi.hoisted(() => {
+  const id = (s: string): string => s;
+  const hex = (): ((s: string) => string) => id;
+  return {
+    chalkApi: {
+      cyan: id,
+      yellow: id,
+      red: id,
+      dim: id,
+      gray: id,
+      bold: id,
+      green: id,
+      greenBright: id,
+      blue: id,
+      magenta: id,
+      white: id,
+      hex,
+    },
   };
-  return { default: m, ...m };
 });
+vi.mock('chalk', () => ({
+  default: chalkApi,
+  ...chalkApi,
+}));
 
 import { mkdtemp, mkdir, writeFile, rm } from 'fs/promises';
 import { tmpdir } from 'os';

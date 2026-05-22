@@ -114,7 +114,10 @@ _SESSIONS_CREATED+=("@discover-global")
 
 run_mcpc_discover connect
 assert_success "connect with global-scope config should succeed"
-assert_contains "$STDOUT" ".cursor/mcp.json"
+# On Windows the printed path uses backslashes (.cursor\mcp.json); normalize
+# both directions so the assertion works on POSIX and Git Bash.
+normalized_stdout="${STDOUT//\\//}"
+assert_contains "$normalized_stdout" ".cursor/mcp.json"
 assert_contains "$STDOUT" "@discover-global"
 test_pass
 
@@ -163,24 +166,35 @@ test_pass
 # Test: JSON output is structured and lists discovered/results/skipped
 # =============================================================================
 
-test_case "--json output includes discovered files, results, and skipped entries"
+test_case "--json output is an array of InitializeResult entries with _mcpc metadata"
 run_mcpc_discover --json connect
 assert_success "json discovery should succeed"
 
-# Validate JSON parses and has expected top-level keys
-discovered_count=$(echo "$STDOUT" | jq '.discovered | length')
-results_count=$(echo "$STDOUT" | jq '.results | length')
-skipped_count=$(echo "$STDOUT" | jq '.skipped | length')
+# Output is a flat array of ConnectResultEntry, one per session (active/created/failed/skipped)
+total_count=$(echo "$STDOUT" | jq 'length')
+results_count=$(echo "$STDOUT" | jq '[.[] | select(._mcpc.status == "active" or ._mcpc.status == "created")] | length')
+skipped_count=$(echo "$STDOUT" | jq '[.[] | select(._mcpc.status == "skipped")] | length')
+discovered_count=$(echo "$STDOUT" | jq '[.[]._mcpc.configFile] | unique | length')
 
-assert_eq "$discovered_count" "2" "should report 2 discovered config files"
-assert_eq "$results_count" "1" "should report 1 connect result (duplicate skipped)"
+assert_eq "$total_count" "2" "array should contain 2 entries (1 connected + 1 skipped duplicate)"
+assert_eq "$discovered_count" "2" "entries should reference 2 distinct config files"
+assert_eq "$results_count" "1" "should report 1 connected session (duplicate skipped)"
 assert_eq "$skipped_count" "1" "should report 1 skipped duplicate"
 
-# Duplicate should reference the correct session name and reason
-skipped_name=$(echo "$STDOUT" | jq -r '.skipped[0].sessionName')
-skipped_reason=$(echo "$STDOUT" | jq -r '.skipped[0].reason')
+# Duplicate should reference the correct session name and skipReason
+skipped_name=$(echo "$STDOUT" | jq -r '[.[] | select(._mcpc.status == "skipped")][0]._mcpc.sessionName')
+skipped_reason=$(echo "$STDOUT" | jq -r '[.[] | select(._mcpc.status == "skipped")][0]._mcpc.skipReason')
 assert_eq "$skipped_name" "@shared"
 assert_eq "$skipped_reason" "duplicate"
+
+# Connected entry should expose InitializeResult fields (serverInfo at minimum)
+connected_name=$(echo "$STDOUT" | jq -r '[.[] | select(._mcpc.status == "active" or ._mcpc.status == "created")][0]._mcpc.sessionName')
+connected_server=$(echo "$STDOUT" | jq -r '[.[] | select(._mcpc.status == "active" or ._mcpc.status == "created")][0].serverInfo.name // empty')
+assert_eq "$connected_name" "@shared"
+if [[ -z "$connected_server" ]]; then
+  test_fail "connected entry should include serverInfo.name from InitializeResult"
+  exit 1
+fi
 test_pass
 
 # =============================================================================

@@ -5,6 +5,7 @@ Additional documentation for mcpc.
 ## Contents
 
 - [Claude Skill](./claude-skill/) - Claude Code skill for AI agents using mcpc
+- [VHS demos](./vhs/) - VHS tape files for recording demo GIFs of mcpc
 - [CONTRIBUTING.md](../CONTRIBUTING.md) - Development, contributing, and publishing guide
 
 ## Main documentation

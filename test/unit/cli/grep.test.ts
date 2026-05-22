@@ -2,64 +2,60 @@
  * Tests for grep command formatting utilities
  */
 
-// Mock chalk to return plain strings (required because Jest can't handle chalk's ESM imports)
-const chalkIdentity = (s: string) => s;
-const chalkBold = Object.assign(chalkIdentity, { underline: chalkIdentity });
-jest.mock('chalk', () => ({
-  default: {
-    cyan: chalkIdentity,
-    yellow: chalkIdentity,
-    red: chalkIdentity,
-    dim: chalkIdentity,
-    gray: chalkIdentity,
-    bold: chalkBold,
-    green: chalkIdentity,
-    greenBright: chalkIdentity,
-    blue: chalkIdentity,
-    magenta: chalkIdentity,
-    white: chalkIdentity,
-  },
-  cyan: chalkIdentity,
-  yellow: chalkIdentity,
-  red: chalkIdentity,
-  dim: chalkIdentity,
-  gray: chalkIdentity,
-  bold: chalkBold,
-  green: chalkIdentity,
-  greenBright: chalkIdentity,
-  blue: chalkIdentity,
-  magenta: chalkIdentity,
-  white: chalkIdentity,
+// Mock chalk to return plain strings. `vi.mock` is hoisted above local
+// `const` declarations, so identity helpers must come from `vi.hoisted`.
+const { chalkApi } = vi.hoisted(() => {
+  const chalkIdentity = (s: string) => s;
+  const chalkBold = Object.assign(chalkIdentity, { underline: chalkIdentity });
+  return {
+    chalkApi: {
+      cyan: chalkIdentity,
+      yellow: chalkIdentity,
+      red: chalkIdentity,
+      dim: chalkIdentity,
+      gray: chalkIdentity,
+      bold: chalkBold,
+      green: chalkIdentity,
+      greenBright: chalkIdentity,
+      blue: chalkIdentity,
+      magenta: chalkIdentity,
+      white: chalkIdentity,
+    },
+  };
+});
+vi.mock('chalk', () => ({
+  default: chalkApi,
+  ...chalkApi,
 }));
 
 // Mock modules that grep.ts imports transitively
-jest.mock('../../../src/lib/errors.js', () => ({
+vi.mock('../../../src/lib/errors.js', () => ({
   ClientError: class ClientError extends Error {},
 }));
-jest.mock('../../../src/lib/utils.js', () => ({
-  isProcessAlive: jest.fn(),
+vi.mock('../../../src/lib/utils.js', () => ({
+  isProcessAlive: vi.fn(),
 }));
-jest.mock('../../../src/lib/sessions.js', () => ({
-  consolidateSessions: jest.fn(),
-  getSession: jest.fn(),
+vi.mock('../../../src/lib/sessions.js', () => ({
+  consolidateSessions: vi.fn(),
+  getSession: vi.fn(),
 }));
-jest.mock('../../../src/lib/bridge-manager.js', () => ({
-  reconnectCrashedSessions: jest.fn(),
+vi.mock('../../../src/lib/bridge-manager.js', () => ({
+  reconnectCrashedSessions: vi.fn(),
 }));
-jest.mock('../../../src/lib/session-client.js', () => ({
-  withSessionClient: jest.fn(),
+vi.mock('../../../src/lib/session-client.js', () => ({
+  withSessionClient: vi.fn(),
 }));
-jest.mock('../../../src/cli/helpers.js', () => ({
-  withMcpClient: jest.fn(),
+vi.mock('../../../src/cli/helpers.js', () => ({
+  withMcpClient: vi.fn(),
 }));
-jest.mock('../../../src/cli/output.js', () => ({
-  formatJson: jest.fn(),
-  formatToolLine: jest.fn(),
+vi.mock('../../../src/cli/output.js', () => ({
+  formatJson: vi.fn(),
+  formatToolLine: vi.fn(),
   inBackticks: (s: string) => `\`${s}\``,
 }));
-jest.mock('../../../src/cli/commands/sessions.js', () => ({
-  getBridgeStatus: jest.fn(),
-  formatBridgeStatus: jest.fn(),
+vi.mock('../../../src/cli/commands/sessions.js', () => ({
+  getBridgeStatus: vi.fn(),
+  formatBridgeStatus: vi.fn(),
 }));
 
 import { extractInstructionsSnippet } from '../../../src/cli/commands/grep.js';

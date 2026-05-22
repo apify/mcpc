@@ -38,6 +38,13 @@ jobs:
     if: ${{ !inputs.skip-windows-e2e }}
     uses: ./.github/workflows/e2e-windows.yml
 
+  e2e-linux:
+    # Re-run the full Linux E2E matrix on the exact commit being released.
+    # ci.yml only runs on push/PR, so a manually-dispatched release (especially
+    # a pre-release from a feature branch) is not otherwise guaranteed to have
+    # had Linux E2E executed against this SHA.
+    uses: ./.github/workflows/e2e-linux.yml
+
   conformance:
     # Gate releases on MCP spec conformance so we never publish a version
     # that regresses against the reference conformance suite.
@@ -46,13 +53,15 @@ jobs:
   release:
     name: Publish ${{ inputs.type }}
     runs-on: ubuntu-latest
-    needs: [e2e-windows, conformance]
+    needs: [e2e-windows, e2e-linux, conformance]
     # Release must be from main; pre-release can be from any branch.
     # Allow the e2e-windows dependency to be either successful or skipped
-    # (when the user opts out via skip-windows-e2e). Conformance must pass.
+    # (when the user opts out via skip-windows-e2e). Linux E2E and conformance
+    # must pass.
     if: |
       always() &&
       (needs.e2e-windows.result == 'success' || needs.e2e-windows.result == 'skipped') &&
+      needs.e2e-linux.result == 'success' &&
       needs.conformance.result == 'success' &&
       (inputs.type == 'pre-release' || github.ref == 'refs/heads/main')
 
@@ -76,24 +85,23 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: 24
-          cache: npm
           registry-url: https://registry.npmjs.org
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Install pnpm and dependencies
+        uses: apify/actions/pnpm-install@v1.1.2
 
       - name: Lint
-        run: npm run lint
+        run: pnpm run lint
 
       - name: Build
-        run: npm run build
+        run: pnpm run build
 
       - name: Unit tests
-        run: npm run test:unit
+        run: pnpm run test:unit
 
       - name: Update README
         if: inputs.type == 'release'
-        run: npm run build:readme
+        run: pnpm run build:readme
 
       # ── Pre-release ────────────────────────────────────────────────
       - name: Bump pre-release version
@@ -147,17 +155,21 @@ jobs:
           if [[ -n "$LATEST_BETA" && "$LATEST_BETA" == ${NEXT_BASE}-beta.* ]]; then
             # Existing beta found — increment from it
             echo "Found existing beta on npm: $LATEST_BETA — incrementing"
-            npm version "$LATEST_BETA" --no-git-tag-version --allow-same-version
-            npm version prerelease --preid=beta --no-git-tag-version
+            pnpm version "$LATEST_BETA" --no-git-tag-version --allow-same-version
+            pnpm version prerelease --preid=beta --no-git-tag-version
           else
             # No beta yet — start at beta.0
             echo "No existing beta for ${NEXT_BASE} — creating ${NEXT_BASE}-beta.0"
-            npm version "${NEXT_BASE}-beta.0" --no-git-tag-version --allow-same-version
+            pnpm version "${NEXT_BASE}-beta.0" --no-git-tag-version --allow-same-version
           fi
 
           NEW_VERSION=$(node -p "require('./package.json').version")
-          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
           PKG_NAME=$(node -p "require('./package.json').name")
+          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "package-name=$PKG_NAME" >> "$GITHUB_OUTPUT"
+          # Print install instructions to the job logs AND the run summary so
+          # they are visible both while the run is in progress and on the run
+          # summary tab afterwards.
           {
             echo "### Pre-release version: \`$NEW_VERSION\`"
             echo ""
@@ -167,11 +179,11 @@ jobs:
             echo "# or"
             echo "bun install -g ${PKG_NAME}@${NEW_VERSION}"
             echo "\`\`\`"
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Publish pre-release to npm
         if: inputs.type == 'pre-release'
-        run: MCPC_RELEASE=1 npm publish --access public --tag beta --provenance
+        run: MCPC_RELEASE=1 pnpm publish --access public --tag beta --provenance --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -183,6 +195,17 @@ jobs:
           name: v${{ steps.prerelease.outputs.version }}
           prerelease: true
           generate_release_notes: true
+          # Append install instructions to the auto-generated "What's Changed"
+          # so the release page shows users how to install this version.
+          append_body: true
+          body: |
+            ## Install
+
+            ```bash
+            npm install -g ${{ steps.prerelease.outputs.package-name }}@${{ steps.prerelease.outputs.version }}
+            # or
+            bun install -g ${{ steps.prerelease.outputs.package-name }}@${{ steps.prerelease.outputs.version }}
+            ```
           target_commitish: ${{ github.sha }}
         env:
           GITHUB_TOKEN: ${{ secrets.APIFY_SERVICE_ACCOUNT_GITHUB_TOKEN }}
@@ -195,11 +218,15 @@ jobs:
           CURRENT=$(node -p "require('./package.json').version")
           echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
 
-          npm version "${{ inputs.version }}" --no-git-tag-version
+          pnpm version "${{ inputs.version }}" --no-git-tag-version
 
           NEW_VERSION=$(node -p "require('./package.json').version")
-          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
           PKG_NAME=$(node -p "require('./package.json').name")
+          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "package-name=$PKG_NAME" >> "$GITHUB_OUTPUT"
+          # Print install instructions to the job logs AND the run summary so
+          # they are visible both while the run is in progress and on the run
+          # summary tab afterwards.
           {
             echo "### Release version: \`$NEW_VERSION\`"
             echo ""
@@ -209,7 +236,7 @@ jobs:
             echo "# or"
             echo "bun install -g ${PKG_NAME}@${NEW_VERSION}"
             echo "\`\`\`"
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Update CHANGELOG.md
         if: inputs.type == 'release'
@@ -232,7 +259,7 @@ jobs:
           NEW_VERSION="${{ steps.release.outputs.version }}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package.json package-lock.json CHANGELOG.md README.md
+          git add package.json pnpm-lock.yaml CHANGELOG.md README.md
           git commit -m "v${NEW_VERSION}"
           git tag -a "v${NEW_VERSION}" -m "Release v${NEW_VERSION}"
           git push origin main
@@ -240,7 +267,7 @@ jobs:
 
       - name: Publish release to npm
         if: inputs.type == 'release'
-        run: MCPC_RELEASE=1 npm publish --access public --provenance
+        run: MCPC_RELEASE=1 pnpm publish --access public --provenance --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -251,5 +278,16 @@ jobs:
           tag_name: v${{ steps.release.outputs.version }}
           name: v${{ steps.release.outputs.version }}
           generate_release_notes: true
+          # Append install instructions to the auto-generated "What's Changed"
+          # so the release page shows users how to install this version.
+          append_body: true
+          body: |
+            ## Install
+
+            ```bash
+            npm install -g ${{ steps.release.outputs.package-name }}@${{ steps.release.outputs.version }}
+            # or
+            bun install -g ${{ steps.release.outputs.package-name }}@${{ steps.release.outputs.version }}
+            ```
         env:
           GITHUB_TOKEN: ${{ secrets.APIFY_SERVICE_ACCOUNT_GITHUB_TOKEN }}

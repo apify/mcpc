@@ -21,13 +21,14 @@ When writing examples, tests, README snippets, or help text that reference a rem
 please use `mcp.apify.com` rather than placeholders like `mcp.example.com` or arbitrary third-party
 servers. The motivation is purely practical: `mcp.apify.com` is a real, publicly available MCP
 server that works out of the box, so readers can copy-paste examples and run them unchanged.
-Placeholders like `mcp.example.com` don't resolve to anything, which forces every reader to
-substitute a URL before they can try an example.
 
 This is a soft convention for documentation consistency, not a license condition — mcpc is
 distributed under Apache 2.0 and you are free to use it with any MCP server.
 
 ## Development setup
+
+This repo uses [pnpm](https://pnpm.io/) 10 (pinned via `packageManager` in `package.json`). If you
+don't have it, the easiest way is `corepack enable && corepack prepare pnpm@10 --activate`.
 
 ```bash
 # Clone repository
@@ -35,28 +36,33 @@ git clone https://github.com/apify/mcpc.git
 cd mcpc
 
 # Install dependencies
-npm install
+pnpm install
 
 # Run tests
-npm test
+pnpm test
 
 # Build
-npm run build
+pnpm run build
 
 # Test locally
-npm link
+pnpm link --global
 mcpc --help
 ```
+
+As a supply-chain hardening measure, `pnpm-workspace.yaml` sets `minimumReleaseAge: 1440`, so newly
+published third-party packages aren't installed until they're at least 24 hours old. If a fresh
+dependency bump seems "stuck," that's why — wait it out, or add a targeted exclusion in
+`minimumReleaseAgeExclude` if you have a justified reason.
 
 ## Testing
 
 See [`test/README.md`](./test/README.md) for details on running unit and E2E tests.
 
 ```bash
-npm test                    # Run all tests (unit + e2e)
-npm run test:unit           # Run unit tests only
-npm run test:e2e            # Run e2e tests only
-npm run test:coverage       # Run all tests with coverage
+pnpm test                    # Run all tests (unit + e2e)
+pnpm run test:unit           # Run unit tests only
+pnpm run test:e2e            # Run e2e tests only
+pnpm run test:coverage       # Run all tests with coverage
 ```
 
 ### E2E test prerequisites
@@ -64,8 +70,8 @@ npm run test:coverage       # Run all tests with coverage
 E2E tests require `mcpc` to be built first:
 
 ```bash
-npm run build
-npm link
+pnpm run build
+pnpm link --global
 ```
 
 Some E2E tests connect to a real remote MCP server and require OAuth authentication profiles.
@@ -83,154 +89,39 @@ The test runner does not take any destructive actions.
 ## Release process
 
 Use the release script to publish a new version
-of the [@apify/mcpc](https://www.npmjs.com/package/@apify/mcpc) package on NPM:
+of the [@apify/mcpc](https://www.npmjs.com/package/@apify/mcpc) package on npm:
 
 ```bash
-npm run release          # patch version bump (0.1.2 → 0.1.3)
-npm run release:minor    # minor version bump (0.1.2 → 0.2.0)
-npm run release:major    # major version bump (0.1.2 → 1.0.0)
+pnpm run release          # patch version bump (0.1.2 → 0.1.3)
+pnpm run release:minor    # minor version bump (0.1.2 → 0.2.0)
+pnpm run release:major    # major version bump (0.1.2 → 1.0.0)
 ```
 
-The script automatically:
-- Ensures you're on `main` branch
-- Ensures working directory is clean (no uncommitted changes)
-- Ensures branch is up-to-date with remote
-- Runs lint, build, and tests
-- Bumps the version in package.json
-- Creates a git commit and annotated tag (`v{version}`)
-- Pushes the commit and tag to origin
-- Publishes to npm
+The script validates preconditions locally (clean branch, up-to-date with `origin/main`, CI green),
+then triggers the `release.yml` GitHub Actions workflow which handles lint, build, test, version
+bump, changelog update, README update, git commit/tag/push, npm publish (with provenance), and
+GitHub release creation.
 
-After publishing, create a GitHub release at the provided link.
+## Architecture
 
-## Architecture overview
+The codebase is a single TypeScript package with three internal modules:
 
 ```
-mcpc (single package)
-├── src/
-│   ├── core/           # Core MCP protocol implementation
-│   ├── bridge/         # Bridge process logic
-│   ├── cli/            # CLI interface
-│   └── lib/            # Shared utilities
-├── bin/
-│   ├── mcpc            # Main CLI executable
-│   └── mcpc-bridge     # Bridge process executable
-└── test/
-    └── e2e/
-        └── server/     # Test MCP server for E2E tests
+src/
+├── core/       # Runtime-agnostic MCP protocol implementation (Node ≥18, Bun ≥1)
+├── bridge/     # Persistent bridge process — one per session, owns the MCP connection
+├── cli/        # `mcpc` command — argument parsing, output formatting, IPC to the bridge
+└── lib/        # Shared utilities (auth, keychain, file locking, …)
 ```
 
-### Core module (runtime-agnostic)
+The CLI talks to bridges over Unix domain sockets (named pipes on Windows) located in
+`~/.mcpc/bridges/`. Session state lives in `~/.mcpc/sessions.json` (file-locked). Credentials live
+in the OS keychain via [`@napi-rs/keyring`](https://www.npmjs.com/package/@napi-rs/keyring), with a
+`0600` file fallback on headless systems.
 
-Implemented with minimal dependencies to support both Node.js (≥18.0.0) and Bun (≥1.0.0).
-
-**Core responsibilities:**
-- Transport selection and initialization (Streamable HTTP vs stdio)
-- MCP protocol implementation and version negotiation
-- Session state machine management
-- Streamable HTTP connection management (reconnection with exponential backoff)
-- Request/response correlation (JSON-RPC style with request IDs)
-- Multiplexing concurrent requests (up to 10 concurrent)
-- Event emitter for async notifications
-
-**Key dependencies:**
-- Native `fetch` API (available in Node.js 18+ and Bun)
-- Native process APIs for stdio transport
-- Minimal: UUID generation, event emitter abstraction
-
-### Bridge process
-
-Implemented as a separate executable (`mcpc-bridge`) that maintains persistent connections.
-
-**Bridge responsibilities:**
-- Session persistence (reads/writes `~/.mcpc/sessions.json` with file locking)
-- Process lifecycle management for local package servers
-- Stdio framing and protocol handling
-- Unix domain socket server for CLI communication
-- Heartbeat mechanism for health monitoring
-- Orphaned process cleanup on startup
-
-**IPC protocol:**
-- Unix domain sockets (located in `~/.mcpc/bridges/<session-name>.sock`)
-- Named pipes on Windows
-- JSON-RPC style messages over socket
-- Control messages: init, request, cancel, close, health-check
-
-**Bridge discovery:**
-- CLI reads `~/.mcpc/sessions.json` to find socket path and PID
-- Validates bridge is alive (connect to socket + health-check)
-- Auto-restarts crashed bridges (detected via socket connection failure)
-- Cleanup: removes stale socket files for dead processes
-
-**Concurrency safety:**
-- `~/.mcpc/sessions.json` protected with file locking (`proper-lockfile` package)
-- Atomic writes (write to temp file, then rename)
-- Lock timeout: 5 seconds (fails if can't acquire lock)
-
-### CLI executable
-
-The main `mcpc` command provides the user interface.
-
-**CLI responsibilities:**
-- Argument parsing using Commander.js
-- Output formatting (human-readable vs `--json`)
-- Bridge lifecycle: start/connect/stop
-- Communication with bridge via socket
-- Interactive shell (REPL using Node.js `readline`)
-- Configuration file loading (standard MCP JSON format)
-- Credential management (OS keychain via `keytar` package)
-
-**Shell implementation:**
-- Built on Node.js `readline` module for input handling with history support
-- Command history using `~/.mcpc/history` (last 1000 commands)
-- Real-time notification display during shell sessions
-- Graceful exit handling (cleanup on Ctrl+C/Ctrl+D)
-
-### Session lifecycle
-
-1. User: `mcpc https://mcp.apify.com session @apify`
-2. CLI: Atomically creates session entry in `~/.mcpc/sessions.json`
-3. CLI: Spawns bridge process (`mcpc-bridge`)
-4. Bridge: Creates Unix socket at `~/.mcpc/bridges/apify.sock`
-5. Bridge: Performs MCP initialization handshake with server:
-   - Sends initialize request with protocol version and capabilities
-   - Receives server info, version, and capabilities
-   - Sends initialized notification to activate session
-6. Bridge: Updates session in `~/.mcpc/sessions.json` (adds PID, socket path, protocol version)
-7. CLI: Confirms session created
-8. User: mcpc @apify tools-list
-9. CLI: Reads `~/.mcpc/sessions.json`, finds socket path
-10. CLI: Connects to bridge socket
-11. CLI: Sends `tools/list` JSON-RPC request via socket
-12. Bridge: Forwards to MCP server via Streamable HTTP
-13. Bridge: Returns response via socket
-14. CLI: Formats and displays to user
-
-
-### Error recovery
-
-**Bridge crashes:**
-1. CLI detects socket connection failure
-2. Reads `~/.mcpc/sessions.json` for last known config
-3. Spawns new bridge process
-4. Bridge re-initializes connection to MCP server
-5. Continues request
-
-**Network failures:**
-1. Bridge detects connection error
-2. Begins exponential backoff reconnection
-3. Queues incoming requests (up to 100, max 3min)
-4. On reconnect: drains queue
-5. On timeout: fails queued requests with network error
-
-**Orphaned processes:**
-1. On startup, CLI scans `~/.mcpc/bridges/` directory
-2. For each socket file, attempts connection
-3. If connection fails, reads PID from sessions.json
-4. Checks if process exists (via `kill -0` or similar)
-5. If dead: removes socket file and session entry
-6. If alive but unresponsive: kills process, removes entries
-
+For a deeper walkthrough of the protocol implementation, session lifecycle, error recovery, and
+security model, see [`CLAUDE.md`](./CLAUDE.md) — it's the reference document maintained for AI
+coding agents, but it's plain Markdown and useful to humans too.
 
 ## References
 

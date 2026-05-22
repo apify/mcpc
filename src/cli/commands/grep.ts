@@ -10,7 +10,7 @@ import { consolidateSessions } from '../../lib/sessions.js';
 import { reconnectCrashedSessions } from '../../lib/bridge-manager.js';
 import { withSessionClient } from '../../lib/session-client.js';
 import { withMcpClient } from '../helpers.js';
-import { formatJson, formatToolLine, inBackticks } from '../output.js';
+import { formatJson, formatToolLine, inBackticks, theme } from '../output.js';
 import type { IMcpClient } from '../../lib/types.js';
 import { getBridgeStatus, formatBridgeStatus } from './sessions.js';
 
@@ -553,7 +553,7 @@ export async function grepSession(
  */
 function formatSkippedSession(skipped: SessionGrepSkipped): string {
   const { dot, text } = formatBridgeStatus(skipped.status as 'crashed');
-  return `${chalk.cyan(skipped.name)} ${dot} ${text}`;
+  return `${theme.cyan(skipped.name)} ${dot} ${text}`;
 }
 
 /**
@@ -719,14 +719,14 @@ export async function grepAllSessions(pattern: string, options: GrepOptions): Pr
     }
 
     for (const r of displayResultsWithMatches) {
-      lines.push(chalk.cyan(r.name));
+      lines.push(theme.cyan(r.name));
       lines.push(...formatGrepResultHuman(r, '  ', pattern, options));
       lines.push('');
     }
 
     // Show warnings for failed sessions
     for (const err of errors) {
-      lines.push(chalk.yellow(`Warning: ${err.name} \u2014 ${err.error}`));
+      lines.push(theme.yellow(`Warning: ${err.name} \u2014 ${err.error}`));
     }
 
     if (totalMatchCount === 0 && skippedSessions.length === 0) {

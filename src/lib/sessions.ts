@@ -4,7 +4,7 @@
  * Uses file locking to prevent concurrent access issues
  */
 
-import { readFile, writeFile, rename, unlink } from 'fs/promises';
+import { readFile, writeFile, unlink } from 'fs/promises';
 import { join } from 'path';
 import type { SessionData, SessionsStorage } from './types.js';
 import {
@@ -14,6 +14,7 @@ import {
   ensureDir,
   getMcpcHome,
   isProcessAlive,
+  atomicRename,
 } from './utils.js';
 import { withFileLock } from './file-lock.js';
 import { createLogger } from './logger.js';
@@ -68,8 +69,8 @@ async function saveSessionsInternal(storage: SessionsStorage): Promise<void> {
     const content = JSON.stringify(storage, null, 2);
     await writeFile(tempFile, content, { encoding: 'utf-8', mode: 0o600 });
 
-    // Atomic rename
-    await rename(tempFile, filePath);
+    // Atomic rename (retries on Windows EPERM/EBUSY from transient file locks)
+    await atomicRename(tempFile, filePath);
 
     logger.debug('Sessions saved successfully');
   } catch (error) {

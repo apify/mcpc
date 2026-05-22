@@ -31,30 +31,32 @@ const keychainStore = new Map<string, string>();
 /** When true, all keychain operations throw to simulate a missing keyring daemon */
 let keychainThrows = false;
 
-jest.mock('@napi-rs/keyring', () => ({
-  Entry: jest.fn().mockImplementation((_service: string, account: string) => ({
-    setPassword(value: string) {
-      if (keychainThrows) throw new Error('No keyring daemon');
-      keychainStore.set(account, value);
-    },
-    getPassword(): string | null {
-      if (keychainThrows) throw new Error('No keyring daemon');
-      return keychainStore.get(account) ?? null;
-    },
-    deletePassword(): boolean {
-      if (keychainThrows) throw new Error('No keyring daemon');
-      const had = keychainStore.has(account);
-      keychainStore.delete(account);
-      return had;
-    },
-  })),
+vi.mock('@napi-rs/keyring', () => ({
+  Entry: vi.fn(function (_service: string, account: string) {
+    return {
+      setPassword(value: string) {
+        if (keychainThrows) throw new Error('No keyring daemon');
+        keychainStore.set(account, value);
+      },
+      getPassword(): string | null {
+        if (keychainThrows) throw new Error('No keyring daemon');
+        return keychainStore.get(account) ?? null;
+      },
+      deletePassword(): boolean {
+        if (keychainThrows) throw new Error('No keyring daemon');
+        const had = keychainStore.has(account);
+        keychainStore.delete(account);
+        return had;
+      },
+    };
+  }),
 }));
 
 // ---------------------------------------------------------------------------
-// Mock chalk — its ESM subpath imports (#ansi-styles) break under Jest/ts-jest
+// Mock chalk to keep the test runtime untouched by ANSI codes.
 // ---------------------------------------------------------------------------
 
-jest.mock('chalk', () => ({
+vi.mock('chalk', () => ({
   __esModule: true,
   default: { red: (s: string) => s },
 }));
@@ -88,7 +90,7 @@ beforeEach(async () => {
 // ---------------------------------------------------------------------------
 
 async function loadKeychain() {
-  jest.resetModules();
+  vi.resetModules();
   return import('../../../../src/lib/auth/keychain.js');
 }
 

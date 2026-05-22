@@ -4,7 +4,7 @@
  * Uses file locking to prevent concurrent access issues
  */
 
-import { readFile, writeFile, rename, unlink } from 'fs/promises';
+import { readFile, writeFile, unlink } from 'fs/promises';
 import { join } from 'path';
 import type { AuthProfile, AuthProfilesStorage } from '../types.js';
 import {
@@ -13,6 +13,7 @@ import {
   ensureDir,
   getMcpcHome,
   getServerHost,
+  atomicRename,
 } from '../utils.js';
 import { loadSessions } from '../sessions.js';
 import { withFileLock } from '../file-lock.js';
@@ -70,8 +71,8 @@ async function saveAuthProfilesInternal(storage: AuthProfilesStorage): Promise<v
     const content = JSON.stringify(storage, null, 2);
     await writeFile(tempFile, content, { encoding: 'utf-8', mode: 0o600 });
 
-    // Atomic rename
-    await rename(tempFile, filePath);
+    // Atomic rename (retries on Windows EPERM/EBUSY from transient file locks)
+    await atomicRename(tempFile, filePath);
 
     logger.debug('Auth profiles saved successfully');
   } catch (error) {

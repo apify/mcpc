@@ -8,30 +8,18 @@ import { createServer, type Server, type IncomingMessage, type ServerResponse } 
 import type { Socket } from 'net';
 import { URL } from 'url';
 import { createInterface } from 'readline';
+import { randomBytes } from 'crypto';
 import { auth as sdkAuth } from '@modelcontextprotocol/sdk/client/auth.js';
 import { OAuthProvider, type OAuthProviderOptions } from './oauth-provider.js';
-import { normalizeServerUrl } from '../utils.js';
+import { getServerHost, normalizeServerUrl } from '../utils.js';
 import { ClientError } from '../errors.js';
 import { createLogger } from '../logger.js';
 import { removeKeychainOAuthClientInfo, storeKeychainOAuthClientInfo } from './keychain.js';
 import type { AuthProfile } from '../types.js';
 import { MCPC_OAUTH_CALLBACK_PORTS, validateClientMetadataUrl } from './oauth-utils.js';
+import { renderAuthPage } from './auth-page.js';
 
 const logger = createLogger('oauth-flow');
-
-/**
- * Escape HTML special characters to prevent XSS in OAuth callback responses.
- * The callback server renders error messages from query parameters (error_description)
- * directly into HTML, so they must be escaped.
- */
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
 
 // Special key codes
 const ESCAPE_KEY = '\x1b';
@@ -142,7 +130,10 @@ export interface OAuthFlowResult {
  * Start a local HTTP server for OAuth callback
  * Returns the server, a promise that resolves with the authorization code, and a destroy function
  */
-function startCallbackServer(port: number): {
+function startCallbackServer(
+  port: number,
+  context: { serverUrl: string; profileName: string; scope?: string }
+): {
   server: Server;
   codePromise: Promise<{ code: string; state?: string }>;
   destroyConnections: () => void;
@@ -178,49 +169,52 @@ function startCallbackServer(port: number): {
       const errorDescription = url.searchParams.get('error_description');
       const state = url.searchParams.get('state') || undefined;
 
+      const info = [
+        { label: 'Server', value: getServerHost(context.serverUrl) },
+        { label: 'Profile', value: context.profileName },
+        { label: 'Scopes', value: context.scope },
+      ];
+
       if (error) {
         const message = errorDescription || error;
-        res.writeHead(400, { 'Content-Type': 'text/html' });
-        res.end(`
-          <html>
-            <head><title>Authentication failed</title></head>
-            <body>
-              <h1>Authentication failed</h1>
-              <p>Error: ${escapeHtml(message)}</p>
-              <p>You can close this window.</p>
-            </body>
-          </html>
-        `);
+        res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(
+          renderAuthPage({
+            success: false,
+            title: 'mcpc login failed',
+            message: 'The authorization server returned an error.',
+            detail: message,
+            info,
+          })
+        );
         rejectCode(new ClientError(`OAuth error: ${message}`));
         return;
       }
 
       if (!code) {
-        res.writeHead(400, { 'Content-Type': 'text/html' });
-        res.end(`
-          <html>
-            <head><title>Authentication failed</title></head>
-            <body>
-              <h1>Authentication failed</h1>
-              <p>No authorization code received</p>
-              <p>You can close this window.</p>
-            </body>
-          </html>
-        `);
+        res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(
+          renderAuthPage({
+            success: false,
+            title: 'mcpc login failed',
+            message: 'No authorization code was received from the server.',
+            info,
+          })
+        );
         rejectCode(new ClientError('No authorization code in callback'));
         return;
       }
 
-      res.writeHead(200, { 'Content-Type': 'text/html' });
-      res.end(`
-        <html>
-          <head><title>Authentication successful</title></head>
-          <body>
-            <h1>Authentication successful!</h1>
-            <p>You can close this window and return to the terminal.</p>
-          </body>
-        </html>
-      `);
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(
+        renderAuthPage({
+          success: true,
+          title: 'mcpc login succeeded',
+          message:
+            'Your authentication profile has been securely saved. You can now use it in your mcpc sessions.',
+          info,
+        })
+      );
       const result: { code: string; state?: string } = { code };
       if (state !== undefined) {
         result.state = state;
@@ -478,7 +472,14 @@ export async function performOAuthFlow(
   const provider = new OAuthProvider(providerOptions);
 
   // Start callback server
-  const { server, codePromise, destroyConnections } = startCallbackServer(port);
+  const callbackContext: { serverUrl: string; profileName: string; scope?: string } = {
+    serverUrl: normalizedServerUrl,
+    profileName,
+  };
+  if (scope !== undefined) {
+    callbackContext.scope = scope;
+  }
+  const { server, codePromise, destroyConnections } = startCallbackServer(port, callbackContext);
 
   // Track whether browser failed so we can fall back to URL paste
   let browserFailed = false;
@@ -503,6 +504,14 @@ export async function performOAuthFlow(
 
     // Override redirectToAuthorization to open browser
     provider.redirectToAuthorization = async (authorizationUrl: URL) => {
+      // Inject a random `state` parameter if the SDK didn't add one. OAuth 2.1 treats
+      // `state` as RECOMMENDED rather than REQUIRED, but RFC 6749 §4.1.1 allows servers
+      // to require it, and some production MCP servers do (e.g. Ubersuggest). PKCE
+      // already provides CSRF protection on this flow, so the value need not be verified.
+      if (!authorizationUrl.searchParams.has('state')) {
+        authorizationUrl.searchParams.set('state', randomBytes(16).toString('hex'));
+      }
+
       logger.debug('Opening browser for authorization...');
       // Interactive chatter goes to stderr so stdout stays clean for --json output.
       console.error(`\nAuthorization URL: ${authorizationUrl.toString()}`);
