@@ -1,7 +1,7 @@
 /**
  * Tests for the proactive-sign path and the tool-result retry path's scheme handling.
  *
- * Regression target: `--x402-scheme exact` must not be silently overridden by the
+ * Regression target: `--x402 exact` must not be silently overridden by the
  * proactive `_meta.x402` path or by the tool-result retry helper. Both used to
  * hard-code `auto` and pick whatever the server preferred (which now defaults to
  * `upto` after apify-mcp-server #876).
