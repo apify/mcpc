@@ -31,6 +31,7 @@ import type { OutputMode, X402SchemePreference } from '../lib/index.js';
 import { X402_SCHEME_PREFERENCES } from '../lib/index.js';
 import {
   extractOptions,
+  preProcessX402Argv,
   getVerboseFromEnv,
   getJsonFromEnv,
   validateOptions,
@@ -164,6 +165,9 @@ function jsonHelp(description: string, shape?: string, schemaUrl?: string): stri
 const SCHEMA_BASE = 'https://modelcontextprotocol.io/specification/2025-11-25/schema';
 
 async function main(): Promise<void> {
+  // Disambiguate `--x402 <non-scheme>` (URL, @session, etc.) so Commander's
+  // greedy [optional] arg parser doesn't eat the next positional as the value.
+  process.argv = preProcessX402Argv(process.argv);
   const args = process.argv.slice(2);
 
   // Set up cleanup handlers for graceful shutdown
@@ -460,7 +464,7 @@ Full docs: ${docsUrl}`
     .option('--stdio', 'Launch all local stdio servers from selected config files')
     .option(
       '--x402 [scheme]',
-      'Enable x402 auto-payment using the configured wallet; optional scheme: auto (default, prefer upto), upto, or exact. Use --x402=<scheme> when followed by positional args.'
+      'Enable x402 auto-payment using the configured wallet; optional scheme: auto (default, prefer upto), upto, or exact.'
     )
     .addHelpText(
       'after',

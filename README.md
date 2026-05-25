@@ -748,12 +748,9 @@ Pass the `--x402` flag when connecting to a session. It accepts an optional sche
 # Create a session with x402 payment support (auto picks the best advertised scheme)
 mcpc connect mcp.apify.com @apify --x402
 
-# Pin a specific scheme — value goes after the flag
+# Pin a specific scheme — position doesn't matter, before or after positional args
+mcpc connect --x402 upto mcp.apify.com @apify
 mcpc connect mcp.apify.com @apify --x402 exact
-
-# When --x402 precedes positional args, use the equals form to avoid Commander's
-# greedy [optional] argument parser eating the URL/session as the value.
-mcpc connect --x402=upto mcp.apify.com @apify
 
 # The session now automatically handles 402 responses using your preference
 mcpc @apify tools-call expensive-tool query:="hello"
