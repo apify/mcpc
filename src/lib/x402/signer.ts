@@ -28,6 +28,9 @@ const logger = createLogger('x402-signer');
 export const X402_VERSION = 2;
 const USDC_DECIMALS = 6;
 
+/** Fallback expiry when neither the caller nor the `accept` advertise one. */
+export const DEFAULT_PAYMENT_EXPIRY_SECONDS = 3600;
+
 /** Canonical Permit2 contract address (CREATE2, same on all EVM chains). */
 const PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
 
@@ -157,7 +160,7 @@ export interface SignPaymentInput {
   resource?: PaymentRequiredHeader['resource'];
   /** Override amount in atomic units (default: from accept.amount) */
   amountOverride?: bigint;
-  /** Override expiry in seconds (default: from accept.maxTimeoutSeconds or 3600) */
+  /** Override expiry in seconds (default: `accept.maxTimeoutSeconds` or `DEFAULT_PAYMENT_EXPIRY_SECONDS`) */
   expiryOverride?: number;
   /**
    * For the upto scheme: skip the on-chain Permit2 allowance check & auto-approval.
@@ -343,7 +346,8 @@ async function signExactPayment(input: SignPaymentInput): Promise<SignPaymentRes
   const amountUsd = Number(amountAtomicUnits) / 10 ** USDC_DECIMALS;
 
   // Resolve expiry
-  const expirySeconds = (input.expiryOverride ?? accept.maxTimeoutSeconds) || 3600;
+  const expirySeconds =
+    (input.expiryOverride ?? accept.maxTimeoutSeconds) || DEFAULT_PAYMENT_EXPIRY_SECONDS;
 
   // EIP-3009 domain
   const eip3009Name = accept.extra?.name ?? 'USDC';
@@ -531,7 +535,8 @@ async function signUptoPayment(input: SignPaymentInput): Promise<SignPaymentResu
   const amountUsd = Number(amountAtomicUnits) / 10 ** USDC_DECIMALS;
 
   // Resolve expiry
-  const expirySeconds = (input.expiryOverride ?? accept.maxTimeoutSeconds) || 3600;
+  const expirySeconds =
+    (input.expiryOverride ?? accept.maxTimeoutSeconds) || DEFAULT_PAYMENT_EXPIRY_SECONDS;
 
   // Validate facilitator address (required by upto scheme for witness binding)
   const facilitatorAddress = accept.extra?.facilitatorAddress;

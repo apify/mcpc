@@ -22,6 +22,7 @@ import {
   signPayment,
   parsePaymentRequired,
   selectAcceptEntry,
+  DEFAULT_PAYMENT_EXPIRY_SECONDS,
   type SignerWallet,
   type PaymentRequiredAccept,
   type PaymentRequiredHeader,
@@ -352,7 +353,7 @@ function selectAcceptFromToolMeta(
     amount: x402.amount,
     asset: x402.asset,
     payTo: x402.payTo,
-    maxTimeoutSeconds: x402.maxTimeoutSeconds || 3600,
+    maxTimeoutSeconds: x402.maxTimeoutSeconds || DEFAULT_PAYMENT_EXPIRY_SECONDS,
     ...(x402.extra && { extra: x402.extra }),
   };
 }
