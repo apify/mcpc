@@ -1,0 +1,56 @@
+name: E2E Linux
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  e2e-linux-node:
+    name: E2E tests (Linux, Node.js)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Install pnpm and dependencies
+        uses: apify/actions/pnpm-install@v1.1.2
+
+      - name: Build
+        run: pnpm run build
+
+      - name: E2E tests
+        # Run without gnome-keyring: @napi-rs/keyring fails fast when no D-Bus secret
+        # service is available, and keychain.ts automatically falls back to encrypted
+        # file storage (~/.mcpc/credentials.json, mode 0600).  The keychain code paths
+        # are covered by unit tests; e2e tests only need credentials to work, not a
+        # specific storage backend.
+        run: ./test/e2e/run.sh --no-build --parallel 6
+
+  e2e-linux-bun:
+    name: E2E tests (Linux, Bun)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install pnpm and dependencies
+        uses: apify/actions/pnpm-install@v1.1.2
+
+      - name: Build
+        run: pnpm run build
+
+      - name: E2E tests
+        run: ./test/e2e/run.sh --no-build --runtime bun --parallel 4

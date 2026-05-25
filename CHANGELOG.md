@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Deprecated
+
+- The `shell` command (`mcpc shell @<session>` and `mcpc @<session> shell`) is deprecated and will be removed in a future release. It is now hidden from `--help` output and prints a deprecation warning when invoked
+
+## [0.3.0] - 2026-05-20
+
 ### Added
 
 - `mcpc connect` (with no arguments) now auto-discovers standard MCP config files (`.mcp.json`, `mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, `~/.claude.json`, Claude Desktop, Windsurf, Kiro, etc.) in the current directory and home directory, and connects every server defined across them. Entries with duplicate session names are deduplicated (project-scoped files win over global ones). VS Code's `"servers"` key is also supported.
@@ -21,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - x402 debug logs now announce the selected scheme (`scheme=upto` / `scheme=exact`) up front and print USD amounts with 6-decimal precision (USDC atomic unit). Enable with `--verbose` or `MCPC_VERBOSE=1`.
 - **Breaking:** `mcpc connect --json` now always returns an array of `InitializeResult` objects (extended with `toolNames` and `_mcpc` metadata), regardless of whether you connect a single server, a config file, or auto-discover all configs. Skipped/failed entries carry `_mcpc.status` (`created` | `active` | `failed` | `skipped`) and `_mcpc.skipReason` / `_mcpc.error`. The previous wrapper-object shapes (`{configFile, results, skipped}` and `{discovered, results, skipped}`) have been removed.
 - `tools-call --task` now prints the task ID and recovery commands when interrupted with Ctrl+C, so you can fetch or cancel the server-side task later
+- Human-mode `tools-call` / `tasks-result` output no longer prints the **Structured content** section when **Content** already has at least one visible block. The JSON dump was redundant verbose output (especially for LLMs) whenever a server returned both. The section is still shown when `content` is empty or contains only a JSON-dump duplicate of `structuredContent`; use `--json` to always get the full payload
 
 ### Fixed
 
@@ -273,7 +280,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Interactive shell mode
 - JSON output mode for scripting
 
-[Unreleased]: https://github.com/apify/mcpc/compare/v0.2.6...HEAD
+[Unreleased]: https://github.com/apify/mcpc/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/apify/mcpc/compare/v0.2.6...v0.3.0
 [0.2.6]: https://github.com/apify/mcpc/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/apify/mcpc/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/apify/mcpc/compare/v0.2.3...v0.2.4

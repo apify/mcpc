@@ -612,11 +612,11 @@ ${jsonHelp(
       await sessions.restartSession(sessionName, getOptionsFromCommand(command));
     });
 
-  // shell command: mcpc shell @<session>
+  // shell command: mcpc shell @<session> (deprecated, hidden from help)
   program
-    .command('shell [@session]')
+    .command('shell [@session]', { hidden: true })
     .usage('<@session>')
-    .description('Open interactive shell for a session')
+    .description('Open interactive shell for a session (deprecated)')
     .action(async (sessionName) => {
       if (!sessionName) {
         throw new ClientError('Missing required argument: @session\n\nExample: mcpc shell @myapp');
@@ -903,10 +903,10 @@ function registerSessionCommands(program: Command, session: string): void {
       command.parent.outputHelp();
     });
 
-  // Shell command
+  // Shell command (deprecated, hidden from help)
   program
-    .command('shell')
-    .description('Launch interactive MCP shell.')
+    .command('shell', { hidden: true })
+    .description('Launch interactive MCP shell (deprecated).')
     .action(async () => {
       await sessions.openShell(session);
     });

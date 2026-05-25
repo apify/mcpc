@@ -63,12 +63,12 @@ wiring up dozens of MCP functions. Just one `Bash()` tool, and `mcpc` handles th
 
 ```
 
-  ┌──────────┐         Bash()         ┌──────────┐           MCP          ┌────────────┐
-  │ AI agent │  ────────────────────► │   mcpc   │  ────────────────────► │ MCP server │
-  └──────────┘                        └──────────┘    Sessions, OAuth,    └────────────┘
-                                                      Tools, Resources,
-                                                      Prompts, Tasks,
-                                                      x402, ...
+ ┌──────────┐   Bash()   ┌────────┐    MCP    ┌────────────┐
+ │ AI agent │ ─────────► │  mcpc  │ ────────► │ MCP server │
+ └──────────┘            └────────┘           └────────────┘
+                                     Sessions, OAuth, Tools,
+                                     Resources, Prompts,
+                                     Tasks, x402, ...
 ```
 
 CLI is the perfect _local_ interface between agents and MCP, while MCP remains the
@@ -135,7 +135,6 @@ Commands:
   connect <server> [@session]  Connect to an MCP server and start a new named @session
   close <@session>             Close a session
   restart <@session>           Restart a session (losing all state)
-  shell <@session>             Open interactive shell for a session
   login <server>               Interactively login to a server using OAuth and save profile
   logout <server>              Delete an OAuth profile for a server
   clean [resources...]         Clean up mcpc data (sessions, profiles, logs, all)
