@@ -680,20 +680,12 @@ This is entirely **opt-in**: existing functionality is unaffected unless you exp
 
 ### How it works
 
-The x402 protocol defines different payment **schemes**:
+Two schemes are supported, both signed by your local wallet:
 
-- **`exact`** (Standard EIP-3009): The client signs an exact `TransferWithAuthorization` on USDC. Settles on-chain immediately at call-time.
-- **`upto`** (Permit2): The client signs a maximum authorization cap using Uniswap's `Permit2` witness signatures. The facilitator verifies the signature off-chain immediately, and settles the actual accumulated usage later (asynchronously).
+- **`exact`** — EIP-3009 `TransferWithAuthorization`. Settles on-chain at call-time.
+- **`upto`** — Permit2 `PermitWitnessTransferFrom`. You sign a max cap; the facilitator settles accumulated usage later. First use auto-grants a one-time `USDC.approve(PERMIT2, MAX_UINT256)` (needs a tiny native ETH float for gas).
 
-Regardless of the scheme, the general flow is:
-
-1. **Server returns HTTP 402** with a `PAYMENT-REQUIRED` header advertising its supported schemes and details.
-2. `mcpc` parses the header, picks the best scheme, and signs the payment payload using your local wallet.
-   - For `upto`, `mcpc` automatically checks and grants the one-time on-chain Permit2 allowance if needed (requires a small native ETH float for gas).
-3. `mcpc` retries the request with a `PAYMENT-SIGNATURE` header containing the signed payload.
-4. The server verifies the signature and fulfills the request.
-
-For tools that advertise pricing in their `_meta.x402` metadata, `mcpc` can **proactively sign** payments on the first request, avoiding the 402 round-trip entirely. This path is fully scheme-aware and respects your configured session preference.
+Flow: server returns HTTP 402 with a `PAYMENT-REQUIRED` header → `mcpc` picks the best scheme per your preference, signs, and retries with `PAYMENT-SIGNATURE` → server verifies and fulfills. Tools that advertise pricing in `_meta.x402` are signed proactively, skipping the 402 round-trip.
 
 ### Wallet setup
 

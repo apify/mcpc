@@ -1650,17 +1650,16 @@ async function main(): Promise<void> {
     mcpSessionId = args[mcpSessionIdIndex + 1];
   }
 
-  // Parse `--x402 <scheme>`. The CLI always spawns the bridge with an explicit
-  // scheme value; if a bare `--x402` slips through (no value, or invalid value)
-  // we default to `auto` to keep the spawn surface tolerant.
+  // Parse `--x402 <scheme>` (CLI always spawns the bridge with an explicit value).
   let x402: X402SchemePreference | undefined;
   const x402Index = args.indexOf('--x402');
   if (x402Index !== -1) {
     const value = args[x402Index + 1];
-    x402 =
-      value !== undefined && (X402_SCHEME_PREFERENCES as readonly string[]).includes(value)
-        ? (value as X402SchemePreference)
-        : 'auto';
+    if (value === undefined || !(X402_SCHEME_PREFERENCES as readonly string[]).includes(value)) {
+      console.error(`--x402 requires a scheme: ${X402_SCHEME_PREFERENCES.join('|')} (got ${value ?? '<missing>'})`);
+      process.exit(1);
+    }
+    x402 = value as X402SchemePreference;
   }
 
   // Parse --insecure flag (skip TLS certificate verification)
