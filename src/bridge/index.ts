@@ -1656,7 +1656,9 @@ async function main(): Promise<void> {
   if (x402Index !== -1) {
     const value = args[x402Index + 1];
     if (value === undefined || !(X402_SCHEME_PREFERENCES as readonly string[]).includes(value)) {
-      console.error(`--x402 requires a scheme: ${X402_SCHEME_PREFERENCES.join('|')} (got ${value ?? '<missing>'})`);
+      console.error(
+        `--x402 requires a scheme: ${X402_SCHEME_PREFERENCES.join('|')} (got ${value ?? '<missing>'})`
+      );
       process.exit(1);
     }
     x402 = value as X402SchemePreference;

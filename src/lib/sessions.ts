@@ -103,10 +103,7 @@ export function normaliseLegacyX402(session: SessionData): void {
     else delete (session as { x402?: unknown }).x402;
     return;
   }
-  if (
-    typeof raw === 'string' &&
-    !(X402_SCHEME_PREFERENCES as readonly string[]).includes(raw)
-  ) {
+  if (typeof raw === 'string' && !(X402_SCHEME_PREFERENCES as readonly string[]).includes(raw)) {
     delete (session as { x402?: unknown }).x402;
   }
 }
