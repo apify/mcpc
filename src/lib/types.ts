@@ -150,10 +150,6 @@ export interface SessionData {
    * x402 auto-payment scheme preference. Presence enables x402 for the session;
    * the value is the preference (`auto` = prefer upto, fall back to exact).
    * Absent / undefined means x402 is disabled.
-   *
-   * Legacy shape (pre-consolidation): `x402: boolean` + a sibling `x402Scheme`. The
-   * session loader normalises both shapes on read — see `normaliseLegacyX402` in
-   * `src/lib/sessions.ts`.
    */
   x402?: X402SchemePreference;
   insecure?: boolean; // Skip TLS certificate verification

@@ -7,7 +7,6 @@
 import { readFile, writeFile, unlink } from 'fs/promises';
 import { join } from 'path';
 import type { SessionData, SessionsStorage } from './types.js';
-import { X402_SCHEME_PREFERENCES } from './types.js';
 import {
   getSessionsFilePath,
   getSocketPath,
@@ -43,10 +42,6 @@ async function loadSessionsInternal(): Promise<SessionsStorage> {
     if (!storage.sessions || typeof storage.sessions !== 'object') {
       logger.warn('Invalid sessions file format, returning empty sessions');
       return { sessions: {} };
-    }
-
-    for (const session of Object.values(storage.sessions)) {
-      normaliseLegacyX402(session);
     }
 
     return storage;
@@ -90,23 +85,6 @@ async function saveSessionsInternal(storage: SessionsStorage): Promise<void> {
 }
 
 const SESSIONS_DEFAULT_CONTENT = JSON.stringify({ sessions: {} }, null, 2);
-
-/**
- * Normalise the legacy `x402: boolean` shape to the current `x402: 'auto'|'upto'|'exact'`.
- * Sessions written by mcpc ≤ v0.3.0 stored `{ x402: true }`; this migration runs on load
- * and the next write converges the on-disk format. Also drops bogus hand-edited values.
- */
-export function normaliseLegacyX402(session: SessionData): void {
-  const raw: unknown = session.x402;
-  if (typeof raw === 'boolean') {
-    if (raw) session.x402 = 'auto';
-    else delete (session as { x402?: unknown }).x402;
-    return;
-  }
-  if (typeof raw === 'string' && !(X402_SCHEME_PREFERENCES as readonly string[]).includes(raw)) {
-    delete (session as { x402?: unknown }).x402;
-  }
-}
 
 /**
  * Load sessions from storage (with locking)
