@@ -349,7 +349,7 @@ and auto-reconnects on network failures or its own crashes (10s cooldown on fail
 **Session states:**
 
 | State            | Meaning                                                                                         |
-|------------------| ----------------------------------------------------------------------------------------------- |
+| ---------------- | ----------------------------------------------------------------------------------------------- |
 | 🟢`live`         | Bridge process running and server responding                                                    |
 | 🟡`connecting`   | Initial bridge startup in progress (`mcpc connect`)                                             |
 | 🟡`reconnecting` | Bridge crashed or lost auth; auto-reconnecting in the background                                |
@@ -484,13 +484,13 @@ always win over stored profiles, and credentials are never silently downgraded. 
 is missing, expired, or invalid, `mcpc` fails with an error that includes the right
 `mcpc login` command to recover.
 
-| Flag                            | Behavior                                                                                    |
-| ------------------------------- | ------------------------------------------------------------------------------------------- |
-| `--header "Authorization: ..."` | Use explicit header; skip OAuth auto-detection. Cannot combine with `--profile`.            |
-| `--profile <name>`              | Require the named profile to exist.                                                         |
-| `--no-profile`                  | Connect anonymously even if a `default` profile exists.                                     |
-| `--x402`                        | Skip OAuth auto-detection; use x402 payments instead. Combine with `--profile` to use both. |
-| _(none)_                        | Use `default` profile if it exists; otherwise connect anonymously.                          |
+| Flag                            | Behavior                                                                                                                                        |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--header "Authorization: ..."` | Use explicit header; skip OAuth auto-detection. Cannot combine with `--profile`.                                                                |
+| `--profile <name>`              | Require the named profile to exist.                                                                                                             |
+| `--no-profile`                  | Connect anonymously even if a `default` profile exists.                                                                                         |
+| `--x402 [scheme]`               | Skip OAuth auto-detection; use x402 payments instead. Optional scheme: `auto` (default), `upto`, `exact`. Combine with `--profile` to use both. |
+| _(none)_                        | Use `default` profile if it exists; otherwise connect anonymously.                                                                              |
 
 Config file headers (from `--config`) apply to servers loaded from that file.
 
@@ -680,13 +680,12 @@ This is entirely **opt-in**: existing functionality is unaffected unless you exp
 
 ### How it works
 
-1. **Server returns HTTP 402** with a `PAYMENT-REQUIRED` header describing the price and payment details.
-2. `mcpc` parses the header, signs an [EIP-3009](https://eips.ethereum.org/EIPS/eip-3009) `TransferWithAuthorization` using your local wallet.
-3. `mcpc` retries the request with a `PAYMENT-SIGNATURE` header containing the signed payment.
-4. The server verifies the signature and fulfills the request.
+Two schemes are supported, both signed by your local wallet:
 
-For tools that advertise pricing in their `_meta.x402` metadata, `mcpc` can **proactively sign** payments
-on the first request, avoiding the 402 round-trip entirely.
+- **`exact`** — EIP-3009 `TransferWithAuthorization`. Settles on-chain at call-time.
+- **`upto`** — Permit2 `PermitWitnessTransferFrom`. You sign a max cap; the facilitator settles accumulated usage later. First use auto-grants a one-time `USDC.approve(PERMIT2, MAX_UINT256)` (needs a tiny native ETH float for gas).
+
+Flow: server returns HTTP 402 with a `PAYMENT-REQUIRED` header → `mcpc` picks the best scheme per your preference, signs, and retries with `PAYMENT-SIGNATURE` → server verifies and fulfills. Tools that advertise pricing in `_meta.x402` are signed proactively, skipping the 402 round-trip.
 
 ### Wallet setup
 
@@ -730,31 +729,38 @@ mcpc x402 sign <base64-payment-required> --amount 1.00 --expiry 3600 --json
 
 **Options:**
 
-| Option               | Description                                                   |
-| -------------------- | ------------------------------------------------------------- |
-| `--amount <usd>`     | Override the payment amount in USD (e.g. `0.50` for $0.50)    |
-| `--expiry <seconds>` | Override the payment expiry in seconds from now (e.g. `3600`) |
+| Option               | Description                                                             |
+| -------------------- | ----------------------------------------------------------------------- |
+| `--amount <usd>`     | Override the payment amount in USD (e.g. `0.50` for $0.50)              |
+| `--expiry <seconds>` | Override the payment expiry in seconds from now (e.g. `3600`)           |
+| `--scheme <val>`     | Scheme preference: `auto` (default, upto > exact), `upto`, or `exact`   |
+| `--no-approve`       | For `upto`, skip checking and auto-approving on-chain Permit2 allowance |
 
 The command outputs the signed `PAYMENT-SIGNATURE` header value and an MCP config snippet
 that can be used directly with other MCP clients.
 
 ### Using x402 with MCP servers
 
-Pass the `--x402` flag when connecting to a session or running direct commands:
+Pass the `--x402` flag when connecting to a session. It accepts an optional scheme preference
+(`auto`, `upto`, or `exact`); bare `--x402` defaults to `auto`.
 
 ```bash
-# Create a session with x402 payment support
+# Create a session with x402 payment support (auto picks the best advertised scheme)
 mcpc connect mcp.apify.com @apify --x402
 
-# The session now automatically handles 402 responses
+# Pin a specific scheme — position doesn't matter, before or after positional args
+mcpc connect --x402 upto mcp.apify.com @apify
+mcpc connect mcp.apify.com @apify --x402 exact
+
+# The session now automatically handles 402 responses using your preference
 mcpc @apify tools-call expensive-tool query:="hello"
 
-# Restart a session with x402 enabled
-mcpc @apify restart --x402
+# Restart re-uses the saved scheme from sessions.json — no need to repeat the flag
+mcpc @apify restart
 ```
 
 When `--x402` is active, a fetch middleware wraps all HTTP requests to the MCP server.
-If any request returns HTTP 402, the middleware transparently signs and retries.
+If any request returns HTTP 402, the middleware transparently signs and retries. Your scheme preference is persisted in `sessions.json` and reused on every reconnect or restart.
 
 ### Supported networks
 

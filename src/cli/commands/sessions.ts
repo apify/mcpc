@@ -15,7 +15,12 @@ import {
   redactHeaders,
 } from '../../lib/index.js';
 import { DISCONNECTED_THRESHOLD_MS } from '../../lib/types.js';
-import type { ServerConfig, ProxyConfig, ServerDetails } from '../../lib/types.js';
+import type {
+  ServerConfig,
+  ProxyConfig,
+  ServerDetails,
+  X402SchemePreference,
+} from '../../lib/types.js';
 import {
   formatOutput,
   formatSuccess,
@@ -299,7 +304,7 @@ export async function connectSession(
     noProfile?: boolean;
     proxy?: string;
     proxyBearerToken?: string;
-    x402?: boolean;
+    x402?: X402SchemePreference;
     insecure?: boolean;
     skipDetails?: boolean;
     quiet?: boolean;
@@ -461,7 +466,7 @@ export async function connectSession(
     server: sessionTransportConfig,
     ...(profileName && { profileName }),
     ...(proxyConfig && { proxy: proxyConfig }),
-    ...(options.x402 && { x402: true }),
+    ...(options.x402 && { x402: options.x402 }),
     ...(options.insecure && { insecure: true }),
     // Clear any previous error status (unauthorized, expired) when reconnecting
     ...(isReconnect && { status: 'active' }),
@@ -498,7 +503,7 @@ export async function connectSession(
       bridgeOptions.proxyConfig = proxyConfig;
     }
     if (options.x402) {
-      bridgeOptions.x402 = true;
+      bridgeOptions.x402 = options.x402;
     }
     if (options.insecure) {
       bridgeOptions.insecure = true;
@@ -1019,7 +1024,7 @@ type BulkConnectOptions = {
   proxy?: string;
   proxyBearerToken?: string;
   stdio?: boolean;
-  x402?: boolean;
+  x402?: X402SchemePreference;
   insecure?: boolean;
 };
 

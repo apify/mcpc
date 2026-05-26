@@ -1309,9 +1309,12 @@ export function formatSessionLine(session: SessionData): string {
   }
   const targetStr = truncateWithEllipsis(target, 80);
 
-  // Format auth info (transport type omitted — obvious from context)
+  // Format auth info. OAuth and x402 are mutually exclusive auth mechanisms;
+  // x402 takes precedence when both happen to be present on the session record.
   let infoStr = '';
-  if (!session.server.command && session.profileName) {
+  if (session.x402) {
+    infoStr = theme.yellow('[x402]');
+  } else if (!session.server.command && session.profileName) {
     infoStr = chalk.dim('(OAuth: ') + theme.magenta(session.profileName) + chalk.dim(')');
   }
 

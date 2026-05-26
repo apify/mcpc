@@ -79,6 +79,10 @@ export const KEEPALIVE_INTERVAL_MS = 30_000;
 /** Threshold for considering a session disconnected (bridge alive but server unreachable) */
 export const DISCONNECTED_THRESHOLD_MS = 2 * KEEPALIVE_INTERVAL_MS + 5000; // ~2 missed pings + 5s buffer
 
+/** Valid x402 scheme preferences. Canonical source for CLI validation and type-narrowing. */
+export const X402_SCHEME_PREFERENCES = ['auto', 'upto', 'exact'] as const;
+export type X402SchemePreference = (typeof X402_SCHEME_PREFERENCES)[number];
+
 /**
  * Configuration for a connection to MCP server
  * Used both for config file format and internal representation
@@ -142,7 +146,12 @@ export interface SessionData {
   name: string;
   server: ServerConfig; // Transport configuration (header values redacted to "<redacted>")
   profileName?: string; // Name of auth profile (for OAuth servers)
-  x402?: boolean; // x402 auto-payment enabled for this session
+  /**
+   * x402 auto-payment scheme preference. Presence enables x402 for the session;
+   * the value is the preference (`auto` = prefer upto, fall back to exact).
+   * Absent / undefined means x402 is disabled.
+   */
+  x402?: X402SchemePreference;
   insecure?: boolean; // Skip TLS certificate verification
   pid?: number; // Bridge process PID
   protocolVersion?: string; // Negotiated MCP version

@@ -15,7 +15,13 @@
 import { spawn, type ChildProcess } from 'child_process';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import type { ServerConfig, AuthCredentials, ProxyConfig, X402WalletCredentials } from './types.js';
+import type {
+  ServerConfig,
+  AuthCredentials,
+  ProxyConfig,
+  X402WalletCredentials,
+  X402SchemePreference,
+} from './types.js';
 import {
   getSocketPath,
   waitForFile,
@@ -100,7 +106,8 @@ export interface StartBridgeOptions {
   headers?: Record<string, string>; // Headers to send via IPC (caller stores in keychain)
   proxyConfig?: ProxyConfig; // Proxy server configuration
   mcpSessionId?: string; // MCP session ID for resumption (Streamable HTTP only)
-  x402?: boolean; // Enable x402 auto-payment using the wallet
+  /** x402 scheme preference; presence enables x402 auto-payment, absence disables. */
+  x402?: X402SchemePreference;
   insecure?: boolean; // Skip TLS certificate verification
 }
 
@@ -188,10 +195,10 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
     logger.debug(`Passing MCP session ID for resumption: ${mcpSessionId}`);
   }
 
-  // Pass x402 flag (if enabled)
+  // Pass x402 scheme preference (presence enables x402).
   if (x402) {
-    args.push('--x402');
-    logger.debug('Passing x402 flag to bridge');
+    args.push('--x402', x402);
+    logger.debug(`Passing x402 scheme preference: ${x402}`);
   }
 
   // Pass insecure flag (if enabled)
@@ -427,7 +434,7 @@ export async function restartBridge(sessionName: string): Promise<StartBridgeRes
   }
   if (session.x402) {
     bridgeOptions.x402 = session.x402;
-    logger.debug('Using saved x402 flag');
+    logger.debug(`Using saved x402 scheme preference: ${session.x402}`);
   }
   if (session.insecure) {
     bridgeOptions.insecure = session.insecure;
