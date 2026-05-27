@@ -645,6 +645,7 @@ Bridge logs location: `~/.mcpc/logs/bridge-<session>.log`
 - `MCPC_HOME_DIR` - Directory for session and auth profiles data (default: `~/.mcpc`)
 - `MCPC_VERBOSE` - Enable verbose logging (set to `1`, `true`, or `yes`, case-insensitive)
 - `MCPC_JSON` - Enable JSON output (set to `1`, `true`, or `yes`, case-insensitive)
+- `MCPC_BRIDGE_STARTUP_TIMEOUT_MS` - How long the CLI waits for a freshly spawned bridge to open its IPC socket (default: `30000`). Raise this on resource-constrained machines or when connecting many servers at once if you see `Bridge failed to start: socket not created within timeout`
 
 ## Current Implementation Status
 

@@ -98,6 +98,28 @@ function getBridgeExecutable(): string {
   return join(__dirname, '..', 'bridge', 'index.js');
 }
 
+/**
+ * How long to wait for a freshly spawned bridge to open its IPC socket.
+ *
+ * The bridge must boot Node and load its (sizeable) module graph before it can
+ * create the socket. On resource-constrained machines, or when many bridges are
+ * spawned in parallel (e.g. `connect` against a multi-server config), this can
+ * take well over the old 5s default — and exceeding it killed the bridge before
+ * it had even initialized its file logger, leaving the user with a "check bridge
+ * logs" error pointing at logs that were never written. Default generously and
+ * let users raise it further via the environment when needed.
+ */
+function getBridgeStartupTimeoutMs(): number {
+  const raw = process.env.MCPC_BRIDGE_STARTUP_TIMEOUT_MS;
+  if (raw) {
+    const parsed = Number.parseInt(raw, 10);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  return 30_000;
+}
+
 export interface StartBridgeOptions {
   sessionName: string;
   serverConfig: ServerConfig;
@@ -239,18 +261,51 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
   // conflict. The bridge process computes the same path via process.pid.
   const socketPath = getSocketPath(sessionName, pid);
 
-  // Wait for socket file to be created (with timeout)
+  // Wait for the bridge to open its IPC socket. Race the wait against the
+  // process exiting: a crash during startup then fails fast (reporting the exit
+  // code) instead of stalling for the full timeout, while a bridge that is
+  // merely slow to boot is given a generous window so it is not killed before it
+  // can initialize logging and connect.
+  const startupTimeoutMs = getBridgeStartupTimeoutMs();
+  const logPath = `${getLogsDir()}/bridge-${sessionName}.log`;
+
+  const socketReady = Symbol('socket-ready');
+  let resolveExit!: (detail: string) => void;
+  const exitInfo = new Promise<string>((resolve) => {
+    resolveExit = resolve;
+  });
+  const onBridgeExit = (code: number | null, signal: NodeJS.Signals | null): void => {
+    resolveExit(signal != null ? `signal ${signal}` : `exit code ${code ?? 'unknown'}`);
+  };
+  bridgeProcess.once('exit', onBridgeExit);
+
+  let outcome: string | symbol;
   try {
-    await waitForFile(socketPath, { timeoutMs: 5000 });
+    outcome = await Promise.race([
+      waitForFile(socketPath, { timeoutMs: startupTimeoutMs }).then(() => socketReady),
+      exitInfo,
+    ]);
   } catch {
-    // Kill the process if socket wasn't created
+    // waitForFile timed out while the process is still alive — kill it.
     try {
       process.kill(pid, 'SIGTERM');
     } catch {
       // Ignore errors killing process
     }
     throw new ClientError(
-      `Bridge failed to start: socket file not created within timeout. Check bridge logs.`
+      `Bridge failed to start: socket not created within ${startupTimeoutMs} ms. ` +
+        `On resource-constrained machines, or when connecting many servers at once, ` +
+        `raise the limit with the MCPC_BRIDGE_STARTUP_TIMEOUT_MS environment variable. ` +
+        `For details, check logs at ${logPath}`
+    );
+  } finally {
+    bridgeProcess.removeListener('exit', onBridgeExit);
+  }
+
+  if (typeof outcome === 'string') {
+    // Bridge process exited before it opened its socket (startup crash).
+    throw new ClientError(
+      `Bridge process exited during startup (${outcome}). For details, check logs at ${logPath}`
     );
   }
 
