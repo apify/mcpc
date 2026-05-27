@@ -16,7 +16,6 @@ import * as prompts from './commands/prompts.js';
 import * as tasks from './commands/tasks.js';
 import * as logging from './commands/logging.js';
 import { ping } from './commands/utilities.js';
-import { showLogs } from './commands/logs.js';
 import { createSessionClient } from '../lib/session-client.js';
 import type { SessionClient } from '../lib/session-client.js';
 import { parseShellCommand } from './shell-parser.js';
@@ -158,7 +157,6 @@ function showShellHelp(): void {
   console.log('    prompts-get <name> [key:=value ...]');
   console.log('    logging-set-level <level>');
   console.log('    ping');
-  console.log('    logs [-n N] [--follow] [--since 1h]');
   console.log('');
   console.log(theme.cyan('  Shell commands:'));
   console.log('    help              Show this help message');
@@ -205,47 +203,6 @@ async function executeCommand(ctx: ShellContext, line: string): Promise<void> {
       case 'ping':
         await ping(ctx.target, options);
         break;
-
-      case 'logs': {
-        let tail: number | undefined;
-        let follow = false;
-        let since: string | undefined;
-        for (let i = 0; i < args.length; i++) {
-          const a = args[i];
-          if (a === '--follow') {
-            follow = true;
-          } else if (a === '-n' || a === '--tail') {
-            const next = args[++i];
-            if (!next) {
-              console.log(chalk.red(`Error: ${a} requires a value`));
-              return;
-            }
-            const parsed = parseInt(next, 10);
-            if (isNaN(parsed) || parsed < 0) {
-              console.log(chalk.red(`Error: invalid ${a} value: "${next}"`));
-              return;
-            }
-            tail = parsed;
-          } else if (a === '--since') {
-            const next = args[++i];
-            if (!next) {
-              console.log(chalk.red('Error: --since requires a value'));
-              return;
-            }
-            since = next;
-          } else if (a) {
-            console.log(chalk.red(`Error: unknown logs option: ${a}`));
-            return;
-          }
-        }
-        await showLogs(ctx.target, {
-          ...options,
-          ...(tail !== undefined && { tail }),
-          ...(follow && { follow }),
-          ...(since && { since }),
-        });
-        break;
-      }
 
       case 'tools':
       case 'tools-list':

@@ -13,7 +13,6 @@ import {
   parseLogLine,
   readRecentLogLines,
   resolveSince,
-  type LogRecord,
 } from '../../lib/log-reader.js';
 import { formatJson } from '../output.js';
 import type { CommandOptions } from '../../lib/types.js';
@@ -46,148 +45,87 @@ export async function showLogs(target: string, options: LogsCommandOptions): Pro
     );
   }
 
-  const logPath = getBridgeLogPath(target);
-  const files = await listLogFiles(target);
-
   let since: Date | undefined;
   if (options.since) {
-    const resolved = resolveSince(options.since);
-    if (!resolved) {
+    since = resolveSince(options.since) ?? undefined;
+    if (!since) {
       throw new ClientError(
         `Invalid --since value: "${options.since}". ` +
           `Use a duration (e.g. 30s, 5m, 2h, 1d, 1w) or an ISO 8601 timestamp.`
       );
     }
-    since = resolved;
   }
 
-  // Default tail: 50 in non-follow mode, also used as the backlog size when --follow is set.
+  // Default tail also acts as the backlog size when --follow is set.
   const tail = options.tail ?? DEFAULT_TAIL;
-
-  const emitOpts: EmitOpts = {
-    tail,
-    ...(since && { since }),
-    ...(options.follow && { follow: true }),
-  };
+  const backlog = await readRecentLogLines(target, { tail, ...(since && { since }) });
 
   if (options.outputMode === 'json') {
-    await emitJson(target, logPath, files, emitOpts);
+    if (!options.follow) {
+      console.log(formatJson(backlog.map(parseLogLine)));
+      return;
+    }
+    // Streaming: emit NDJSON (one record per line) — a JSON array can't be streamed.
+    backlog.forEach(emitJsonLine);
+    await follow(target, emitJsonLine);
     return;
   }
 
-  await emitHuman(target, logPath, files, emitOpts);
-}
-
-interface EmitOpts {
-  tail: number;
-  since?: Date;
-  follow?: boolean;
-}
-
-async function emitHuman(
-  sessionName: string,
-  logPath: string,
-  files: string[],
-  opts: EmitOpts
-): Promise<void> {
-  const header = await buildHeader(sessionName, logPath, files, opts);
-  for (const line of header) {
+  // Human mode: header on stderr, raw log lines on stdout.
+  for (const line of await buildHeader(target, since, tail, options.follow)) {
     console.error(line);
   }
-
-  const backlog = await readRecentLogLines(sessionName, {
-    tail: opts.tail,
-    ...(opts.since && { since: opts.since }),
-  });
   for (const line of backlog) {
     console.log(line);
   }
-
-  if (!opts.follow) {
-    return;
+  if (options.follow) {
+    await follow(target, (line) => console.log(line));
   }
-
-  await new Promise<void>((resolve) => {
-    const sub = followLog(sessionName, (line) => {
-      console.log(line);
-    });
-    const onSignal = (): void => {
-      void sub.stop().finally(resolve);
-    };
-    process.once('SIGINT', onSignal);
-    process.once('SIGTERM', onSignal);
-  });
 }
 
-async function emitJson(
-  sessionName: string,
-  logPath: string,
-  files: string[],
-  opts: EmitOpts
-): Promise<void> {
-  const backlog = await readRecentLogLines(sessionName, {
-    tail: opts.tail,
-    ...(opts.since && { since: opts.since }),
-  });
-  const records = backlog.map(parseLogLine);
+function emitJsonLine(line: string): void {
+  process.stdout.write(JSON.stringify(parseLogLine(line)) + '\n');
+}
 
-  if (!opts.follow) {
-    console.log(formatJson(records));
-    return;
-  }
-
-  // Streaming mode: emit NDJSON (one record per line). A JSON array can't be streamed.
-  for (const rec of records) {
-    process.stdout.write(JSON.stringify(rec) + '\n');
-  }
-
-  await new Promise<void>((resolve) => {
-    const sub = followLog(sessionName, (line) => {
-      const rec: LogRecord = parseLogLine(line);
-      process.stdout.write(JSON.stringify(rec) + '\n');
-    });
-    const onSignal = (): void => {
-      void sub.stop().finally(resolve);
-    };
+/**
+ * Follow the log until interrupted (Ctrl+C / SIGTERM), forwarding each new line.
+ */
+function follow(sessionName: string, onLine: (line: string) => void): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const sub = followLog(sessionName, onLine);
+    const onSignal = (): void => void sub.stop().finally(resolve);
     process.once('SIGINT', onSignal);
     process.once('SIGTERM', onSignal);
   });
-
-  // Suppress unused-parameter warnings for parameters kept for symmetry with emitHuman.
-  void logPath;
-  void files;
 }
 
 async function buildHeader(
   sessionName: string,
-  logPath: string,
-  files: string[],
-  opts: EmitOpts
+  since: Date | undefined,
+  tail: number,
+  follow: boolean | undefined
 ): Promise<string[]> {
-  const lines: string[] = [];
-  let size = 0;
-  let exists = false;
-  try {
-    const st = await stat(logPath);
-    size = st.size;
-    exists = true;
-  } catch {
-    // file doesn't exist yet
-  }
+  const logPath = getBridgeLogPath(sessionName);
+  const fileCount = (await listLogFiles(sessionName)).length;
+  const size = await stat(logPath)
+    .then((st) => st.size)
+    .catch(() => null);
 
-  const fileCount = files.length;
-  const sizeStr = formatBytes(size);
-  const tailLabel = opts.follow
-    ? `following (backlog ${opts.tail} lines)`
-    : opts.since
-      ? `since ${opts.since.toISOString()}, last ${opts.tail} lines`
-      : `last ${opts.tail} lines`;
+  const tailLabel = follow
+    ? `following (backlog ${tail} lines)`
+    : since
+      ? `since ${since.toISOString()}, last ${tail} lines`
+      : `last ${tail} lines`;
 
-  lines.push(chalk.dim(`Session ${sessionName}  ·  ${logPath}  ·  ${tailLabel}`));
+  const lines = [chalk.dim(`Session ${sessionName}  ·  ${logPath}  ·  ${tailLabel}`)];
   if (fileCount > 1) {
-    lines.push(chalk.dim(`  ${fileCount} files (current + ${fileCount - 1} rotated), ${sizeStr}`));
-  } else if (exists) {
-    lines.push(chalk.dim(`  ${sizeStr}`));
+    lines.push(
+      chalk.dim(
+        `  ${fileCount} files (current + ${fileCount - 1} rotated), ${formatBytes(size ?? 0)}`
+      )
+    );
+  } else if (size !== null) {
+    lines.push(chalk.dim(`  ${formatBytes(size)}`));
   } else {
     lines.push(chalk.dim(`  no logs yet for ${sessionName}`));
   }
