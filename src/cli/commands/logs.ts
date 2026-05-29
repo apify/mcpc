@@ -14,8 +14,8 @@ import {
   readRecentLogLines,
   resolveSince,
 } from '../../lib/log-reader.js';
-import { formatJson } from '../output.js';
-import type { CommandOptions } from '../../lib/types.js';
+import { formatJson, formatSessionLine } from '../output.js';
+import type { CommandOptions, SessionData } from '../../lib/types.js';
 
 const DEFAULT_TAIL = 50;
 
@@ -71,8 +71,8 @@ export async function showLogs(target: string, options: LogsCommandOptions): Pro
     return;
   }
 
-  // Human mode: header on stderr, raw log lines on stdout.
-  for (const line of await buildHeader(target, since, tail, options.follow)) {
+  // Human mode: header on stderr (so stdout stays pipeable), raw log lines on stdout.
+  for (const line of await buildHeader(session, since, tail, options.follow, options.hideTarget)) {
     console.error(line);
   }
   for (const line of backlog) {
@@ -140,13 +140,14 @@ function follow(sessionName: string, onLine: (line: string) => void): Promise<vo
 }
 
 async function buildHeader(
-  sessionName: string,
+  session: SessionData,
   since: Date | undefined,
   tail: number,
-  follow: boolean | undefined
+  follow: boolean | undefined,
+  hideTarget: boolean | undefined
 ): Promise<string[]> {
-  const logPath = getBridgeLogPath(sessionName);
-  const fileCount = (await listLogFiles(sessionName)).length;
+  const logPath = getBridgeLogPath(session.name);
+  const fileCount = (await listLogFiles(session.name)).length;
   const size = await stat(logPath)
     .then((st) => st.size)
     .catch(() => null);
@@ -164,7 +165,14 @@ async function buildHeader(
         ? `${formatBytes(size)}, ${fileCount} files (current + ${fileCount - 1} rotated)`
         : formatBytes(size);
 
-  return [chalk.dim(`Session ${sessionName}  ·  ${logPath}  ·  ${tailLabel}  ·  ${sizeLabel}`), ''];
+  const lines: string[] = [];
+  // Same `[@name → target (OAuth: profile)]` prefix used by other session commands.
+  if (!hideTarget) {
+    lines.push(`[${formatSessionLine(session)}]`);
+  }
+  lines.push(chalk.dim(`${logPath}  ·  ${tailLabel}  ·  ${sizeLabel}`));
+  lines.push('');
+  return lines;
 }
 
 function formatBytes(n: number): string {
