@@ -1299,8 +1299,8 @@ ${chalk.bold('Notes:')}
   Reads ~/.mcpc/logs/bridge-${session}.log and transparently spans
   rotated files (.log.1 … .log.5) when -n or --since needs older lines.
   Continuation lines (e.g. stack traces) fold into the preceding entry's msg.
-  With --follow, output is NDJSON (one record per line) instead of a JSON array.
 ${jsonHelp(
+  'Array of log records (NDJSON when streaming with --follow)',
   '`[{ time, level, context?, msg } | { raw }, ...]`'
 )}`
     )
