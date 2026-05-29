@@ -234,6 +234,11 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
   });
   const stderrTail = new StderrTail();
   if (bridgeProcess.stderr) {
+    // Pipe streams from child_process are net.Sockets at runtime (typed only as
+    // Readable). Unref the underlying handle so the open stderr pipe doesn't
+    // keep the CLI event loop alive after startBridge returns — without this,
+    // commands like `mcpc connect` hang until the bridge eventually exits.
+    (bridgeProcess.stderr as unknown as { unref(): void }).unref();
     const rl = createInterface({ input: bridgeProcess.stderr, crlfDelay: Infinity });
     rl.on('line', (line) => {
       stderrTail.add(line);
