@@ -256,9 +256,16 @@ async function main(): Promise<void> {
   if (!firstNonOption) {
     const { json } = extractOptions(args);
     if (json) setJsonMode(true);
-    await sessions.listSessionsAndAuthProfiles({ outputMode: json ? 'json' : 'human' });
+    const { hasSessions } = await sessions.listSessionsAndAuthProfiles({
+      outputMode: json ? 'json' : 'human',
+    });
     if (!json) {
-      console.log('\nRun "mcpc --help" for usage information.\n');
+      console.log('');
+      if (hasSessions) {
+        console.log('To view server capabilities and tools, run: mcpc @session');
+      }
+      console.log('For usage information, run: mcpc --help');
+      console.log('');
     }
     await closeFileLogger();
     return;
@@ -849,9 +856,16 @@ ${jsonHelp('`[{ sessionName, tools?: Tool[], resources?: Resource[], prompts?: P
     const opts = program.opts();
     const json = opts.json || getJsonFromEnv();
     if (json) setJsonMode(true);
-    await sessions.listSessionsAndAuthProfiles({ outputMode: json ? 'json' : 'human' });
+    const { hasSessions } = await sessions.listSessionsAndAuthProfiles({
+      outputMode: json ? 'json' : 'human',
+    });
     if (!json) {
-      console.log('\nRun "mcpc --help" for usage information.\n');
+      console.log('');
+      if (hasSessions) {
+        console.log('To view server capabilities and tools, run: mcpc @session');
+      }
+      console.log('For usage information, run: mcpc --help');
+      console.log('');
     }
   });
 

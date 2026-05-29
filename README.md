@@ -80,6 +80,8 @@ many AI agents on the same machine. Authenticate once, reuse everywhere.
 
 ## Install
 
+Requires a JavaScript runtime — install the latest [Node.js](https://nodejs.org/en/download) or [Bun](https://bun.sh) if you don't have one yet.
+
 ```bash
 npm install -g @apify/mcpc
 

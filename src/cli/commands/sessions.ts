@@ -678,8 +678,12 @@ export function formatTimeAgo(isoDate: string | undefined): string {
   if (diffHours < 24) return `${diffHours}h ago`;
   if (diffDays === 1) return 'yesterday';
   if (diffDays < 7) return `${diffDays} days ago`;
-  if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
-  return `${Math.floor(diffDays / 30)} months ago`;
+  if (diffDays < 30) {
+    const weeks = Math.floor(diffDays / 7);
+    return `${weeks} ${weeks === 1 ? 'week' : 'weeks'} ago`;
+  }
+  const months = Math.floor(diffDays / 30);
+  return `${months} ${months === 1 ? 'month' : 'months'} ago`;
 }
 
 /**
@@ -688,7 +692,7 @@ export function formatTimeAgo(isoDate: string | undefined): string {
  */
 export async function listSessionsAndAuthProfiles(options: {
   outputMode: OutputMode;
-}): Promise<void> {
+}): Promise<{ hasSessions: boolean }> {
   // Consolidate sessions first (cleans up crashed bridges, removes expired sessions)
   const consolidateResult = await consolidateSessions(false);
   const sessions = Object.values(consolidateResult.sessions);
@@ -777,6 +781,8 @@ export async function listSessionsAndAuthProfiles(options: {
       }
     }
   }
+
+  return { hasSessions: sessions.length > 0 };
 }
 
 /**
@@ -1416,11 +1422,14 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
     }
     if (skippedStdio.length > 0) {
       parts.push(
-        `skipped ${skippedStdio.length} stdio server${skippedStdio.length === 1 ? '' : 's'}, pass --stdio to include`
+        `skipped ${skippedStdio.length} stdio server${skippedStdio.length === 1 ? '' : 's'}`
       );
     }
     if (parts.length > 0) {
       console.log(theme.cyan(`\n${parts.join('. ')}.`));
+      if (skippedStdio.length > 0) {
+        console.log(chalk.dim('  ↳ run: mcpc connect --stdio'));
+      }
     }
   }
 

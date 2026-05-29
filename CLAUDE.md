@@ -618,17 +618,18 @@ Always end the PR description with the Claude Code session link (the same `https
 When implementing features:
 
 1. **Self-documenting CLI** - All features, options, and usage patterns must be documented in command `--help` output (Commander.js `.description()` and `.addHelpText()`), not just in the README. AI agents discover how to use mcpc purely by running `mcpc --help` and `mcpc <command> --help`, so help text is the primary documentation surface. Include examples in help text for non-obvious commands. The README can provide additional context but must not be the only place a feature is documented.
-2. **Keep core runtime-agnostic** - Use native APIs, avoid runtime-specific dependencies
-3. **Error handling** - Provide clear, actionable error messages; use appropriate exit codes
-4. **Retry logic** - Use exponential backoff for network operations (3 attempts for requests, 1s→30s for streams)
-5. **Concurrent safety** - Use file locking for shared state (`sessions.json`)
-6. **Security** - Never log credentials (log `present`/`MISSING` instead); use OS keychain; enforce HTTPS; use `execFile()` not `exec()`; escape HTML output; validate Host headers on local servers; send secrets via IPC not CLI args; see "Security Considerations" section for full guidelines
-7. **Output formatting** - Support both human-readable (default) and JSON (`--json`) modes
-8. **Protocol compliance** - Follow MCP specification strictly; handle all notification types
-9. **Session management** - Always clean up resources; handle orphaned processes; provide reconnection
-10. **Hyphenated commands** - All MCP commands use hyphens: `tools-list`, `resources-read`, `prompts-list`
-11. **Command-first syntax** - Top-level commands come first (`connect`, `login`, `clean`); MCP operations always go through a named session (`mcpc @session <command>`)
-12. **JSON field naming** - Use consistent field names in JSON output:
+2. **Next-step hints** - Every command's human-mode output should make it clear what the user or agent might want to do next. After listing items or finishing an action, print a dim hint suggesting the next likely command using the format `chalk.dim('  ↳ <action>: mcpc <command>')` with the `↳` arrow prefix. Examples: after `mcpc` lists sessions, hint how to view details (`↳ view a session: mcpc @sessionname`); after `mcpc connect` skips stdio servers, hint how to include them (`↳ run: mcpc connect --stdio`); after recoverable session states, hint the recovery command (`↳ run: mcpc @sessionname restart`). The goal is that any user or agent can chain commands without consulting `--help`. Do not emit hints in `--json` mode — JSON output stays strictly machine-readable.
+3. **Keep core runtime-agnostic** - Use native APIs, avoid runtime-specific dependencies
+4. **Error handling** - Provide clear, actionable error messages; use appropriate exit codes
+5. **Retry logic** - Use exponential backoff for network operations (3 attempts for requests, 1s→30s for streams)
+6. **Concurrent safety** - Use file locking for shared state (`sessions.json`)
+7. **Security** - Never log credentials (log `present`/`MISSING` instead); use OS keychain; enforce HTTPS; use `execFile()` not `exec()`; escape HTML output; validate Host headers on local servers; send secrets via IPC not CLI args; see "Security Considerations" section for full guidelines
+8. **Output formatting** - Support both human-readable (default) and JSON (`--json`) modes
+9. **Protocol compliance** - Follow MCP specification strictly; handle all notification types
+10. **Session management** - Always clean up resources; handle orphaned processes; provide reconnection
+11. **Hyphenated commands** - All MCP commands use hyphens: `tools-list`, `resources-read`, `prompts-list`
+12. **Command-first syntax** - Top-level commands come first (`connect`, `login`, `clean`); MCP operations always go through a named session (`mcpc @session <command>`)
+13. **JSON field naming** - Use consistent field names in JSON output:
     - `sessionName` (not `name`) for session identifiers
     - `server` (not `target`) for server URLs/addresses
     - No `success` wrapper - indicate errors via exit codes
