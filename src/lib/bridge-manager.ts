@@ -222,11 +222,47 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
   logger.debug('Bridge executable:', bridgeExecutable);
   logger.debug('Bridge args:', args);
 
-  // Spawn bridge process
+  // Capture a bounded tail of the bridge's stderr during startup. If the bridge
+  // dies before its file logger initializes (e.g. an import error), the file
+  // log alone won't show the cause — stderr is then the only signal we have.
+  const STDERR_TAIL_MAX_LINES = 50;
+  const STDERR_TAIL_MAX_CHARS = 8_000;
+  const stderrTail: string[] = [];
+  let stderrTailChars = 0;
+  let stderrPartial = '';
+  const captureStderr = (chunk: Buffer): void => {
+    stderrPartial += chunk.toString('utf8');
+    const lines = stderrPartial.split('\n');
+    stderrPartial = lines.pop() ?? '';
+    for (const line of lines) {
+      if (line.length === 0) continue;
+      const trimmed =
+        line.length > STDERR_TAIL_MAX_CHARS ? line.slice(0, STDERR_TAIL_MAX_CHARS) + '…' : line;
+      stderrTail.push(trimmed);
+      stderrTailChars += trimmed.length + 1;
+      while (
+        stderrTail.length > STDERR_TAIL_MAX_LINES ||
+        (stderrTail.length > 1 && stderrTailChars > STDERR_TAIL_MAX_CHARS)
+      ) {
+        const dropped = stderrTail.shift();
+        if (dropped === undefined) break;
+        stderrTailChars -= dropped.length + 1;
+      }
+    }
+  };
+  const renderStderrTail = (): string => {
+    const all = stderrPartial ? [...stderrTail, stderrPartial] : stderrTail;
+    if (all.length === 0) return '';
+    return `\nBridge stderr:\n${all.map((l) => `  ${l}`).join('\n')}`;
+  };
+
+  // Spawn bridge process. stderr is piped (instead of 'ignore') so we can
+  // capture early crash output — see the comment above.
   const bridgeProcess: ChildProcess = spawn('node', [bridgeExecutable, ...args], {
     detached: true,
-    stdio: 'ignore', // Don't inherit stdio (run in background)
+    stdio: ['ignore', 'ignore', 'pipe'],
   });
+  bridgeProcess.stderr?.on('data', captureStderr);
 
   // Reset the Windows tasklist cache so the freshly spawned PID is observable
   // by subsequent isProcessAlive() checks within this CLI invocation (e.g. the
@@ -283,7 +319,8 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
     }
     throw new ClientError(
       `Bridge failed to start: socket not created within ${BRIDGE_STARTUP_TIMEOUT_MS} ms. ` +
-        `For details, check logs at ${logPath}`
+        `For details, check logs at ${logPath}` +
+        renderStderrTail()
     );
   } finally {
     bridgeProcess.removeListener('exit', onBridgeExit);
@@ -292,7 +329,9 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
   if (typeof outcome === 'string') {
     // Bridge process exited before it opened its socket (startup crash).
     throw new ClientError(
-      `Bridge process exited during startup (${outcome}). For details, check logs at ${logPath}`
+      `Bridge process exited during startup (${outcome}). ` +
+        `For details, check logs at ${logPath}` +
+        renderStderrTail()
     );
   }
 
