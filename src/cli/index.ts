@@ -1302,7 +1302,7 @@ ${chalk.bold('Notes:')}
   With --follow, output is NDJSON (one record per line) instead of a JSON array.
 ${jsonHelp(
   'Array of log records',
-  '`[{ ts, level, context?, msg } | { raw }, ...]` — absent fields are omitted'
+  '`[{ time, level, context?, msg } | { raw }, ...]` — absent fields are omitted'
 )}`
     )
     .action(async (opts, command) => {

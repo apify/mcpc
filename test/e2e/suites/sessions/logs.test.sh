@@ -81,22 +81,22 @@ if [[ "$arr_len" -lt 1 ]]; then
   test_fail "expected at least one log record, got $arr_len"
   exit 1
 fi
-# Records that match the [ts] [LEVEL] [ctx?] msg shape have ts populated;
-# banner separators don't and surface as { ts: null, raw: "..." } instead.
-parsed_count=$(echo "$STDOUT" | jq '[.[] | select(.ts != null)] | length')
+# Records that match the [time] [LEVEL] [ctx?] msg shape have `time` populated;
+# banner separators don't and surface as `{ raw: "..." }` instead.
+parsed_count=$(echo "$STDOUT" | jq '[.[] | select(.time != null)] | length')
 raw_count=$(echo "$STDOUT" | jq '[.[] | select(.raw != null)] | length')
 if [[ "$parsed_count" -lt 1 ]]; then
-  test_fail "expected at least one parsed record with non-null ts, got $parsed_count"
+  test_fail "expected at least one parsed record with .time set, got $parsed_count"
   exit 1
 fi
 # Either format is acceptable, but the union should equal total length.
 total=$(( parsed_count + raw_count ))
 if [[ "$total" -ne "$arr_len" ]]; then
-  test_fail "every record should have either ts or raw, got parsed=$parsed_count raw=$raw_count total=$arr_len"
+  test_fail "every record should have either .time or .raw, got parsed=$parsed_count raw=$raw_count total=$arr_len"
   exit 1
 fi
 # Parsed records should expose the documented fields.
-first_parsed=$(echo "$STDOUT" | jq '[.[] | select(.ts != null)][0]')
+first_parsed=$(echo "$STDOUT" | jq '[.[] | select(.time != null)][0]')
 assert_contains "$first_parsed" '"level"'
 assert_contains "$first_parsed" '"context"'
 assert_contains "$first_parsed" '"msg"'
@@ -141,7 +141,7 @@ test_pass
 test_case "--since in the future yields no parseable records"
 run_mcpc --json "$SESSION" logs --since 2099-01-01T00:00:00Z
 assert_success
-parsed_count=$(echo "$STDOUT" | jq '[.[] | select(.ts != null)] | length')
+parsed_count=$(echo "$STDOUT" | jq '[.[] | select(.time != null)] | length')
 if [[ "$parsed_count" -ne 0 ]]; then
   test_fail "expected 0 parsed records after filtering with future --since, got $parsed_count"
   exit 1

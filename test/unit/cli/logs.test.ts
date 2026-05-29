@@ -152,14 +152,14 @@ describe('showLogs (CLI command)', () => {
     const parsed = JSON.parse(out.stdout) as Array<Record<string, unknown>>;
     expect(parsed).toHaveLength(3);
     expect(parsed[0]).toMatchObject({
-      ts: '2026-04-28T10:00:00.000Z',
+      time: '2026-04-28T10:00:00.000Z',
       level: 'info',
       context: 'test',
       msg: 'one',
     });
     expect(parsed[1]).toEqual({ raw: banner });
     expect(parsed[2]).toMatchObject({
-      ts: '2026-04-28T10:00:01.000Z',
+      time: '2026-04-28T10:00:01.000Z',
       level: 'warn',
       msg: 'two',
     });

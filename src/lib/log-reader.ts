@@ -12,7 +12,7 @@ import { getLogsDir } from './utils.js';
 
 /**
  * A parsed log record. All fields are optional to keep the JSON output compact:
- *   - Entries that match `[ISO] [LEVEL] [context?] msg` carry `ts`, `level`,
+ *   - Entries that match `[ISO] [LEVEL] [context?] msg` carry `time`, `level`,
  *     optionally `context`, and `msg`.
  *   - Lines that don't (banners, stack-trace frames that landed at the top of a
  *     window, etc.) carry only `raw`.
@@ -22,8 +22,8 @@ import { getLogsDir } from './utils.js';
  * a single record.
  */
 export interface LogRecord {
-  /** ISO timestamp, e.g. "2026-04-28T12:01:14.231Z". */
-  ts?: string;
+  /** ISO 8601 timestamp, e.g. "2026-04-28T12:01:14.231Z". */
+  time?: string;
   /** Lowercased level: debug, info, warn, error, ... */
   level?: string;
   /** Optional context tag, e.g. "bridge-manager". */
@@ -68,9 +68,9 @@ export function parseLogLine(line: string): LogRecord {
   if (!m) {
     return { raw: line };
   }
-  // Field order chosen to read naturally in JSON output: ts, level, context, msg.
+  // Field order chosen to read naturally in JSON output: time, level, context, msg.
   const rec: LogRecord = {};
-  if (m[1]) rec.ts = m[1];
+  if (m[1]) rec.time = m[1];
   if (m[2]) rec.level = m[2].toLowerCase();
   if (m[3]) rec.context = m[3];
   rec.msg = m[4] ?? '';

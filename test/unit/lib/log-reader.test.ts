@@ -21,7 +21,7 @@ describe('parseLogLine', () => {
     const rec = parseLogLine(
       '[2026-04-28T12:01:14.231Z] [INFO] [bridge-manager] Started bridge for @apify'
     );
-    expect(rec.ts).toBe('2026-04-28T12:01:14.231Z');
+    expect(rec.time).toBe('2026-04-28T12:01:14.231Z');
     expect(rec.level).toBe('info');
     expect(rec.context).toBe('bridge-manager');
     expect(rec.msg).toBe('Started bridge for @apify');
@@ -44,12 +44,12 @@ describe('parseLogLine', () => {
 
   it('handles a missing message body', () => {
     const rec = parseLogLine('[2026-04-28T12:00:00.000Z] [INFO]');
-    expect(rec.ts).toBe('2026-04-28T12:00:00.000Z');
+    expect(rec.time).toBe('2026-04-28T12:00:00.000Z');
     expect(rec.level).toBe('info');
     expect(rec.msg).toBe('');
   });
 
-  it('falls back to raw for non-matching lines (no ts/level/context emitted)', () => {
+  it('falls back to raw for non-matching lines (no time/level/context emitted)', () => {
     const rec = parseLogLine('========================================');
     expect(rec).toEqual({ raw: '========================================' });
   });
@@ -74,7 +74,7 @@ describe('parseLogLines (folding)', () => {
     ]);
     expect(records).toHaveLength(2);
     expect(records[0]).toEqual({
-      ts: '2026-04-28T12:00:00.000Z',
+      time: '2026-04-28T12:00:00.000Z',
       level: 'error',
       context: 'McpClient',
       msg:
