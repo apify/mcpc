@@ -105,10 +105,10 @@ function getBridgeExecutable(): string {
  * (e.g. `connect` against a multi-server config), this can take several
  * seconds. With the old 5s window the CLI killed the bridge before it had even
  * initialized its file logger, leaving the user with a "check bridge logs"
- * error pointing at logs that were never written. 30s is generous enough that
+ * error pointing at logs that were never written. 15s is generous enough that
  * any failure to hit it is pathological.
  */
-const BRIDGE_STARTUP_TIMEOUT_MS = 30_000;
+const BRIDGE_STARTUP_TIMEOUT_MS = 15_000;
 
 export interface StartBridgeOptions {
   sessionName: string;
