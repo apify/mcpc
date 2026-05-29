@@ -69,7 +69,7 @@ export async function showLogs(target: string, options: LogsCommandOptions): Pro
       console.log(formatJson(parseLogLines(backlog)));
       return;
     }
-    // Streaming: emit NDJSON (one record per line) — a JSON array can't be streamed.
+    // Streaming: emit JSONL (one record per line) — a JSON array can't be streamed.
     // A record is held until the next entry begins so continuation lines (stack
     // frames) fold into it; the final record is flushed when following stops.
     const emit = (rec: LogRecord): void => void process.stdout.write(JSON.stringify(rec) + '\n');

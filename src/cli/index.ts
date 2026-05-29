@@ -1300,7 +1300,7 @@ ${chalk.bold('Notes:')}
   rotated files (.log.1 … .log.5) when -n or --since needs older lines.
   Continuation lines (e.g. stack traces) fold into the preceding entry's msg.
 ${jsonHelp(
-  'Array of log records (NDJSON when streaming with --follow)',
+  'Array of log records (JSONL when streaming with --follow)',
   '`[{ time, level, context?, msg } | { raw }, ...]`'
 )}`
     )
