@@ -3,6 +3,7 @@
  * Pure functions with no external dependencies for easy testing
  */
 import { ClientError } from '../lib/index.js';
+import { X402_SCHEME_PREFERENCES } from '../lib/types.js';
 
 /**
  * Check if an environment variable is set to a truthy value
@@ -26,6 +27,35 @@ export function getVerboseFromEnv(): boolean {
  */
 export function getJsonFromEnv(): boolean {
   return isEnvTrue(process.env.MCPC_JSON);
+}
+
+/**
+ * Disambiguate `--x402 <next>` when `<next>` is not a valid scheme.
+ *
+ * Commander's `[optional]` arg parser greedily consumes the next token as the
+ * option value, so `mcpc connect --x402 mcp.apify.com @s` would parse the URL
+ * as the scheme. Rewriting such cases to `--x402=auto` leaves `<next>` as a
+ * positional. Tokens following `--x402` that match a real scheme are passed
+ * through unchanged.
+ */
+export function preProcessX402Argv(argv: string[]): string[] {
+  const schemes = X402_SCHEME_PREFERENCES as readonly string[];
+  const out: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i] as string;
+    if (arg !== '--x402') {
+      out.push(arg);
+      continue;
+    }
+    const next = argv[i + 1];
+    if (next !== undefined && schemes.includes(next)) {
+      out.push(arg, next);
+      i++;
+    } else {
+      out.push('--x402=auto');
+    }
+  }
+  return out;
 }
 
 // Global options that take a value (not boolean flags)
@@ -294,7 +324,6 @@ export function validateArgValues(args: string[]): void {
 export function extractOptions(args: string[]): {
   timeout?: number;
   profile?: string;
-  x402?: boolean;
   insecure?: boolean;
   verbose: boolean;
   json: boolean;
@@ -315,9 +344,6 @@ export function extractOptions(args: string[]): {
   const profile =
     profileIndex >= 0 && profileIndex + 1 < args.length ? args[profileIndex + 1] : undefined;
 
-  // Extract --x402 (boolean flag)
-  const x402 = args.includes('--x402') || undefined;
-
   // Extract --insecure (boolean flag)
   const insecure = args.includes('--insecure') || undefined;
 
@@ -325,7 +351,6 @@ export function extractOptions(args: string[]): {
     ...options,
     ...(timeout !== undefined && { timeout }),
     ...(profile && { profile }),
-    ...(x402 && { x402 }),
     ...(insecure && { insecure }),
   };
 }

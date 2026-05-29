@@ -16,7 +16,12 @@ import {
   redactHeaders,
 } from '../../lib/index.js';
 import { DISCONNECTED_THRESHOLD_MS } from '../../lib/types.js';
-import type { ServerConfig, ProxyConfig, ServerDetails } from '../../lib/types.js';
+import type {
+  ServerConfig,
+  ProxyConfig,
+  ServerDetails,
+  X402SchemePreference,
+} from '../../lib/types.js';
 import {
   formatOutput,
   formatSuccess,
@@ -300,7 +305,7 @@ export async function connectSession(
     noProfile?: boolean;
     proxy?: string;
     proxyBearerToken?: string;
-    x402?: boolean;
+    x402?: X402SchemePreference;
     insecure?: boolean;
     skipDetails?: boolean;
     quiet?: boolean;
@@ -462,7 +467,7 @@ export async function connectSession(
     server: sessionTransportConfig,
     ...(profileName && { profileName }),
     ...(proxyConfig && { proxy: proxyConfig }),
-    ...(options.x402 && { x402: true }),
+    ...(options.x402 && { x402: options.x402 }),
     ...(options.insecure && { insecure: true }),
     // Clear any previous error status (unauthorized, expired) when reconnecting
     ...(isReconnect && { status: 'active' }),
@@ -499,7 +504,7 @@ export async function connectSession(
       bridgeOptions.proxyConfig = proxyConfig;
     }
     if (options.x402) {
-      bridgeOptions.x402 = true;
+      bridgeOptions.x402 = options.x402;
     }
     if (options.insecure) {
       bridgeOptions.insecure = true;
@@ -674,8 +679,12 @@ export function formatTimeAgo(isoDate: string | undefined): string {
   if (diffHours < 24) return `${diffHours}h ago`;
   if (diffDays === 1) return 'yesterday';
   if (diffDays < 7) return `${diffDays} days ago`;
-  if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
-  return `${Math.floor(diffDays / 30)} months ago`;
+  if (diffDays < 30) {
+    const weeks = Math.floor(diffDays / 7);
+    return `${weeks} ${weeks === 1 ? 'week' : 'weeks'} ago`;
+  }
+  const months = Math.floor(diffDays / 30);
+  return `${months} ${months === 1 ? 'month' : 'months'} ago`;
 }
 
 /**
@@ -684,7 +693,7 @@ export function formatTimeAgo(isoDate: string | undefined): string {
  */
 export async function listSessionsAndAuthProfiles(options: {
   outputMode: OutputMode;
-}): Promise<void> {
+}): Promise<{ hasSessions: boolean }> {
   // Consolidate sessions first (cleans up crashed bridges, removes expired sessions)
   const consolidateResult = await consolidateSessions(false);
   const sessions = Object.values(consolidateResult.sessions);
@@ -773,6 +782,8 @@ export async function listSessionsAndAuthProfiles(options: {
       }
     }
   }
+
+  return { hasSessions: sessions.length > 0 };
 }
 
 /**
@@ -1037,7 +1048,7 @@ type BulkConnectOptions = {
   proxy?: string;
   proxyBearerToken?: string;
   stdio?: boolean;
-  x402?: boolean;
+  x402?: X402SchemePreference;
   insecure?: boolean;
 };
 
@@ -1429,11 +1440,14 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
     }
     if (skippedStdio.length > 0) {
       parts.push(
-        `skipped ${skippedStdio.length} stdio server${skippedStdio.length === 1 ? '' : 's'}, pass --stdio to include`
+        `skipped ${skippedStdio.length} stdio server${skippedStdio.length === 1 ? '' : 's'}`
       );
     }
     if (parts.length > 0) {
       console.log(theme.cyan(`\n${parts.join('. ')}.`));
+      if (skippedStdio.length > 0) {
+        console.log(chalk.dim('  ↳ run: mcpc connect --stdio'));
+      }
     }
   }
 

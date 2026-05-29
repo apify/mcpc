@@ -10,8 +10,8 @@ import { createServer, type Server as NetServer, type Socket } from 'net';
 import { unlink } from 'fs/promises';
 import { createMcpClient, CreateMcpClientOptions } from '../core/index.js';
 import type { McpClient } from '../core/index.js';
-import type { ServerConfig, IpcMessage, LoggingLevel } from '../lib/index.js';
-import { KEEPALIVE_INTERVAL_MS } from '../lib/types.js';
+import type { ServerConfig, IpcMessage, LoggingLevel, X402SchemePreference } from '../lib/index.js';
+import { KEEPALIVE_INTERVAL_MS, X402_SCHEME_PREFERENCES } from '../lib/types.js';
 import { createLogger, setVerbose, initFileLogger, closeFileLogger } from '../lib/index.js';
 import {
   fileExists,
@@ -20,6 +20,7 @@ import {
   ensureDir,
   cleanupOrphanedLogFiles,
   isSessionExpiredError,
+  StderrTail,
 } from '../lib/index.js';
 import {
   ClientError,
@@ -74,7 +75,8 @@ interface BridgeOptions {
   profileName?: string; // Auth profile name for token refresh
   proxyConfig?: ProxyConfig; // Proxy server configuration
   mcpSessionId?: string; // MCP session ID for resumption (Streamable HTTP only)
-  x402?: boolean; // Enable x402 auto-payment
+  /** x402 scheme preference; presence enables x402 auto-payment, absence disables. */
+  x402?: X402SchemePreference;
   insecure?: boolean; // Skip TLS certificate verification
 }
 
@@ -126,10 +128,7 @@ class BridgeProcess {
   // Bounded tail of stderr lines emitted by a stdio server, surfaced in the
   // connect-failure error so the CLI can show users why startup failed
   // (e.g. TLS errors when NODE_EXTRA_CA_CERTS is not forwarded — see #195).
-  private stderrTail: string[] = [];
-  private stderrTailChars = 0;
-  private static readonly STDERR_TAIL_MAX_LINES = 50;
-  private static readonly STDERR_TAIL_MAX_CHARS = 8_000;
+  private readonly stderrTail = new StderrTail();
 
   constructor(options: BridgeOptions) {
     this.options = options;
@@ -444,9 +443,8 @@ class BridgeProcess {
         }
         // Append recent stdio server stderr so the CLI can show the user why
         // startup failed (common case: missing NODE_EXTRA_CA_CERTS etc.).
-        if (this.stderrTail.length > 0) {
-          const tail = this.stderrTail.map((l) => `  ${l}`).join('\n');
-          classifiedError.message = `${classifiedError.message}\n\nRecent server stderr:\n${tail}`;
+        if (this.stderrTail.count > 0) {
+          classifiedError.message = `${classifiedError.message}\n\nRecent server stderr:\n${this.stderrTail.format()}`;
         }
         this.mcpClientReadyRejecter(classifiedError);
 
@@ -504,24 +502,9 @@ class BridgeProcess {
    * with a prefix, and keep a bounded tail for surfacing in connect failures.
    */
   private recordServerStderr(line: string): void {
-    // Cap per-line length so a single huge line (stack trace, etc.) can't push
-    // every other line out of the bounded tail or get itself fully evicted.
-    const trimmed =
-      line.length > BridgeProcess.STDERR_TAIL_MAX_CHARS
-        ? line.slice(0, BridgeProcess.STDERR_TAIL_MAX_CHARS) + '…'
-        : line;
-
-    logger.info(`[server stderr] ${trimmed}`);
-
-    this.stderrTail.push(trimmed);
-    this.stderrTailChars += trimmed.length + 1;
-    while (
-      this.stderrTail.length > BridgeProcess.STDERR_TAIL_MAX_LINES ||
-      (this.stderrTail.length > 1 && this.stderrTailChars > BridgeProcess.STDERR_TAIL_MAX_CHARS)
-    ) {
-      const removed = this.stderrTail.shift();
-      if (removed === undefined) break;
-      this.stderrTailChars -= removed.length + 1;
+    const stored = this.stderrTail.add(line);
+    if (stored !== null) {
+      logger.info(`[server stderr] ${stored}`);
     }
   }
 
@@ -615,6 +598,7 @@ class BridgeProcess {
         wallet,
         getToolByName,
         paymentCache: this.x402PaymentCache,
+        ...(this.options.x402 && { schemePreference: this.options.x402 }),
       });
     }
 
@@ -1111,7 +1095,7 @@ class BridgeProcess {
     const paymentRequired = extractPaymentRequiredFromResult(toolResult);
     if (!paymentRequired) return { handled: false };
 
-    const parsed = extractAcceptFromPaymentRequired(paymentRequired);
+    const parsed = extractAcceptFromPaymentRequired(paymentRequired, this.options.x402);
     if (!parsed) {
       logger.warn('Payment-required tool result but could not extract supported payment terms');
       return { handled: false };
@@ -1129,7 +1113,7 @@ class BridgeProcess {
       });
       this.x402PaymentCache.signature = signed.paymentSignatureBase64;
       logger.debug(
-        `Fresh payment signed for retry: $${signed.amountUsd.toFixed(4)} to ${signed.to} on ${signed.networkLabel}`
+        `Fresh payment signed for retry: $${signed.amountUsd.toFixed(6)} to ${signed.to} on ${signed.networkLabel}`
       );
     } catch (signError) {
       logger.warn('Failed to sign fresh payment for 402 retry:', signError);
@@ -1613,7 +1597,7 @@ async function main(): Promise<void> {
 
   if (args.length < 2) {
     console.error(
-      'Usage: mcpc-bridge <sessionName> <transportConfigJson> [--verbose] [--profile <name>] [--proxy-host <host>] [--proxy-port <port>] [--mcp-session-id <id>] [--x402] [--insecure]'
+      'Usage: mcpc-bridge <sessionName> <transportConfigJson> [--verbose] [--profile <name>] [--proxy-host <host>] [--proxy-port <port>] [--mcp-session-id <id>] [--x402 <auto|upto|exact>] [--insecure]'
     );
     process.exit(1);
   }
@@ -1648,8 +1632,19 @@ async function main(): Promise<void> {
     mcpSessionId = args[mcpSessionIdIndex + 1];
   }
 
-  // Parse --x402 flag (for x402 payment signing)
-  const x402 = args.includes('--x402');
+  // Parse `--x402 <scheme>` (CLI always spawns the bridge with an explicit value).
+  let x402: X402SchemePreference | undefined;
+  const x402Index = args.indexOf('--x402');
+  if (x402Index !== -1) {
+    const value = args[x402Index + 1];
+    if (value === undefined || !(X402_SCHEME_PREFERENCES as readonly string[]).includes(value)) {
+      console.error(
+        `--x402 requires a scheme: ${X402_SCHEME_PREFERENCES.join('|')} (got ${value ?? '<missing>'})`
+      );
+      process.exit(1);
+    }
+    x402 = value as X402SchemePreference;
+  }
 
   // Parse --insecure flag (skip TLS certificate verification)
   const insecure = args.includes('--insecure');
@@ -1674,7 +1669,7 @@ async function main(): Promise<void> {
       bridgeOptions.mcpSessionId = mcpSessionId;
     }
     if (x402) {
-      bridgeOptions.x402 = true;
+      bridgeOptions.x402 = x402;
     }
     if (insecure) {
       bridgeOptions.insecure = true;
