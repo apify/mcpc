@@ -130,7 +130,7 @@ describe('showLogs (CLI command)', () => {
   it('shows "no logs yet" header when log file is missing', async () => {
     await seedSession('@x');
     const out = await capture(() => showLogs('@x', { outputMode: 'human' as OutputMode }));
-    expect(out.stderr).toContain('no logs yet for @x');
+    expect(out.stderr).toContain('no logs yet');
     expect(out.stdout).toBe('');
   });
 

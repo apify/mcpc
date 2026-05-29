@@ -88,14 +88,54 @@ function emitJsonLine(line: string): void {
 }
 
 /**
- * Follow the log until interrupted (Ctrl+C / SIGTERM), forwarding each new line.
+ * Follow the log until interrupted, forwarding each new line.
+ *
+ * Cancellation sources:
+ *   - SIGINT / SIGTERM (always — works for both interactive and piped invocations)
+ *   - When stdin is a TTY: also accept ESC, Ctrl+C, or `q` keypresses. Putting
+ *     stdin in raw mode short-circuits the kernel's Ctrl+C → SIGINT translation,
+ *     so we have to read the 0x03 byte ourselves.
  */
 function follow(sessionName: string, onLine: (line: string) => void): Promise<void> {
   return new Promise<void>((resolve) => {
     const sub = followLog(sessionName, onLine);
-    const onSignal = (): void => void sub.stop().finally(resolve);
+    const stdin = process.stdin;
+    let onKey: ((data: Buffer) => void) | undefined;
+    let stopping = false;
+
+    const stop = (): void => {
+      if (stopping) return;
+      stopping = true;
+      process.removeListener('SIGINT', onSignal);
+      process.removeListener('SIGTERM', onSignal);
+      if (onKey && stdin.isTTY) {
+        stdin.removeListener('data', onKey);
+        try {
+          stdin.setRawMode?.(false);
+        } catch {
+          // restoring raw mode is best-effort
+        }
+        stdin.pause();
+      }
+      void sub.stop().finally(resolve);
+    };
+
+    const onSignal = (): void => stop();
     process.once('SIGINT', onSignal);
     process.once('SIGTERM', onSignal);
+
+    if (stdin.isTTY && typeof stdin.setRawMode === 'function') {
+      stdin.setRawMode(true);
+      stdin.resume();
+      onKey = (data: Buffer): void => {
+        const byte = data[0];
+        // ESC (0x1b), Ctrl+C (0x03), or 'q'
+        if (byte === 0x1b || byte === 0x03 || data.toString() === 'q') {
+          stop();
+        }
+      };
+      stdin.on('data', onKey);
+    }
   });
 }
 
@@ -112,25 +152,19 @@ async function buildHeader(
     .catch(() => null);
 
   const tailLabel = follow
-    ? `following (backlog ${tail} lines)`
+    ? `following (backlog ${tail} lines, ESC/Ctrl+C/q to stop)`
     : since
       ? `since ${since.toISOString()}, last ${tail} lines`
       : `last ${tail} lines`;
 
-  const lines = [chalk.dim(`Session ${sessionName}  ·  ${logPath}  ·  ${tailLabel}`)];
-  if (fileCount > 1) {
-    lines.push(
-      chalk.dim(
-        `  ${fileCount} files (current + ${fileCount - 1} rotated), ${formatBytes(size ?? 0)}`
-      )
-    );
-  } else if (size !== null) {
-    lines.push(chalk.dim(`  ${formatBytes(size)}`));
-  } else {
-    lines.push(chalk.dim(`  no logs yet for ${sessionName}`));
-  }
-  lines.push('');
-  return lines;
+  const sizeLabel =
+    size === null
+      ? `no logs yet`
+      : fileCount > 1
+        ? `${formatBytes(size)}, ${fileCount} files (current + ${fileCount - 1} rotated)`
+        : formatBytes(size);
+
+  return [chalk.dim(`Session ${sessionName}  ·  ${logPath}  ·  ${tailLabel}  ·  ${sizeLabel}`), ''];
 }
 
 function formatBytes(n: number): string {
