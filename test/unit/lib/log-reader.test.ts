@@ -31,7 +31,7 @@ describe('parseLogLine', () => {
   it('parses a line without context', () => {
     const rec = parseLogLine('[2026-04-28T12:01:14.231Z] [WARN] something happened');
     expect(rec.level).toBe('warn');
-    expect(rec.context).toBeNull();
+    expect(rec.context).toBeUndefined();
     expect(rec.msg).toBe('something happened');
   });
 
@@ -49,24 +49,18 @@ describe('parseLogLine', () => {
     expect(rec.msg).toBe('');
   });
 
-  it('falls back to raw for non-matching lines', () => {
+  it('falls back to raw for non-matching lines (no ts/level/context emitted)', () => {
     const rec = parseLogLine('========================================');
-    expect(rec.ts).toBeNull();
-    expect(rec.level).toBeNull();
-    expect(rec.context).toBeNull();
-    expect(rec.raw).toBe('========================================');
+    expect(rec).toEqual({ raw: '========================================' });
   });
 
   it('falls back to raw for stack-trace continuation lines', () => {
     const rec = parseLogLine('    at Foo.bar (/path/to/file.ts:42:13)');
-    expect(rec.ts).toBeNull();
-    expect(rec.raw).toBe('    at Foo.bar (/path/to/file.ts:42:13)');
+    expect(rec).toEqual({ raw: '    at Foo.bar (/path/to/file.ts:42:13)' });
   });
 
   it('falls back to raw for empty input', () => {
-    const rec = parseLogLine('');
-    expect(rec.ts).toBeNull();
-    expect(rec.raw).toBe('');
+    expect(parseLogLine('')).toEqual({ raw: '' });
   });
 });
 
@@ -101,8 +95,8 @@ describe('parseLogLines (folding)', () => {
     expect(records).toHaveLength(3);
     expect(records[0]).toMatchObject({ msg: 'hello' });
     // Banner has a timestamp but no [LEVEL], so it stays a standalone raw record.
-    expect(records[1]).toEqual({ ts: null, level: null, context: null, raw: banner });
-    expect(records[2]).toMatchObject({ ts: null });
+    expect(records[1]).toEqual({ raw: banner });
+    expect(records[2]).toEqual({ raw: '[2026-04-28T12:00:00.002Z] mcpc v0.3.0' });
   });
 
   it('folds leading continuation lines into a raw record', () => {
@@ -113,9 +107,6 @@ describe('parseLogLines (folding)', () => {
     ]);
     expect(records).toHaveLength(2);
     expect(records[0]).toEqual({
-      ts: null,
-      level: null,
-      context: null,
       raw: '    at orphaned stack frame\n    at another frame',
     });
     expect(records[1]).toMatchObject({ msg: 'entry' });

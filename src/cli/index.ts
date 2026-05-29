@@ -1301,8 +1301,8 @@ ${chalk.bold('Notes:')}
   Continuation lines (e.g. stack traces) fold into the preceding entry's msg.
   With --follow, output is NDJSON (one record per line) instead of a JSON array.
 ${jsonHelp(
-  'Array of `LogRecord` objects',
-  '`[{ ts: string|null, level: string|null, context: string|null, msg?: string, raw?: string }, ...]`'
+  'Array of log records',
+  '`[{ ts, level, context?, msg } | { raw }, ...]` — absent fields are omitted'
 )}`
     )
     .action(async (opts, command) => {

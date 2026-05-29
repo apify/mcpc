@@ -138,7 +138,7 @@ describe('showLogs (CLI command)', () => {
     await seedSession('@x');
     const logFile = join(homeDir, 'logs', 'bridge-@x.log');
     // A startup banner is timestamped but has no [LEVEL], so it surfaces as a
-    // standalone { ts: null, raw } record rather than folding into a neighbour.
+    // standalone { raw } record rather than folding into a neighbour.
     const banner = '[2026-04-28T10:00:00.500Z] ========================================';
     await writeFile(
       logFile,
@@ -157,7 +157,7 @@ describe('showLogs (CLI command)', () => {
       context: 'test',
       msg: 'one',
     });
-    expect(parsed[1]).toMatchObject({ ts: null, raw: banner });
+    expect(parsed[1]).toEqual({ raw: banner });
     expect(parsed[2]).toMatchObject({
       ts: '2026-04-28T10:00:01.000Z',
       level: 'warn',

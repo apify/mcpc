@@ -10,19 +10,27 @@ import { createReadStream, watch as fsWatch, type FSWatcher, type Stats } from '
 import { join } from 'path';
 import { getLogsDir } from './utils.js';
 
+/**
+ * A parsed log record. All fields are optional to keep the JSON output compact:
+ *   - Entries that match `[ISO] [LEVEL] [context?] msg` carry `ts`, `level`,
+ *     optionally `context`, and `msg`.
+ *   - Lines that don't (banners, stack-trace frames that landed at the top of a
+ *     window, etc.) carry only `raw`.
+ *
+ * Continuation lines (anything that doesn't begin with an `[ISO-timestamp]`)
+ * fold into the preceding record's `msg` or `raw`, so a multi-line error stays
+ * a single record.
+ */
 export interface LogRecord {
-  /** ISO timestamp parsed from the line, or null if the line had no recognizable prefix. */
-  ts: string | null;
-  /** Log level lowercased (debug|info|warn|error|...) or null. */
-  level: string | null;
-  /** Optional context tag (e.g. "bridge-manager"), or null. */
-  context: string | null;
-  /**
-   * Message body without the timestamp/level/context prefix. May span multiple
-   * lines when continuation lines (e.g. stack-trace frames) follow the entry.
-   */
+  /** ISO timestamp, e.g. "2026-04-28T12:01:14.231Z". */
+  ts?: string;
+  /** Lowercased level: debug, info, warn, error, ... */
+  level?: string;
+  /** Optional context tag, e.g. "bridge-manager". */
+  context?: string;
+  /** Message body without the prefix. May span multiple lines. */
   msg?: string;
-  /** Raw text, set only when the line(s) did not match the expected prefix format. */
+  /** Raw text for lines that didn't match the expected prefix shape. */
   raw?: string;
 }
 
@@ -52,19 +60,21 @@ export function getBridgeLogPath(sessionName: string): string {
 
 /**
  * Parse a single raw log line into a structured record.
- * Lines that don't match the expected `[ISO] [LEVEL] [context?] msg` shape return `{ ts: null, raw }`.
+ * Lines that don't match the expected `[ISO] [LEVEL] [context?] msg` shape return `{ raw }`.
+ * Absent fields are omitted (rather than serialized as `null`) to keep JSON output compact.
  */
 export function parseLogLine(line: string): LogRecord {
   const m = LINE_RE.exec(line);
   if (!m) {
-    return { ts: null, level: null, context: null, raw: line };
+    return { raw: line };
   }
-  return {
-    ts: m[1] ?? null,
-    level: (m[2] ?? '').toLowerCase() || null,
-    context: m[3] ?? null,
-    msg: m[4] ?? '',
-  };
+  // Field order chosen to read naturally in JSON output: ts, level, context, msg.
+  const rec: LogRecord = {};
+  if (m[1]) rec.ts = m[1];
+  if (m[2]) rec.level = m[2].toLowerCase();
+  if (m[3]) rec.context = m[3];
+  rec.msg = m[4] ?? '';
+  return rec;
 }
 
 /**
