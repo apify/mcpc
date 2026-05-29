@@ -13,6 +13,7 @@
  */
 
 import { spawn, type ChildProcess } from 'child_process';
+import { createInterface } from 'readline';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import type {
@@ -33,6 +34,7 @@ import {
 } from './utils.js';
 import { updateSession, getSession } from './sessions.js';
 import { createLogger } from './logger.js';
+import { StderrTail } from './stderr-tail.js';
 import {
   ClientError,
   NetworkError,
@@ -222,47 +224,23 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
   logger.debug('Bridge executable:', bridgeExecutable);
   logger.debug('Bridge args:', args);
 
-  // Capture a bounded tail of the bridge's stderr during startup. If the bridge
+  // Spawn bridge process. stderr is piped (instead of 'ignore') so we can keep
+  // a bounded tail of recent lines and surface them on failure — if the bridge
   // dies before its file logger initializes (e.g. an import error), the file
-  // log alone won't show the cause — stderr is then the only signal we have.
-  const STDERR_TAIL_MAX_LINES = 50;
-  const STDERR_TAIL_MAX_CHARS = 8_000;
-  const stderrTail: string[] = [];
-  let stderrTailChars = 0;
-  let stderrPartial = '';
-  const captureStderr = (chunk: Buffer): void => {
-    stderrPartial += chunk.toString('utf8');
-    const lines = stderrPartial.split('\n');
-    stderrPartial = lines.pop() ?? '';
-    for (const line of lines) {
-      if (line.length === 0) continue;
-      const trimmed =
-        line.length > STDERR_TAIL_MAX_CHARS ? line.slice(0, STDERR_TAIL_MAX_CHARS) + '…' : line;
-      stderrTail.push(trimmed);
-      stderrTailChars += trimmed.length + 1;
-      while (
-        stderrTail.length > STDERR_TAIL_MAX_LINES ||
-        (stderrTail.length > 1 && stderrTailChars > STDERR_TAIL_MAX_CHARS)
-      ) {
-        const dropped = stderrTail.shift();
-        if (dropped === undefined) break;
-        stderrTailChars -= dropped.length + 1;
-      }
-    }
-  };
-  const renderStderrTail = (): string => {
-    const all = stderrPartial ? [...stderrTail, stderrPartial] : stderrTail;
-    if (all.length === 0) return '';
-    return `\nBridge stderr:\n${all.map((l) => `  ${l}`).join('\n')}`;
-  };
-
-  // Spawn bridge process. stderr is piped (instead of 'ignore') so we can
-  // capture early crash output — see the comment above.
+  // log alone won't show the cause, and stderr is the only signal we have.
   const bridgeProcess: ChildProcess = spawn('node', [bridgeExecutable, ...args], {
     detached: true,
     stdio: ['ignore', 'ignore', 'pipe'],
   });
-  bridgeProcess.stderr?.on('data', captureStderr);
+  const stderrTail = new StderrTail();
+  if (bridgeProcess.stderr) {
+    const rl = createInterface({ input: bridgeProcess.stderr, crlfDelay: Infinity });
+    rl.on('line', (line) => {
+      stderrTail.add(line);
+    });
+  }
+  const renderStderrTail = (): string =>
+    stderrTail.count > 0 ? `\nBridge stderr:\n${stderrTail.format()}` : '';
 
   // Reset the Windows tasklist cache so the freshly spawned PID is observable
   // by subsequent isProcessAlive() checks within this CLI invocation (e.g. the

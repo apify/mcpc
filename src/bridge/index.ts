@@ -20,6 +20,7 @@ import {
   ensureDir,
   cleanupOrphanedLogFiles,
   isSessionExpiredError,
+  StderrTail,
 } from '../lib/index.js';
 import {
   ClientError,
@@ -127,10 +128,7 @@ class BridgeProcess {
   // Bounded tail of stderr lines emitted by a stdio server, surfaced in the
   // connect-failure error so the CLI can show users why startup failed
   // (e.g. TLS errors when NODE_EXTRA_CA_CERTS is not forwarded — see #195).
-  private stderrTail: string[] = [];
-  private stderrTailChars = 0;
-  private static readonly STDERR_TAIL_MAX_LINES = 50;
-  private static readonly STDERR_TAIL_MAX_CHARS = 8_000;
+  private readonly stderrTail = new StderrTail();
 
   constructor(options: BridgeOptions) {
     this.options = options;
@@ -445,9 +443,8 @@ class BridgeProcess {
         }
         // Append recent stdio server stderr so the CLI can show the user why
         // startup failed (common case: missing NODE_EXTRA_CA_CERTS etc.).
-        if (this.stderrTail.length > 0) {
-          const tail = this.stderrTail.map((l) => `  ${l}`).join('\n');
-          classifiedError.message = `${classifiedError.message}\n\nRecent server stderr:\n${tail}`;
+        if (this.stderrTail.count > 0) {
+          classifiedError.message = `${classifiedError.message}\n\nRecent server stderr:\n${this.stderrTail.format()}`;
         }
         this.mcpClientReadyRejecter(classifiedError);
 
@@ -505,24 +502,9 @@ class BridgeProcess {
    * with a prefix, and keep a bounded tail for surfacing in connect failures.
    */
   private recordServerStderr(line: string): void {
-    // Cap per-line length so a single huge line (stack trace, etc.) can't push
-    // every other line out of the bounded tail or get itself fully evicted.
-    const trimmed =
-      line.length > BridgeProcess.STDERR_TAIL_MAX_CHARS
-        ? line.slice(0, BridgeProcess.STDERR_TAIL_MAX_CHARS) + '…'
-        : line;
-
-    logger.info(`[server stderr] ${trimmed}`);
-
-    this.stderrTail.push(trimmed);
-    this.stderrTailChars += trimmed.length + 1;
-    while (
-      this.stderrTail.length > BridgeProcess.STDERR_TAIL_MAX_LINES ||
-      (this.stderrTail.length > 1 && this.stderrTailChars > BridgeProcess.STDERR_TAIL_MAX_CHARS)
-    ) {
-      const removed = this.stderrTail.shift();
-      if (removed === undefined) break;
-      this.stderrTailChars -= removed.length + 1;
+    const stored = this.stderrTail.add(line);
+    if (stored !== null) {
+      logger.info(`[server stderr] ${stored}`);
     }
   }
 
