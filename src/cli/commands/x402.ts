@@ -233,8 +233,10 @@ async function removeWalletCmd(options: { outputMode: OutputMode }): Promise<voi
 
 interface SignOptions {
   paymentRequired: string;
-  amount?: string;
-  expiry?: string;
+  amount: string | undefined;
+  expiry: string | undefined;
+  scheme: string | undefined;
+  noApprove: boolean | undefined;
   outputMode: OutputMode;
 }
 
@@ -244,8 +246,14 @@ async function signPaymentCommand(options: SignOptions): Promise<void> {
     throw new ClientError('No wallet configured. Create one with: mcpc x402 init');
   }
 
+  // Resolve scheme preference
+  const schemePreference =
+    options.scheme === 'upto' || options.scheme === 'exact' || options.scheme === 'auto'
+      ? options.scheme
+      : 'auto';
+
   // Parse PAYMENT-REQUIRED header
-  const { header, accept } = parsePaymentRequired(options.paymentRequired);
+  const { header, accept } = parsePaymentRequired(options.paymentRequired, schemePreference);
 
   // Resolve overrides
   let amountOverride: bigint | undefined;
@@ -265,6 +273,7 @@ async function signPaymentCommand(options: SignOptions): Promise<void> {
     resource: header.resource,
     ...(amountOverride !== undefined && { amountOverride }),
     ...(expiryOverride !== undefined && { expiryOverride }),
+    ...(options.noApprove === true && { skipPermit2Approval: true }),
   });
 
   if (options.outputMode === 'json') {
@@ -346,8 +355,10 @@ export async function handleX402Command(args: string[]): Promise<void> {
       'after',
       `
 ${chalk.bold('sign options:')}
-  --amount <usd>      Override amount in USD
-  --expiry <seconds>  Override expiry in seconds`
+  --amount <usd>         Override amount in USD (for upto: max authorization cap)
+  --expiry <seconds>     Override expiry in seconds
+  --scheme <preference>  Payment scheme: auto (default), upto, or exact
+  --no-approve           Skip the upto Permit2 allowance check & auto-approval`
     );
 
   const resolveOutputMode = (cmd: Command): OutputMode => {
@@ -387,16 +398,33 @@ ${chalk.bold('sign options:')}
     .command('sign <payment-required>')
     .description('Sign a payment using the wallet')
     .helpOption('-h, --help', 'Display help')
-    .option('--amount <usd>', 'Override amount in USD')
+    .option(
+      '--amount <usd>',
+      'Override amount in USD (for upto this sets the max authorization cap)'
+    )
     .option('--expiry <seconds>', 'Override expiry in seconds')
-    .action(async (paymentRequired, opts, cmd) => {
-      await signPaymentCommand({
+    .option('--scheme <auto|upto|exact>', 'Payment scheme preference (default: auto)', 'auto')
+    .option(
+      '--no-approve',
+      'For the upto scheme: skip the on-chain Permit2 allowance check & auto-approval'
+    )
+    .action(
+      async (
         paymentRequired,
-        amount: opts.amount,
-        expiry: opts.expiry,
-        outputMode: resolveOutputMode(cmd),
-      });
-    });
+        opts: { amount?: string; expiry?: string; scheme?: string; approve?: boolean },
+        cmd
+      ) => {
+        // Commander turns --no-approve into opts.approve = false
+        await signPaymentCommand({
+          paymentRequired,
+          amount: opts.amount,
+          expiry: opts.expiry,
+          scheme: opts.scheme,
+          noApprove: opts.approve === false,
+          outputMode: resolveOutputMode(cmd),
+        });
+      }
+    );
 
   // Show help if no subcommand
   if (args.length === 0) {

@@ -16,6 +16,7 @@ VERSION_TYPE="patch"
 RELEASE_TYPE="release"
 RELEASE_BRANCH="main"
 SKIP_WINDOWS_E2E="false"
+SKIP_MACOS_E2E="false"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -32,8 +33,12 @@ while [[ $# -gt 0 ]]; do
       SKIP_WINDOWS_E2E="true"
       shift
       ;;
+    --skip-macos-e2e)
+      SKIP_MACOS_E2E="true"
+      shift
+      ;;
     -h|--help)
-      echo "Usage: ./scripts/publish.sh [major|minor|patch] [--pre-release] [--skip-windows-e2e]"
+      echo "Usage: ./scripts/publish.sh [major|minor|patch] [--pre-release] [--skip-windows-e2e] [--skip-macos-e2e]"
       echo ""
       echo "Triggers the release.yml GitHub Actions workflow."
       echo ""
@@ -41,6 +46,7 @@ while [[ $# -gt 0 ]]; do
       echo "  major|minor|patch   Version bump type (default: patch)"
       echo "  --pre-release       Create a pre-release (beta) instead of a stable release"
       echo "  --skip-windows-e2e  Skip the slow Windows E2E tests (included by default)"
+      echo "  --skip-macos-e2e    Skip the slow macOS E2E tests (included by default)"
       echo ""
       echo "Examples:"
       echo "  npm run release                      # patch release"
@@ -52,7 +58,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     *)
       echo -e "${RED}Unknown option: $1${NC}"
-      echo "Usage: ./scripts/publish.sh [major|minor|patch] [--pre-release] [--skip-windows-e2e]"
+      echo "Usage: ./scripts/publish.sh [major|minor|patch] [--pre-release] [--skip-windows-e2e] [--skip-macos-e2e]"
       exit 1
       ;;
   esac
@@ -115,7 +121,8 @@ gh workflow run release.yml \
   --ref "$BRANCH" \
   -f type="$RELEASE_TYPE" \
   -f version="$VERSION_TYPE" \
-  -f skip-windows-e2e="$SKIP_WINDOWS_E2E"
+  -f skip-windows-e2e="$SKIP_WINDOWS_E2E" \
+  -f skip-macos-e2e="$SKIP_MACOS_E2E"
 echo -e "${GREEN}✓ Workflow triggered${NC}"
 
 # Wait briefly for the run to appear, then fetch its URL

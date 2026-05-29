@@ -21,9 +21,12 @@ import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import {
   signPayment,
   parsePaymentRequired,
+  selectAcceptEntry,
+  DEFAULT_PAYMENT_EXPIRY_SECONDS,
   type SignerWallet,
   type PaymentRequiredAccept,
   type PaymentRequiredHeader,
+  type SchemePreference,
 } from './signer.js';
 import { createLogger } from '../logger.js';
 
@@ -32,16 +35,26 @@ const logger = createLogger('x402-middleware');
 /** MCP _meta key for x402 payment (per x402 MCP spec) */
 const MCP_PAYMENT_META_KEY = 'x402/payment';
 
-/** Payment information from tool's _meta.x402 */
+/**
+ * Payment information from tool's `_meta.x402`.
+ *
+ * Apify exposes two shapes side-by-side:
+ * - **`accepts[]`** carries every advertised scheme (post apify-mcp-server #876).
+ *   Walk this when present — it's the only way to honor the session's `--x402 <scheme>`
+ *   preference against servers that advertise multiple schemes.
+ * - **Flat preferred fields** mirror the server's preferred entry for back-compat
+ *   with clients that don't iterate `accepts[]`. Used as a fallback.
+ */
 interface ToolPaymentMeta {
   paymentRequired: boolean;
+  accepts?: PaymentRequiredAccept[];
   scheme?: string;
   network?: string;
   amount?: string;
   asset?: string;
   payTo?: string;
   maxTimeoutSeconds?: number;
-  extra?: { name?: string; version?: string };
+  extra?: { name?: string; version?: string; facilitatorAddress?: string };
 }
 
 /** Parsed JSON-RPC request body (enough to identify tools/call) */
@@ -79,6 +92,9 @@ export interface X402FetchMiddlewareOptions {
 
   /** Shared mutable cache for reusing payment signatures across tool calls */
   paymentCache: X402PaymentCache;
+
+  /** Payment scheme preference when multiple accepts are available (default: auto) */
+  schemePreference?: SchemePreference;
 }
 
 /**
@@ -93,11 +109,17 @@ export function createX402FetchMiddleware(
   baseFetch: FetchLike,
   options: X402FetchMiddlewareOptions
 ): FetchLike {
-  const { wallet, getToolByName, paymentCache } = options;
+  const { wallet, getToolByName, paymentCache, schemePreference } = options;
 
   return async (url: string | URL, init?: RequestInit): Promise<Response> => {
     // Try to get a payment signature (cached or freshly signed) for tools/call requests
-    const paymentSignature = await getOrSignPayment(init, wallet, getToolByName, paymentCache);
+    const paymentSignature = await getOrSignPayment(
+      init,
+      wallet,
+      getToolByName,
+      paymentCache,
+      schemePreference
+    );
     if (paymentSignature) {
       const enhancedInit = injectPayment(init, paymentSignature);
       const response = await baseFetch(url, enhancedInit);
@@ -110,7 +132,15 @@ export function createX402FetchMiddleware(
       // HTTP 402 — invalidate cache and fall through to fallback
       logger.debug('Payment rejected (HTTP 402), invalidating cache');
       paymentCache.signature = null;
-      return handle402Fallback(url, init, response, baseFetch, wallet, paymentCache);
+      return handle402Fallback(
+        url,
+        init,
+        response,
+        baseFetch,
+        wallet,
+        paymentCache,
+        schemePreference
+      );
     }
 
     // No payment needed — make request normally
@@ -118,7 +148,15 @@ export function createX402FetchMiddleware(
 
     // Check for HTTP 402 fallback
     if (response.status === 402) {
-      return handle402Fallback(url, init, response, baseFetch, wallet, paymentCache);
+      return handle402Fallback(
+        url,
+        init,
+        response,
+        baseFetch,
+        wallet,
+        paymentCache,
+        schemePreference
+      );
     }
 
     return response;
@@ -134,7 +172,8 @@ async function getOrSignPayment(
   init: RequestInit | undefined,
   wallet: SignerWallet,
   getToolByName: ((name: string) => Tool | undefined) | undefined,
-  paymentCache: X402PaymentCache
+  paymentCache: X402PaymentCache,
+  schemePreference?: SchemePreference
 ): Promise<string | undefined> {
   if (!getToolByName || !init?.body) {
     return undefined;
@@ -171,29 +210,18 @@ async function getOrSignPayment(
     return paymentCache.signature;
   }
 
-  // Check if we have enough info to sign
-  if (!x402.scheme || !x402.network || !x402.amount || !x402.asset || !x402.payTo) {
+  const accept = selectAcceptFromToolMeta(x402, schemePreference);
+  if (!accept) {
     logger.debug(
-      `Tool "${toolName}" has x402 metadata but missing fields, skipping payment signing`
+      `Tool "${toolName}" _meta.x402 does not advertise a usable accept for schemePreference=${schemePreference ?? 'auto'}, deferring to 402 fallback`
     );
     return undefined;
   }
 
-  // Build accept from tool metadata and sign fresh
-  const accept: PaymentRequiredAccept = {
-    scheme: x402.scheme,
-    network: x402.network,
-    amount: x402.amount,
-    asset: x402.asset,
-    payTo: x402.payTo,
-    maxTimeoutSeconds: x402.maxTimeoutSeconds || 3600,
-    ...(x402.extra && { extra: x402.extra }),
-  };
-
   try {
     const result = await signPayment({ wallet, accept });
     logger.debug(
-      `Fresh payment signed: $${result.amountUsd.toFixed(4)} to ${result.to} on ${result.networkLabel}`
+      `Fresh payment signed: scheme=${accept.scheme} amount=$${result.amountUsd.toFixed(6)} to=${result.to} network=${result.networkLabel}`
     );
     paymentCache.signature = result.paymentSignatureBase64;
     return result.paymentSignatureBase64;
@@ -213,7 +241,8 @@ async function handle402Fallback(
   response402: Response,
   baseFetch: FetchLike,
   wallet: SignerWallet,
-  paymentCache: X402PaymentCache
+  paymentCache: X402PaymentCache,
+  schemePreference?: SchemePreference
 ): Promise<Response> {
   // Extract PAYMENT-REQUIRED header (case-insensitive)
   const paymentRequiredBase64 =
@@ -229,7 +258,7 @@ async function handle402Fallback(
   let header: PaymentRequiredHeader;
   let accept: PaymentRequiredAccept;
   try {
-    ({ header, accept } = parsePaymentRequired(paymentRequiredBase64));
+    ({ header, accept } = parsePaymentRequired(paymentRequiredBase64, schemePreference));
   } catch (error) {
     logger.warn('Failed to parse PAYMENT-REQUIRED header:', error);
     return response402;
@@ -244,7 +273,7 @@ async function handle402Fallback(
     });
 
     logger.debug(
-      `402 fallback payment signed: $${result.amountUsd.toFixed(4)} to ${result.to} on ${result.networkLabel}`
+      `402 fallback payment signed: scheme=${accept.scheme} amount=$${result.amountUsd.toFixed(6)} to=${result.to} network=${result.networkLabel}`
     );
 
     // Cache the freshly signed payment for subsequent calls
@@ -294,12 +323,51 @@ function extractToolCallName(body: RequestInit['body'] | undefined): string | un
 }
 
 /**
- * Extract `PaymentRequiredAccept` from a PaymentRequired object.
- * Returns the first "exact" scheme accept entry, or undefined if not found.
+ * Pick an accept entry from a tool's `_meta.x402` block honoring `schemePreference`.
  *
- * The data is expected to have the shape: `{ x402Version, accepts: [...] }`
+ * Prefers the spec-shaped `accepts[]` array when present; falls back to the flat fields
+ * only when the preference matches the flat scheme (or the preference is `auto`).
+ * Returning undefined defers signing to the 402 fallback path, which re-runs the
+ * selector against the authoritative PAYMENT-REQUIRED header.
  */
-export function extractAcceptFromPaymentRequired(data: unknown):
+function selectAcceptFromToolMeta(
+  x402: ToolPaymentMeta,
+  schemePreference?: SchemePreference
+): PaymentRequiredAccept | undefined {
+  const preference = schemePreference ?? 'auto';
+
+  if (Array.isArray(x402.accepts) && x402.accepts.length > 0) {
+    return selectAcceptEntry(x402.accepts, preference);
+  }
+
+  if (!x402.scheme || !x402.network || !x402.amount || !x402.asset || !x402.payTo) {
+    return undefined;
+  }
+  if (preference !== 'auto' && preference !== x402.scheme) {
+    return undefined;
+  }
+
+  return {
+    scheme: x402.scheme,
+    network: x402.network,
+    amount: x402.amount,
+    asset: x402.asset,
+    payTo: x402.payTo,
+    maxTimeoutSeconds: x402.maxTimeoutSeconds || DEFAULT_PAYMENT_EXPIRY_SECONDS,
+    ...(x402.extra && { extra: x402.extra }),
+  };
+}
+
+/**
+ * Extract `PaymentRequiredAccept` from a PaymentRequired object honoring scheme preference.
+ *
+ * Expected shape: `{ x402Version, accepts: [...] }`. Default preference is `auto`
+ * (prefer upto, fall back to exact) when the caller doesn't pin one.
+ */
+export function extractAcceptFromPaymentRequired(
+  data: unknown,
+  schemePreference?: SchemePreference
+):
   | {
       accept: PaymentRequiredAccept;
       resource?: { url?: string; description?: string; mimeType?: string };
@@ -310,8 +378,11 @@ export function extractAcceptFromPaymentRequired(data: unknown):
   const obj = data as Record<string, unknown>;
   if (!Array.isArray(obj.accepts) || obj.accepts.length === 0) return undefined;
 
-  const accept = (obj.accepts as PaymentRequiredAccept[]).find((a) => a.scheme === 'exact');
-  if (!accept || !accept.payTo || !accept.amount || !accept.network || !accept.asset) {
+  const accept = selectAcceptEntry(
+    obj.accepts as PaymentRequiredAccept[],
+    schemePreference ?? 'auto'
+  );
+  if (!accept) {
     return undefined;
   }
 
@@ -365,7 +436,7 @@ export function extractPaymentRequiredFromResult(
   const content = toolResult.content;
   if (!Array.isArray(content) || content.length === 0) return undefined;
 
-  const first = content[0] as ToolResultContent | undefined;
+  const first = content[0];
   if (!first || first.type !== 'text' || typeof first.text !== 'string') return undefined;
 
   try {
