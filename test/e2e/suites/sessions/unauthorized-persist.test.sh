@@ -18,16 +18,15 @@ _SESSIONS_CREATED+=("$SESSION")
 # Test: bearer-only session fails with auth error containing log path
 # =============================================================================
 
-test_case "connect with bad bearer token fails with auth error + log path"
+test_case "connect with bad bearer token fails with auth error + logs hint"
 run_mcpc connect "$TEST_SERVER_URL" "$SESSION" \
   --header "X-Test: true" \
   --header "Authorization: InvalidScheme not-a-bearer-token"
 assert_failure
 assert_exit_code 4 "should fail with auth exit code (4)"
 assert_contains "$STDERR" "Authentication required by server"
-# The error should point at the bridge log file so the user can investigate
-assert_contains "$STDERR" "check logs at"
-assert_contains "$STDERR" "bridge-${SESSION}.log"
+# The error should point at the new logs command so the user can investigate
+assert_contains "$STDERR" "mcpc ${SESSION} logs"
 test_pass
 
 # =============================================================================
@@ -86,13 +85,12 @@ test_pass
 # Test: using an unauthorized session surfaces the auth error + log path
 # =============================================================================
 
-test_case "using unauthorized session surfaces auth error with log path"
+test_case "using unauthorized session surfaces auth error with logs hint"
 run_mcpc "$SESSION" tools-list
 assert_failure
 assert_exit_code 4 "should fail with auth exit code (4)"
 assert_contains "$STDERR" "Authentication required by server"
-assert_contains "$STDERR" "check logs at"
-assert_contains "$STDERR" "bridge-${SESSION}.log"
+assert_contains "$STDERR" "mcpc ${SESSION} logs"
 test_pass
 
 test_done

@@ -173,6 +173,7 @@ MCP session commands (after connecting):
   <@session> tasks-cancel <taskId>
   <@session> logging-set-level <level>
   <@session> ping
+  <@session> logs [-n N] [--follow] [--since 1h]
 
 Run "mcpc" without arguments to show active sessions and OAuth profiles.
 Run "mcpc --json" to get the same data as `{ sessions: [...], profiles: [...] }`.
@@ -1183,9 +1184,11 @@ This causes `mcpc` to print detailed debug messages to stderr.
 
 ### Logs
 
-The background bridge processes log to `~/.mcpc/logs/bridge-@<session>.log`.
-The main `mcpc` process doesn't save log files, but supports [verbose mode](#verbose-mode).
-`mcpc` automatically rotates log files: keep last 10MB per session, max 5 files.
+View the bridge log for a session with `mcpc @<session> logs` (run with
+`--help` for `--follow`, `-n`, and `--since` options). The underlying file
+lives at `~/.mcpc/logs/bridge-@<session>.log` and is rotated automatically
+(10MB per file, max 5 files). The main `mcpc` process doesn't save log
+files, but supports [verbose mode](#verbose-mode).
 
 ### Troubleshooting
 

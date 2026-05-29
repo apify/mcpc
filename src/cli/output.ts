@@ -23,9 +23,8 @@ import type {
   CallToolResult,
 } from '../lib/types.js';
 import { extractAllTextContent } from './tool-result.js';
-import { join } from 'node:path';
-import { getLogsDir } from '../lib/utils.js';
 import { getSession } from '../lib/sessions.js';
+import { getBridgeLogPath } from '../lib/log-reader.js';
 
 // Re-export for external use
 export { extractAllTextContent } from './tool-result.js';
@@ -1484,16 +1483,20 @@ export function formatServerDetails(
     commands.push(`${bullet} ${bt}mcpc ${target} logging-set-level <lvl>${bt}`);
   }
 
+  if (target.startsWith('@')) {
+    commands.push(`${bullet} ${bt}mcpc ${target} logs${bt}`);
+  }
+
   if (commands.length > 0) {
     lines.push(chalk.bold('Available commands:'));
     lines.push(commands.join('\n'));
     lines.push('');
   }
 
-  // Debugging hint: bridge log file path (only shown for sessions, i.e. @name targets)
+  // Debugging hint: how to view logs (only shown for sessions, i.e. @name targets)
   if (target.startsWith('@')) {
-    const logPath = join(getLogsDir(), `bridge-${target}.log`);
-    lines.push(chalk.dim(`Session log for debugging: ${logPath}`));
+    lines.push(chalk.dim(`For session logs, run: mcpc ${target} logs`));
+    lines.push(chalk.dim(`Log file: ${getBridgeLogPath(target)}`));
     lines.push('');
   }
 

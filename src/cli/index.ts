@@ -22,6 +22,7 @@ import * as prompts from './commands/prompts.js';
 import * as sessions from './commands/sessions.js';
 import * as logging from './commands/logging.js';
 import * as utilities from './commands/utilities.js';
+import * as logs from './commands/logs.js';
 import * as auth from './commands/auth.js';
 import * as tasks from './commands/tasks.js';
 import * as grepCmd from './commands/grep.js';
@@ -451,6 +452,7 @@ ${chalk.bold('MCP session commands (after connecting):')}
   <@session> ${theme.cyan('tasks-cancel')} <taskId>
   <@session> ${theme.cyan('logging-set-level')} <level>
   <@session> ${theme.cyan('ping')}
+  <@session> ${theme.cyan('logs')} [-n N] [--follow] [--since 1h]
 
 Run "mcpc" without arguments to show active sessions and OAuth profiles.
 Run "mcpc --json" to get the same data as \`{ sessions: [...], profiles: [...] }\`.
@@ -495,8 +497,8 @@ ${chalk.bold('Session name:')}
 
 ${chalk.bold('Stdio servers (command-based, run locally):')}
   Config entries spawn the command on connect, even if the handshake
-  later fails — only connect to configs you trust. Stderr is logged to
-  ~/.mcpc/logs/bridge-<session>.log. Bulk connects skip stdio by default;
+  later fails — only connect to configs you trust. View the bridge log
+  with: mcpc <@session> logs. Bulk connects skip stdio by default;
   pass --stdio to include them.
 ${jsonHelp(
   'Array of `InitializeResult` objects (one per session), extended with `toolNames` and `_mcpc` metadata',
@@ -1271,6 +1273,50 @@ ${jsonHelp('`GetPromptResult` object', '`{ description?, messages: [{ role, cont
     .addHelpText('after', jsonHelp('`{ success: true, durationMs: number }`'))
     .action(async (_options, command) => {
       await utilities.ping(session, getOptionsFromCommand(command));
+    });
+
+  // Logs command
+  program
+    .command('logs')
+    .description('Show or follow the bridge log file for this session.')
+    .option('-n, --tail <n>', 'Number of recent lines to show (default: 50)')
+    .option('--follow', 'Stream new log lines as they are written')
+    .option(
+      '--since <value>',
+      'Only show entries newer than a duration (30s, 5m, 2h, 1d) or ISO timestamp'
+    )
+    .addHelpText(
+      'after',
+      `
+${chalk.bold('Examples:')}
+  mcpc ${session} logs                  Last 50 lines
+  mcpc ${session} logs -n 200           Last 200 lines
+  mcpc ${session} logs --follow         Stream new lines (ESC/Ctrl+C/q to stop)
+  mcpc ${session} logs --since 1h       Lines from the last hour
+  mcpc ${session} logs --since 30m -n 50
+
+${chalk.bold('Notes:')}
+  Reads ~/.mcpc/logs/bridge-${session}.log and transparently spans
+  rotated files (.log.1 … .log.5) when -n or --since needs older lines.
+  Continuation lines (e.g. stack traces) fold into the preceding entry's msg.
+${jsonHelp(
+  'Array of log records (JSONL when streaming with --follow)',
+  '`[{ time, level, context?, msg } | { raw }, ...]`'
+)}`
+    )
+    .action(async (opts, command) => {
+      const tail = opts.tail !== undefined ? parseInt(opts.tail as string, 10) : undefined;
+      if (tail !== undefined && (isNaN(tail) || tail < 0)) {
+        throw new ClientError(
+          `Invalid --tail value: "${opts.tail as string}". Must be a non-negative integer.`
+        );
+      }
+      await logs.showLogs(session, {
+        ...getOptionsFromCommand(command),
+        ...(tail !== undefined && { tail }),
+        ...(opts.follow && { follow: true }),
+        ...(opts.since && { since: opts.since as string }),
+      });
     });
 }
 

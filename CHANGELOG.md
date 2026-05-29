@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `mcpc @<session> logs` command to show or follow the bridge log file. Supports `-n/--tail <n>` (default 50), `--follow` to stream new lines, and `--since <duration|iso>` (e.g. `1h`, `30m`, `2026-04-28T12:00:00Z`). Transparently spans rotated files (`.log.1` … `.log.5`) when more lines are needed. With `--json`, returns parsed `{ time, level, context?, msg }` records (continuation lines such as stack traces fold into the preceding entry's `msg`; lines that aren't standard log entries become `{ raw }`); combined with `--follow`, output is JSONL. `mcpc @<session> --json` now also exposes `_mcpc.logPath` and `_mcpc.logSize`. Error messages that previously pointed users to a raw log file path now suggest `mcpc @<session> logs` instead (#205).
+
 ### Deprecated
 
 - The `shell` command (`mcpc shell @<session>` and `mcpc @<session> shell`) is deprecated and will be removed in a future release. It is now hidden from `--help` output and prints a deprecation warning when invoked

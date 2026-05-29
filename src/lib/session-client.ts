@@ -35,7 +35,7 @@ import { BridgeClient } from './bridge-client.js';
 import { ensureBridgeReady, restartBridge } from './bridge-manager.js';
 import { updateSession } from './sessions.js';
 import { NetworkError } from './errors.js';
-import { getSocketPath, getLogsDir, generateRequestId } from './utils.js';
+import { getSocketPath, generateRequestId } from './utils.js';
 import { createLogger } from './logger.js';
 
 const logger = createLogger('session-client');
@@ -92,8 +92,7 @@ export class SessionClient extends EventEmitter implements IMcpClient {
       if (!(error instanceof NetworkError)) {
         // Add log hint for MCP/server errors
         const err = error as Error;
-        const logPath = `${getLogsDir()}/bridge-${this.sessionName}.log`;
-        err.message = `${err.message}. For details, check logs at ${logPath}`;
+        err.message = `${err.message}. For details, run: mcpc ${this.sessionName} logs`;
         throw error;
       }
 
@@ -333,8 +332,7 @@ export class SessionClient extends EventEmitter implements IMcpClient {
     } catch (error) {
       if (!(error instanceof NetworkError)) {
         const err = error as Error;
-        const logPath = `${getLogsDir()}/bridge-${this.sessionName}.log`;
-        err.message = `${err.message}. For details, check logs at ${logPath}`;
+        err.message = `${err.message}. For details, run: mcpc ${this.sessionName} logs`;
         throw error;
       }
 
