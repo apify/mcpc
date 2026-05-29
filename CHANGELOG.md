@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The `shell` command (`mcpc shell @<session>` and `mcpc @<session> shell`) is deprecated and will be removed in a future release. It is now hidden from `--help` output and prints a deprecation warning when invoked
 
+### Fixed
+
+- `mcpc connect` no longer fails with `socket file not created within timeout` when the bridge is slow to start (CPU-constrained machines, many parallel connects). The startup window is more generous, and a bridge that crashes on startup now reports its exit code immediately instead of stalling until the timeout
+
 ## [0.3.0] - 2026-05-20
 
 ### Added
