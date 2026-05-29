@@ -613,6 +613,8 @@ When opening a pull request, always reference the originating issue or PR in the
 
 Keep the PR description itself concise: a 1–3 sentence summary of the user-visible change, a short bulleted list of what was done, and the issue ref. Avoid `## Summary` / `## Key Changes` / `## Implementation Details` section headers and exhaustive walkthroughs — reviewers can read the diff for implementation; the PR body is for the why and the gist.
 
+Always end the PR description with the Claude Code session link (the same `https://claude.ai/code/session_<id>` URL appended to commit messages from this session), on its own line, so reviewers can trace the conversation that produced the change.
+
 When implementing features:
 
 1. **Self-documenting CLI** - All features, options, and usage patterns must be documented in command `--help` output (Commander.js `.description()` and `.addHelpText()`), not just in the README. AI agents discover how to use mcpc purely by running `mcpc --help` and `mcpc <command> --help`, so help text is the primary documentation surface. Include examples in help text for non-obvious commands. The README can provide additional context but must not be the only place a feature is documented.
