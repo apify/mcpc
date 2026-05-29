@@ -607,7 +607,11 @@ After build passes, run `pnpm run test:unit` and fix any failures before committ
 
 For any non-trivial change (new feature, bug fix, behaviour change, or notable refactor), add an entry to the `[Unreleased]` section of `CHANGELOG.md` before finishing. Use the appropriate category (`Added`, `Changed`, `Fixed`, `Removed`). Skip purely internal changes such as test-only edits, code style fixes, or minor cosmetic/styling tweaks (e.g. changing colors, adjusting whitespace, renaming labels). The changelog is for **users reading release notes** — only include entries that a user would care about. Do not add entries for: new warnings or deprecation notices on existing commands, minor help text changes, test infrastructure, CI/CD changes, or internal refactors. When in doubt, leave it out.
 
+Keep each changelog entry to one or two short sentences focused on the user-visible behaviour. Do not enumerate implementation details, internal class names, or step-by-step breakdowns — readers want to know what changed for them, not how it was built. If an entry needs subheadings or its own bulleted breakdown, it's too long.
+
 When opening a pull request, always reference the originating issue or PR in the description (e.g. `Fixes #55`, `Refs #223`, `Supersedes #222`). This anchors the change to its motivation and lets reviewers see prior discussion, alternative fixes that were considered, and the failure mode being addressed. If the change is motivated by a Slack/email/internal thread with no GitHub artifact, open or link an issue first so future readers have a single source of truth. The same applies to commit messages for non-trivial changes: include `Fixes #N` / `Refs #N` in the body.
+
+Keep the PR description itself concise: a 1–3 sentence summary of the user-visible change, a short bulleted list of what was done, and the issue ref. Avoid `## Summary` / `## Key Changes` / `## Implementation Details` section headers and exhaustive walkthroughs — reviewers can read the diff for implementation; the PR body is for the why and the gist.
 
 When implementing features:
 

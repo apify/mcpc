@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `mcpc connect` no longer fails with `socket file not created within timeout` (pointing at a bridge log that was never written) when the bridge is slow to start — e.g. on CPU-constrained machines or when connecting many servers at once. The bridge now gets a generous startup window so it survives long enough to write its log and connect. A bridge that genuinely crashes during startup now reports its exit code immediately instead of stalling until the timeout
+- `mcpc connect` no longer fails with `socket file not created within timeout` when the bridge is slow to start (CPU-constrained machines, many parallel connects). The startup window is more generous, and if the bridge does crash on startup the error now shows its exit code and recent stderr instead of pointing at a log that was never written
 
 ## [0.3.0] - 2026-05-20
 
