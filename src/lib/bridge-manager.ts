@@ -13,7 +13,6 @@
  */
 
 import { spawn, type ChildProcess } from 'child_process';
-import { createInterface } from 'readline';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import type {
@@ -34,7 +33,6 @@ import {
 } from './utils.js';
 import { updateSession, getSession } from './sessions.js';
 import { createLogger } from './logger.js';
-import { StderrTail } from './stderr-tail.js';
 import {
   ClientError,
   NetworkError,
@@ -224,28 +222,16 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
   logger.debug('Bridge executable:', bridgeExecutable);
   logger.debug('Bridge args:', args);
 
-  // Spawn bridge process. stderr is piped (instead of 'ignore') so we can keep
-  // a bounded tail of recent lines and surface them on failure — if the bridge
-  // dies before its file logger initializes (e.g. an import error), the file
-  // log alone won't show the cause, and stderr is the only signal we have.
+  // Spawn bridge process. stderr is dropped: piping it (to capture a tail for
+  // failure diagnostics) made rapid CLI invocations destabilize the bridge —
+  // child_process pipes are net.Sockets, and the close-from-parent semantics
+  // interacted badly with the bridge's connection handling. The 15s startup
+  // window already gives the bridge time to initialize its file logger for
+  // realistic failure modes, so the per-session log file is sufficient.
   const bridgeProcess: ChildProcess = spawn('node', [bridgeExecutable, ...args], {
     detached: true,
-    stdio: ['ignore', 'ignore', 'pipe'],
+    stdio: 'ignore',
   });
-  const stderrTail = new StderrTail();
-  if (bridgeProcess.stderr) {
-    // Pipe streams from child_process are net.Sockets at runtime (typed only as
-    // Readable). Unref the underlying handle so the open stderr pipe doesn't
-    // keep the CLI event loop alive after startBridge returns — without this,
-    // commands like `mcpc connect` hang until the bridge eventually exits.
-    (bridgeProcess.stderr as unknown as { unref(): void }).unref();
-    const rl = createInterface({ input: bridgeProcess.stderr, crlfDelay: Infinity });
-    rl.on('line', (line) => {
-      stderrTail.add(line);
-    });
-  }
-  const renderStderrTail = (): string =>
-    stderrTail.count > 0 ? `\nBridge stderr:\n${stderrTail.format()}` : '';
 
   // Reset the Windows tasklist cache so the freshly spawned PID is observable
   // by subsequent isProcessAlive() checks within this CLI invocation (e.g. the
@@ -302,8 +288,7 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
     }
     throw new ClientError(
       `Bridge failed to start: socket not created within ${BRIDGE_STARTUP_TIMEOUT_MS} ms. ` +
-        `For details, check logs at ${logPath}` +
-        renderStderrTail()
+        `For details, check logs at ${logPath}`
     );
   } finally {
     bridgeProcess.removeListener('exit', onBridgeExit);
@@ -312,9 +297,7 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
   if (typeof outcome === 'string') {
     // Bridge process exited before it opened its socket (startup crash).
     throw new ClientError(
-      `Bridge process exited during startup (${outcome}). ` +
-        `For details, check logs at ${logPath}` +
-        renderStderrTail()
+      `Bridge process exited during startup (${outcome}). For details, check logs at ${logPath}`
     );
   }
 
