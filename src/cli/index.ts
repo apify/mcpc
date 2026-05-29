@@ -94,7 +94,7 @@ function getOptionsFromCommand(command: Command): HandlerOptions {
   if (json) setJsonMode(true);
 
   const options: HandlerOptions = {
-    outputMode: (json ? 'json' : 'human') as OutputMode,
+    outputMode: json ? 'json' : 'human',
   };
 
   // Only include optional properties if they're present
@@ -231,7 +231,7 @@ async function main(): Promise<void> {
     validateOptions(args);
     validateArgValues(args);
   } catch (error) {
-    console.error(theme.red(formatHumanError(error as Error, false)));
+    console.error(theme.red(formatHumanError(error, false)));
     process.exit(1);
   }
 
@@ -1380,7 +1380,7 @@ async function handleSessionCommands(session: string, args: string[]): Promise<v
     console.error(
       outputMode === 'json'
         ? formatJsonError(error as Error, 1)
-        : theme.red(formatHumanError(error as Error, opts.verbose))
+        : theme.red(formatHumanError(error, opts.verbose))
     );
     process.exit(1);
   }

@@ -515,7 +515,7 @@ export function formatToolParamsInline(schema: Record<string, unknown>): string 
  */
 export function formatToolLine(tool: Tool): string {
   const bullet = chalk.dim('*');
-  const params = formatToolParamsInline(tool.inputSchema as Record<string, unknown>);
+  const params = formatToolParamsInline(tool.inputSchema);
   const hintsStr = formatToolHints(tool);
   const suffix = hintsStr ? ` ${chalk.gray(`[${hintsStr}]`)}` : '';
   return `${bullet} ${grayBacktick()}${theme.cyan(tool.name)} ${params}${grayBacktick()}${suffix}`;
@@ -587,14 +587,14 @@ export function formatToolDetail(tool: Tool): string {
   // Input args
   lines.push('');
   lines.push(chalk.bold('Input:'));
-  const inputArgs = formatSimplifiedArgs(tool.inputSchema as Record<string, unknown>, '');
+  const inputArgs = formatSimplifiedArgs(tool.inputSchema, '');
   lines.push(...inputArgs);
 
   // Output schema (if present)
   if ('outputSchema' in tool && tool.outputSchema) {
     lines.push('');
     lines.push(chalk.bold('Output:'));
-    const outputArgs = formatSimplifiedArgs(tool.outputSchema as Record<string, unknown>, '');
+    const outputArgs = formatSimplifiedArgs(tool.outputSchema, '');
     lines.push(...outputArgs);
   }
 
@@ -934,7 +934,7 @@ function formatPromptContent(content: PromptMessage['content']): string {
   const lines: string[] = [];
 
   // ContentBlock is a union type, use type narrowing
-  const block = content as ContentBlock;
+  const block = content;
 
   switch (block.type) {
     case 'text':
