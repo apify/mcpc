@@ -23,9 +23,8 @@ import type {
   CallToolResult,
 } from '../lib/types.js';
 import { extractAllTextContent } from './tool-result.js';
-import { join } from 'node:path';
-import { getLogsDir } from '../lib/utils.js';
 import { getSession } from '../lib/sessions.js';
+import { getBridgeLogPath } from '../lib/log-reader.js';
 
 // Re-export for external use
 export { extractAllTextContent } from './tool-result.js';
@@ -1496,9 +1495,8 @@ export function formatServerDetails(
 
   // Debugging hint: how to view logs (only shown for sessions, i.e. @name targets)
   if (target.startsWith('@')) {
-    const logPath = join(getLogsDir(), `bridge-${target}.log`);
     lines.push(chalk.dim(`For session logs, run: mcpc ${target} logs`));
-    lines.push(chalk.dim(`Log file: ${logPath}`));
+    lines.push(chalk.dim(`Log file: ${getBridgeLogPath(target)}`));
     lines.push('');
   }
 

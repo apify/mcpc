@@ -497,8 +497,8 @@ ${chalk.bold('Session name:')}
 
 ${chalk.bold('Stdio servers (command-based, run locally):')}
   Config entries spawn the command on connect, even if the handshake
-  later fails — only connect to configs you trust. Stderr is logged to
-  ~/.mcpc/logs/bridge-<session>.log. Bulk connects skip stdio by default;
+  later fails — only connect to configs you trust. View the bridge log
+  with: mcpc <@session> logs. Bulk connects skip stdio by default;
   pass --stdio to include them.
 ${jsonHelp(
   'Array of `InitializeResult` objects (one per session), extended with `toolNames` and `_mcpc` metadata',
@@ -1314,7 +1314,7 @@ ${jsonHelp(
       await logs.showLogs(session, {
         ...getOptionsFromCommand(command),
         ...(tail !== undefined && { tail }),
-        ...(opts.follow && { follow: true as boolean }),
+        ...(opts.follow && { follow: true }),
         ...(opts.since && { since: opts.since as string }),
       });
     });

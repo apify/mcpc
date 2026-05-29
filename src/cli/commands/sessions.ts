@@ -12,7 +12,6 @@ import {
   validateProfileName,
   isProcessAlive,
   getServerHost,
-  getLogsDir,
   redactHeaders,
 } from '../../lib/index.js';
 import { DISCONNECTED_THRESHOLD_MS } from '../../lib/types.js';
@@ -62,6 +61,7 @@ import { getWallet } from '../../lib/wallets.js';
 import chalk from 'chalk';
 import { createLogger } from '../../lib/logger.js';
 import { parseProxyArg } from '../parser.js';
+import { getBridgeLogPath } from '../../lib/log-reader.js';
 import {
   loadConfig,
   listServers,
@@ -566,8 +566,7 @@ export async function connectSession(
     // Fallback: check error message for auth patterns (error may have been wrapped
     // as ClientError/ServerError during bridge IPC serialization)
     if (detailsError instanceof Error && isAuthenticationError(detailsError.message)) {
-      const logPath = `${getLogsDir()}/bridge-${name}.log`;
-      throw createServerAuthError(serverConfig.url || target, { sessionName: name, logPath });
+      throw createServerAuthError(serverConfig.url || target, { sessionName: name });
     }
 
     // Non-auth failure: session was created but server didn't respond properly.
@@ -880,7 +879,7 @@ export async function showServerDetails(
       let logPath: string | undefined;
       let logSize: number | undefined;
       if (target.startsWith('@')) {
-        logPath = `${getLogsDir()}/bridge-${target}.log`;
+        logPath = getBridgeLogPath(target);
         try {
           const st = await stat(logPath);
           logSize = st.size;

@@ -27,7 +27,6 @@ import {
   waitForFile,
   isProcessAlive,
   invalidateProcessAliveCache,
-  getLogsDir,
   isSessionExpiredError,
   enrichErrorMessage,
 } from './utils.js';
@@ -77,10 +76,8 @@ async function classifyAndThrowSessionError(
       logger.warn(`Failed to mark session ${sessionName} as unauthorized:`, e)
     );
     const target = session.server.url || session.server.command || sessionName;
-    const logPath = `${getLogsDir()}/bridge-${sessionName}.log`;
     throw createServerAuthError(target, {
       sessionName,
-      logPath,
       ...(originalError && { originalError }),
     });
   }
@@ -260,8 +257,6 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
   // code) instead of stalling for the full timeout, while a bridge that is
   // merely slow to boot is given a generous window so it is not killed before it
   // can initialize logging and connect.
-  const logPath = `${getLogsDir()}/bridge-${sessionName}.log`;
-
   const socketReady = Symbol('socket-ready');
   let resolveExit!: (detail: string) => void;
   const exitInfo = new Promise<string>((resolve) => {
@@ -287,7 +282,7 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
     }
     throw new ClientError(
       `Bridge failed to start: socket not created within ${BRIDGE_STARTUP_TIMEOUT_MS} ms. ` +
-        `For details, check logs at ${logPath}`
+        `For details, run: mcpc ${sessionName} logs`
     );
   } finally {
     bridgeProcess.removeListener('exit', onBridgeExit);
@@ -296,7 +291,7 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
   if (typeof outcome === 'string') {
     // Bridge process exited before it opened its socket (startup crash).
     throw new ClientError(
-      `Bridge process exited during startup (${outcome}). For details, check logs at ${logPath}`
+      `Bridge process exited during startup (${outcome}). For details, run: mcpc ${sessionName} logs`
     );
   }
 
@@ -675,8 +670,7 @@ export async function ensureBridgeReady(sessionName: string): Promise<string> {
 
   if (session.status === 'unauthorized') {
     const target = session.server.url || session.server.command || sessionName;
-    const logPath = `${getLogsDir()}/bridge-${sessionName}.log`;
-    throw createServerAuthError(target, { sessionName, logPath });
+    throw createServerAuthError(target, { sessionName });
   }
 
   if (session.status === 'expired') {
