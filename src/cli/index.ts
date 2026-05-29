@@ -23,14 +23,17 @@ import * as prompts from './commands/prompts.js';
 import * as sessions from './commands/sessions.js';
 import * as logging from './commands/logging.js';
 import * as utilities from './commands/utilities.js';
+import * as logs from './commands/logs.js';
 import * as auth from './commands/auth.js';
 import * as tasks from './commands/tasks.js';
 import * as grepCmd from './commands/grep.js';
 import { handleX402Command } from './commands/x402.js';
 import { clean } from './commands/clean.js';
-import type { OutputMode } from '../lib/index.js';
+import type { OutputMode, X402SchemePreference } from '../lib/index.js';
+import { X402_SCHEME_PREFERENCES } from '../lib/index.js';
 import {
   extractOptions,
+  preProcessX402Argv,
   getVerboseFromEnv,
   getJsonFromEnv,
   validateOptions,
@@ -64,7 +67,11 @@ interface HandlerOptions {
   verbose?: boolean;
   profile?: string;
   noProfile?: boolean;
-  x402?: boolean;
+  /**
+   * x402 scheme preference. Presence enables x402 for the run; value is the preference.
+   * `--x402` (no value) resolves to `'auto'` (prefer upto, fall back to exact).
+   */
+  x402?: X402SchemePreference;
   insecure?: boolean;
   schema?: string;
   schemaMode?: 'strict' | 'compatible' | 'ignore';
@@ -89,14 +96,14 @@ function getOptionsFromCommand(command: Command): HandlerOptions {
   if (json) setJsonMode(true);
 
   const options: HandlerOptions = {
-    outputMode: (json ? 'json' : 'human') as OutputMode,
+    outputMode: json ? 'json' : 'human',
   };
 
   // Only include optional properties if they're present
   if (opts.timeout) {
     const timeout = parseInt(opts.timeout as string, 10);
     if (isNaN(timeout) || timeout <= 0) {
-      throw new Error(
+      throw new ClientError(
         `Invalid --timeout value: "${opts.timeout as string}". Must be a positive number (seconds).`
       );
     }
@@ -108,13 +115,26 @@ function getOptionsFromCommand(command: Command): HandlerOptions {
     options.profile = opts.profile;
   }
   if (verbose) options.verbose = verbose;
-  if (opts.x402) options.x402 = true;
+
+  // Commander returns `true` for `--x402` (no value) and a string for `--x402 <scheme>`.
+  // Normalise to the canonical scheme preference; reject other strings loudly so
+  // commander's greedy [optional] arg parser can't silently eat a positional like a URL.
+  if (opts.x402 === true) {
+    options.x402 = 'auto';
+  } else if (typeof opts.x402 === 'string') {
+    if (!(X402_SCHEME_PREFERENCES as readonly string[]).includes(opts.x402)) {
+      throw new ClientError(
+        `Invalid --x402 value: "${opts.x402}". Expected one of ${X402_SCHEME_PREFERENCES.join(', ')}, or pass --x402 with no value for the default.`
+      );
+    }
+    options.x402 = opts.x402 as X402SchemePreference;
+  }
   if (opts.insecure) options.insecure = true;
   if (opts.schema) options.schema = opts.schema;
   if (opts.schemaMode) {
     const mode = opts.schemaMode as string;
     if (mode !== 'strict' && mode !== 'compatible' && mode !== 'ignore') {
-      throw new Error(
+      throw new ClientError(
         `Invalid --schema-mode value: "${mode}". Valid modes are: strict, compatible, ignore`
       );
     }
@@ -124,7 +144,7 @@ function getOptionsFromCommand(command: Command): HandlerOptions {
   if (opts.maxChars) {
     const maxChars = parseInt(opts.maxChars as string, 10);
     if (isNaN(maxChars) || maxChars <= 0) {
-      throw new Error(
+      throw new ClientError(
         `Invalid --max-chars value: "${opts.maxChars as string}". Must be a positive number (characters).`
       );
     }
@@ -147,6 +167,9 @@ function jsonHelp(description: string, shape?: string, schemaUrl?: string): stri
 const SCHEMA_BASE = 'https://modelcontextprotocol.io/specification/2025-11-25/schema';
 
 async function main(): Promise<void> {
+  // Disambiguate `--x402 <non-scheme>` (URL, @session, etc.) so Commander's
+  // greedy [optional] arg parser doesn't eat the next positional as the value.
+  process.argv = preProcessX402Argv(process.argv);
   const args = process.argv.slice(2);
 
   // Set up cleanup handlers for graceful shutdown
@@ -210,7 +233,7 @@ async function main(): Promise<void> {
     validateOptions(args);
     validateArgValues(args);
   } catch (error) {
-    console.error(theme.red(formatHumanError(error as Error, false)));
+    console.error(theme.red(formatHumanError(error, false)));
     process.exit(1);
   }
 
@@ -235,9 +258,16 @@ async function main(): Promise<void> {
   if (!firstNonOption) {
     const { json } = extractOptions(args);
     if (json) setJsonMode(true);
-    await sessions.listSessionsAndAuthProfiles({ outputMode: json ? 'json' : 'human' });
+    const { hasSessions } = await sessions.listSessionsAndAuthProfiles({
+      outputMode: json ? 'json' : 'human',
+    });
     if (!json) {
-      console.log('\nRun "mcpc --help" for usage information.\n');
+      console.log('');
+      if (hasSessions) {
+        console.log('To view server capabilities and tools, run: mcpc @session');
+      }
+      console.log('For usage information, run: mcpc --help');
+      console.log('');
     }
     await closeFileLogger();
     return;
@@ -425,6 +455,7 @@ ${chalk.bold('MCP session commands (after connecting):')}
   <@session> ${theme.cyan('tasks-cancel')} <taskId>
   <@session> ${theme.cyan('logging-set-level')} <level>
   <@session> ${theme.cyan('ping')}
+  <@session> ${theme.cyan('logs')} [-n N] [--follow] [--since 1h]
 
 Run "mcpc" without arguments to show active sessions and OAuth profiles.
 Run "mcpc --json" to get the same data as \`{ sessions: [...], profiles: [...] }\`.
@@ -443,7 +474,10 @@ Full docs: ${docsUrl}`
     .option('--proxy <[host:]port>', 'Start proxy MCP server for session')
     .option('--proxy-bearer-token <token>', 'Require authentication for access to proxy server')
     .option('--stdio', 'Launch all local stdio servers from selected config files')
-    .option('--x402', 'Enable x402 auto-payment using the configured wallet')
+    .option(
+      '--x402 [scheme]',
+      'Enable x402 auto-payment using the configured wallet; optional scheme: auto (default, prefer upto), upto, or exact.'
+    )
     .addHelpText(
       'after',
       `
@@ -466,8 +500,8 @@ ${chalk.bold('Session name:')}
 
 ${chalk.bold('Stdio servers (command-based, run locally):')}
   Config entries spawn the command on connect, even if the handshake
-  later fails — only connect to configs you trust. Stderr is logged to
-  ~/.mcpc/logs/bridge-<session>.log. Bulk connects skip stdio by default;
+  later fails — only connect to configs you trust. View the bridge log
+  with: mcpc <@session> logs. Bulk connects skip stdio by default;
   pass --stdio to include them.
 ${jsonHelp(
   'Array of `InitializeResult` objects (one per session), extended with `toolNames` and `_mcpc` metadata',
@@ -499,7 +533,7 @@ ${jsonHelp(
           ...(opts.proxy && { proxy: opts.proxy as string }),
           ...(opts.proxyBearerToken && { proxyBearerToken: opts.proxyBearerToken as string }),
           ...(opts.stdio && { stdio: true }),
-          ...(opts.x402 && { x402: opts.x402 as boolean }),
+          ...(globalOpts.x402 && { x402: globalOpts.x402 }),
           ...(globalOpts.insecure && { insecure: true }),
         });
         return;
@@ -528,7 +562,7 @@ ${jsonHelp(
           ...(opts.proxy && { proxy: opts.proxy as string }),
           ...(opts.proxyBearerToken && { proxyBearerToken: opts.proxyBearerToken as string }),
           ...(opts.stdio && { stdio: true }),
-          ...(opts.x402 && { x402: opts.x402 as boolean }),
+          ...(globalOpts.x402 && { x402: globalOpts.x402 }),
           ...(globalOpts.insecure && { insecure: true }),
         });
         return;
@@ -552,7 +586,7 @@ ${jsonHelp(
           config: parsed.file,
           proxy: opts.proxy,
           proxyBearerToken: opts.proxyBearerToken,
-          x402: opts.x402,
+          ...(globalOpts.x402 && { x402: globalOpts.x402 }),
           ...(globalOpts.insecure && { insecure: true }),
         });
       } else {
@@ -561,7 +595,7 @@ ${jsonHelp(
           ...(headers && { headers }),
           proxy: opts.proxy,
           proxyBearerToken: opts.proxyBearerToken,
-          x402: opts.x402,
+          ...(globalOpts.x402 && { x402: globalOpts.x402 }),
           ...(globalOpts.insecure && { insecure: true }),
         });
       }
@@ -827,9 +861,16 @@ ${jsonHelp('`[{ sessionName, tools?: Tool[], resources?: Resource[], prompts?: P
     const opts = program.opts();
     const json = opts.json || getJsonFromEnv();
     if (json) setJsonMode(true);
-    await sessions.listSessionsAndAuthProfiles({ outputMode: json ? 'json' : 'human' });
+    const { hasSessions } = await sessions.listSessionsAndAuthProfiles({
+      outputMode: json ? 'json' : 'human',
+    });
     if (!json) {
-      console.log('\nRun "mcpc --help" for usage information.\n');
+      console.log('');
+      if (hasSessions) {
+        console.log('To view server capabilities and tools, run: mcpc @session');
+      }
+      console.log('For usage information, run: mcpc --help');
+      console.log('');
     }
   });
 
@@ -1284,6 +1325,50 @@ ${jsonHelp('`GetPromptResult` object', '`{ description?, messages: [{ role, cont
     .action(async (_options, command) => {
       await utilities.ping(session, getOptionsFromCommand(command));
     });
+
+  // Logs command
+  program
+    .command('logs')
+    .description('Show or follow the bridge log file for this session.')
+    .option('-n, --tail <n>', 'Number of recent lines to show (default: 50)')
+    .option('--follow', 'Stream new log lines as they are written')
+    .option(
+      '--since <value>',
+      'Only show entries newer than a duration (30s, 5m, 2h, 1d) or ISO timestamp'
+    )
+    .addHelpText(
+      'after',
+      `
+${chalk.bold('Examples:')}
+  mcpc ${session} logs                  Last 50 lines
+  mcpc ${session} logs -n 200           Last 200 lines
+  mcpc ${session} logs --follow         Stream new lines (ESC/Ctrl+C/q to stop)
+  mcpc ${session} logs --since 1h       Lines from the last hour
+  mcpc ${session} logs --since 30m -n 50
+
+${chalk.bold('Notes:')}
+  Reads ~/.mcpc/logs/bridge-${session}.log and transparently spans
+  rotated files (.log.1 … .log.5) when -n or --since needs older lines.
+  Continuation lines (e.g. stack traces) fold into the preceding entry's msg.
+${jsonHelp(
+  'Array of log records (JSONL when streaming with --follow)',
+  '`[{ time, level, context?, msg } | { raw }, ...]`'
+)}`
+    )
+    .action(async (opts, command) => {
+      const tail = opts.tail !== undefined ? parseInt(opts.tail as string, 10) : undefined;
+      if (tail !== undefined && (isNaN(tail) || tail < 0)) {
+        throw new ClientError(
+          `Invalid --tail value: "${opts.tail as string}". Must be a non-negative integer.`
+        );
+      }
+      await logs.showLogs(session, {
+        ...getOptionsFromCommand(command),
+        ...(tail !== undefined && { tail }),
+        ...(opts.follow && { follow: true }),
+        ...(opts.since && { since: opts.since as string }),
+      });
+    });
 }
 
 /**
@@ -1406,7 +1491,7 @@ async function handleSessionCommands(session: string, args: string[]): Promise<v
     console.error(
       outputMode === 'json'
         ? formatJsonError(error as Error, 1)
-        : theme.red(formatHumanError(error as Error, opts.verbose))
+        : theme.red(formatHumanError(error, opts.verbose))
     );
     process.exit(1);
   }

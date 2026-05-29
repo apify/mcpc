@@ -9,7 +9,7 @@ import { join } from 'path';
 import { fileExists, getMcpcHome } from '../lib/utils.js';
 import { formatError, logTarget, theme } from './output.js';
 import chalk from 'chalk';
-import type { OutputMode, CommandOptions, NotificationData } from '../lib/types.js';
+import type { CommandOptions, NotificationData } from '../lib/types.js';
 import * as tools from './commands/tools.js';
 import * as resources from './commands/resources.js';
 import * as prompts from './commands/prompts.js';
@@ -193,7 +193,7 @@ async function executeCommand(ctx: ShellContext, line: string): Promise<void> {
 
   // Build command options
   const options: CommandOptions = {
-    outputMode: 'human' as OutputMode,
+    outputMode: 'human',
     hideTarget: true, // Don't show session info in shell
   };
 

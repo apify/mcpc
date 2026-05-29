@@ -18,5 +18,8 @@ export * from './utils.js';
 // Export file logger
 export * from './file-logger.js';
 
+// Export stderr tail buffer
+export * from './stderr-tail.js';
+
 // Export cleanup utilities
 export * from './cleanup.js';

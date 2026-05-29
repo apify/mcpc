@@ -7,9 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `mcpc @<session> logs` command to show or follow the bridge log file. Supports `-n/--tail <n>` (default 50), `--follow` to stream new lines, and `--since <duration|iso>` (e.g. `1h`, `30m`, `2026-04-28T12:00:00Z`). Transparently spans rotated files (`.log.1` … `.log.5`) when more lines are needed. With `--json`, returns parsed `{ time, level, context?, msg }` records (continuation lines such as stack traces fold into the preceding entry's `msg`; lines that aren't standard log entries become `{ raw }`); combined with `--follow`, output is JSONL. `mcpc @<session> --json` now also exposes `_mcpc.logPath` and `_mcpc.logSize`. Error messages that previously pointed users to a raw log file path now suggest `mcpc @<session> logs` instead (#205).
+
 ### Deprecated
 
 - The `shell` command (`mcpc shell @<session>` and `mcpc @<session> shell`) is deprecated and will be removed in a future release. It is now hidden from `--help` output and prints a deprecation warning when invoked
+
+### Fixed
+
+- `mcpc connect` no longer fails with `socket file not created within timeout` when the bridge is slow to start (CPU-constrained machines, many parallel connects). The startup window is more generous, and a bridge that crashes on startup now reports its exit code immediately instead of stalling until the timeout
 
 ## [0.3.0] - 2026-05-20
 
@@ -18,17 +26,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New **[EXPERIMENTAL]** `skills-list` and `skills-get` commands implementing the draft MCP skills extension (`io.modelcontextprotocol/skills`, [SEP-2640](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2640)). Marked experimental because the spec is still in draft and the index shape, recognized types, and capability key may change. Skills are discovered via the well-known `skill://index.json` resource, falling back to scanning `skill://*/SKILL.md` URIs. Supports all three SEP-2640 index entry types: `skill-md`, `archive` (`.tar.gz`/`.zip` bundles), and `mcp-resource-template`. Entries with unrecognized `type` values are skipped per spec. `skills-get <name>` reads a skill's `SKILL.md`; pass `--raw` to print just the markdown for piping to LLMs or files. The session overview lists `skills` under capabilities when a server advertises the extension under either `capabilities.extensions` (per spec) or `capabilities.experimental` (the SDK-preserved escape hatch). JSON shape: `[{ name, description, type, url }]` for `skills-list`, full `ReadResourceResult` for `skills-get`.
 - `mcpc connect` (with no arguments) now auto-discovers standard MCP config files (`.mcp.json`, `mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, `~/.claude.json`, Claude Desktop, Windsurf, Kiro, etc.) in the current directory and home directory, and connects every server defined across them. Entries with duplicate session names are deduplicated (project-scoped files win over global ones). VS Code's `"servers"` key is also supported.
 - `mcpc connect` auto-connects to `mcp.apify.com` as `@apify` when the `APIFY_API_TOKEN` environment variable is set, using it as a Bearer token. Existing live sessions are reused without restart.
+- `mcpc x402 sign` supports the x402 `upto` scheme alongside `exact`. Use `--scheme <auto|upto|exact>` to pick a preference (default `auto` prefers `upto`, falls back to `exact`). The signer auto-grants a one-time `USDC.approve(PERMIT2, MAX_UINT256)` allowance on first upto sign; pass `--no-approve` to skip.
+- `mcpc connect --x402 [auto|upto|exact]` enables x402 auto-payment with an optional scheme preference. Bare `--x402` defaults to `auto` (prefer upto, fall back to exact). The choice is persisted to `sessions.json` and reused on `mcpc restart`. Flag position is unrestricted — `mcpc connect --x402 mcp.apify.com @s` and `mcpc connect mcp.apify.com @s --x402` both work.
+- Sessions using x402 auto-payment now show a yellow `[x402]` marker in session listings, alongside the existing OAuth and proxy markers.
 
 ### Changed
 
 - Stdio (command-based) config entries are now skipped by default when connecting from a config file (`mcpc connect <file>`). Pass `--stdio` to include them. Single-entry connects (`mcpc connect file:entry @session`) are not affected.
+- x402 debug logs now announce the selected scheme (`scheme=upto` / `scheme=exact`) up front and print USD amounts with 6-decimal precision (USDC atomic unit). Enable with `--verbose` or `MCPC_VERBOSE=1`.
 - **Breaking:** `mcpc connect --json` now always returns an array of `InitializeResult` objects (extended with `toolNames` and `_mcpc` metadata), regardless of whether you connect a single server, a config file, or auto-discover all configs. Skipped/failed entries carry `_mcpc.status` (`created` | `active` | `failed` | `skipped`) and `_mcpc.skipReason` / `_mcpc.error`. The previous wrapper-object shapes (`{configFile, results, skipped}` and `{discovered, results, skipped}`) have been removed.
 - `tools-call --task` now prints the task ID and recovery commands when interrupted with Ctrl+C, so you can fetch or cancel the server-side task later
 - Human-mode `tools-call` / `tasks-result` output no longer prints the **Structured content** section when **Content** already has at least one visible block. The JSON dump was redundant verbose output (especially for LLMs) whenever a server returned both. The section is still shown when `content` is empty or contains only a JSON-dump duplicate of `structuredContent`; use `--json` to always get the full payload
 
 ### Fixed
 
-- `mcpc connect` and `mcpc restart` no longer fail with `ENOENT` when the macOS Keychain prompts for a password. Credentials are now read from the keychain *before* the bridge process is spawned, so the bridge's IPC startup timer no longer races a foreground password dialog (#55)
+- `mcpc connect` and `mcpc restart` no longer fail with `ENOENT` when the macOS Keychain prompts for a password. Credentials are now read from the keychain _before_ the bridge process is spawned, so the bridge's IPC startup timer no longer races a foreground password dialog (#55)
 - Background auto-reconnect now correctly marks sessions as `unauthorized` when the server returns 401/403, instead of leaving them stuck in `connecting` after the bridge crashed on an unhandled rejection
 - Sessions using a static bearer token (via `--header "Authorization: ..."`) no longer flip between `unauthorized` and `connecting` on every `mcpc` invocation — they stay `unauthorized` until you `mcpc login` or reconnect. OAuth-profile sessions still auto-retry because tokens may have been refreshed by another session
 - Stdio servers no longer fail silently: the bridge now captures the child's stderr, writes it to `~/.mcpc/logs/bridge-<session>.log`, and appends a tail of the most recent lines to `mcpc connect` errors. This makes it obvious when a stdio server crashes on startup due to e.g. missing TLS trust (`NODE_EXTRA_CA_CERTS`), missing proxy vars, or missing credentials (#195)

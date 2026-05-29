@@ -24,6 +24,11 @@ on:
         required: false
         type: boolean
         default: false
+      skip-macos-e2e:
+        description: 'Skip macOS E2E tests (they take a long time)'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -37,6 +42,10 @@ jobs:
   e2e-windows:
     if: ${{ !inputs.skip-windows-e2e }}
     uses: ./.github/workflows/e2e-windows.yml
+
+  e2e-macos:
+    if: ${{ !inputs.skip-macos-e2e }}
+    uses: ./.github/workflows/e2e-macos.yml
 
   e2e-linux:
     # Re-run the full Linux E2E matrix on the exact commit being released.
@@ -53,14 +62,15 @@ jobs:
   release:
     name: Publish ${{ inputs.type }}
     runs-on: ubuntu-latest
-    needs: [e2e-windows, e2e-linux, conformance]
+    needs: [e2e-windows, e2e-macos, e2e-linux, conformance]
     # Release must be from main; pre-release can be from any branch.
-    # Allow the e2e-windows dependency to be either successful or skipped
-    # (when the user opts out via skip-windows-e2e). Linux E2E and conformance
-    # must pass.
+    # Allow the e2e-windows and e2e-macos dependencies to be either successful
+    # or skipped (when the user opts out via skip-windows-e2e / skip-macos-e2e).
+    # Linux E2E and conformance must pass.
     if: |
       always() &&
       (needs.e2e-windows.result == 'success' || needs.e2e-windows.result == 'skipped') &&
+      (needs.e2e-macos.result == 'success' || needs.e2e-macos.result == 'skipped') &&
       needs.e2e-linux.result == 'success' &&
       needs.conformance.result == 'success' &&
       (inputs.type == 'pre-release' || github.ref == 'refs/heads/main')

@@ -15,13 +15,18 @@
 import { spawn, type ChildProcess } from 'child_process';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import type { ServerConfig, AuthCredentials, ProxyConfig, X402WalletCredentials } from './types.js';
+import type {
+  ServerConfig,
+  AuthCredentials,
+  ProxyConfig,
+  X402WalletCredentials,
+  X402SchemePreference,
+} from './types.js';
 import {
   getSocketPath,
   waitForFile,
   isProcessAlive,
   invalidateProcessAliveCache,
-  getLogsDir,
   isSessionExpiredError,
   enrichErrorMessage,
 } from './utils.js';
@@ -60,11 +65,10 @@ async function classifyAndThrowSessionError(
     await updateSession(sessionName, { status: 'expired' }).catch((e) =>
       logger.warn(`Failed to mark session ${sessionName} as expired:`, e)
     );
-    const logPath = `${getLogsDir()}/bridge-${sessionName}.log`;
     throw new ClientError(
       `Session ${sessionName} expired (server rejected session ID). ` +
         `Use "mcpc ${sessionName} restart" to start a new session. ` +
-        `For details, check logs at ${logPath}`
+        `For details, run: mcpc ${sessionName} logs`
     );
   }
   if (isAuthenticationError(errorMessage)) {
@@ -72,10 +76,8 @@ async function classifyAndThrowSessionError(
       logger.warn(`Failed to mark session ${sessionName} as unauthorized:`, e)
     );
     const target = session.server.url || session.server.command || sessionName;
-    const logPath = `${getLogsDir()}/bridge-${sessionName}.log`;
     throw createServerAuthError(target, {
       sessionName,
-      logPath,
       ...(originalError && { originalError }),
     });
   }
@@ -92,6 +94,18 @@ function getBridgeExecutable(): string {
   return join(__dirname, '..', 'bridge', 'index.js');
 }
 
+/**
+ * How long to wait for a freshly spawned bridge to open its IPC socket. The
+ * bridge must boot Node and load its (sizeable) module graph first; on
+ * resource-constrained machines, or when many bridges are spawned in parallel
+ * (e.g. `connect` against a multi-server config), this can take several
+ * seconds. With the old 5s window the CLI killed the bridge before it had even
+ * initialized its file logger, leaving the user with a "check bridge logs"
+ * error pointing at logs that were never written. 15s is generous enough that
+ * any failure to hit it is pathological.
+ */
+const BRIDGE_STARTUP_TIMEOUT_MS = 15_000;
+
 export interface StartBridgeOptions {
   sessionName: string;
   serverConfig: ServerConfig;
@@ -100,7 +114,8 @@ export interface StartBridgeOptions {
   headers?: Record<string, string>; // Headers to send via IPC (caller stores in keychain)
   proxyConfig?: ProxyConfig; // Proxy server configuration
   mcpSessionId?: string; // MCP session ID for resumption (Streamable HTTP only)
-  x402?: boolean; // Enable x402 auto-payment using the wallet
+  /** x402 scheme preference; presence enables x402 auto-payment, absence disables. */
+  x402?: X402SchemePreference;
   insecure?: boolean; // Skip TLS certificate verification
 }
 
@@ -188,10 +203,10 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
     logger.debug(`Passing MCP session ID for resumption: ${mcpSessionId}`);
   }
 
-  // Pass x402 flag (if enabled)
+  // Pass x402 scheme preference (presence enables x402).
   if (x402) {
-    args.push('--x402');
-    logger.debug('Passing x402 flag to bridge');
+    args.push('--x402', x402);
+    logger.debug(`Passing x402 scheme preference: ${x402}`);
   }
 
   // Pass insecure flag (if enabled)
@@ -203,10 +218,15 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
   logger.debug('Bridge executable:', bridgeExecutable);
   logger.debug('Bridge args:', args);
 
-  // Spawn bridge process
+  // Spawn bridge process. stderr is dropped: piping it (to capture a tail for
+  // failure diagnostics) made rapid CLI invocations destabilize the bridge —
+  // child_process pipes are net.Sockets, and the close-from-parent semantics
+  // interacted badly with the bridge's connection handling. The 15s startup
+  // window already gives the bridge time to initialize its file logger for
+  // realistic failure modes, so the per-session log file is sufficient.
   const bridgeProcess: ChildProcess = spawn('node', [bridgeExecutable, ...args], {
     detached: true,
-    stdio: 'ignore', // Don't inherit stdio (run in background)
+    stdio: 'ignore',
   });
 
   // Reset the Windows tasklist cache so the freshly spawned PID is observable
@@ -232,18 +252,46 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
   // conflict. The bridge process computes the same path via process.pid.
   const socketPath = getSocketPath(sessionName, pid);
 
-  // Wait for socket file to be created (with timeout)
+  // Wait for the bridge to open its IPC socket. Race the wait against the
+  // process exiting: a crash during startup then fails fast (reporting the exit
+  // code) instead of stalling for the full timeout, while a bridge that is
+  // merely slow to boot is given a generous window so it is not killed before it
+  // can initialize logging and connect.
+  const socketReady = Symbol('socket-ready');
+  let resolveExit!: (detail: string) => void;
+  const exitInfo = new Promise<string>((resolve) => {
+    resolveExit = resolve;
+  });
+  const onBridgeExit = (code: number | null, signal: NodeJS.Signals | null): void => {
+    resolveExit(signal != null ? `signal ${signal}` : `exit code ${code ?? 'unknown'}`);
+  };
+  bridgeProcess.once('exit', onBridgeExit);
+
+  let outcome: string | symbol;
   try {
-    await waitForFile(socketPath, { timeoutMs: 5000 });
+    outcome = await Promise.race([
+      waitForFile(socketPath, { timeoutMs: BRIDGE_STARTUP_TIMEOUT_MS }).then(() => socketReady),
+      exitInfo,
+    ]);
   } catch {
-    // Kill the process if socket wasn't created
+    // waitForFile timed out while the process is still alive — kill it.
     try {
       process.kill(pid, 'SIGTERM');
     } catch {
       // Ignore errors killing process
     }
     throw new ClientError(
-      `Bridge failed to start: socket file not created within timeout. Check bridge logs.`
+      `Bridge failed to start: socket not created within ${BRIDGE_STARTUP_TIMEOUT_MS} ms. ` +
+        `For details, run: mcpc ${sessionName} logs`
+    );
+  } finally {
+    bridgeProcess.removeListener('exit', onBridgeExit);
+  }
+
+  if (typeof outcome === 'string') {
+    // Bridge process exited before it opened its socket (startup crash).
+    throw new ClientError(
+      `Bridge process exited during startup (${outcome}). For details, run: mcpc ${sessionName} logs`
     );
   }
 
@@ -427,7 +475,7 @@ export async function restartBridge(sessionName: string): Promise<StartBridgeRes
   }
   if (session.x402) {
     bridgeOptions.x402 = session.x402;
-    logger.debug('Using saved x402 flag');
+    logger.debug(`Using saved x402 scheme preference: ${session.x402}`);
   }
   if (session.insecure) {
     bridgeOptions.insecure = session.insecure;
@@ -622,8 +670,7 @@ export async function ensureBridgeReady(sessionName: string): Promise<string> {
 
   if (session.status === 'unauthorized') {
     const target = session.server.url || session.server.command || sessionName;
-    const logPath = `${getLogsDir()}/bridge-${sessionName}.log`;
-    throw createServerAuthError(target, { sessionName, logPath });
+    throw createServerAuthError(target, { sessionName });
   }
 
   if (session.status === 'expired') {
@@ -690,11 +737,10 @@ export async function ensureBridgeReady(sessionName: string): Promise<string> {
   const errorMsg = result.error?.message || 'unknown error';
   await classifyAndThrowSessionError(sessionName, session, errorMsg, result.error);
 
-  // Other errors - provide enriched error with log path
+  // Other errors - provide enriched error with hint to view logs
   const serverUrl = session.server.url;
-  const logPath = `${getLogsDir()}/bridge-${sessionName}.log`;
   throw new ClientError(
-    `${enrichErrorMessage(errorMsg, serverUrl)}\n` + `For details, check logs at ${logPath}`
+    `${enrichErrorMessage(errorMsg, serverUrl)}\n` + `For details, run: mcpc ${sessionName} logs`
   );
 }
 

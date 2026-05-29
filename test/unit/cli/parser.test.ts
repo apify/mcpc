@@ -11,6 +11,7 @@ import {
   optionTakesValue,
   hasSubcommand,
   suggestCommand,
+  preProcessX402Argv,
 } from '../../../src/cli/parser.js';
 import { ClientError } from '../../../src/lib/errors.js';
 
@@ -573,5 +574,77 @@ describe('suggestCommand', () => {
     expect(suggestCommand('tools-lst', commands, 0)).toBeUndefined();
     // With higher maxDistance, more distant matches are accepted
     expect(suggestCommand('tools-lst', commands, 1)).toBe('tools-list');
+  });
+});
+
+describe('preProcessX402Argv', () => {
+  // Mirrors process.argv where indices 0 and 1 are node + script path.
+  const head = ['node', 'mcpc'];
+
+  it('rewrites `--x402 <url>` so the URL stays a positional', () => {
+    expect(preProcessX402Argv([...head, 'connect', '--x402', 'mcp.apify.com', '@s'])).toEqual([
+      ...head,
+      'connect',
+      '--x402=auto',
+      'mcp.apify.com',
+      '@s',
+    ]);
+  });
+
+  it('passes `--x402 <scheme>` through unchanged for each valid scheme', () => {
+    for (const scheme of ['auto', 'upto', 'exact']) {
+      expect(preProcessX402Argv([...head, 'connect', '--x402', scheme, 'mcp.apify.com'])).toEqual([
+        ...head,
+        'connect',
+        '--x402',
+        scheme,
+        'mcp.apify.com',
+      ]);
+    }
+  });
+
+  it('rewrites bare `--x402` at the end of argv to `--x402=auto`', () => {
+    expect(preProcessX402Argv([...head, 'connect', 'mcp.apify.com', '--x402'])).toEqual([
+      ...head,
+      'connect',
+      'mcp.apify.com',
+      '--x402=auto',
+    ]);
+  });
+
+  it('leaves `--x402=<scheme>` (equals form) untouched', () => {
+    expect(preProcessX402Argv([...head, 'connect', '--x402=upto', 'mcp.apify.com'])).toEqual([
+      ...head,
+      'connect',
+      '--x402=upto',
+      'mcp.apify.com',
+    ]);
+  });
+
+  it('rewrites `--x402 <invalid-scheme>` so the invalid token stays a positional', () => {
+    // The bogus token then surfaces as an extra positional, which Commander rejects loudly.
+    expect(preProcessX402Argv([...head, 'connect', '--x402', 'bogus', 'mcp.apify.com'])).toEqual([
+      ...head,
+      'connect',
+      '--x402=auto',
+      'bogus',
+      'mcp.apify.com',
+    ]);
+  });
+
+  it('does not touch the `x402` subcommand (no leading dashes)', () => {
+    expect(preProcessX402Argv([...head, 'x402', 'sign', '--scheme', 'upto'])).toEqual([
+      ...head,
+      'x402',
+      'sign',
+      '--scheme',
+      'upto',
+    ]);
+  });
+
+  it('handles multiple `--x402` occurrences independently', () => {
+    expect(
+      preProcessX402Argv([...head, '--x402', 'mcp.apify.com', 'other', '--x402', 'exact'])
+    ).toEqual([...head, '--x402=auto', 'mcp.apify.com', 'other', '--x402', 'exact']);
   });
 });

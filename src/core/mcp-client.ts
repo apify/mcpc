@@ -61,14 +61,6 @@ interface TransportWithProtocolVersion extends Transport {
 }
 
 /**
- * Transport with MCP-Session-Id for resumption (e.g., StreamableHTTPClientTransport)
- * Note: The SDK uses 'sessionId' property name
- */
-interface TransportWithMcpSessionId extends Transport {
-  sessionId?: string;
-}
-
-/**
  * Options for creating an MCP client
  */
 export interface McpClientOptions extends ClientOptions {
@@ -152,7 +144,7 @@ export class McpClient implements IMcpClient {
       this.logger.debug('Connecting to MCP server...');
 
       // Store transport for later use (e.g., terminateSession on close)
-      this.transport = transport as TransportWithTermination;
+      this.transport = transport;
 
       // Set up transport error handlers
       transport.onerror = (error) => {
@@ -183,9 +175,8 @@ export class McpClient implements IMcpClient {
 
       // Capture MCP session ID from transport if available (for session resumption)
       // StreamableHTTPClientTransport exposes sessionId after initialization
-      const transportWithMcpSessionId = transport as TransportWithMcpSessionId;
-      if (transportWithMcpSessionId.sessionId) {
-        this.mcpSessionId = transportWithMcpSessionId.sessionId;
+      if (transport.sessionId) {
+        this.mcpSessionId = transport.sessionId;
         this.logger.debug(`MCP session ID: ${this.mcpSessionId}`);
       }
 
@@ -479,13 +470,13 @@ export class McpClient implements IMcpClient {
   async getPrompt(name: string, args?: Record<string, string>): Promise<GetPromptResult> {
     try {
       this.logger.debug(`Getting prompt: ${name}`, args);
-      const result = (await this.client.getPrompt(
+      const result = await this.client.getPrompt(
         {
           name,
           arguments: args,
         },
         this.getRequestOptions()
-      )) as GetPromptResult;
+      );
       this.logger.debug(`Prompt ${name} retrieved`);
       return result;
     } catch (error) {
@@ -606,7 +597,7 @@ export class McpClient implements IMcpClient {
 
           case 'result':
             this.logger.debug(`Task completed with result for tool ${name}`);
-            result = message.result as CallToolResult;
+            result = message.result;
             break;
 
           case 'error':
@@ -717,7 +708,7 @@ export class McpClient implements IMcpClient {
             // The GetTaskResult includes the task with its artifacts
             return {
               content: [{ type: 'text', text: task.statusMessage || 'Task completed' }],
-            } as CallToolResult;
+            };
           }
           throw new ServerError(
             `Task ${taskId} ${task.status}: ${task.statusMessage || 'no details'}`
@@ -780,11 +771,11 @@ export class McpClient implements IMcpClient {
   async getTaskResult(taskId: string): Promise<CallToolResult> {
     try {
       this.logger.debug(`Getting task result: ${taskId}`);
-      const result = (await this.client.experimental.tasks.getTaskResult(
+      const result = await this.client.experimental.tasks.getTaskResult(
         taskId,
         CallToolResultSchema,
         this.getRequestOptions()
-      )) as CallToolResult;
+      );
       this.logger.debug(`Task ${taskId} result received`);
       return result;
     } catch (error) {

@@ -24,9 +24,8 @@ import type {
   CallToolResult,
 } from '../lib/types.js';
 import { extractAllTextContent } from './tool-result.js';
-import { join } from 'node:path';
-import { getLogsDir } from '../lib/utils.js';
 import { getSession } from '../lib/sessions.js';
+import { getBridgeLogPath } from '../lib/log-reader.js';
 
 // Re-export for external use
 export { extractAllTextContent } from './tool-result.js';
@@ -516,7 +515,7 @@ export function formatToolParamsInline(schema: Record<string, unknown>): string 
  */
 export function formatToolLine(tool: Tool): string {
   const bullet = chalk.dim('*');
-  const params = formatToolParamsInline(tool.inputSchema as Record<string, unknown>);
+  const params = formatToolParamsInline(tool.inputSchema);
   const hintsStr = formatToolHints(tool);
   const suffix = hintsStr ? ` ${chalk.gray(`[${hintsStr}]`)}` : '';
   return `${bullet} ${grayBacktick()}${theme.cyan(tool.name)} ${params}${grayBacktick()}${suffix}`;
@@ -588,14 +587,14 @@ export function formatToolDetail(tool: Tool): string {
   // Input args
   lines.push('');
   lines.push(chalk.bold('Input:'));
-  const inputArgs = formatSimplifiedArgs(tool.inputSchema as Record<string, unknown>, '');
+  const inputArgs = formatSimplifiedArgs(tool.inputSchema, '');
   lines.push(...inputArgs);
 
   // Output schema (if present)
   if ('outputSchema' in tool && tool.outputSchema) {
     lines.push('');
     lines.push(chalk.bold('Output:'));
-    const outputArgs = formatSimplifiedArgs(tool.outputSchema as Record<string, unknown>, '');
+    const outputArgs = formatSimplifiedArgs(tool.outputSchema, '');
     lines.push(...outputArgs);
   }
 
@@ -1029,7 +1028,7 @@ function formatPromptContent(content: PromptMessage['content']): string {
   const lines: string[] = [];
 
   // ContentBlock is a union type, use type narrowing
-  const block = content as ContentBlock;
+  const block = content;
 
   switch (block.type) {
     case 'text':
@@ -1404,9 +1403,12 @@ export function formatSessionLine(session: SessionData): string {
   }
   const targetStr = truncateWithEllipsis(target, 80);
 
-  // Format auth info (transport type omitted — obvious from context)
+  // Format auth info. OAuth and x402 are mutually exclusive auth mechanisms;
+  // x402 takes precedence when both happen to be present on the session record.
   let infoStr = '';
-  if (!session.server.command && session.profileName) {
+  if (session.x402) {
+    infoStr = theme.yellow('[x402]');
+  } else if (!session.server.command && session.profileName) {
     infoStr = chalk.dim('(OAuth: ') + theme.magenta(session.profileName) + chalk.dim(')');
   }
 
@@ -1603,16 +1605,20 @@ export function formatServerDetails(
     commands.push(`${bullet} ${bt}mcpc ${target} logging-set-level <lvl>${bt}`);
   }
 
+  if (target.startsWith('@')) {
+    commands.push(`${bullet} ${bt}mcpc ${target} logs${bt}`);
+  }
+
   if (commands.length > 0) {
     lines.push(chalk.bold('Available commands:'));
     lines.push(commands.join('\n'));
     lines.push('');
   }
 
-  // Debugging hint: bridge log file path (only shown for sessions, i.e. @name targets)
+  // Debugging hint: how to view logs (only shown for sessions, i.e. @name targets)
   if (target.startsWith('@')) {
-    const logPath = join(getLogsDir(), `bridge-${target}.log`);
-    lines.push(chalk.dim(`Session log for debugging: ${logPath}`));
+    lines.push(chalk.dim(`For session logs, run: mcpc ${target} logs`));
+    lines.push(chalk.dim(`Log file: ${getBridgeLogPath(target)}`));
     lines.push('');
   }
 

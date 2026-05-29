@@ -1,0 +1,51 @@
+name: E2E macOS
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  e2e-macos-node:
+    name: E2E tests (macOS, Node.js)
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Install pnpm and dependencies
+        uses: apify/actions/pnpm-install@v1.1.2
+
+      - name: Build
+        run: pnpm run build
+
+      - name: E2E tests
+        run: ./test/e2e/run.sh --no-build --parallel 4
+
+  e2e-macos-bun:
+    name: E2E tests (macOS, Bun)
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install pnpm and dependencies
+        uses: apify/actions/pnpm-install@v1.1.2
+
+      - name: Build
+        run: pnpm run build
+
+      - name: E2E tests
+        run: ./test/e2e/run.sh --no-build --runtime bun --parallel 4
