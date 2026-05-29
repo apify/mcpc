@@ -137,10 +137,14 @@ describe('showLogs (CLI command)', () => {
   it('JSON mode emits structured records', async () => {
     await seedSession('@x');
     const logFile = join(homeDir, 'logs', 'bridge-@x.log');
+    // A startup banner is timestamped but has no [LEVEL], so it surfaces as a
+    // standalone { ts: null, raw } record rather than folding into a neighbour.
+    const banner = '[2026-04-28T10:00:00.500Z] ========================================';
     await writeFile(
       logFile,
       '[2026-04-28T10:00:00.000Z] [INFO] [test] one\n' +
-        '======== banner ========\n' +
+        banner +
+        '\n' +
         '[2026-04-28T10:00:01.000Z] [WARN] [test] two\n'
     );
     const out = await capture(() => showLogs('@x', { outputMode: 'json' as OutputMode }));
@@ -151,25 +155,54 @@ describe('showLogs (CLI command)', () => {
       ts: '2026-04-28T10:00:00.000Z',
       level: 'info',
       context: 'test',
-      message: 'one',
+      msg: 'one',
     });
-    expect(parsed[1]).toMatchObject({ ts: null, raw: '======== banner ========' });
+    expect(parsed[1]).toMatchObject({ ts: null, raw: banner });
     expect(parsed[2]).toMatchObject({
       ts: '2026-04-28T10:00:01.000Z',
       level: 'warn',
-      message: 'two',
+      msg: 'two',
     });
+  });
+
+  it('JSON mode folds stack-trace lines into the preceding record', async () => {
+    await seedSession('@x');
+    const logFile = join(homeDir, 'logs', 'bridge-@x.log');
+    await writeFile(
+      logFile,
+      '[2026-04-28T10:00:00.000Z] [ERROR] [McpClient] Transport error: terminated\n' +
+        '    at processStream (file:///x/streamableHttp.js:233:32)\n' +
+        '    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n' +
+        '[2026-04-28T10:00:01.000Z] [INFO] [bridge] recovered\n'
+    );
+    const out = await capture(() => showLogs('@x', { outputMode: 'json' as OutputMode }));
+    const parsed = JSON.parse(out.stdout) as Array<Record<string, unknown>>;
+    expect(parsed).toHaveLength(2);
+    expect(parsed[0]).toMatchObject({
+      level: 'error',
+      context: 'McpClient',
+      msg:
+        'Transport error: terminated\n' +
+        '    at processStream (file:///x/streamableHttp.js:233:32)\n' +
+        '    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)',
+    });
+    expect(parsed[1]).toMatchObject({ msg: 'recovered' });
   });
 
   it('JSON mode honours --tail', async () => {
     await seedSession('@x');
     const logFile = join(homeDir, 'logs', 'bridge-@x.log');
-    await writeFile(logFile, 'a\nb\nc\nd\ne\n');
+    await writeFile(
+      logFile,
+      ['a', 'b', 'c', 'd', 'e']
+        .map((m, i) => `[2026-04-28T10:00:0${i}.000Z] [INFO] [test] ${m}`)
+        .join('\n') + '\n'
+    );
     const out = await capture(() => showLogs('@x', { outputMode: 'json' as OutputMode, tail: 2 }));
     const parsed = JSON.parse(out.stdout) as Array<Record<string, unknown>>;
     expect(parsed).toHaveLength(2);
-    expect(parsed[0]).toMatchObject({ raw: 'd' });
-    expect(parsed[1]).toMatchObject({ raw: 'e' });
+    expect(parsed[0]).toMatchObject({ msg: 'd' });
+    expect(parsed[1]).toMatchObject({ msg: 'e' });
   });
 
   it('JSON mode honours --since', async () => {
@@ -187,7 +220,7 @@ describe('showLogs (CLI command)', () => {
     );
     const parsed = JSON.parse(out.stdout) as Array<Record<string, unknown>>;
     expect(parsed).toHaveLength(1);
-    expect(parsed[0]).toMatchObject({ message: 'new' });
+    expect(parsed[0]).toMatchObject({ msg: 'new' });
   });
 
   it('header shows file count when rotated files are present', async () => {

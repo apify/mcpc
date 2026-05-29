@@ -1291,17 +1291,18 @@ ${jsonHelp('`GetPromptResult` object', '`{ description?, messages: [{ role, cont
 ${chalk.bold('Examples:')}
   mcpc ${session} logs                  Last 50 lines
   mcpc ${session} logs -n 200           Last 200 lines
-  mcpc ${session} logs --follow         Stream new lines (Ctrl+C to stop)
+  mcpc ${session} logs --follow         Stream new lines (ESC/Ctrl+C/q to stop)
   mcpc ${session} logs --since 1h       Lines from the last hour
   mcpc ${session} logs --since 30m -n 50
 
 ${chalk.bold('Notes:')}
   Reads ~/.mcpc/logs/bridge-${session}.log and transparently spans
   rotated files (.log.1 … .log.5) when -n or --since needs older lines.
+  Continuation lines (e.g. stack traces) fold into the preceding entry's msg.
   With --follow, output is NDJSON (one record per line) instead of a JSON array.
 ${jsonHelp(
   'Array of `LogRecord` objects',
-  '`[{ ts: string|null, level: string|null, context: string|null, message?: string, raw?: string }, ...]`'
+  '`[{ ts: string|null, level: string|null, context: string|null, msg?: string, raw?: string }, ...]`'
 )}`
     )
     .action(async (opts, command) => {

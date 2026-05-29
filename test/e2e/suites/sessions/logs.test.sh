@@ -99,7 +99,7 @@ fi
 first_parsed=$(echo "$STDOUT" | jq '[.[] | select(.ts != null)][0]')
 assert_contains "$first_parsed" '"level"'
 assert_contains "$first_parsed" '"context"'
-assert_contains "$first_parsed" '"message"'
+assert_contains "$first_parsed" '"msg"'
 test_pass
 
 # =============================================================================
@@ -160,6 +160,46 @@ fi
 test_pass
 
 # =============================================================================
+# JSON folding: stack-trace continuation lines attach to the preceding entry
+#
+# Uses a fresh, never-connected session so the bridge isn't writing to the file
+# while we inject deterministic content with a multi-line error.
+# =============================================================================
+
+FOLD_SESSION="@fold-$(date +%s)"
+_SESSIONS_CREATED+=("$FOLD_SESSION")
+fold_sessions_file="$MCPC_HOME_DIR/sessions.json"
+if [[ ! -f "$fold_sessions_file" ]]; then
+  echo '{"sessions":{}}' > "$fold_sessions_file"
+fi
+jq --arg name "$FOLD_SESSION" --arg url "$TEST_SERVER_URL" \
+  '.sessions[$name] = { name: $name, server: { url: $url }, transport: "http", status: "live", createdAt: "2026-04-28T00:00:00.000Z" }' \
+  "$fold_sessions_file" > "$fold_sessions_file.tmp"
+mv "$fold_sessions_file.tmp" "$fold_sessions_file"
+
+mkdir -p "$MCPC_HOME_DIR/logs"
+cat > "$MCPC_HOME_DIR/logs/bridge-${FOLD_SESSION}.log" <<'FOLDLOG'
+[2026-04-28T10:00:00.000Z] [ERROR] [McpClient] Transport error: terminated
+    at processStream (file:///x/streamableHttp.js:233:32)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+[2026-04-28T10:00:01.000Z] [INFO] [bridge] recovered
+FOLDLOG
+
+test_case "stack-trace lines fold into the preceding JSON record"
+run_mcpc --json "$FOLD_SESSION" logs
+assert_success
+# Two entries, not four: the two stack frames fold into the error's msg.
+arr_len=$(echo "$STDOUT" | jq 'length')
+assert_eq "$arr_len" "2" "expected stack frames to fold into the error entry"
+first_msg=$(echo "$STDOUT" | jq -r '.[0].msg')
+assert_contains "$first_msg" "Transport error: terminated"
+assert_contains "$first_msg" "at processStream"
+assert_contains "$first_msg" "at process.processTicksAndRejections"
+second_msg=$(echo "$STDOUT" | jq -r '.[1].msg')
+assert_eq "$second_msg" "recovered" "second record should be the standalone info entry"
+test_pass
+
+# =============================================================================
 # Rotation: tail spans .log.1, .log.2 transparently
 #
 # We use a fresh, never-connected session so the bridge isn't actively writing
@@ -211,7 +251,7 @@ run_mcpc --json "$ROTATION_SESSION" logs -n 4
 assert_success
 arr_len=$(echo "$STDOUT" | jq 'length')
 assert_eq "$arr_len" "4" "expected exactly 4 records with -n 4"
-got=$(echo "$STDOUT" | jq -r '[.[] | .message] | join(",")')
+got=$(echo "$STDOUT" | jq -r '[.[] | .msg] | join(",")')
 assert_contains "$got" "r1-line-b"
 assert_contains "$got" "r1-line-c"
 assert_contains "$got" "cur-line-a"
@@ -226,7 +266,7 @@ test_pass
 test_case "tail larger than total reads everything across rotations"
 run_mcpc --json "$ROTATION_SESSION" logs -n 1000
 assert_success
-got=$(echo "$STDOUT" | jq -r '[.[] | .message // .raw] | join("|")')
+got=$(echo "$STDOUT" | jq -r '[.[] | .msg // .raw] | join("|")')
 # All injected lines should appear, in order.
 assert_contains "$got" "r2-line-a"
 assert_contains "$got" "r2-line-b"
@@ -252,7 +292,7 @@ test_pass
 test_case "--since spans rotated files"
 run_mcpc --json "$ROTATION_SESSION" logs --since 2026-04-28T08:30:00.000Z
 assert_success
-got=$(echo "$STDOUT" | jq -r '[.[] | .message] | join(",")')
+got=$(echo "$STDOUT" | jq -r '[.[] | .msg] | join(",")')
 # r2-line-a is before the cutoff and should be filtered out
 if echo "$got" | grep -q "r2-line-a"; then
   test_fail "r2-line-a should be filtered out by --since, got: $got"

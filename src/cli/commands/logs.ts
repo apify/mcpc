@@ -7,12 +7,16 @@ import chalk from 'chalk';
 import { ClientError } from '../../lib/errors.js';
 import { getSession } from '../../lib/sessions.js';
 import {
+  ENTRY_START_RE,
+  appendContinuation,
   followLog,
   getBridgeLogPath,
   listLogFiles,
   parseLogLine,
+  parseLogLines,
   readRecentLogLines,
   resolveSince,
+  type LogRecord,
 } from '../../lib/log-reader.js';
 import { formatJson, formatSessionLine } from '../output.js';
 import type { CommandOptions, SessionData } from '../../lib/types.js';
@@ -62,12 +66,16 @@ export async function showLogs(target: string, options: LogsCommandOptions): Pro
 
   if (options.outputMode === 'json') {
     if (!options.follow) {
-      console.log(formatJson(backlog.map(parseLogLine)));
+      console.log(formatJson(parseLogLines(backlog)));
       return;
     }
     // Streaming: emit NDJSON (one record per line) — a JSON array can't be streamed.
-    backlog.forEach(emitJsonLine);
-    await follow(target, emitJsonLine);
+    // A record is held until the next entry begins so continuation lines (stack
+    // frames) fold into it; the final record is flushed when following stops.
+    const emit = (rec: LogRecord): void => void process.stdout.write(JSON.stringify(rec) + '\n');
+    const folder = createRecordFolder(emit);
+    backlog.forEach(folder.push);
+    await follow(target, folder.push, folder.flush);
     return;
   }
 
@@ -83,8 +91,33 @@ export async function showLogs(target: string, options: LogsCommandOptions): Pro
   }
 }
 
-function emitJsonLine(line: string): void {
-  process.stdout.write(JSON.stringify(parseLogLine(line)) + '\n');
+/**
+ * Stateful folder that turns a stream of raw lines into structured records,
+ * attaching continuation lines (stack frames) to the entry above them. The
+ * current record is held until the next entry begins; call `flush()` to emit
+ * the final pending record (e.g. when following stops).
+ */
+function createRecordFolder(emit: (rec: LogRecord) => void): {
+  push: (line: string) => void;
+  flush: () => void;
+} {
+  let pending: LogRecord | null = null;
+  return {
+    push(line: string): void {
+      if (pending && !ENTRY_START_RE.test(line)) {
+        appendContinuation(pending, line);
+        return;
+      }
+      if (pending) emit(pending);
+      pending = parseLogLine(line);
+    },
+    flush(): void {
+      if (pending) {
+        emit(pending);
+        pending = null;
+      }
+    },
+  };
 }
 
 /**
@@ -95,8 +128,14 @@ function emitJsonLine(line: string): void {
  *   - When stdin is a TTY: also accept ESC, Ctrl+C, or `q` keypresses. Putting
  *     stdin in raw mode short-circuits the kernel's Ctrl+C → SIGINT translation,
  *     so we have to read the 0x03 byte ourselves.
+ *
+ * `onStop` runs once after following ends (used to flush a buffered record).
  */
-function follow(sessionName: string, onLine: (line: string) => void): Promise<void> {
+function follow(
+  sessionName: string,
+  onLine: (line: string) => void,
+  onStop?: () => void
+): Promise<void> {
   return new Promise<void>((resolve) => {
     const sub = followLog(sessionName, onLine);
     const stdin = process.stdin;
@@ -117,7 +156,10 @@ function follow(sessionName: string, onLine: (line: string) => void): Promise<vo
         }
         stdin.pause();
       }
-      void sub.stop().finally(resolve);
+      void sub.stop().finally(() => {
+        onStop?.();
+        resolve();
+      });
     };
 
     const onSignal = (): void => stop();

@@ -17,9 +17,12 @@ export interface LogRecord {
   level: string | null;
   /** Optional context tag (e.g. "bridge-manager"), or null. */
   context: string | null;
-  /** Message body without the timestamp/level/context prefix. */
-  message?: string;
-  /** Raw line, set only when the line did not match the expected prefix format. */
+  /**
+   * Message body without the timestamp/level/context prefix. May span multiple
+   * lines when continuation lines (e.g. stack-trace frames) follow the entry.
+   */
+  msg?: string;
+  /** Raw text, set only when the line(s) did not match the expected prefix format. */
   raw?: string;
 }
 
@@ -32,6 +35,12 @@ export interface ReadLogsOptions {
 
 const LINE_RE =
   /^\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)\] \[([A-Z]+)\](?: \[([^\]]+)\])?\s?(.*)$/;
+
+/**
+ * A line starts a new log entry when it begins with an `[ISO-timestamp]`.
+ * Lines that don't (e.g. stack-trace frames) are continuations of the entry above.
+ */
+export const ENTRY_START_RE = /^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\]/;
 
 /**
  * Path of the active (current) bridge log file for a session.
@@ -54,8 +63,38 @@ export function parseLogLine(line: string): LogRecord {
     ts: m[1] ?? null,
     level: (m[2] ?? '').toLowerCase() || null,
     context: m[3] ?? null,
-    message: m[4] ?? '',
+    msg: m[4] ?? '',
   };
+}
+
+/**
+ * Append a continuation line (e.g. a stack-trace frame) onto the record it belongs to,
+ * preserving the newline so the original multi-line text round-trips.
+ */
+export function appendContinuation(record: LogRecord, line: string): void {
+  if (record.msg !== undefined) {
+    record.msg += '\n' + line;
+  } else {
+    record.raw = (record.raw ?? '') + '\n' + line;
+  }
+}
+
+/**
+ * Parse raw log lines into structured records, folding continuation lines
+ * (stack-trace frames and other un-prefixed lines) into the entry above them.
+ * A line begins a new entry only when it starts with an `[ISO-timestamp]`.
+ */
+export function parseLogLines(lines: string[]): LogRecord[] {
+  const records: LogRecord[] = [];
+  for (const line of lines) {
+    const prev = records[records.length - 1];
+    if (prev && !ENTRY_START_RE.test(line)) {
+      appendContinuation(prev, line);
+    } else {
+      records.push(parseLogLine(line));
+    }
+  }
+  return records;
 }
 
 /**

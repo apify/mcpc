@@ -11,6 +11,7 @@ import {
   listLogFiles,
   parseDuration,
   parseLogLine,
+  parseLogLines,
   readRecentLogLines,
   resolveSince,
 } from '../../../src/lib/log-reader';
@@ -23,7 +24,7 @@ describe('parseLogLine', () => {
     expect(rec.ts).toBe('2026-04-28T12:01:14.231Z');
     expect(rec.level).toBe('info');
     expect(rec.context).toBe('bridge-manager');
-    expect(rec.message).toBe('Started bridge for @apify');
+    expect(rec.msg).toBe('Started bridge for @apify');
     expect(rec.raw).toBeUndefined();
   });
 
@@ -31,7 +32,7 @@ describe('parseLogLine', () => {
     const rec = parseLogLine('[2026-04-28T12:01:14.231Z] [WARN] something happened');
     expect(rec.level).toBe('warn');
     expect(rec.context).toBeNull();
-    expect(rec.message).toBe('something happened');
+    expect(rec.msg).toBe('something happened');
   });
 
   it('parses every standard log level', () => {
@@ -45,7 +46,7 @@ describe('parseLogLine', () => {
     const rec = parseLogLine('[2026-04-28T12:00:00.000Z] [INFO]');
     expect(rec.ts).toBe('2026-04-28T12:00:00.000Z');
     expect(rec.level).toBe('info');
-    expect(rec.message).toBe('');
+    expect(rec.msg).toBe('');
   });
 
   it('falls back to raw for non-matching lines', () => {
@@ -66,6 +67,62 @@ describe('parseLogLine', () => {
     const rec = parseLogLine('');
     expect(rec.ts).toBeNull();
     expect(rec.raw).toBe('');
+  });
+});
+
+describe('parseLogLines (folding)', () => {
+  it('folds stack-trace continuation lines into the preceding entry msg', () => {
+    const records = parseLogLines([
+      '[2026-04-28T12:00:00.000Z] [ERROR] [McpClient] Transport error: terminated',
+      '    at processStream (file:///x/streamableHttp.js:233:32)',
+      '    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)',
+      '[2026-04-28T12:00:01.000Z] [INFO] [bridge] recovered',
+    ]);
+    expect(records).toHaveLength(2);
+    expect(records[0]).toEqual({
+      ts: '2026-04-28T12:00:00.000Z',
+      level: 'error',
+      context: 'McpClient',
+      msg:
+        'Transport error: terminated\n' +
+        '    at processStream (file:///x/streamableHttp.js:233:32)\n' +
+        '    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)',
+    });
+    expect(records[1]).toMatchObject({ level: 'info', msg: 'recovered' });
+  });
+
+  it('keeps timestamped banner lines as their own records (not folded)', () => {
+    const banner = '[2026-04-28T12:00:00.001Z] ========================================';
+    const records = parseLogLines([
+      '[2026-04-28T12:00:00.000Z] [INFO] hello',
+      banner,
+      '[2026-04-28T12:00:00.002Z] mcpc v0.3.0',
+    ]);
+    expect(records).toHaveLength(3);
+    expect(records[0]).toMatchObject({ msg: 'hello' });
+    // Banner has a timestamp but no [LEVEL], so it stays a standalone raw record.
+    expect(records[1]).toEqual({ ts: null, level: null, context: null, raw: banner });
+    expect(records[2]).toMatchObject({ ts: null });
+  });
+
+  it('folds leading continuation lines into a raw record', () => {
+    const records = parseLogLines([
+      '    at orphaned stack frame',
+      '    at another frame',
+      '[2026-04-28T12:00:00.000Z] [INFO] entry',
+    ]);
+    expect(records).toHaveLength(2);
+    expect(records[0]).toEqual({
+      ts: null,
+      level: null,
+      context: null,
+      raw: '    at orphaned stack frame\n    at another frame',
+    });
+    expect(records[1]).toMatchObject({ msg: 'entry' });
+  });
+
+  it('returns [] for no lines', () => {
+    expect(parseLogLines([])).toEqual([]);
   });
 });
 
