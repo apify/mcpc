@@ -25,9 +25,6 @@ _SESSIONS_CREATED+=("$SESSION")
 run_mcpc connect "$TEST_SERVER_URL" "$SESSION" --header "X-Test: true"
 assert_success "connect should succeed"
 
-LOG_DIR="$MCPC_HOME_DIR/logs"
-LOG_FILE="$LOG_DIR/bridge-${SESSION}.log"
-
 # =============================================================================
 # Error: session does not exist
 # =============================================================================
@@ -57,8 +54,13 @@ test_pass
 test_case "default logs prints header on stderr and lines on stdout"
 run_mcpc "$SESSION" logs
 assert_success
-# Header (path + tail label) goes to stderr
-assert_contains "$STDERR" "$LOG_FILE"
+# Header (path + tail label) goes to stderr. Match the log file's basename
+# rather than the full path: mcpc resolves the path from MCPC_HOME_DIR via
+# Node, which diverges from the bash-side value on Windows (MSYS rewrites
+# /tmp to a native C:\...\Temp path) and macOS (path.resolve collapses
+# TMPDIR's trailing slash). The basename uniquely identifies this session's
+# log file and is portable across platforms.
+assert_contains "$STDERR" "bridge-${SESSION}.log"
 assert_contains "$STDERR" "last 50 lines"
 # At least one log line on stdout (bridge writes a startup banner + version line)
 if [[ -z "$STDOUT" ]]; then
