@@ -786,4 +786,4 @@ The `CHANGELOG.md` file follows [Keep a Changelog](https://keepachangelog.com/en
 
 When writing titles of sections in README and code, do not capitalize first letters (e.g. "Session management" instead of "Session Management")
 
-Never add files to git or commit yourself.
+Never add files to git or commit yourself during local development — i.e. interactive Claude Code sessions running on the user's own machine. This does not apply to Claude Code on the web (the managed remote execution environment), where committing and pushing your changes to the designated branch is part of the expected workflow.
