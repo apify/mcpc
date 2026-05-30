@@ -1249,7 +1249,7 @@ ${jsonHelp(
   program
     .command('skills-get <name>')
     .description("[EXPERIMENTAL] Read a skill's SKILL.md by name (SEP-2640).")
-    .option('--raw', 'Print only the SKILL.md text (markdown), suitable for piping')
+    .option('--raw', 'Print only the SKILL.md text (Markdown), suitable for piping')
     .addHelpText(
       'after',
       `
