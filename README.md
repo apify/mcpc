@@ -803,21 +803,21 @@ The bridge process manages the full MCP session lifecycle:
 
 ### MCP feature support
 
-| **Feature**                                        | **Status**                        |
-| :------------------------------------------------- | :-------------------------------- |
-| 📖 [**Instructions**](#server-instructions)        | ✅ Supported                      |
-| 🔧 [**Tools**](#tools)                             | ✅ Supported                      |
-| 💬 [**Prompts**](#prompts)                         | ✅ Supported                      |
-| 📦 [**Resources**](#resources)                     | ✅ Supported                      |
-| 📝 [**Logging**](#server-logs)                     | ✅ Supported                      |
-| 🔔 [**Notifications**](#list-change-notifications) | ✅ Supported                      |
-| 📄 [**Pagination**](#pagination)                   | ✅ Supported                      |
-| 🏓 [**Ping**](#ping)                               | ✅ Supported                      |
-| ⏳ [**Async tasks**](#async-tasks)                 | ✅ Supported                      |
-| 📁 **Roots**                                       | 🚧 Planned                        |
-| ❓ **Elicitation**                                 | 🚧 Planned                        |
-| 🔤 **Completion**                                  | 🚧 Planned                        |
-| 🤖 **Sampling**                                    | ❌ Not applicable (no LLM access) |
+| **Feature**                                        | **Status**                         |
+| :------------------------------------------------- | :--------------------------------- |
+| 📖 [**Instructions**](#server-instructions)        | ✅ Supported                       |
+| 🔧 [**Tools**](#tools)                             | ✅ Supported                       |
+| 💬 [**Prompts**](#prompts)                         | ✅ Supported                       |
+| 📦 [**Resources**](#resources)                     | ✅ Supported                       |
+| 📝 [**Logging**](#server-logs)                     | ✅ Supported (deprecated by MCP)   |
+| 🔔 [**Notifications**](#list-change-notifications) | ✅ Supported                       |
+| 📄 [**Pagination**](#pagination)                   | ✅ Supported                       |
+| 🏓 [**Ping**](#ping)                               | ✅ Supported                       |
+| ⏳ [**Async tasks**](#async-tasks)                 | ✅ Supported                       |
+| 📁 **Roots**                                       | ❌ Not planned (deprecated by MCP) |
+| ❓ **Elicitation**                                 | 🚧 Planned                         |
+| 🔤 **Completion**                                  | 🚧 Planned                         |
+| 🤖 **Sampling**                                    | ❌ Not applicable (no LLM access)  |
 
 #### Server instructions
 
