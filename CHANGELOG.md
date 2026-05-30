@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `mcpc @<session>` now reports the negotiated MCP protocol version and whether the connection is stateful (a stdio process, or an HTTP server that assigned a session id) or stateless (an HTTP server that assigned none — the upcoming `2026-07-28` model). The same `statefulness` value is exposed under `_mcpc` in the `--json` output of `mcpc @<session>` and `mcpc connect`, and on each session in the session list. Stateless sessions are never marked `expired` on a transient `404` (they hold no session to lose).
 - `mcpc @<session> logs` command to show or follow the bridge log file. Supports `-n/--tail <n>` (default 50), `--follow` to stream new lines, and `--since <duration|iso>` (e.g. `1h`, `30m`, `2026-04-28T12:00:00Z`). Transparently spans rotated files (`.log.1` … `.log.5`) when more lines are needed. With `--json`, returns parsed `{ time, level, context?, msg }` records (continuation lines such as stack traces fold into the preceding entry's `msg`; lines that aren't standard log entries become `{ raw }`); combined with `--follow`, output is JSONL. `mcpc @<session> --json` now also exposes `_mcpc.logPath` and `_mcpc.logSize`. Error messages that previously pointed users to a raw log file path now suggest `mcpc @<session> logs` instead (#205).
 
 ### Deprecated

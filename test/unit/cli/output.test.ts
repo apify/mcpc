@@ -1059,6 +1059,46 @@ describe('formatServerDetails', () => {
     expect(output).toContain('This is the server instructions.');
   });
 
+  it('shows protocol version with the stateless mode suffix', () => {
+    const details: ServerDetails = {
+      protocolVersion: '2026-07-28',
+      capabilities: {},
+      serverInfo: { name: 'Stateless Server', version: '1.0.0' },
+      statefulness: 'stateless',
+    };
+
+    const output = formatServerDetails(details, '@s');
+
+    expect(output).toContain('Protocol: 2026-07-28 (stateless)');
+  });
+
+  it('shows protocol version with the stateful mode suffix', () => {
+    const details: ServerDetails = {
+      protocolVersion: '2025-11-25',
+      capabilities: {},
+      serverInfo: { name: 'Stateful Server', version: '1.0.0' },
+      statefulness: 'stateful',
+    };
+
+    const output = formatServerDetails(details, '@s');
+
+    expect(output).toContain('Protocol: 2025-11-25 (stateful)');
+  });
+
+  it('omits the statefulness suffix when it is unknown', () => {
+    const details: ServerDetails = {
+      protocolVersion: '2025-11-25',
+      capabilities: {},
+      serverInfo: { name: 'S', version: '1.0.0' },
+      statefulness: 'unknown',
+    };
+
+    const output = formatServerDetails(details, '@s');
+
+    expect(output).toContain('Protocol: 2025-11-25');
+    expect(output).not.toContain('(unknown)');
+  });
+
   it('should format server info with minimal features', () => {
     const details: ServerDetails = {
       capabilities: {},

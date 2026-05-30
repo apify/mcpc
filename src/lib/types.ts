@@ -124,6 +124,18 @@ export type SessionStatus =
   | 'crashed';
 
 /**
+ * Whether the MCP connection carries server-side session state.
+ * - stateful: a persistent connection — a stdio child process, or a Streamable HTTP
+ *   server that assigned a session id (legacy `initialize`, or the optional
+ *   `sessions/create` in 2026-07-28+), in which case it is resumable via `MCP-Session-Id`.
+ * - stateless: a Streamable HTTP server that assigned no session id (the `2026-07-28`
+ *   model where any request may hit any server instance). Not resumable; cannot "expire".
+ * - unknown: not yet determined (e.g. before the first successful connect).
+ * Derived at connect time from the transport and the presence of a session id.
+ */
+export type SessionStatefulness = 'stateful' | 'stateless' | 'unknown';
+
+/**
  * Notification timestamps for list change events
  * Tracks when the server last notified about changes to tools, prompts, or resources
  */
@@ -155,7 +167,8 @@ export interface SessionData {
   insecure?: boolean; // Skip TLS certificate verification
   pid?: number; // Bridge process PID
   protocolVersion?: string; // Negotiated MCP version
-  mcpSessionId?: string; // Server-assigned MCP session ID for resumption (Streamable HTTP only)
+  mcpSessionId?: string; // Server-assigned MCP session ID for resumption (stateful Streamable HTTP only)
+  statefulness?: SessionStatefulness; // Whether the connection carries server-side session state (derived at connect)
   serverInfo?: {
     name: string;
     version: string;
@@ -372,6 +385,8 @@ export interface ServerDetails {
   serverInfo?: Implementation;
   /** Server-provided instructions for the client */
   instructions?: string;
+  /** Whether the connection carries server-side session state (derived from transport + session id) */
+  statefulness?: SessionStatefulness;
 }
 
 /**

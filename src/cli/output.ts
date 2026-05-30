@@ -1472,13 +1472,22 @@ export function formatServerDetails(
   const bullet = chalk.dim('*');
   const bt = chalk.gray('`'); // backtick
 
-  const { serverInfo, capabilities, instructions } = details;
+  const { serverInfo, capabilities, instructions, protocolVersion, statefulness } = details;
 
   // Server info
   if (serverInfo) {
     lines.push(
       chalk.bold('Server:') + ` ${serverInfo.name} (version: ${serverInfo.version || 'N/A'})`
     );
+    lines.push('');
+  }
+
+  // Protocol version + whether the connection is stateful (stateless = 2026-07-28 model,
+  // any request may hit any server instance; stateful = stdio process or HTTP session id)
+  const hasMode = statefulness !== undefined && statefulness !== 'unknown';
+  if (protocolVersion || hasMode) {
+    const mode = hasMode ? ` (${statefulness})` : '';
+    lines.push(chalk.bold('Protocol:') + ` ${protocolVersion ?? 'unknown'}${mode}`);
     lines.push('');
   }
 
