@@ -66,9 +66,10 @@ import {
   loadConfig,
   listServers,
   isStdioEntry,
-  discoverMcpConfigFiles,
+  scanMcpConfigFiles,
   getStandardMcpConfigPaths,
   type DiscoveredConfig,
+  type McpConfigScan,
 } from '../../lib/config.js';
 
 const logger = createLogger('sessions');
@@ -1350,6 +1351,40 @@ function aggregateDiscoveredEntries(
 }
 
 /**
+ * Build the error shown when `mcpc connect` (no args) finds nothing to connect.
+ *
+ * Distinguishes "a config file exists but defines no servers" from "no config file exists
+ * at all". The former is common — e.g. a freshly-created `{ "mcpServers": {} }` skeleton —
+ * and must not be misreported as "No MCP config files found", which is confusing when the
+ * file is sitting right there among the searched paths.
+ */
+function buildNoServersError(scan: McpConfigScan): string {
+  if (scan.empty.length > 0) {
+    const intro =
+      scan.empty.length === 1
+        ? `Found a config file, but it defines no servers:`
+        : `Found config files, but they define no servers:`;
+    const fileList = scan.empty.map((c) => `  ${c.path}`).join('\n');
+    return (
+      `No MCP servers to connect.\n\n` +
+      `${intro}\n${fileList}\n\n` +
+      `Add a server under "mcpServers" and re-run mcpc connect, or connect one now:\n` +
+      `  mcpc connect mcp.example.com @myserver`
+    );
+  }
+
+  const searchPaths = getStandardMcpConfigPaths()
+    .map((c) => `  ${c.path}`)
+    .join('\n');
+  return (
+    `No MCP config files found in standard locations.\n\n` +
+    `Searched:\n${searchPaths}\n\n` +
+    `Connect a specific server:    mcpc connect mcp.example.com\n` +
+    `Connect from a specific file: mcpc connect /path/to/mcp.json`
+  );
+}
+
+/**
  * Discover MCP config files in standard locations and connect all servers defined in them.
  *
  * Locations searched (in priority order):
@@ -1361,7 +1396,8 @@ function aggregateDiscoveredEntries(
  * the first occurrence wins. Re-running the command reuses existing sessions.
  */
 export async function connectAllFromStandardConfigs(options: BulkConnectOptions): Promise<void> {
-  const discovered = discoverMcpConfigFiles();
+  const scan = scanMcpConfigFiles();
+  const { discovered } = scan;
 
   const hasApifyToken = !!process.env.APIFY_API_TOKEN;
 
@@ -1370,15 +1406,7 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
       console.log(formatOutput([] as ConnectResultEntry[], 'json'));
       return;
     }
-    const searchPaths = getStandardMcpConfigPaths()
-      .map((c) => `  ${c.path}`)
-      .join('\n');
-    throw new ClientError(
-      `No MCP config files found in standard locations.\n\n` +
-        `Searched:\n${searchPaths}\n\n` +
-        `Connect a specific server:    mcpc connect mcp.example.com\n` +
-        `Connect from a specific file: mcpc connect /path/to/mcp.json`
-    );
+    throw new ClientError(buildNoServersError(scan));
   }
 
   // No config files but APIFY_API_TOKEN present — connect to Apify only
