@@ -809,7 +809,7 @@ The bridge process manages the full MCP session lifecycle:
 | 🔧 [**Tools**](#tools)                             | ✅ Supported                       |
 | 💬 [**Prompts**](#prompts)                         | ✅ Supported                       |
 | 📦 [**Resources**](#resources)                     | ✅ Supported                       |
-| 📝 [**Logging**](#server-logs)                     | ✅ Supported                       |
+| 📝 [**Logging**](#server-logs)                     | ✅ Supported (deprecated by MCP)   |
 | 🔔 [**Notifications**](#list-change-notifications) | ✅ Supported                       |
 | 📄 [**Pagination**](#pagination)                   | ✅ Supported                       |
 | 🏓 [**Ping**](#ping)                               | ✅ Supported                       |
