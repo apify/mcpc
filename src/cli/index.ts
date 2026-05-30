@@ -1233,9 +1233,9 @@ ${toolsCallCombinedJsonHelp}`
     .addHelpText(
       'after',
       `
-  Tries \`skill://index.json\`; falls back to scanning \`skill://*/SKILL.md\`
-  resources. Index entry types: \`skill-md\`, \`archive\` (.tar.gz/.zip — fetch
-  with \`resources-read <url>\`), \`mcp-resource-template\`.
+${chalk.bold('Discovery:')}
+  Tries \`skill://index.json\`, else scans \`skill://*/SKILL.md\`. Types:
+  \`skill-md\`, \`mcp-resource-template\`, \`archive\` (use \`resources-read <url>\`).
 ${jsonHelp(
   '`[{ name, description, type, url }, ...]`',
   undefined,
@@ -1253,10 +1253,9 @@ ${jsonHelp(
     .addHelpText(
       'after',
       `
-  Accepts a bare name (\`git-workflow\`), a nested path
-  (\`acme/billing/refunds\`), or a full \`skill://...\` URI. For \`archive\`
-  skills, use \`resources-read <url>\` instead. With --json, --raw is
-  ignored; pull markdown via \`jq -r '.contents[0].text'\`.
+${chalk.bold('Names:')}
+  \`name\`, \`nested/path\`, or \`skill://...\` URI. For \`archive\` skills, use
+  \`resources-read <url>\`. With --json, --raw is ignored.
 ${jsonHelp(
   '`ReadResourceResult`: `{ contents: [{ uri, mimeType?, text? | blob? }] }`',
   undefined,
