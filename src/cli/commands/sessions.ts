@@ -277,6 +277,10 @@ async function buildConnectResultEntry(
           ...(options.configFile && { configFile: options.configFile }),
           ...(options.entry && { entry: options.entry }),
           status,
+          ...(serverDetails.statefulness &&
+            serverDetails.statefulness !== 'unknown' && {
+              statefulness: serverDetails.statefulness,
+            }),
         },
         ...(serverDetails.protocolVersion && { protocolVersion: serverDetails.protocolVersion }),
         ...(serverDetails.capabilities && { capabilities: serverDetails.capabilities }),
@@ -854,7 +858,7 @@ export async function showServerDetails(
 ): Promise<void> {
   await withMcpClient(target, options, async (client, context) => {
     const serverDetails = await client.getServerDetails();
-    const { serverInfo, capabilities, instructions, protocolVersion } = serverDetails;
+    const { serverInfo, capabilities, instructions, protocolVersion, statefulness } = serverDetails;
 
     // Get tools list (uses bridge cache when available, no extra server call)
     const cachedToolsResult = await client.listAllTools();
@@ -895,6 +899,7 @@ export async function showServerDetails(
               sessionName: context.sessionName,
               profileName: context.profileName,
               server,
+              ...(statefulness && statefulness !== 'unknown' && { statefulness }),
               ...(logPath && { logPath }),
               ...(logSize !== undefined && { logSize }),
             },

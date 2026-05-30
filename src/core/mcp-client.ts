@@ -34,7 +34,7 @@ function getRootCauseMessage(error: Error): string {
   }
   return current.message;
 }
-import type { IMcpClient, ServerDetails, TaskUpdate } from '../lib/types.js';
+import type { IMcpClient, ServerDetails, SessionStatefulness, TaskUpdate } from '../lib/types.js';
 import type { Task } from '@modelcontextprotocol/sdk/types.js';
 
 /**
@@ -59,6 +59,15 @@ function taskToUpdate(task: Task): TaskUpdate {
 interface TransportWithProtocolVersion extends Transport {
   protocolVersion?: string;
 }
+
+/**
+ * Fallback freshness window for the in-memory tools cache on stateless connections.
+ * Stateless servers (2026-07-28) may not push tools/list_changed (no standing stream), so the
+ * cache would otherwise go stale silently. Stateful connections rely on notification-driven
+ * invalidation and use no expiry. Phase 1 will replace this fixed value with the server's
+ * ttlMs/cacheScope hint.
+ */
+const STATELESS_TOOLS_CACHE_TTL_MS = 60_000;
 
 /**
  * Options for creating an MCP client
@@ -97,6 +106,7 @@ export class McpClient implements IMcpClient {
   private hasConnected = false;
   private requestTimeout?: number;
   private cachedTools: Tool[] | null = null;
+  private cachedToolsExpiresAt: number | null = null;
 
   constructor(clientInfo: Implementation, options: McpClientOptions = {}) {
     this.logger = options.logger || createNoOpLogger();
@@ -248,6 +258,7 @@ export class McpClient implements IMcpClient {
     if (capabilities) details.capabilities = capabilities;
     if (serverInfo) details.serverInfo = serverInfo;
     if (instructions) details.instructions = instructions;
+    details.statefulness = this.deriveStatefulness();
 
     return Promise.resolve(details);
   }
@@ -258,6 +269,22 @@ export class McpClient implements IMcpClient {
    */
   getMcpSessionId(): string | undefined {
     return this.mcpSessionId;
+  }
+
+  /**
+   * Derive whether this connection carries server-side session state.
+   * stdio transports are persistent local processes (always stateful). Streamable HTTP is
+   * stateful/resumable when the server assigned a session id, otherwise stateless (the
+   * 2026-07-28 model where any request may hit any server instance).
+   */
+  private deriveStatefulness(): SessionStatefulness {
+    if (!this.hasConnected) return 'unknown';
+    // Only the Streamable HTTP transport exposes terminateSession() (it sends an HTTP DELETE);
+    // its absence indicates a stdio transport. The method exists on the HTTP transport
+    // regardless of whether a session id was issued, so it reliably distinguishes the two.
+    const isHttpTransport = typeof this.transport?.terminateSession === 'function';
+    if (!isHttpTransport) return 'stateful';
+    return this.mcpSessionId ? 'stateful' : 'stateless';
   }
 
   /**
@@ -296,7 +323,7 @@ export class McpClient implements IMcpClient {
    * Returns cached tools if available; use refreshCache to bypass cache.
    */
   async listAllTools(options?: { refreshCache?: boolean }): Promise<ListToolsResult> {
-    if (!options?.refreshCache && this.cachedTools) {
+    if (!options?.refreshCache && this.cachedTools && !this.isToolsCacheExpired()) {
       return { tools: this.cachedTools };
     }
 
@@ -310,7 +337,15 @@ export class McpClient implements IMcpClient {
     } while (cursor);
 
     this.cachedTools = allTools;
+    // Stateless connections get a time-based expiry as a fallback for absent list_changed
+    // pushes; stateful connections keep no expiry (notifications/explicit invalidation drive it).
+    this.cachedToolsExpiresAt =
+      this.deriveStatefulness() === 'stateless' ? Date.now() + STATELESS_TOOLS_CACHE_TTL_MS : null;
     return { tools: allTools };
+  }
+
+  private isToolsCacheExpired(): boolean {
+    return this.cachedToolsExpiresAt !== null && Date.now() >= this.cachedToolsExpiresAt;
   }
 
   /**
@@ -325,6 +360,7 @@ export class McpClient implements IMcpClient {
    */
   invalidateToolsCache(): void {
     this.cachedTools = null;
+    this.cachedToolsExpiresAt = null;
   }
 
   /**
@@ -512,6 +548,17 @@ export class McpClient implements IMcpClient {
   }
 
   /**
+   * Single access point for the SDK's task API. The `2025-11-25` experimental Tasks API
+   * (`experimental.tasks`) is superseded by the `2026-07-28` Tasks extension (SEP-2663:
+   * `tasks/get` polling, `tasks/update`, returnless `tasks/cancel`, and removal of
+   * `tasks/list`). Keeping every task call funnelled through here means that migration is a
+   * change to this one accessor rather than scattered across the file.
+   */
+  private get tasksApi(): SDKClient['experimental']['tasks'] {
+    return this.client.experimental.tasks;
+  }
+
+  /**
    * Call a tool with task-augmented execution
    * Uses the SDK's experimental callToolStream which handles task creation,
    * polling, and result retrieval automatically via an AsyncGenerator.
@@ -571,11 +618,7 @@ export class McpClient implements IMcpClient {
         callParams._meta = meta;
       }
 
-      const stream = this.client.experimental.tasks.callToolStream(
-        callParams,
-        CallToolResultSchema,
-        requestOptions
-      );
+      const stream = this.tasksApi.callToolStream(callParams, CallToolResultSchema, requestOptions);
 
       let result: CallToolResult | undefined;
 
@@ -644,11 +687,10 @@ export class McpClient implements IMcpClient {
       if (meta) {
         callParams._meta = meta;
       }
-      const stream = this.client.experimental.tasks.callToolStream(
-        callParams,
-        CallToolResultSchema,
-        { ...this.getRequestOptions(), task: {} }
-      );
+      const stream = this.tasksApi.callToolStream(callParams, CallToolResultSchema, {
+        ...this.getRequestOptions(),
+        task: {},
+      });
 
       for await (const message of stream) {
         if (message.type === 'taskCreated') {
@@ -732,10 +774,7 @@ export class McpClient implements IMcpClient {
   async listTasks(cursor?: string): Promise<ListTasksResult> {
     try {
       this.logger.debug('Listing tasks...', cursor ? { cursor } : {});
-      const result = await this.client.experimental.tasks.listTasks(
-        cursor,
-        this.getRequestOptions()
-      );
+      const result = await this.tasksApi.listTasks(cursor, this.getRequestOptions());
       this.logger.debug(`Found ${result.tasks.length} tasks`);
       return result;
     } catch (error) {
@@ -752,7 +791,7 @@ export class McpClient implements IMcpClient {
   async getTask(taskId: string): Promise<GetTaskResult> {
     try {
       this.logger.debug(`Getting task: ${taskId}`);
-      const result = await this.client.experimental.tasks.getTask(taskId, this.getRequestOptions());
+      const result = await this.tasksApi.getTask(taskId, this.getRequestOptions());
       this.logger.debug(`Task ${taskId} status: ${result.status}`);
       return result;
     } catch (error) {
@@ -771,7 +810,7 @@ export class McpClient implements IMcpClient {
   async getTaskResult(taskId: string): Promise<CallToolResult> {
     try {
       this.logger.debug(`Getting task result: ${taskId}`);
-      const result = await this.client.experimental.tasks.getTaskResult(
+      const result = await this.tasksApi.getTaskResult(
         taskId,
         CallToolResultSchema,
         this.getRequestOptions()
@@ -792,10 +831,7 @@ export class McpClient implements IMcpClient {
   async cancelTask(taskId: string): Promise<CancelTaskResult> {
     try {
       this.logger.debug(`Cancelling task: ${taskId}`);
-      const result = await this.client.experimental.tasks.cancelTask(
-        taskId,
-        this.getRequestOptions()
-      );
+      const result = await this.tasksApi.cancelTask(taskId, this.getRequestOptions());
       this.logger.debug(`Task ${taskId} cancelled`);
       return result;
     } catch (error) {

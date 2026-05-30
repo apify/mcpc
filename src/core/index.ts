@@ -11,3 +11,6 @@ export * from './transports.js';
 
 // Export factory functions
 export * from './factory.js';
+
+// Export client capabilities builder
+export * from './capabilities.js';

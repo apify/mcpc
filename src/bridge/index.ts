@@ -8,7 +8,7 @@
 import { initProxy, proxyFetch } from '../lib/proxy.js';
 import { createServer, type Server as NetServer, type Socket } from 'net';
 import { unlink } from 'fs/promises';
-import { createMcpClient, CreateMcpClientOptions } from '../core/index.js';
+import { createMcpClient, CreateMcpClientOptions, buildClientCapabilities } from '../core/index.js';
 import type { McpClient } from '../core/index.js';
 import type { ServerConfig, IpcMessage, LoggingLevel, X402SchemePreference } from '../lib/index.js';
 import { KEEPALIVE_INTERVAL_MS, X402_SCHEME_PREFERENCES } from '../lib/types.js';
@@ -605,17 +605,7 @@ class BridgeProcess {
     const clientConfig: CreateMcpClientOptions = {
       clientInfo: { name: 'mcpc', version: mcpcVersion },
       serverConfig,
-      capabilities: {
-        roots: { listChanged: true },
-        sampling: {},
-        tasks: {
-          list: {},
-          cancel: {},
-          requests: {
-            sampling: { createMessage: {} },
-          },
-        },
-      },
+      capabilities: buildClientCapabilities(),
       // Pass auth provider for automatic token refresh (HTTP transport only)
       ...(this.authProvider && { authProvider: this.authProvider }),
       // Pass session ID for resumption (HTTP transport only)
@@ -701,6 +691,8 @@ class BridgeProcess {
     // Detect session ID mismatch: we tried to resume but server did not return the
     // same session ID. This covers: server issued a different ID, or server did not
     // return any ID at all (e.g. session state lost). Either way the old session is gone.
+    // Guarded by `this.options.mcpSessionId`, so stateless connections (which never resume,
+    // since no session id was ever persisted) fall through without being marked expired.
     if (this.options.mcpSessionId && newMcpSessionId !== this.options.mcpSessionId) {
       logger.warn(
         `Server did not resume MCP session ` +
@@ -728,6 +720,12 @@ class BridgeProcess {
     };
     if (serverDetails.protocolVersion) {
       sessionUpdate.protocolVersion = serverDetails.protocolVersion;
+    }
+    // Persist statefulness (derived by getServerDetails from the transport + session id) so the
+    // session list can display it without an extra round-trip. stdio is always stateful; HTTP is
+    // stateful/resumable iff the server assigned a session id, else stateless (2026-07-28 model).
+    if (serverDetails.statefulness) {
+      sessionUpdate.statefulness = serverDetails.statefulness;
     }
     if (serverDetails.serverInfo) {
       sessionUpdate.serverInfo = serverDetails.serverInfo;
@@ -880,8 +878,13 @@ class BridgeProcess {
       }
     }
 
+    // Only treat a bare HTTP 404 as session expiry when this connection actually has a
+    // server-assigned session id to lose. Stateless servers (2026-07-28) issue no id, so a
+    // transient 404 there is a routing/path error, not an expired session — never mark such
+    // a session "expired" (it cannot be, and there is nothing for `restart` to recover).
+    const hadActiveSession = !!(this.options.mcpSessionId || this.client?.getMcpSessionId());
     let status: 'expired' | 'unauthorized' | null = null;
-    if (isSessionExpiredError(error.message, { hadActiveSession: true })) {
+    if (isSessionExpiredError(error.message, { hadActiveSession })) {
       logger.warn('Session appears to be expired, marking as expired and shutting down');
       status = 'expired';
     } else if (isAuthenticationError(error.message)) {
