@@ -10,6 +10,12 @@
  *   NO_TOOLS - disable tools capability (default: false)
  *   NO_RESOURCES - disable resources capability (default: false)
  *   NO_PROMPTS - disable prompts capability (default: false)
+ *   WITH_SKILLS - enable the io.modelcontextprotocol/skills extension and
+ *     expose skill:// resources (default: false; opt-in to avoid skewing
+ *     resource counts in non-skills tests)
+ *   SKILLS_NO_INDEX - serve skill files but no skill://index.json (default: false,
+ *     used to exercise the resource-scan fallback path; only meaningful when
+ *     WITH_SKILLS=true)
  *
  * Control endpoints (for test manipulation):
  *   GET  /health - health check
@@ -48,6 +54,8 @@ const REQUIRE_AUTH = process.env.REQUIRE_AUTH === 'true';
 const NO_TOOLS = process.env.NO_TOOLS === 'true';
 const NO_RESOURCES = process.env.NO_RESOURCES === 'true';
 const NO_PROMPTS = process.env.NO_PROMPTS === 'true';
+const WITH_SKILLS = process.env.WITH_SKILLS === 'true';
+const SKILLS_NO_INDEX = process.env.SKILLS_NO_INDEX === 'true';
 
 // Control state (manipulated via /control/* endpoints)
 let failNextCount = 0;
@@ -170,6 +178,133 @@ const RESOURCE_TEMPLATES = [
   },
 ];
 
+// Skills (experimental MCP extension: io.modelcontextprotocol/skills, SEP-2640)
+// Each skill is served as one or more `skill://...` resources. The resource
+// list always includes the skill file entries; the well-known
+// `skill://index.json` is included only when SKILLS_NO_INDEX is unset, so
+// tests can exercise both the index path and the resource-scan fallback.
+
+const SKILL_GIT_BODY = `---
+name: git-workflow
+description: Helpers for everyday Git workflows
+---
+
+# Git workflow
+
+Stash, commit, push. The usual.
+`;
+
+const SKILL_REFUNDS_BODY = `---
+name: refunds
+description: How acme processes refund requests
+---
+
+# Refunds
+
+Acme's refund flow lives at \`acme/billing/refunds\`.
+`;
+
+// Extra non-SKILL.md file under a skill prefix — used to verify that the
+// resource-scan fallback only picks up SKILL.md entries.
+const SKILL_GIT_NOTES_BODY = `# Notes
+
+Reference notes for the git-workflow skill.
+`;
+
+const SKILL_INDEX_BODY = JSON.stringify(
+  {
+    $schema: 'https://schemas.agentskills.io/discovery/0.2.0/schema.json',
+    skills: [
+      {
+        name: 'git-workflow',
+        type: 'skill-md',
+        description: 'Helpers for everyday Git workflows',
+        url: 'skill://git-workflow/SKILL.md',
+      },
+      {
+        name: 'refunds',
+        type: 'skill-md',
+        description: 'How acme processes refund requests',
+        url: 'skill://acme/billing/refunds/SKILL.md',
+      },
+      // SEP-2640 type: bundled skill delivered as a single archive resource.
+      {
+        name: 'big-skill',
+        type: 'archive',
+        description: 'A bundled skill delivered as .tar.gz',
+        url: 'skill://big-skill/big-skill.tar.gz',
+      },
+      // Entry with unrecognized type — clients SHOULD skip it.
+      {
+        name: 'future-thing',
+        type: 'something-not-in-spec',
+        description: 'Reserved for a future spec version',
+        url: 'skill://future-thing/SKILL.md',
+      },
+    ],
+  },
+  null,
+  2
+);
+
+// Skill file resources always exposed (when NO_SKILLS is unset)
+const SKILL_FILE_RESOURCES = [
+  {
+    uri: 'skill://git-workflow/SKILL.md',
+    name: 'git-workflow',
+    description: 'Helpers for everyday Git workflows',
+    mimeType: 'text/markdown',
+  },
+  {
+    uri: 'skill://acme/billing/refunds/SKILL.md',
+    name: 'refunds',
+    description: 'How acme processes refund requests',
+    mimeType: 'text/markdown',
+  },
+  {
+    uri: 'skill://git-workflow/references/notes.md',
+    name: 'git-workflow notes',
+    description: 'Supporting notes for git-workflow',
+    mimeType: 'text/markdown',
+  },
+];
+
+const SKILL_INDEX_RESOURCE = {
+  uri: 'skill://index.json',
+  name: 'Skills index',
+  description: 'Skills discovery index (SEP-2640)',
+  mimeType: 'application/json',
+};
+
+// Compute the effective skills resource list and content map at startup.
+const SKILLS_RESOURCES: Array<{
+  uri: string;
+  name?: string;
+  description?: string;
+  mimeType?: string;
+}> = !WITH_SKILLS
+  ? []
+  : SKILLS_NO_INDEX
+    ? [...SKILL_FILE_RESOURCES]
+    : [SKILL_INDEX_RESOURCE, ...SKILL_FILE_RESOURCES];
+
+const SKILL_CONTENTS: Record<string, { mimeType: string; text: string }> = !WITH_SKILLS
+  ? {}
+  : {
+      'skill://git-workflow/SKILL.md': { mimeType: 'text/markdown', text: SKILL_GIT_BODY },
+      'skill://acme/billing/refunds/SKILL.md': {
+        mimeType: 'text/markdown',
+        text: SKILL_REFUNDS_BODY,
+      },
+      'skill://git-workflow/references/notes.md': {
+        mimeType: 'text/markdown',
+        text: SKILL_GIT_NOTES_BODY,
+      },
+      ...(SKILLS_NO_INDEX
+        ? {}
+        : { 'skill://index.json': { mimeType: 'application/json', text: SKILL_INDEX_BODY } }),
+    };
+
 const PROMPTS = [
   {
     name: 'greeting',
@@ -252,6 +387,22 @@ function createMcpServer(): Server {
   }
   if (!NO_PROMPTS) {
     capabilities.prompts = { listChanged: true };
+  }
+  // Advertise the experimental skills extension when skill resources are exposed.
+  // SEP-2640 specifies `capabilities.extensions`, but current MCP SDKs strip
+  // unknown capability fields. We also publish under `capabilities.experimental`
+  // (the standard SDK-preserved escape hatch) so clients can detect the
+  // extension today regardless of SDK version.
+  if (WITH_SKILLS && !NO_RESOURCES) {
+    const SKILLS_KEY = 'io.modelcontextprotocol/skills';
+    capabilities.extensions = {
+      ...((capabilities.extensions as Record<string, unknown>) || {}),
+      [SKILLS_KEY]: {},
+    };
+    capabilities.experimental = {
+      ...((capabilities.experimental as Record<string, unknown>) || {}),
+      [SKILLS_KEY]: {},
+    };
   }
 
   const server = new Server(
@@ -440,7 +591,10 @@ function createMcpServer(): Server {
         throw new Error('Simulated failure');
       }
 
-      const { items, nextCursor } = paginate(RESOURCES, request.params?.cursor);
+      // Combine standard test resources with skill resources (when enabled)
+      // so listResources can drive the skills resource-scan fallback path.
+      const all = [...RESOURCES, ...SKILLS_RESOURCES];
+      const { items, nextCursor } = paginate(all, request.params?.cursor);
       return { resources: items, nextCursor };
     });
 
@@ -483,6 +637,15 @@ function createMcpServer(): Server {
       if (uri === 'test://dynamic/time') {
         return {
           contents: [{ uri, mimeType: 'text/plain', text: new Date().toISOString() }],
+        };
+      }
+
+      // Skill resources (SEP-2640). May include the well-known
+      // skill://index.json plus per-skill SKILL.md files.
+      const skillContent = SKILL_CONTENTS[uri];
+      if (skillContent) {
+        return {
+          contents: [{ uri, mimeType: skillContent.mimeType, text: skillContent.text }],
         };
       }
 
@@ -725,6 +888,9 @@ async function main() {
     if (NO_TOOLS) console.log(`  Tools: DISABLED`);
     if (NO_RESOURCES) console.log(`  Resources: DISABLED`);
     if (NO_PROMPTS) console.log(`  Prompts: DISABLED`);
+    if (WITH_SKILLS) {
+      console.log(`  Skills: ENABLED${SKILLS_NO_INDEX ? ' (index OFF, fallback only)' : ''}`);
+    }
   });
 
   // Graceful shutdown

@@ -46,6 +46,8 @@ import {
   formatResourceTemplateDetail,
   formatPrompts,
   formatPromptDetail,
+  formatSkills,
+  formatSkillDetail,
   formatSessionLine,
   formatHuman,
   logTarget,
@@ -1171,6 +1173,74 @@ describe('formatServerDetails', () => {
     expect(output).toContain('prompts-list');
     expect(output).toContain('prompts-get');
   });
+
+  it('surfaces the skills extension when capabilities.extensions advertises it', () => {
+    const details: ServerDetails = {
+      capabilities: {
+        resources: {},
+        // The skills extension is reported as a non-standard capability
+        // under `extensions["io.modelcontextprotocol/skills"]`. The mcpc
+        // overview should detect it and list both the capability line and
+        // the corresponding session commands.
+        extensions: { 'io.modelcontextprotocol/skills': {} },
+      } as ServerDetails['capabilities'],
+      serverInfo: { name: 'Skills Server', version: '1.0.0' },
+    };
+
+    const output = formatServerDetails(details, '@skills');
+
+    expect(output).toContain('skills (experimental extension)');
+    expect(output).toContain('mcpc @skills skills-list');
+    expect(output).toContain('mcpc @skills skills-get');
+  });
+
+  it('does not surface skills when the extension is absent', () => {
+    const details: ServerDetails = {
+      capabilities: {
+        resources: {},
+      },
+      serverInfo: { name: 'Plain Server', version: '1.0.0' },
+    };
+
+    const output = formatServerDetails(details, '@plain');
+
+    expect(output).not.toContain('skills (experimental extension)');
+    expect(output).not.toContain('skills-list');
+    expect(output).not.toContain('skills-get');
+  });
+
+  it('does not surface skills when extensions is present but empty', () => {
+    const details: ServerDetails = {
+      capabilities: {
+        resources: {},
+        extensions: {},
+      } as ServerDetails['capabilities'],
+      serverInfo: { name: 'Empty Ext', version: '1.0.0' },
+    };
+
+    const output = formatServerDetails(details, '@e');
+
+    expect(output).not.toContain('skills');
+  });
+
+  it('also surfaces skills when advertised under capabilities.experimental', () => {
+    // The current MCP SDK strips unknown fields like `extensions` but
+    // preserves `experimental` — the long-standing escape hatch for
+    // non-standard capabilities. mcpc accepts the skills extension under
+    // either key for forward compatibility.
+    const details: ServerDetails = {
+      capabilities: {
+        resources: {},
+        experimental: { 'io.modelcontextprotocol/skills': {} },
+      } as ServerDetails['capabilities'],
+      serverInfo: { name: 'Experimental Skills', version: '1.0.0' },
+    };
+
+    const output = formatServerDetails(details, '@exp');
+
+    expect(output).toContain('skills (experimental extension)');
+    expect(output).toContain('mcpc @exp skills-list');
+  });
 });
 
 describe('formatResources', () => {
@@ -1426,6 +1496,136 @@ describe('formatPromptDetail', () => {
     // Optional should NOT have [required]
     expect(output).toContain('`optional_arg`: string');
     expect(output).not.toMatch(/`optional_arg`.*\[required\]/);
+  });
+});
+
+describe('formatSkills', () => {
+  it('formats a list of skills with name and description', () => {
+    const skills = [
+      {
+        name: 'git-workflow',
+        description: 'Helpers for Git workflows',
+        type: 'skill-md',
+        url: 'skill://git-workflow/SKILL.md',
+      },
+      {
+        name: 'pdf',
+        description: 'PDF processing skill',
+        type: 'skill-md',
+        url: 'skill://pdf/SKILL.md',
+      },
+    ];
+
+    const output = formatSkills(skills, '@test');
+
+    expect(output).toContain('Skills (2):');
+    expect(output).toContain('git-workflow');
+    expect(output).toContain('Helpers for Git workflows');
+    expect(output).toContain('pdf');
+    expect(output).toContain('PDF processing skill');
+    // skill-md is the default; not surfaced
+    expect(output).not.toContain('[skill-md]');
+    // Hint references the session
+    expect(output).toContain('mcpc @test skills-get');
+    expect(output).toContain('--raw');
+  });
+
+  it('flags non-default types like mcp-resource-template', () => {
+    const skills = [
+      {
+        name: 'paramd',
+        description: 'Parameterized',
+        type: 'mcp-resource-template',
+        url: 'skill://paramd/{id}/SKILL.md',
+      },
+    ];
+    const output = formatSkills(skills, '@test');
+    expect(output).toContain('[mcp-resource-template]');
+  });
+
+  it('returns a helpful empty message when no skills are found', () => {
+    const output = formatSkills([], '@test');
+    expect(output).toContain('no skills found');
+    // Mentions both discovery paths so users know what to expect
+    expect(output).toContain('skill://index.json');
+    expect(output).toContain('SKILL.md');
+  });
+
+  it('omits the get hint when no session is provided', () => {
+    const skills = [
+      {
+        name: 'x',
+        description: 'y',
+        type: 'skill-md',
+        url: 'skill://x/SKILL.md',
+      },
+    ];
+    const output = formatSkills(skills);
+    expect(output).toContain('Skills (1):');
+    expect(output).not.toContain('skills-get');
+  });
+
+  it('handles skills without descriptions', () => {
+    const skills = [
+      {
+        name: 'minimal',
+        description: '',
+        type: 'skill-md',
+        url: 'skill://minimal/SKILL.md',
+      },
+    ];
+    const output = formatSkills(skills);
+    expect(output).toContain('minimal');
+    // Should not produce a stray dash when description is empty
+    expect(output).not.toMatch(/`minimal`.*-\s*$/m);
+  });
+});
+
+describe('formatSkillDetail', () => {
+  it('renders a skill with markdown body in a code fence', () => {
+    const result = {
+      contents: [
+        {
+          uri: 'skill://git-workflow/SKILL.md',
+          mimeType: 'text/markdown',
+          text: '---\nname: git-workflow\ndescription: Helpers\n---\n\n# Body',
+        },
+      ],
+    };
+
+    const output = formatSkillDetail('skill://git-workflow/SKILL.md', result);
+    expect(output).toContain('Skill:');
+    expect(output).toContain('skill://git-workflow/SKILL.md');
+    expect(output).toContain('text/markdown');
+    expect(output).toContain('````');
+    expect(output).toContain('# Body');
+    expect(output).toContain('name: git-workflow');
+  });
+
+  it('omits MIME type when not provided', () => {
+    const result = {
+      contents: [{ uri: 'skill://x/SKILL.md', text: 'body' }],
+    };
+    const output = formatSkillDetail('skill://x/SKILL.md', result);
+    expect(output).not.toContain('MIME type:');
+    expect(output).toContain('body');
+  });
+
+  it('shows a placeholder when there is no text content', () => {
+    const result = {
+      contents: [{ uri: 'skill://x/SKILL.md', blob: 'aGk=', mimeType: 'application/octet-stream' }],
+    };
+    const output = formatSkillDetail('skill://x/SKILL.md', result);
+    expect(output).toContain('non-text content');
+  });
+
+  it('truncates the body when maxChars is provided', () => {
+    const result = {
+      contents: [{ uri: 'skill://x/SKILL.md', text: 'A'.repeat(10000) }],
+    };
+    const output = formatSkillDetail('skill://x/SKILL.md', result, { maxChars: 200 });
+    expect(output.length).toBeLessThan(500);
+    expect(output).toContain('output truncated');
   });
 });
 

@@ -134,6 +134,8 @@ export const KNOWN_SESSION_COMMANDS = [
   'resources-subscribe',
   'resources-unsubscribe',
   'resources-templates-list',
+  'skills-list',
+  'skills-get',
   'prompts-list',
   'prompts-get',
   'logging-set-level',
@@ -198,6 +200,7 @@ export function suggestCommand(
     tools: 'tools-list',
     resources: 'resources-list',
     prompts: 'prompts-list',
+    skills: 'skills-list',
   };
   const prefixSuggestion = prefixSuggestions[normalized];
   if (prefixSuggestion && commands.includes(prefixSuggestion)) {

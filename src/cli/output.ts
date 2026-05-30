@@ -10,6 +10,7 @@ import type {
   GetPromptResult,
   PromptMessage,
   ContentBlock,
+  ReadResourceResult,
 } from '@modelcontextprotocol/sdk/types.js';
 import type { OutputMode } from '../lib/index.js';
 import type {
@@ -825,6 +826,100 @@ export function formatResourceTemplateDetail(template: ResourceTemplate): string
 }
 
 /**
+ * Skill entry as exposed by the MCP skills extension.
+ * Imported indirectly to avoid coupling output.ts to commands/skills.ts.
+ */
+interface SkillSummary {
+  name: string;
+  description: string;
+  type?: string;
+  url: string;
+}
+
+/**
+ * Format a list of skills with Markdown-like display.
+ * Used by `skills-list` in human mode.
+ */
+export function formatSkills(
+  skills: SkillSummary[],
+  sessionName?: string,
+  options?: FormatOptions
+): string {
+  if (skills.length === 0) {
+    return chalk.gray(
+      '(no skills found — server does not expose `skill://index.json` and no `skill://*/SKILL.md` resources are listed)'
+    );
+  }
+
+  const lines: string[] = [];
+  const bullet = chalk.dim('*');
+
+  lines.push(chalk.bold(`Skills (${skills.length}):`));
+  for (const skill of skills) {
+    const typeSuffix =
+      skill.type && skill.type !== 'skill-md' ? ` ${chalk.gray(`[${skill.type}]`)}` : '';
+    const desc = skill.description ? ` ${chalk.dim('-')} ${skill.description}` : '';
+    lines.push(`${bullet} ${inBackticks(skill.name)}${typeSuffix}${desc}`);
+  }
+
+  if (sessionName) {
+    lines.push('');
+    lines.push(
+      `For full skill content, run \`mcpc ${sessionName} skills-get <name>\` (use --raw for the markdown only).`
+    );
+  }
+
+  let output = lines.join('\n');
+  if (options?.maxChars) {
+    output = truncateOutput(output, options.maxChars);
+  }
+  return output;
+}
+
+/**
+ * Format a single skill (`skills-get` output) with the SKILL.md text inlined
+ * in a code block, prefixed with the resolved URI.
+ */
+export function formatSkillDetail(
+  uri: string,
+  result: ReadResourceResult,
+  options?: { maxChars?: number }
+): string {
+  const lines: string[] = [];
+  lines.push(`${chalk.bold('Skill:')} ${inBackticks(uri)}`);
+
+  let body: string | undefined;
+  let mimeType: string | undefined;
+  for (const item of result.contents) {
+    if ('text' in item && typeof item.text === 'string') {
+      body = item.text;
+      mimeType = item.mimeType;
+      break;
+    }
+  }
+
+  if (mimeType) {
+    lines.push(`${chalk.bold('MIME type:')} ${chalk.yellow(mimeType)}`);
+  }
+
+  if (body !== undefined) {
+    lines.push('');
+    lines.push(chalk.gray('````'));
+    lines.push(body);
+    lines.push(chalk.gray('````'));
+  } else {
+    lines.push('');
+    lines.push(chalk.gray('(skill returned non-text content)'));
+  }
+
+  let output = lines.join('\n');
+  if (options?.maxChars) {
+    output = truncateOutput(output, options.maxChars);
+  }
+  return output;
+}
+
+/**
  * Format a list of prompts with Markdown-like display
  */
 export function formatPrompts(prompts: Prompt[]): string {
@@ -1426,6 +1521,25 @@ export function formatServerDetails(
     capabilityList.push(`${bullet} tasks${featureStr}`);
   }
 
+  // Experimental extension: io.modelcontextprotocol/skills (SEP-2640).
+  // The spec advertises under `capabilities.extensions`, but the current MCP
+  // SDK strips unknown capability fields. The SDK does preserve
+  // `capabilities.experimental` — the long-standing escape hatch for
+  // non-standard capabilities — so we check both locations to support
+  // today's servers and forward-compatible SDKs.
+  const capsAny = capabilities as
+    | { extensions?: Record<string, unknown>; experimental?: Record<string, unknown> }
+    | undefined;
+  const SKILLS_KEY = 'io.modelcontextprotocol/skills';
+  const hasSkillsExtension =
+    (!!capsAny?.extensions &&
+      Object.prototype.hasOwnProperty.call(capsAny.extensions, SKILLS_KEY)) ||
+    (!!capsAny?.experimental &&
+      Object.prototype.hasOwnProperty.call(capsAny.experimental, SKILLS_KEY));
+  if (hasSkillsExtension) {
+    capabilityList.push(`${bullet} skills ${chalk.gray('(experimental extension)')}`);
+  }
+
   if (capabilityList.length > 0) {
     lines.push(capabilityList.join('\n'));
   } else {
@@ -1463,6 +1577,14 @@ export function formatServerDetails(
   if (capabilities?.resources) {
     commands.push(`${bullet} ${bt}mcpc ${target} resources-list${bt}`);
     commands.push(`${bullet} ${bt}mcpc ${target} resources-read <uri>${bt}`);
+  }
+
+  // Surface skills commands when the server advertises the extension, OR
+  // unconditionally as a hint when resources are supported (the spec lets a
+  // server expose `skill://*` resources without advertising the extension).
+  if (hasSkillsExtension) {
+    commands.push(`${bullet} ${bt}mcpc ${target} skills-list${bt}`);
+    commands.push(`${bullet} ${bt}mcpc ${target} skills-get <name> [--raw]${bt}`);
   }
 
   if (capabilities?.prompts) {

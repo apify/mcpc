@@ -167,6 +167,8 @@ MCP session commands (after connecting):
   <@session> resources-subscribe <uri>
   <@session> resources-unsubscribe <uri>
   <@session> resources-templates-list
+  <@session> skills-list
+  <@session> skills-get <name> [--raw]
   <@session> tasks-list
   <@session> tasks-get <taskId>
   <@session> tasks-result <taskId>
@@ -670,6 +672,9 @@ To help Claude Code use `mcpc`, you can install this [Claude skill](./docs/claud
 
 <!-- TODO: Add also AGENTS.md, GitHub skills etc. -->
 
+`mcpc` also acts as a **client for skills served by MCP servers** (experimental, SEP-2640) — see
+[Skills](#skills) for the `skills-list` / `skills-get` commands.
+
 ## Agentic payments (x402)
 
 > ⚠️ **Experimental.** This feature is under active development and may change.
@@ -809,6 +814,7 @@ The bridge process manages the full MCP session lifecycle:
 | 🔧 [**Tools**](#tools)                             | ✅ Supported                       |
 | 💬 [**Prompts**](#prompts)                         | ✅ Supported                       |
 | 📦 [**Resources**](#resources)                     | ✅ Supported                       |
+| 🧠 [**Skills**](#skills)                           | 🧪 Experimental (SEP-2640)         |
 | 📝 [**Logging**](#server-logs)                     | ✅ Supported (deprecated by MCP)   |
 | 🔔 [**Notifications**](#list-change-notifications) | ✅ Supported                       |
 | 📄 [**Pagination**](#pagination)                   | ✅ Supported                       |
@@ -918,6 +924,41 @@ mcpc @apify resources-subscribe "https://api.example.com/data"
 # List resource templates
 mcpc @apify resources-templates-list
 ```
+
+#### Skills
+
+> 🧪 **Experimental.** Implements the draft [MCP skills extension (SEP-2640)](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2640).
+> The spec is in active iteration; the index shape, recognized entry types, and capability key may change.
+
+[Agent Skills](https://agentskills.io/) are reusable markdown workflow instructions (`SKILL.md` with YAML frontmatter)
+that AI agents load on demand. `mcpc` lets you discover and pull skills served by any MCP server that exposes
+them under the `skill://` URI convention — no SDK changes required, since skills are just resources:
+
+```bash
+# List skills exposed by the server (tries skill://index.json, falls back to scanning skill://*/SKILL.md)
+mcpc @apify skills-list
+
+# Read a skill's SKILL.md by bare name, nested path, or full URI
+mcpc @apify skills-get git-workflow
+mcpc @apify skills-get acme/billing/refunds
+mcpc @apify skills-get skill://git-workflow/SKILL.md
+
+# Print just the markdown (no header/fences) — pipe straight to an LLM or a file
+mcpc @apify skills-get git-workflow --raw > /tmp/skill.md
+
+# JSON for scripts: [{ name, description, type, url }]
+mcpc --json @apify skills-list | jq '.[].name'
+```
+
+Recognized index entry types (per SEP-2640): `skill-md` (concrete skill), `mcp-resource-template`
+(parameterized namespace), and `archive` (`.tar.gz`/`.zip` bundle — fetch the URL via `resources-read`).
+Entries with an unrecognized `type` are silently skipped.
+
+Skills appear under capabilities in `mcpc @session` output when a server advertises the extension
+under either `capabilities.extensions["io.modelcontextprotocol/skills"]` (per spec) or
+`capabilities.experimental["io.modelcontextprotocol/skills"]` (the SDK-preserved escape hatch some
+SDKs still use). Skill content is treated as untrusted input — `mcpc` only reads and prints it; it
+never executes hooks, scripts, or other frontmatter-declared behavior.
 
 #### List change notifications
 

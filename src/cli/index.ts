@@ -18,6 +18,7 @@ import chalk from 'chalk';
 import { formatJson, formatJsonError, rainbow, theme } from './output.js';
 import * as tools from './commands/tools.js';
 import * as resources from './commands/resources.js';
+import * as skills from './commands/skills.js';
 import * as prompts from './commands/prompts.js';
 import * as sessions from './commands/sessions.js';
 import * as logging from './commands/logging.js';
@@ -446,6 +447,8 @@ ${chalk.bold('MCP session commands (after connecting):')}
   <@session> ${theme.cyan('resources-subscribe')} <uri>
   <@session> ${theme.cyan('resources-unsubscribe')} <uri>
   <@session> ${theme.cyan('resources-templates-list')}
+  <@session> ${theme.cyan('skills-list')}
+  <@session> ${theme.cyan('skills-get')} <name> [--raw]
   <@session> ${theme.cyan('tasks-list')}
   <@session> ${theme.cyan('tasks-get')} <taskId>
   <@session> ${theme.cyan('tasks-result')} <taskId>
@@ -1217,6 +1220,53 @@ ${toolsCallCombinedJsonHelp}`
     )
     .action(async (_options, command) => {
       await resources.listResourceTemplates(session, getOptionsFromCommand(command));
+    });
+
+  // Skills commands (experimental MCP extension: io.modelcontextprotocol/skills)
+  // Sugar over resources-read using the `skill://` URI convention.
+  // Spec: https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2640
+  // NOTE: This extension is still in draft (SEP-2640) and may change. The
+  // command surface here is marked EXPERIMENTAL accordingly.
+  program
+    .command('skills-list')
+    .description('[EXPERIMENTAL] List agent skills from the server (SEP-2640).')
+    .addHelpText(
+      'after',
+      `
+${chalk.bold('Discovery:')}
+  Tries \`skill://index.json\`, else scans \`skill://*/SKILL.md\`. Types:
+  \`skill-md\`, \`mcp-resource-template\`, \`archive\` (use \`resources-read <url>\`).
+${jsonHelp(
+  '`[{ name, description, type, url }, ...]`',
+  undefined,
+  'https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2640'
+)}`
+    )
+    .action(async (_options, command) => {
+      await skills.listSkills(session, getOptionsFromCommand(command));
+    });
+
+  program
+    .command('skills-get <name>')
+    .description("[EXPERIMENTAL] Read a skill's SKILL.md by name (SEP-2640).")
+    .option('--raw', 'Print only the SKILL.md text (Markdown), suitable for piping')
+    .addHelpText(
+      'after',
+      `
+${chalk.bold('Names:')}
+  \`name\`, \`nested/path\`, or \`skill://...\` URI. For \`archive\` skills, use
+  \`resources-read <url>\`. With --json, --raw is ignored.
+${jsonHelp(
+  '`ReadResourceResult`: `{ contents: [{ uri, mimeType?, text? | blob? }] }`',
+  undefined,
+  `${SCHEMA_BASE}#readresourceresult`
+)}`
+    )
+    .action(async (name, options, command) => {
+      await skills.getSkill(session, name, {
+        ...(options.raw && { raw: true }),
+        ...getOptionsFromCommand(command),
+      });
     });
 
   // Prompts commands

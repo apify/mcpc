@@ -515,6 +515,8 @@ describe('suggestCommand', () => {
     'tools-call',
     'resources-list',
     'resources-read',
+    'skills-list',
+    'skills-get',
     'prompts-list',
     'prompts-get',
     'connect',
@@ -526,15 +528,18 @@ describe('suggestCommand', () => {
     expect(suggestCommand('list-tools', commands)).toBe('tools-list');
     expect(suggestCommand('list-resources', commands)).toBe('resources-list');
     expect(suggestCommand('list-prompts', commands)).toBe('prompts-list');
+    expect(suggestCommand('list-skills', commands)).toBe('skills-list');
   });
 
-  it('suggests list command for bare prefix (tools, resources, prompts)', () => {
+  it('suggests list command for bare prefix (tools, resources, prompts, skills)', () => {
     expect(suggestCommand('tools', commands)).toBe('tools-list');
     expect(suggestCommand('resources', commands)).toBe('resources-list');
     expect(suggestCommand('prompts', commands)).toBe('prompts-list');
+    expect(suggestCommand('skills', commands)).toBe('skills-list');
     // Case-insensitive
     expect(suggestCommand('TOOLS', commands)).toBe('tools-list');
     expect(suggestCommand('Resources', commands)).toBe('resources-list');
+    expect(suggestCommand('Skills', commands)).toBe('skills-list');
   });
 
   it('suggests the closest match for typos', () => {
