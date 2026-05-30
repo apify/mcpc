@@ -1229,7 +1229,7 @@ ${toolsCallCombinedJsonHelp}`
   // command surface here is marked EXPERIMENTAL accordingly.
   program
     .command('skills-list')
-    .description('[EXPERIMENTAL] List Agent Skills from the server (SEP-2640).')
+    .description('[EXPERIMENTAL] List agent skills from the server (SEP-2640).')
     .addHelpText(
       'after',
       `
