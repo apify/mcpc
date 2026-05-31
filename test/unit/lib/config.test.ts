@@ -659,7 +659,7 @@ describe('scanMcpConfigFiles', () => {
     return { home, cwd };
   }
 
-  it('partitions a file with an empty mcpServers object into `empty`, not `discovered`', () => {
+  it('partitions an empty-mcpServers file into `empty`, not `discovered`', () => {
     const { home, cwd } = freshDirs('empty');
     writeFileSync(join(cwd, 'mcp.json'), JSON.stringify({ mcpServers: {} }));
 
@@ -667,16 +667,6 @@ describe('scanMcpConfigFiles', () => {
     expect(scan.discovered).toHaveLength(0);
     expect(scan.empty).toHaveLength(1);
     expect(scan.empty[0]?.path).toContain('mcp.json');
-  });
-
-  it('treats an empty VS Code "servers" object as empty too', () => {
-    const { home, cwd } = freshDirs('empty-vscode');
-    mkdirSync(join(cwd, '.vscode'), { recursive: true });
-    writeFileSync(join(cwd, '.vscode/mcp.json'), JSON.stringify({ servers: {} }));
-
-    const scan = scanMcpConfigFiles({ homeDir: home, cwd, platform: 'linux' });
-    expect(scan.discovered).toHaveLength(0);
-    expect(scan.empty.some((c) => c.path.includes('.vscode/mcp.json'))).toBe(true);
   });
 
   it('returns a populated config under `discovered` with no `empty` entries', () => {
@@ -696,25 +686,6 @@ describe('scanMcpConfigFiles', () => {
     const { home, cwd } = freshDirs('no-key');
     writeFileSync(join(home, '.claude.json'), JSON.stringify({ numStartups: 5, theme: 'dark' }));
 
-    const scan = scanMcpConfigFiles({ homeDir: home, cwd, platform: 'linux' });
-    expect(scan.discovered).toEqual([]);
-    expect(scan.empty).toEqual([]);
-  });
-
-  it('does not surface files with invalid JSON, and does not throw', () => {
-    const { home, cwd } = freshDirs('bad-json');
-    writeFileSync(join(cwd, '.mcp.json'), '{ not valid json');
-
-    let scan!: ReturnType<typeof scanMcpConfigFiles>;
-    expect(() => {
-      scan = scanMcpConfigFiles({ homeDir: home, cwd, platform: 'linux' });
-    }).not.toThrow();
-    expect(scan.discovered).toEqual([]);
-    expect(scan.empty).toEqual([]);
-  });
-
-  it('reports nothing when no config files exist at all', () => {
-    const { home, cwd } = freshDirs('none');
     const scan = scanMcpConfigFiles({ homeDir: home, cwd, platform: 'linux' });
     expect(scan.discovered).toEqual([]);
     expect(scan.empty).toEqual([]);

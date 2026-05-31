@@ -66,6 +66,36 @@ assert_contains "$STDERR" ".cursor"
 test_pass
 
 # =============================================================================
+# Test: A config that exists but defines no servers is reported clearly,
+#       not misreported as "No MCP config files found" (#255)
+# =============================================================================
+
+test_case "empty config (no servers) reports a clear message, not 'not found'"
+cat > "$FAKE_CWD/mcp.json" <<EOF
+{
+  "mcpServers": {}
+}
+EOF
+
+run_mcpc_discover connect
+assert_failure "connect with an empty config should fail"
+assert_contains "$STDERR" "No MCP servers to connect"
+assert_contains "$STDERR" "defines no servers"
+assert_contains "$STDERR" "mcp.json"
+# Regression: the present-but-empty file must not be reported as missing
+assert_not_contains "$STDERR" "No MCP config files found"
+
+# JSON mode stays machine-readable: empty array, exit 0
+run_mcpc_discover --json connect
+assert_success "json mode with an empty config should exit 0"
+assert_json_valid "$STDOUT"
+empty_len=$(echo "$STDOUT" | jq 'length')
+assert_eq "$empty_len" "0" "json mode should output an empty array"
+
+rm -f "$FAKE_CWD/mcp.json"
+test_pass
+
+# =============================================================================
 # Test: Project-scope .mcp.json is discovered and connected
 # =============================================================================
 
