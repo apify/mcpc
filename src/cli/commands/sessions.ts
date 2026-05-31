@@ -1485,6 +1485,18 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
   // its connection result (or skip reason) inline, within the context of its config file.
   const statusByName = new Map(results.map((r) => [r.sessionName, r] as const));
 
+  // A stdio server skipped (no --stdio) may already be live from an earlier
+  // `mcpc connect --stdio`. Detect those so we show their real status instead of "skipped",
+  // and only suggest --stdio when a stdio server is genuinely unconnected.
+  const liveSkippedStdio = new Set<string>();
+  for (const s of skippedStdio) {
+    const session = await getSession(s.sessionName);
+    if (session && getBridgeStatus(session) === 'live') {
+      liveSkippedStdio.add(s.sessionName);
+    }
+  }
+  const unconnectedStdio = skippedStdio.length - liveSkippedStdio.size;
+
   for (const d of discovered) {
     console.log(
       `  ${formatPath(d.path)} ${chalk.dim(`(${d.serverCount} server${d.serverCount === 1 ? '' : 's'})`)}`
@@ -1497,7 +1509,10 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
 
       let marker: string;
       if (skippedStdio.some((s) => s.configFile === d.path && s.entry === entryName)) {
-        marker = theme.yellow('○ skipped (stdio)');
+        // Show a live badge for stdio servers that are already running; otherwise "skipped".
+        marker = liveSkippedStdio.has(sessionName)
+          ? formatConnectStatusBadge('active')
+          : theme.yellow('○ skipped (stdio)');
       } else if (skippedDuplicates.some((s) => s.configFile === d.path && s.entry === entryName)) {
         marker = chalk.dim('○ skipped (duplicate)');
       } else {
@@ -1517,15 +1532,16 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
     console.log(`  ${formatPath(c.path)} ${chalk.dim('(0 servers)')}`);
   }
 
-  // All discovered servers use stdio (nothing connectable) and there's no Apify token.
-  if (entries.length === 0 && !hasApifyToken) {
+  // Nothing connectable, nothing already live, and no Apify token — guide the user to --stdio.
+  if (entries.length === 0 && !hasApifyToken && liveSkippedStdio.size === 0) {
     throw new ClientError(
       `All servers in discovered config files use stdio transport.\n` +
         `Pass --stdio to include them: mcpc connect --stdio`
     );
   }
 
-  if (skippedStdio.length > 0) {
+  // Only suggest --stdio when a stdio server isn't already connected.
+  if (unconnectedStdio > 0) {
     console.log('\nTo include stdio servers, run: mcpc connect --stdio');
   }
 

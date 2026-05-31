@@ -235,7 +235,7 @@ test_case "re-running discovery reuses existing session (no @shared-2)"
 run_mcpc_discover connect
 assert_success "re-run discovery should succeed"
 # Already-live sessions are shown inline with the green "live" state
-assert_contains "$STDOUT" "live already"
+assert_contains "$STDOUT" "● live"
 
 # Session list must not grow (no @shared-2 / duplicates)
 run_mcpc --json
@@ -333,6 +333,44 @@ if [[ -z "$status_line" || -z "$hint_line" || "$status_line" -gt "$hint_line" ]]
   test_fail "inline server status (line ${status_line:-?}) should appear before the --stdio hint (line ${hint_line:-?})"
   exit 1
 fi
+test_pass
+
+# =============================================================================
+# Test: A stdio server already live (from a prior `connect --stdio`) is shown
+#       with its live status on a plain `mcpc connect`, not "○ skipped (stdio)",
+#       and the --stdio note is omitted when nothing stdio is unconnected (#255)
+# =============================================================================
+
+test_case "already-live stdio server shows live (not skipped) on a plain connect"
+run_mcpc "@discover-http" close || true
+rm -f "$FAKE_CWD/.mcp.json" "$FAKE_CWD/mcp.json" "$FAKE_HOME/.cursor/mcp.json"
+
+# A local stdio MCP server (no network) so we can make a stdio session live.
+cat > "$FAKE_CWD/.mcp.json" <<EOF
+{
+  "mcpServers": {
+    "discover-live-stdio": {
+      "command": "node",
+      "args": ["$PROJECT_ROOT/test/e2e/server/stdio-server.mjs"]
+    }
+  }
+}
+EOF
+_SESSIONS_CREATED+=("@discover-live-stdio")
+
+# Connect it as a stdio server, then confirm it is live via a ping.
+run_mcpc_discover connect --stdio
+assert_success "connect --stdio should connect the stdio server"
+run_mcpc "@discover-live-stdio" ping
+assert_success "the stdio session should be live and answer ping"
+
+# A plain connect (no --stdio) must show it live, not skipped, and omit the note.
+run_mcpc_discover connect
+assert_success "plain connect should succeed with an already-live stdio server"
+assert_contains "$STDOUT" "@discover-live-stdio"
+assert_contains "$STDOUT" "● live"
+assert_not_contains "$STDOUT" "○ skipped (stdio)"
+assert_not_contains "$STDOUT" "To include stdio servers"
 test_pass
 
 test_done

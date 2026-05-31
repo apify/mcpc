@@ -1358,9 +1358,9 @@ export function formatPath(p: string): string {
 }
 
 /**
- * Format an inline connection-status badge for a session — `● live already`,
- * `● connecting`, or `● failed — <reason>`. Used to annotate each config entry with its
- * bulk-connect result, mirroring the session list's green `● live` state. Human output only.
+ * Format an inline connection-status badge for a session — `● live`, `● connecting`, or
+ * `● failed — <reason>`. Used to annotate each config entry with its bulk-connect result,
+ * matching the session list's green `● live` state exactly. Human output only.
  */
 export function formatConnectStatusBadge(
   status: 'active' | 'created' | 'failed',
@@ -1368,7 +1368,7 @@ export function formatConnectStatusBadge(
 ): string {
   switch (status) {
     case 'active':
-      return `${theme.green('●')} ${theme.green('live already')}`;
+      return `${theme.green('●')} ${theme.green('live')}`;
     case 'created':
       return `${theme.yellow('●')} ${theme.yellow('connecting')}`;
     case 'failed':
