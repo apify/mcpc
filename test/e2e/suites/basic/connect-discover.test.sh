@@ -292,11 +292,12 @@ assert_contains "$STDOUT" "0 servers"
 test_pass
 
 # =============================================================================
-# Test: connect summary uses sentence case ("Skipped") and prints the result
-#       badge before the --stdio hint (so it isn't shown out of context)
+# Test: connection status is reported inline within each config file — the
+#       connected server shows a status badge, stdio servers are marked skipped
+#       inline, and the --stdio hint follows the listing (not in a separate block)
 # =============================================================================
 
-test_case "summary capitalizes 'Skipped' and shows the badge before the --stdio hint"
+test_case "status is reported inline per config entry, with the --stdio hint last"
 run_mcpc "@discover-mixed" close || true
 rm -f "$FAKE_CWD/.mcp.json" "$FAKE_CWD/mcp.json" "$FAKE_HOME/.cursor/mcp.json"
 
@@ -314,16 +315,19 @@ _SESSIONS_CREATED+=("@discover-http")
 
 run_mcpc_discover connect
 assert_success "discovery with an http + skipped stdio server should succeed"
-# Sentence case: "Connecting 1 server. Skipped 1 stdio server."
-assert_contains "$STDOUT" "Skipped 1 stdio server"
-assert_not_contains "$STDOUT" "server. skipped"
+# The connected server shows its status inline; the stdio server is marked inline.
+assert_contains "$STDOUT" "@discover-http"
+assert_contains "$STDOUT" "connecting"
+assert_contains "$STDOUT" "○ skipped (stdio)"
 assert_contains "$STDOUT" "mcpc connect --stdio"
+# No leftover lowercase mid-sentence "skipped" from the old summary line.
+assert_not_contains "$STDOUT" "server. skipped"
 
-# The connected-server badge must appear before the --stdio hint, not after it.
-badge_line=$(echo "$STDOUT" | grep -n "@discover-http" | tail -1 | cut -d: -f1)
+# The connected server's inline result must appear before the trailing --stdio hint.
+status_line=$(echo "$STDOUT" | grep -n "@discover-http" | tail -1 | cut -d: -f1)
 hint_line=$(echo "$STDOUT" | grep -n "mcpc connect --stdio" | head -1 | cut -d: -f1)
-if [[ -z "$badge_line" || -z "$hint_line" || "$badge_line" -gt "$hint_line" ]]; then
-  test_fail "result badge (line ${badge_line:-?}) should appear before the --stdio hint (line ${hint_line:-?})"
+if [[ -z "$status_line" || -z "$hint_line" || "$status_line" -gt "$hint_line" ]]; then
+  test_fail "inline server status (line ${status_line:-?}) should appear before the --stdio hint (line ${hint_line:-?})"
   exit 1
 fi
 test_pass

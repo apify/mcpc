@@ -29,6 +29,7 @@ import {
   formatSessionLine,
   formatServerDetails,
   formatPath,
+  formatConnectStatusBadge,
   theme,
 } from '../output.js';
 import { withMcpClient, resolveTarget, resolveAuthProfile } from '../helpers.js';
@@ -1081,7 +1082,8 @@ type BulkConnectResult = BulkConnectEntry & {
  */
 async function bulkConnectEntries(
   entries: BulkConnectEntry[],
-  options: BulkConnectOptions
+  options: BulkConnectOptions,
+  { printBadges = true }: { printBadges?: boolean } = {}
 ): Promise<BulkConnectResult[]> {
   // Pre-check which sessions are already live (for accurate status badges)
   const liveSet = new Set<string>();
@@ -1113,8 +1115,9 @@ async function bulkConnectEntries(
     return { ...base, status: 'failed', error };
   });
 
-  // Display badges in human mode
-  if (options.outputMode === 'human') {
+  // Display badges in human mode (callers that render their own per-entry status,
+  // e.g. config discovery, pass printBadges: false to suppress this block).
+  if (options.outputMode === 'human' && printBadges) {
     for (const r of results) {
       const name = theme.cyan(r.sessionName);
       switch (r.status) {
@@ -1420,84 +1423,6 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
     ...(options.stdio && { stdio: true }),
   });
 
-  if (options.outputMode === 'human') {
-    const totalEntries = entries.length + skippedDuplicates.length + skippedStdio.length;
-    const fileCount = discovered.length + scan.empty.length;
-    console.log(
-      theme.cyan(
-        `Found ${fileCount} MCP config file${fileCount === 1 ? '' : 's'} ` +
-          `with ${totalEntries} server${totalEntries === 1 ? '' : 's'}:`
-      )
-    );
-
-    // Group all entries (connected + skipped) by config file for display
-    for (const d of discovered) {
-      console.log(
-        `  ${formatPath(d.path)} ${chalk.dim(`(${d.serverCount} server${d.serverCount === 1 ? '' : 's'})`)}`
-      );
-      for (const entryName of Object.keys(d.config.mcpServers)) {
-        const sessionName = generateSessionName({ type: 'config', file: d.path, entry: entryName });
-        const serverCfg = d.config.mcpServers[entryName];
-        const target = serverCfg?.url ?? [serverCfg?.command, ...(serverCfg?.args ?? [])].join(' ');
-        const truncated = target && target.length > 72 ? target.slice(0, 72) + '…' : target;
-
-        const isStdio = skippedStdio.some((s) => s.configFile === d.path && s.entry === entryName);
-        const isDuplicate = skippedDuplicates.some(
-          (s) => s.configFile === d.path && s.entry === entryName
-        );
-
-        if (isStdio) {
-          console.log(
-            `    ${theme.cyan(sessionName)} → ${chalk.dim(truncated ?? entryName)} ${theme.yellow('○ skipped (stdio)')}`
-          );
-        } else if (isDuplicate) {
-          console.log(
-            `    ${theme.cyan(sessionName)} → ${chalk.dim(truncated ?? entryName)} ${chalk.dim('○ skipped (duplicate)')}`
-          );
-        } else {
-          console.log(`    ${theme.cyan(sessionName)} → ${chalk.dim(truncated ?? entryName)}`);
-        }
-      }
-    }
-
-    // Config files that exist but define no servers — list them so they're visibly
-    // accounted for rather than silently dropped from the summary above.
-    for (const c of scan.empty) {
-      console.log(`  ${formatPath(c.path)} ${chalk.dim('(0 servers)')}`);
-    }
-
-    if (entries.length === 0 && !hasApifyToken) {
-      throw new ClientError(
-        `All servers in discovered config files use stdio transport.\n` +
-          `Pass --stdio to include them: mcpc connect --stdio`
-      );
-    }
-
-    // Summary line (intent). The per-server result badges and the --stdio hint are
-    // printed afterwards (see printStdioHint below), so the badges sit directly under
-    // this line instead of being separated from it by the hint.
-    const parts: string[] = [];
-    if (entries.length > 0) {
-      parts.push(`Connecting ${entries.length} server${entries.length === 1 ? '' : 's'}`);
-    }
-    if (skippedStdio.length > 0) {
-      parts.push(
-        `Skipped ${skippedStdio.length} stdio server${skippedStdio.length === 1 ? '' : 's'}`
-      );
-    }
-    if (parts.length > 0) {
-      console.log(theme.cyan(`\n${parts.join('. ')}.`));
-    }
-  }
-
-  // Printed after the connection result badges so the hint doesn't separate them from
-  // the "Connecting N servers" summary above.
-  const printStdioHint = () => {
-    if (options.outputMode === 'human' && skippedStdio.length > 0) {
-      console.log(chalk.dim('  ↳ run: mcpc connect --stdio'));
-    }
-  };
-
   const skippedJsonEntries: ConnectResultEntry[] = [
     ...skippedStdio.map(
       (s): ConnectResultEntry => ({
@@ -1523,34 +1448,94 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
     ),
   ];
 
-  if (entries.length === 0) {
-    // No connectable entries from config files. If APIFY_API_TOKEN is set,
-    // maybeConnectApify will still run below; otherwise we already threw above.
-    if (!hasApifyToken && options.outputMode === 'json') {
-      console.log(formatOutput(skippedJsonEntries, 'json'));
-      return;
-    }
-    printStdioHint();
-    await maybeConnectApify([], [], options);
-    return;
+  // Print the header up front (before connecting) for immediate feedback; each entry's
+  // result is filled in inline below.
+  if (options.outputMode === 'human') {
+    const totalEntries = entries.length + skippedDuplicates.length + skippedStdio.length;
+    const fileCount = discovered.length + scan.empty.length;
+    console.log(
+      theme.cyan(
+        `Found ${fileCount} MCP config file${fileCount === 1 ? '' : 's'} ` +
+          `with ${totalEntries} server${totalEntries === 1 ? '' : 's'}:`
+      )
+    );
   }
 
-  const results = await bulkConnectEntries(entries, options);
+  // Connect all non-skipped entries (quietly) so each server's result can be shown inline
+  // next to its config entry. We don't wait for full readiness — a newly spawned session
+  // is reported optimistically as "connecting".
+  const results =
+    entries.length > 0 ? await bulkConnectEntries(entries, options, { printBadges: false }) : [];
 
   if (options.outputMode === 'json') {
+    if (entries.length === 0) {
+      if (!hasApifyToken) {
+        console.log(formatOutput(skippedJsonEntries, 'json'));
+        return;
+      }
+      await maybeConnectApify([], [], options);
+      return;
+    }
     const resultEntries = await buildBulkConnectEntries(results, options);
     console.log(formatOutput([...resultEntries, ...skippedJsonEntries], 'json'));
     return;
   }
 
-  const { active, connecting, failed } = printBulkConnectSummary(results, options);
-  printStdioHint();
+  // Human output: list each discovered config file and annotate every server entry with
+  // its connection result (or skip reason) inline, within the context of its config file.
+  const statusByName = new Map(results.map((r) => [r.sessionName, r] as const));
+
+  for (const d of discovered) {
+    console.log(
+      `  ${formatPath(d.path)} ${chalk.dim(`(${d.serverCount} server${d.serverCount === 1 ? '' : 's'})`)}`
+    );
+    for (const entryName of Object.keys(d.config.mcpServers)) {
+      const sessionName = generateSessionName({ type: 'config', file: d.path, entry: entryName });
+      const serverCfg = d.config.mcpServers[entryName];
+      const target = serverCfg?.url ?? [serverCfg?.command, ...(serverCfg?.args ?? [])].join(' ');
+      const truncated = target && target.length > 72 ? target.slice(0, 72) + '…' : target;
+
+      let marker: string;
+      if (skippedStdio.some((s) => s.configFile === d.path && s.entry === entryName)) {
+        marker = theme.yellow('○ skipped (stdio)');
+      } else if (skippedDuplicates.some((s) => s.configFile === d.path && s.entry === entryName)) {
+        marker = chalk.dim('○ skipped (duplicate)');
+      } else {
+        const r = statusByName.get(sessionName);
+        marker = r ? formatConnectStatusBadge(r.status, r.error) : '';
+      }
+
+      console.log(
+        `    ${theme.cyan(sessionName)} → ${chalk.dim(truncated ?? entryName)}${marker ? ` ${marker}` : ''}`
+      );
+    }
+  }
+
+  // Config files that exist but define no servers — list them so they're visibly
+  // accounted for rather than silently dropped.
+  for (const c of scan.empty) {
+    console.log(`  ${formatPath(c.path)} ${chalk.dim('(0 servers)')}`);
+  }
+
+  // All discovered servers use stdio (nothing connectable) and there's no Apify token.
+  if (entries.length === 0 && !hasApifyToken) {
+    throw new ClientError(
+      `All servers in discovered config files use stdio transport.\n` +
+        `Pass --stdio to include them: mcpc connect --stdio`
+    );
+  }
+
+  if (skippedStdio.length > 0) {
+    console.log(`\n${chalk.dim('  ↳ run: mcpc connect --stdio')}`);
+  }
 
   // Auto-connect to mcp.apify.com when APIFY_API_TOKEN is set
   await maybeConnectApify(entries, results, options);
 
-  // If ALL servers failed (excluding Apify), exit with error
-  if (active + connecting === 0 && failed > 0) {
+  // If ALL connectable servers failed, exit with error
+  const failed = results.filter((r) => r.status === 'failed').length;
+  const succeeded = results.filter((r) => r.status === 'active' || r.status === 'created').length;
+  if (entries.length > 0 && succeeded === 0 && failed > 0) {
     throw new ClientError(`Failed to connect any servers from discovered config files`);
   }
 }

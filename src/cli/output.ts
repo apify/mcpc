@@ -1357,6 +1357,25 @@ export function formatPath(p: string): string {
   return `"${p.replace(/(["`$])/g, '\\$&')}"`;
 }
 
+/**
+ * Format an inline connection-status badge for a session — `● already active`,
+ * `● connecting`, or `● failed — <reason>`. Used to annotate each config entry with its
+ * bulk-connect result, matching the wording of the standalone badges. Human output only.
+ */
+export function formatConnectStatusBadge(
+  status: 'active' | 'created' | 'failed',
+  error?: string
+): string {
+  switch (status) {
+    case 'active':
+      return `${theme.green('●')} ${chalk.dim('already active')}`;
+    case 'created':
+      return `${theme.yellow('●')} ${theme.yellow('connecting')}`;
+    case 'failed':
+      return `${theme.red('●')} ${theme.red('failed')}${error ? chalk.dim(` — ${error}`) : ''}`;
+  }
+}
+
 export function formatTaskCommandsHint(
   target: string,
   taskId?: string,
