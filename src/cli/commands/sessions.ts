@@ -1473,23 +1473,30 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
       );
     }
 
-    // Summary line
+    // Summary line (intent). The per-server result badges and the --stdio hint are
+    // printed afterwards (see printStdioHint below), so the badges sit directly under
+    // this line instead of being separated from it by the hint.
     const parts: string[] = [];
     if (entries.length > 0) {
       parts.push(`Connecting ${entries.length} server${entries.length === 1 ? '' : 's'}`);
     }
     if (skippedStdio.length > 0) {
       parts.push(
-        `skipped ${skippedStdio.length} stdio server${skippedStdio.length === 1 ? '' : 's'}`
+        `Skipped ${skippedStdio.length} stdio server${skippedStdio.length === 1 ? '' : 's'}`
       );
     }
     if (parts.length > 0) {
       console.log(theme.cyan(`\n${parts.join('. ')}.`));
-      if (skippedStdio.length > 0) {
-        console.log(chalk.dim('  ↳ run: mcpc connect --stdio'));
-      }
     }
   }
+
+  // Printed after the connection result badges so the hint doesn't separate them from
+  // the "Connecting N servers" summary above.
+  const printStdioHint = () => {
+    if (options.outputMode === 'human' && skippedStdio.length > 0) {
+      console.log(chalk.dim('  ↳ run: mcpc connect --stdio'));
+    }
+  };
 
   const skippedJsonEntries: ConnectResultEntry[] = [
     ...skippedStdio.map(
@@ -1523,6 +1530,7 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
       console.log(formatOutput(skippedJsonEntries, 'json'));
       return;
     }
+    printStdioHint();
     await maybeConnectApify([], [], options);
     return;
   }
@@ -1536,6 +1544,7 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
   }
 
   const { active, connecting, failed } = printBulkConnectSummary(results, options);
+  printStdioHint();
 
   // Auto-connect to mcp.apify.com when APIFY_API_TOKEN is set
   await maybeConnectApify(entries, results, options);

@@ -291,4 +291,41 @@ assert_contains "$STDOUT" "@discover-mixed"
 assert_contains "$STDOUT" "0 servers"
 test_pass
 
+# =============================================================================
+# Test: connect summary uses sentence case ("Skipped") and prints the result
+#       badge before the --stdio hint (so it isn't shown out of context)
+# =============================================================================
+
+test_case "summary capitalizes 'Skipped' and shows the badge before the --stdio hint"
+run_mcpc "@discover-mixed" close || true
+rm -f "$FAKE_CWD/.mcp.json" "$FAKE_CWD/mcp.json" "$FAKE_HOME/.cursor/mcp.json"
+
+# One HTTP server (connects) + one stdio server (skipped without --stdio). The
+# stdio command is never executed because the entry is skipped.
+cat > "$FAKE_CWD/.mcp.json" <<EOF
+{
+  "mcpServers": {
+    "discover-http": { "url": "$TEST_SERVER_URL", "headers": { "X-Test": "true" } },
+    "discover-stdio": { "command": "true", "args": [] }
+  }
+}
+EOF
+_SESSIONS_CREATED+=("@discover-http")
+
+run_mcpc_discover connect
+assert_success "discovery with an http + skipped stdio server should succeed"
+# Sentence case: "Connecting 1 server. Skipped 1 stdio server."
+assert_contains "$STDOUT" "Skipped 1 stdio server"
+assert_not_contains "$STDOUT" "server. skipped"
+assert_contains "$STDOUT" "mcpc connect --stdio"
+
+# The connected-server badge must appear before the --stdio hint, not after it.
+badge_line=$(echo "$STDOUT" | grep -n "@discover-http" | tail -1 | cut -d: -f1)
+hint_line=$(echo "$STDOUT" | grep -n "mcpc connect --stdio" | head -1 | cut -d: -f1)
+if [[ -z "$badge_line" || -z "$hint_line" || "$badge_line" -gt "$hint_line" ]]; then
+  test_fail "result badge (line ${badge_line:-?}) should appear before the --stdio hint (line ${hint_line:-?})"
+  exit 1
+fi
+test_pass
+
 test_done
