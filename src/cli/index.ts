@@ -536,6 +536,8 @@ ${jsonHelp(
           ...(globalOpts.x402 && { x402: globalOpts.x402 }),
           ...(globalOpts.insecure && { insecure: true }),
         });
+        // Trailing blank line to match the spacing of other commands (human mode only).
+        if (globalOpts.outputMode === 'human') console.log('');
         return;
       }
 
