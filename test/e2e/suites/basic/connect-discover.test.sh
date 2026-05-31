@@ -373,4 +373,32 @@ assert_not_contains "$STDOUT" "○ skipped (stdio)"
 assert_not_contains "$STDOUT" "To include stdio servers"
 test_pass
 
+# =============================================================================
+# Test: A config file with invalid JSON is listed inline as "(invalid format)"
+#       (counted, with the parse error shown), not dropped or warned out of band
+# =============================================================================
+
+test_case "invalid-JSON config is listed inline as (invalid format)"
+run_mcpc "@discover-live-stdio" close || true
+rm -f "$FAKE_CWD/.mcp.json" "$FAKE_CWD/mcp.json" "$FAKE_HOME/.cursor/mcp.json"
+
+# A valid project config (so discovery proceeds) + a malformed one alongside it.
+cat > "$FAKE_CWD/.mcp.json" <<EOF
+{
+  "mcpServers": {
+    "discover-valid": { "url": "$TEST_SERVER_URL", "headers": { "X-Test": "true" } }
+  }
+}
+EOF
+printf 'f{ not valid json' > "$FAKE_CWD/mcp.json"
+_SESSIONS_CREATED+=("@discover-valid")
+
+run_mcpc_discover connect
+assert_success "discovery should succeed despite an invalid config alongside a valid one"
+assert_contains "$STDOUT" "Found 2 MCP config files"
+# The malformed file is listed in place, marked invalid (not a top-of-output warning).
+normalized_stdout="${STDOUT//\\//}"
+assert_contains "$normalized_stdout" "mcp.json (invalid format)"
+test_pass
+
 test_done

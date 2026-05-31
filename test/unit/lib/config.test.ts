@@ -690,4 +690,16 @@ describe('scanMcpConfigFiles', () => {
     expect(scan.discovered).toEqual([]);
     expect(scan.empty).toEqual([]);
   });
+
+  it('captures files with invalid JSON in `invalid`, with the parser error', () => {
+    const { home, cwd } = freshDirs('bad-json');
+    writeFileSync(join(cwd, 'mcp.json'), '{ not valid json');
+
+    const scan = scanMcpConfigFiles({ homeDir: home, cwd, platform: 'linux' });
+    expect(scan.discovered).toEqual([]);
+    expect(scan.empty).toEqual([]);
+    expect(scan.invalid).toHaveLength(1);
+    expect(scan.invalid[0]?.path).toContain('mcp.json');
+    expect(scan.invalid[0]?.error.length).toBeGreaterThan(0);
+  });
 });

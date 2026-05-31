@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `mcpc connect` (with no arguments) no longer ignores config files that exist but define no servers (e.g. a `{ "mcpServers": {} }` skeleton). They're now listed in the discovered-configs output (as `0 servers`), and when no other config supplies servers the error points at the empty file and explains how to add one — instead of the misleading `No MCP config files found`.
+- `mcpc connect` (with no arguments) no longer silently ignores config files it can't use. Files that define no servers (e.g. a `{ "mcpServers": {} }` skeleton) are listed as `0 servers`, and files with invalid JSON are listed as `invalid format` with the parse error — both shown in the discovered-configs output instead of being dropped or misreported as `No MCP config files found`.
 - `mcpc connect` now prints config file paths so they can be copy-pasted directly: paths containing spaces (e.g. macOS `Library/Application Support/...`) are quoted instead of being split when pasted into a shell.
 - `mcpc connect` no longer fails with `socket file not created within timeout` when the bridge is slow to start (CPU-constrained machines, many parallel connects). The startup window is more generous, and a bridge that crashes on startup now reports its exit code immediately instead of stalling until the timeout
 

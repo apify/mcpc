@@ -1363,15 +1363,28 @@ function aggregateDiscoveredEntries(
  * file is sitting right there among the searched paths.
  */
 function buildNoServersError(scan: McpConfigScan): string {
-  if (scan.empty.length > 0) {
-    const intro =
-      scan.empty.length === 1
-        ? `Found a config file, but it defines no servers:`
-        : `Found config files, but they define no servers:`;
-    const fileList = scan.empty.map((c) => `  ${formatPath(c.path)}`).join('\n');
+  if (scan.empty.length > 0 || scan.invalid.length > 0) {
+    const lines: string[] = [];
+    if (scan.empty.length > 0) {
+      lines.push(
+        scan.empty.length === 1
+          ? `Found a config file, but it defines no servers:`
+          : `Found config files, but they define no servers:`
+      );
+      for (const c of scan.empty) lines.push(`  ${formatPath(c.path)}`);
+    }
+    if (scan.invalid.length > 0) {
+      if (lines.length > 0) lines.push('');
+      lines.push(
+        scan.invalid.length === 1
+          ? `Found a config file, but it isn't valid JSON:`
+          : `Found config files, but they aren't valid JSON:`
+      );
+      for (const c of scan.invalid) lines.push(`  ${formatPath(c.path)}`);
+    }
     return (
       `No MCP servers to connect.\n\n` +
-      `${intro}\n${fileList}\n\n` +
+      `${lines.join('\n')}\n\n` +
       `Add a server under "mcpServers" and re-run mcpc connect, or connect one now:\n` +
       `  mcpc connect mcp.example.com @myserver`
     );
@@ -1452,7 +1465,7 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
   // result is filled in inline below.
   if (options.outputMode === 'human') {
     const totalEntries = entries.length + skippedDuplicates.length + skippedStdio.length;
-    const fileCount = discovered.length + scan.empty.length;
+    const fileCount = discovered.length + scan.empty.length + scan.invalid.length;
     console.log(
       theme.cyan(
         `Found ${fileCount} MCP config file${fileCount === 1 ? '' : 's'} ` +
@@ -1530,6 +1543,12 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
   // accounted for rather than silently dropped.
   for (const c of scan.empty) {
     console.log(`  ${formatPath(c.path)} ${chalk.dim('(0 servers)')}`);
+  }
+
+  // Config files that exist but contain invalid JSON — show the parse error inline.
+  for (const c of scan.invalid) {
+    console.log(`  ${formatPath(c.path)} ${chalk.dim('(invalid format)')}`);
+    console.log(`    ${chalk.dim(c.error)}`);
   }
 
   // Nothing connectable, nothing already live, and no Apify token — guide the user to --stdio.

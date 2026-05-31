@@ -363,45 +363,29 @@ export function getStandardMcpConfigPaths(options?: {
 }
 
 /**
- * Leniently parse a JSON file that may or may not be an MCP config.
- * Returns the parsed `McpConfig` if the file exists, is valid JSON, and has a recognizable
- * `mcpServers` (or `servers` — the VS Code variant) object — even if that object is empty.
- * Returns `null` for missing/unreadable files, invalid JSON, or files without a recognizable
- * servers object. Invalid JSON is logged and skipped.
+ * Recognize a parsed value as an MCP config: the standard `{ mcpServers }` shape or the
+ * VS Code `{ servers }` variant (normalized to `mcpServers`). Returns `null` for anything
+ * else, including a valid-JSON file that simply isn't an MCP config. The servers object may
+ * be empty.
  */
-function tryReadMcpConfig(configPath: string): McpConfig | null {
-  let content: string;
-  try {
-    const stat = statSync(configPath);
-    if (!stat.isFile()) return null;
-    content = readFileSync(configPath, 'utf-8');
-  } catch {
-    // File missing or unreadable — silently skip
-    return null;
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(content);
-  } catch (error) {
-    logger.warn(`Skipping invalid JSON in ${configPath}: ${(error as Error).message}`);
-    return null;
-  }
-
+function asMcpConfig(parsed: unknown): McpConfig | null {
   if (!parsed || typeof parsed !== 'object') return null;
   const obj = parsed as Record<string, unknown>;
-
-  // Standard MCP format: { mcpServers: { ... } }
   if (obj.mcpServers && typeof obj.mcpServers === 'object' && !Array.isArray(obj.mcpServers)) {
     return parsed as McpConfig;
   }
-
-  // VS Code format: { servers: { ... } } — normalize to mcpServers
   if (obj.servers && typeof obj.servers === 'object' && !Array.isArray(obj.servers)) {
     return { mcpServers: obj.servers as Record<string, ServerConfig> };
   }
-
   return null;
+}
+
+/**
+ * A config file that exists at a standard location but contains invalid JSON.
+ */
+export interface InvalidConfig extends ConfigCandidate {
+  /** The JSON parser's error message. */
+  error: string;
 }
 
 /**
@@ -416,13 +400,15 @@ export interface McpConfigScan {
    * "no config file exists at all".
    */
   empty: ConfigCandidate[];
+  /** Files that exist but contain invalid JSON, with the parser's error message. */
+  invalid: InvalidConfig[];
 }
 
 /**
  * Scan all standard MCP config locations, partitioning the files that exist into those that
- * define servers (`discovered`) and those with an empty servers object (`empty`). Files that
- * don't exist, contain invalid JSON, or aren't recognizable MCP configs are skipped silently
- * (invalid JSON is logged). Never throws.
+ * define servers (`discovered`), those with an empty servers object (`empty`), and those that
+ * fail to parse as JSON (`invalid`). Missing/unreadable files and valid-JSON files that aren't
+ * MCP configs are skipped silently. Never throws.
  *
  * Results are returned in priority order (project-level first, then global),
  * so callers can deterministically resolve collisions by taking the first occurrence.
@@ -438,27 +424,40 @@ export function scanMcpConfigFiles(options?: {
   const candidates = getStandardMcpConfigPaths(options);
   const discovered: DiscoveredConfig[] = [];
   const empty: ConfigCandidate[] = [];
+  const invalid: InvalidConfig[] = [];
 
   for (const candidate of candidates) {
-    const config = tryReadMcpConfig(candidate.path);
-    if (!config) continue;
+    let content: string;
+    try {
+      if (!statSync(candidate.path).isFile()) continue;
+      content = readFileSync(candidate.path, 'utf-8');
+    } catch {
+      continue; // missing or unreadable — skip silently
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(content);
+    } catch (error) {
+      invalid.push({ ...candidate, error: (error as Error).message });
+      continue;
+    }
+
+    const config = asMcpConfig(parsed);
+    if (!config) continue; // valid JSON but not an MCP config (e.g. an unrelated ~/.claude.json)
 
     const serverCount = Object.keys(config.mcpServers).length;
-    if (serverCount === 0) {
-      logger.debug(`Found ${candidate.path} but it defines no servers`);
-      empty.push(candidate);
-    } else {
-      discovered.push({ ...candidate, config, serverCount });
-    }
+    if (serverCount === 0) empty.push(candidate);
+    else discovered.push({ ...candidate, config, serverCount });
   }
 
-  return { discovered, empty };
+  return { discovered, empty, invalid };
 }
 
 /**
  * Discover MCP config files from standard locations.
  * Only returns files that exist and contain at least one server.
- * Files with parse errors are logged and skipped — discovery does not fail.
+ * Files that don't parse are skipped (see `scanMcpConfigFiles().invalid`) — discovery does not fail.
  *
  * Results are returned in priority order (project-level first, then global),
  * so callers can deterministically resolve collisions by taking the first occurrence.
