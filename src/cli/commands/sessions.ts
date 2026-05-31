@@ -28,6 +28,7 @@ import {
   formatError,
   formatSessionLine,
   formatServerDetails,
+  formatPath,
   theme,
 } from '../output.js';
 import { withMcpClient, resolveTarget, resolveAuthProfile } from '../helpers.js';
@@ -1364,7 +1365,7 @@ function buildNoServersError(scan: McpConfigScan): string {
       scan.empty.length === 1
         ? `Found a config file, but it defines no servers:`
         : `Found config files, but they define no servers:`;
-    const fileList = scan.empty.map((c) => `  ${c.path}`).join('\n');
+    const fileList = scan.empty.map((c) => `  ${formatPath(c.path)}`).join('\n');
     return (
       `No MCP servers to connect.\n\n` +
       `${intro}\n${fileList}\n\n` +
@@ -1374,7 +1375,7 @@ function buildNoServersError(scan: McpConfigScan): string {
   }
 
   const searchPaths = getStandardMcpConfigPaths()
-    .map((c) => `  ${c.path}`)
+    .map((c) => `  ${formatPath(c.path)}`)
     .join('\n');
   return (
     `No MCP config files found in standard locations.\n\n` +
@@ -1421,9 +1422,10 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
 
   if (options.outputMode === 'human') {
     const totalEntries = entries.length + skippedDuplicates.length + skippedStdio.length;
+    const fileCount = discovered.length + scan.empty.length;
     console.log(
       theme.cyan(
-        `Found ${discovered.length} MCP config file${discovered.length === 1 ? '' : 's'} ` +
+        `Found ${fileCount} MCP config file${fileCount === 1 ? '' : 's'} ` +
           `with ${totalEntries} server${totalEntries === 1 ? '' : 's'}:`
       )
     );
@@ -1431,7 +1433,7 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
     // Group all entries (connected + skipped) by config file for display
     for (const d of discovered) {
       console.log(
-        `  ${d.path} ${chalk.dim(`(${d.serverCount} server${d.serverCount === 1 ? '' : 's'})`)}`
+        `  ${formatPath(d.path)} ${chalk.dim(`(${d.serverCount} server${d.serverCount === 1 ? '' : 's'})`)}`
       );
       for (const entryName of Object.keys(d.config.mcpServers)) {
         const sessionName = generateSessionName({ type: 'config', file: d.path, entry: entryName });
@@ -1456,6 +1458,12 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
           console.log(`    ${theme.cyan(sessionName)} → ${chalk.dim(truncated ?? entryName)}`);
         }
       }
+    }
+
+    // Config files that exist but define no servers — list them so they're visibly
+    // accounted for rather than silently dropped from the summary above.
+    for (const c of scan.empty) {
+      console.log(`  ${formatPath(c.path)} ${chalk.dim('(0 servers)')}`);
     }
 
     if (entries.length === 0 && !hasApifyToken) {

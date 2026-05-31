@@ -54,6 +54,7 @@ import {
   formatToolCallExample,
   formatToolHints,
   formatCallToolResultHuman,
+  formatPath,
 } from '../../../src/cli/output.js';
 import type {
   Tool,
@@ -1977,6 +1978,28 @@ describe('truncateOutput', () => {
     const str = 'a'.repeat(200);
     const result = truncateOutput(str, 50);
     expect(result).toContain('200 chars');
+  });
+});
+
+describe('formatPath', () => {
+  it('leaves simple paths unquoted', () => {
+    expect(formatPath('/Users/jan/.cursor/mcp.json')).toBe('/Users/jan/.cursor/mcp.json');
+    expect(formatPath('/home/user/mcpc/mcp.json')).toBe('/home/user/mcpc/mcp.json');
+  });
+
+  it('double-quotes paths containing spaces so they can be pasted into a shell', () => {
+    expect(formatPath('/Users/jan/Library/Application Support/Code/User/mcp.json')).toBe(
+      '"/Users/jan/Library/Application Support/Code/User/mcp.json"'
+    );
+  });
+
+  it('preserves backslashes in Windows paths verbatim', () => {
+    expect(formatPath('C:\\Users\\foo bar\\mcp.json')).toBe('"C:\\Users\\foo bar\\mcp.json"');
+  });
+
+  it('escapes characters that stay special inside double quotes', () => {
+    expect(formatPath('/tmp/a$b/mcp.json')).toBe('"/tmp/a\\$b/mcp.json"');
+    expect(formatPath('/tmp/a b"c/mcp.json')).toBe('"/tmp/a b\\"c/mcp.json"');
   });
 });
 

@@ -255,4 +255,40 @@ assert_success "tools-list should work on discovered session"
 assert_contains "$STDOUT" "echo"
 test_pass
 
+# =============================================================================
+# Test: A config that exists but defines no servers is still listed alongside
+#       configs that do define servers (rather than silently dropped) (#255)
+# =============================================================================
+
+test_case "empty config is listed (0 servers) next to a config that has servers"
+# Start this final case from a clean discovery state.
+run_mcpc "@shared" close || true
+rm -f "$FAKE_CWD/.mcp.json" "$FAKE_CWD/mcp.json" "$FAKE_HOME/.cursor/mcp.json"
+
+# One project config with a server + one empty project config alongside it.
+cat > "$FAKE_CWD/.mcp.json" <<EOF
+{
+  "mcpServers": {
+    "discover-mixed": {
+      "url": "$TEST_SERVER_URL",
+      "headers": { "X-Test": "true" }
+    }
+  }
+}
+EOF
+cat > "$FAKE_CWD/mcp.json" <<EOF
+{
+  "mcpServers": {}
+}
+EOF
+_SESSIONS_CREATED+=("@discover-mixed")
+
+run_mcpc_discover connect
+assert_success "discovery with a populated + empty config should succeed"
+assert_contains "$STDOUT" "Found 2 MCP config files"
+assert_contains "$STDOUT" "@discover-mixed"
+# The empty config must be visibly accounted for, not silently dropped
+assert_contains "$STDOUT" "0 servers"
+test_pass
+
 test_done
