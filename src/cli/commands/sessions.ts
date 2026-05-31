@@ -1585,9 +1585,7 @@ async function maybeConnectApify(
 
   if (isLive) {
     if (options.outputMode === 'human') {
-      console.log(
-        `  ${theme.green('●')} ${theme.cyan(APIFY_SESSION_NAME)} ${chalk.dim('already active')}`
-      );
+      console.log(`  ${theme.green('●')} ${theme.cyan(APIFY_SESSION_NAME)} ${theme.green('live')}`);
     }
     return;
   }
