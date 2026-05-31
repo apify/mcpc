@@ -234,7 +234,8 @@ test_pass
 test_case "re-running discovery reuses existing session (no @shared-2)"
 run_mcpc_discover connect
 assert_success "re-run discovery should succeed"
-assert_contains "$STDOUT" "already active"
+# Already-live sessions are shown inline with the green "live" state
+assert_contains "$STDOUT" "live already"
 
 # Session list must not grow (no @shared-2 / duplicates)
 run_mcpc --json
@@ -319,7 +320,9 @@ assert_success "discovery with an http + skipped stdio server should succeed"
 assert_contains "$STDOUT" "@discover-http"
 assert_contains "$STDOUT" "connecting"
 assert_contains "$STDOUT" "○ skipped (stdio)"
-assert_contains "$STDOUT" "mcpc connect --stdio"
+# Plain note (not a dim "↳" hint) pointing at --stdio.
+assert_contains "$STDOUT" "To include stdio servers, run: mcpc connect --stdio"
+assert_not_contains "$STDOUT" "↳ run: mcpc connect --stdio"
 # No leftover lowercase mid-sentence "skipped" from the old summary line.
 assert_not_contains "$STDOUT" "server. skipped"
 

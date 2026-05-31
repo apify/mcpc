@@ -1526,7 +1526,7 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
   }
 
   if (skippedStdio.length > 0) {
-    console.log(`\n${chalk.dim('  ↳ run: mcpc connect --stdio')}`);
+    console.log('\nTo include stdio servers, run: mcpc connect --stdio');
   }
 
   // Auto-connect to mcp.apify.com when APIFY_API_TOKEN is set
