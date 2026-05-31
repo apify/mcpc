@@ -381,6 +381,15 @@ function asMcpConfig(parsed: unknown): McpConfig | null {
 }
 
 /**
+ * Reduce a `JSON.parse` error to a safe one-liner. V8 embeds a snippet of the file content
+ * (`Unexpected token X, "<snippet>"... is not valid JSON`) that spans newlines and echoes
+ * untrusted input; drop the snippet and keep just the diagnosis.
+ */
+function sanitizeJsonError(message: string): string {
+  return message.replace(/, "[\s\S]*"\.{0,3} is not valid JSON$/, '. Not a valid JSON file.');
+}
+
+/**
  * A config file that exists at a standard location but contains invalid JSON.
  */
 export interface InvalidConfig extends ConfigCandidate {
@@ -439,7 +448,7 @@ export function scanMcpConfigFiles(options?: {
     try {
       parsed = JSON.parse(content);
     } catch (error) {
-      invalid.push({ ...candidate, error: (error as Error).message });
+      invalid.push({ ...candidate, error: sanitizeJsonError((error as Error).message) });
       continue;
     }
 

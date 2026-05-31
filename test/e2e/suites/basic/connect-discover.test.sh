@@ -390,7 +390,7 @@ cat > "$FAKE_CWD/.mcp.json" <<EOF
   }
 }
 EOF
-printf 'f{ not valid json' > "$FAKE_CWD/mcp.json"
+printf '!INJECTED_CONTENT not valid' > "$FAKE_CWD/mcp.json"
 _SESSIONS_CREATED+=("@discover-valid")
 
 run_mcpc_discover connect
@@ -399,6 +399,8 @@ assert_contains "$STDOUT" "Found 2 MCP config files"
 # The malformed file is listed in place, marked invalid (not a top-of-output warning).
 normalized_stdout="${STDOUT//\\//}"
 assert_contains "$normalized_stdout" "mcp.json (invalid format)"
+# The file's content must not be echoed back (layout + prompt-injection safety).
+assert_not_contains "$STDOUT" "INJECTED_CONTENT"
 test_pass
 
 test_done
