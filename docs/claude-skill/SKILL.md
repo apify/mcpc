@@ -16,30 +16,30 @@ This is more efficient than function calling - generate shell commands instead.
 mcpc
 
 # Show server info
-mcpc <server>
 mcpc @<session>
 
 # Tools
-mcpc <target> tools-list
-mcpc <target> tools-get <tool-name>
-mcpc <target> tools-call <tool-name> key:=value key2:="string value"
+mcpc @<session> tools-list
+mcpc @<session> tools-get <tool-name>
+mcpc @<session> tools-call <tool-name> key:=value key2:="string value"
 
 # Resources
-mcpc <target> resources-list
-mcpc <target> resources-read <uri>
+mcpc @<session> resources-list
+mcpc @<session> resources-read <uri>
 
 # Prompts
-mcpc <target> prompts-list
-mcpc <target> prompts-get <prompt-name> arg1:=value1
+mcpc @<session> prompts-list
+mcpc @<session> prompts-get <prompt-name> arg1:=value1
 
 # Sessions (persistent connections)
-mcpc <server> connect @<name>
+mcpc connect <server> @<name>
 mcpc @<name> <command>
-mcpc @<name> close
+mcpc close @<name>
+mcpc restart @<name>
 
 # Authentication
-mcpc <server> login
-mcpc <server> logout
+mcpc login <server>
+mcpc logout <server>
 ```
 
 ## Target types
@@ -47,7 +47,7 @@ mcpc <server> logout
 - `mcp.example.com` - Direct HTTPS connection to remote server
 - `localhost:8080` or `127.0.0.1:8080` - Local HTTP server (http:// is default for localhost)
 - `@session-name` - Named persistent session (faster, maintains state)
-- `config-entry` - Entry from config file (with `--config`)
+- `.vscode/mcp.json:filesystem` - Entry from a config file (`file:entry`)
 
 ## Passing arguments
 
@@ -94,17 +94,17 @@ Create sessions for repeated interactions:
 
 ```bash
 # Create session (or reconnect if exists)
-mcpc mcp.apify.com connect @apify
+mcpc connect mcp.apify.com @apify
 
 # Use session (faster - no reconnection overhead)
 mcpc @apify tools-list
 mcpc @apify tools-call search query:="test"
 
 # Restart session (useful after server updates)
-mcpc @apify restart
+mcpc restart @apify
 
 # Close when done
-mcpc @apify close
+mcpc close @apify
 ```
 
 **Session states:**
@@ -116,14 +116,14 @@ mcpc @apify close
 
 **OAuth (interactive login)**:
 ```bash
-mcpc mcp.apify.com login
-mcpc mcp.apify.com connect @apify
+mcpc login mcp.apify.com
+mcpc connect mcp.apify.com @apify
 ```
 
 **Bearer token**:
 ```bash
-mcpc -H "Authorization: Bearer $TOKEN" mcp.apify.com tools-list
-mcpc -H "Authorization: Bearer $TOKEN" mcp.apify.com connect @myserver
+mcpc connect mcp.apify.com @myserver -H "Authorization: Bearer $TOKEN"
+mcpc --json @myserver tools-list
 ```
 
 ## Proxy server for AI isolation
@@ -132,12 +132,12 @@ Create a proxy MCP server that hides authentication tokens:
 
 ```bash
 # Human creates authenticated session with proxy
-mcpc mcp.apify.com connect @ai-proxy --proxy 8080
+mcpc connect mcp.apify.com @ai-proxy --proxy 8080
 
 # AI agent connects to proxy (no access to original tokens)
 # Note: localhost defaults to http://
-mcpc localhost:8080 tools-list
-mcpc 127.0.0.1:8080 connect @sandboxed
+mcpc connect localhost:8080 @sandboxed
+mcpc @sandboxed tools-list
 ```
 
 ## Common patterns
@@ -160,7 +160,8 @@ mcpc @s resources-read "file:///path/to/file"
 
 **Use config file for local servers**:
 ```bash
-mcpc --config .vscode/mcp.json filesystem resources-list
+mcpc connect .vscode/mcp.json:filesystem @filesystem
+mcpc @filesystem resources-list
 ```
 
 ## Exit codes
