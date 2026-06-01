@@ -1,184 +1,218 @@
 ---
 name: mcpc
-description: Use mcpc CLI to interact with MCP servers - call tools, read resources, get prompts. Use this when working with Model Context Protocol servers, calling MCP tools, or accessing MCP resources programmatically.
+description: Use the mcpc CLI to work with MCP (Model Context Protocol) servers from the shell - connect to a server as a persistent session, then list and call tools, read resources, get prompts, and run async tasks. Use --json for scripting and code mode. Reach for this whenever interacting with MCP servers, calling MCP tools, or accessing MCP resources programmatically.
 allowed-tools: Bash(mcpc:*), Bash(node dist/cli/index.js:*), Read, Grep
 ---
 
 # mcpc: MCP command-line client
 
-Use `mcpc` to interact with MCP (Model Context Protocol) servers from the command line.
-This is more efficient than function calling - generate shell commands instead.
+`mcpc` maps every MCP operation to a shell command. For agents this is often more
+efficient than function calling: discover the right tool on demand, then generate
+shell commands (ideally with `--json`) instead of carrying tool definitions in context.
 
-## Quick reference
+## Mental model
+
+1. **Connect once** to a server — this creates a persistent, named `@session`. A
+   background bridge process keeps the connection (and its state) alive.
+2. **Run commands against the `@session`**: list/call tools, read resources, get
+   prompts, run async tasks. There is no one-shot `mcpc <url> tools-list` — connect first.
+3. **Default output is human-readable**; add `--json` for machine-readable, MCP-spec
+   shaped output that composes with `jq` and shell pipelines (code mode).
+
+Everything is self-documenting — when unsure, ask the CLI:
 
 ```bash
-# List sessions and auth profiles
-mcpc
-
-# Show server info
-mcpc <server>
-mcpc @<session>
-
-# Tools
-mcpc <target> tools-list
-mcpc <target> tools-get <tool-name>
-mcpc <target> tools-call <tool-name> key:=value key2:="string value"
-
-# Resources
-mcpc <target> resources-list
-mcpc <target> resources-read <uri>
-
-# Prompts
-mcpc <target> prompts-list
-mcpc <target> prompts-get <prompt-name> arg1:=value1
-
-# Sessions (persistent connections)
-mcpc <server> connect @<name>
-mcpc @<name> <command>
-mcpc @<name> close
-
-# Authentication
-mcpc <server> login
-mcpc <server> logout
+mcpc --help                       # all commands + global options
+mcpc help connect                 # help for one command
+mcpc @apify tools-call foo --help # print a specific tool's input schema
 ```
 
-## Target types
-
-- `mcp.example.com` - Direct HTTPS connection to remote server
-- `localhost:8080` or `127.0.0.1:8080` - Local HTTP server (http:// is default for localhost)
-- `@session-name` - Named persistent session (faster, maintains state)
-- `config-entry` - Entry from config file (with `--config`)
-
-## Passing arguments
-
-Arguments use `key:=value` syntax. Values are auto-parsed as JSON when valid:
+## First steps
 
 ```bash
-# String values
-mcpc @s tools-call search query:="hello world"
-
-# Numbers, booleans, null (auto-parsed as JSON)
-mcpc @s tools-call search query:="hello" limit:=10 enabled:=true
-
-# Complex JSON values
-mcpc @s tools-call search config:='{"nested":"value"}' items:='[1,2,3]'
-
-# Force string type with JSON quotes
-mcpc @s tools-call search id:='"123"'
-
-# Inline JSON object (if first arg starts with { or [)
-mcpc @s tools-call search '{"query":"hello","limit":10}'
-
-# From stdin (auto-detected when piped)
-echo '{"query":"hello"}' | mcpc @s tools-call search
+mcpc                                   # list sessions + auth profiles (start here)
+mcpc connect mcp.apify.com @apify      # connect, create the @apify session
+mcpc @apify                            # server info, capabilities, tools overview
+mcpc @apify tools-list                 # list tools
+mcpc @apify tools-call <tool> q:="hi"  # call a tool
 ```
 
-## JSON output for scripting
+## Connecting
 
-Always use `--json` flag for machine-readable output:
+Server formats accepted by `connect` / `login` / `logout`:
+
+- `mcp.example.com` — remote HTTP server (`https://` is added automatically)
+- `localhost:8080` or `127.0.0.1:8080` — local HTTP server (`http://` is the default for localhost)
+- `~/.vscode/mcp.json:filesystem` — a single entry from a config file (`file:entry`)
+- `~/.vscode/mcp.json` — connect **every** entry in a config file
+- _(no server)_ — auto-discover standard configs and connect all of them
 
 ```bash
-# Get tools as JSON
-mcpc --json @apify tools-list
-
-# Call tool and parse result with jq
-mcpc --json @apify tools-call search query:="test" | jq '.content[0].text'
-
-# Chain commands
-mcpc --json @server1 tools-call get-data | mcpc @server2 tools-call process
+mcpc connect mcp.apify.com @apify        # remote server, explicit session name
+mcpc connect mcp.apify.com               # auto-name the session → @apify
+mcpc connect ./.vscode/mcp.json:fs @fs   # one config entry (stdio or http)
+mcpc connect                             # discover standard configs + connect everything
 ```
 
-## Sessions for efficiency
+- `@session` is optional — omit it to auto-generate a name from the server
+  (`mcp.apify.com` → `@apify`). A matching session (same server + auth) is reused.
+- **Stdio (command-based) entries launch a local process on connect** — only connect
+  to configs you trust. Bulk connects skip stdio entries unless you pass `--stdio`.
+- Set `APIFY_API_TOKEN` to auto-connect `mcp.apify.com` as `@apify` (used as a Bearer token).
 
-Create sessions for repeated interactions:
+## Sessions
 
 ```bash
-# Create session (or reconnect if exists)
-mcpc mcp.apify.com connect @apify
-
-# Use session (faster - no reconnection overhead)
-mcpc @apify tools-list
-mcpc @apify tools-call search query:="test"
-
-# Restart session (useful after server updates)
-mcpc @apify restart
-
-# Close when done
-mcpc @apify close
+mcpc                     # list all sessions and their state
+mcpc @apify              # session details, capabilities, tools (also reports the
+                         # negotiated protocol version and stateful vs stateless)
+mcpc restart @apify      # restart (after server updates, or to recover an 'expired' session)
+mcpc close @apify        # tear the session down
 ```
 
 **Session states:**
-- 🟢 **live** - Bridge running, server might or might not be responding
-- 🟡 **crashed** - Bridge crashed; auto-restarts on next use
-- 🔴 **expired** - Server rejected session; needs `close` and reconnect
+
+- 🟢 **live** — ready to use
+- 🟡 **connecting** / **reconnecting** — transient; retry in a moment
+- 🟡 **crashed** — bridge process died; auto-restarts on next use
+- 🔴 **unauthorized** — auth failed; run `mcpc login <server>` then `mcpc restart @session`
+- 🔴 **expired** — server dropped the session; run `mcpc restart @session`
+
+## Discovering and inspecting tools
+
+```bash
+mcpc @apify tools-list                  # compact list with inline param signatures
+mcpc @apify tools-list --full           # full JSON schemas
+mcpc @apify tools-get <tool>            # one tool's details + schema
+mcpc @apify tools-call <tool> --help    # shortcut: print just that tool's input schema
+
+mcpc grep "search"                      # search tools + instructions across ALL sessions
+mcpc @apify grep "actor" --resources    # search one session; --tools/--resources/--prompts, -E regex
+```
+
+Prefer progressive discovery: `grep` to find the right tool, then `tools-get` for its
+schema. This keeps token use low instead of dumping every tool definition.
+
+## Calling tools (passing arguments)
+
+Arguments go after the tool name. Three interchangeable styles:
+
+```bash
+# 1) key:=value — values are auto-parsed as JSON, falling back to string
+mcpc @apify tools-call search query:="hello world" limit:=10 enabled:=true
+mcpc @apify tools-call search config:='{"nested":"value"}' items:='[1,2,3]'
+mcpc @apify tools-call search id:='"123"'          # force a string with JSON quotes
+
+# 2) inline JSON — when the first arg starts with { or [
+mcpc @apify tools-call search '{"query":"hello","limit":10}'
+
+# 3) stdin — auto-detected when piped and no positional args are given
+echo '{"query":"hello"}' | mcpc @apify tools-call search
+```
+
+## JSON output (code mode)
+
+Add `--json` for machine-readable output: results on stdout, errors on stderr,
+shaped strictly per the MCP spec.
+
+```bash
+mcpc --json @apify tools-list | jq -r '.[].name'
+mcpc --json @apify tools-call search query:="test" | jq -r '.content[0].text'
+
+# chain tools across calls/sessions
+mcpc --json @apify tools-call search-actors keywords:="scraper" \
+  | jq -r '.content[0].text | fromjson | .items[0].id' \
+  | xargs -I{} mcpc --json @apify tools-call get-actor actorId:="{}"
+```
+
+`mcpc --json` with no command returns `{ "sessions": [...], "profiles": [...] }`.
+
+## Resources and prompts
+
+```bash
+mcpc @apify resources-list
+mcpc @apify resources-read "file:///path/to/file"   # -o <file> to save, --max-size <bytes>
+mcpc @apify resources-templates-list
+mcpc @apify resources-subscribe <uri>               # and resources-unsubscribe <uri>
+
+mcpc @apify prompts-list
+mcpc @apify prompts-get <name> arg1:=value1         # same argument styles as tools-call
+```
+
+## Async tasks (long-running tools)
+
+```bash
+mcpc @apify tools-call <tool> --task <args>     # run as a task with a progress spinner;
+                                                # Ctrl+C leaves it running and prints the task ID
+mcpc @apify tools-call <tool> --detach <args>   # start and return the task ID immediately
+mcpc @apify tasks-list
+mcpc @apify tasks-get <taskId>                  # status
+mcpc @apify tasks-result <taskId>               # block until the final result is ready
+mcpc @apify tasks-cancel <taskId>
+```
 
 ## Authentication
 
-**OAuth (interactive login)**:
 ```bash
-mcpc mcp.apify.com login
-mcpc mcp.apify.com connect @apify
-```
+# OAuth — interactive browser login, saved as a reusable profile
+mcpc login mcp.apify.com                    # "default" profile
+mcpc login mcp.apify.com --profile work     # a named profile (multiple accounts per server)
+mcpc connect mcp.apify.com @apify --profile work
+mcpc logout mcp.apify.com
 
-**Bearer token**:
-```bash
-mcpc -H "Authorization: Bearer $TOKEN" mcp.apify.com tools-list
-mcpc -H "Authorization: Bearer $TOKEN" mcp.apify.com connect @myserver
-```
-
-## Proxy server for AI isolation
-
-Create a proxy MCP server that hides authentication tokens:
-
-```bash
-# Human creates authenticated session with proxy
-mcpc mcp.apify.com connect @ai-proxy --proxy 8080
-
-# AI agent connects to proxy (no access to original tokens)
-# Note: localhost defaults to http://
-mcpc localhost:8080 tools-list
-mcpc 127.0.0.1:8080 connect @sandboxed
-```
-
-## Common patterns
-
-**List and inspect tools**:
-```bash
+# Bearer token — not stored as a profile; kept per-session
+mcpc connect mcp.apify.com @s -H "Authorization: Bearer $TOKEN"
 mcpc @s tools-list
-mcpc @s tools-get tool-name
 ```
 
-**Call tool and extract text result**:
+With no auth flags, mcpc uses the `default` profile if one exists, otherwise it
+connects anonymously. Use `--no-profile` to force an anonymous connection, or
+`--profile <name>` to require a specific one.
+
+## Proxy for AI isolation
+
+Expose an authenticated session as a local MCP server, so sandboxed AI code can use it
+without ever seeing your real credentials:
+
 ```bash
-mcpc --json @s tools-call my-tool | jq -r '.content[0].text'
+# Human: authenticated session + proxy listening on :8080
+mcpc connect mcp.apify.com @ai-proxy --profile ai-access --proxy 8080
+
+# AI in a sandbox limited to localhost: no access to the original tokens
+mcpc connect localhost:8080 @sandboxed
+mcpc @sandboxed tools-list
 ```
 
-**Read resource content**:
+A proxy does not make an untrusted server safe — stdio servers still touch your system,
+and HTTP servers still hold your credentials. Only connect to servers you trust.
+
+## Agent skills (experimental)
+
+Some servers publish agent skills (draft MCP extension, SEP-2640):
+
 ```bash
-mcpc @s resources-read "file:///path/to/file"
+mcpc @apify skills-list
+mcpc @apify skills-get <name> --raw    # print the SKILL.md markdown (pipe to a file or an LLM)
 ```
-
-**Use config file for local servers**:
-```bash
-mcpc --config .vscode/mcp.json filesystem resources-list
-```
-
-## Exit codes
-
-- `0` - Success
-- `1` - Client error (invalid arguments)
-- `2` - Server error (tool failed)
-- `3` - Network error
-- `4` - Authentication error
 
 ## Debugging
 
 ```bash
-# Verbose output shows protocol details
-mcpc --verbose @s tools-call my-tool
+mcpc --verbose @apify tools-call <tool>   # protocol-level detail (JSON-RPC, transport)
+mcpc @apify logs                          # bridge log; -n <N>, --follow, --since 1h
+mcpc @apify ping                          # round-trip health check
+mcpc clean                                # tidy stale sessions/logs (also: mcpc clean all)
 ```
+
+## Exit codes
+
+- `0` — success
+- `1` — client error (invalid arguments, unknown command)
+- `2` — server error (tool failed, resource not found)
+- `3` — network error
+- `4` — authentication error
 
 ## Example script
 
-See [`docs/examples/company-lookup.sh`](../examples/company-lookup.sh) for a complete example
-of an AI-generated script that validates prerequisites and calls MCP tools.
+See [`docs/examples/company-lookup.sh`](../examples/company-lookup.sh) for a complete,
+AI-generated "code mode" script that validates prerequisites and calls MCP tools with `--json`.
