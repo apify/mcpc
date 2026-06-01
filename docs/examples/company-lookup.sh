@@ -7,8 +7,8 @@
 #
 # Prerequisites:
 #   1. Install mcpc: npm install -g @apify/mcpc
-#   2. Login to Apify MCP server: mcpc mcp.apify.com login
-#   3. Create a session: mcpc mcp.apify.com connect @apify
+#   2. Login to Apify MCP server: mcpc login mcp.apify.com
+#   3. Create a session: mcpc connect mcp.apify.com @apify
 #
 # Usage:
 #   ./company-lookup.sh "Company Name"
@@ -66,16 +66,16 @@ if [ -z "$SESSION_STATUS" ]; then
     error "Session ${SESSION} not found.
 
 To set up the required session:
-  1. Login to Apify: mcpc mcp.apify.com login
-  2. Create session: mcpc mcp.apify.com connect ${SESSION}
+  1. Login to Apify: mcpc login mcp.apify.com
+  2. Create session: mcpc connect mcp.apify.com ${SESSION}
 
 Or use a different session by setting MCPC_SESSION environment variable."
 fi
 
 if [ "$SESSION_STATUS" = "expired" ]; then
     error "Session ${SESSION} has expired. Please recreate it:
-  mcpc ${SESSION} close
-  mcpc mcp.apify.com connect ${SESSION}"
+  mcpc close ${SESSION}
+  mcpc connect mcp.apify.com ${SESSION}"
 fi
 
 if [ "$SESSION_STATUS" = "crashed" ]; then
