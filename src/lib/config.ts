@@ -390,10 +390,11 @@ function sanitizeJsonError(message: string): string {
 }
 
 /**
- * A config file that exists at a standard location but contains invalid JSON.
+ * A config file that exists at a standard location but couldn't be used — invalid JSON,
+ * unreadable (e.g. permissions), or (for project-level files) missing a servers object.
  */
-export interface InvalidConfig extends ConfigCandidate {
-  /** The JSON parser's error message. */
+export interface ConfigError extends ConfigCandidate {
+  /** Human-readable reason the file couldn't be used. */
   error: string;
 }
 
@@ -409,15 +410,16 @@ export interface McpConfigScan {
    * "no config file exists at all".
    */
   empty: ConfigCandidate[];
-  /** Files that exist but contain invalid JSON, with the parser's error message. */
-  invalid: InvalidConfig[];
+  /** Files that exist but couldn't be used, each with a reason (see `ConfigError`). */
+  errors: ConfigError[];
 }
 
 /**
  * Scan all standard MCP config locations, partitioning the files that exist into those that
  * define servers (`discovered`), those with an empty servers object (`empty`), and those that
- * fail to parse as JSON (`invalid`). Missing/unreadable files and valid-JSON files that aren't
- * MCP configs are skipped silently. Never throws.
+ * couldn't be used (`errors`: invalid JSON, unreadable, or — for project-level files — missing
+ * a servers object). Missing files are skipped silently; so are global files without a servers
+ * object (e.g. `~/.claude.json` app state, which legitimately omits MCP servers). Never throws.
  *
  * Results are returned in priority order (project-level first, then global),
  * so callers can deterministically resolve collisions by taking the first occurrence.
@@ -433,40 +435,51 @@ export function scanMcpConfigFiles(options?: {
   const candidates = getStandardMcpConfigPaths(options);
   const discovered: DiscoveredConfig[] = [];
   const empty: ConfigCandidate[] = [];
-  const invalid: InvalidConfig[] = [];
+  const errors: ConfigError[] = [];
 
   for (const candidate of candidates) {
     let content: string;
     try {
-      if (!statSync(candidate.path).isFile()) continue;
+      if (!statSync(candidate.path).isFile()) continue; // missing or not a regular file
       content = readFileSync(candidate.path, 'utf-8');
-    } catch {
-      continue; // missing or unreadable — skip silently
+    } catch (error) {
+      const err = error as NodeJS.ErrnoException;
+      if (err.code === 'ENOENT') continue; // doesn't exist — skip silently
+      errors.push({ ...candidate, error: err.message }); // exists but unreadable (e.g. EACCES)
+      continue;
     }
 
     let parsed: unknown;
     try {
       parsed = JSON.parse(content);
     } catch (error) {
-      invalid.push({ ...candidate, error: sanitizeJsonError((error as Error).message) });
+      errors.push({ ...candidate, error: sanitizeJsonError((error as Error).message) });
       continue;
     }
 
     const config = asMcpConfig(parsed);
-    if (!config) continue; // valid JSON but not an MCP config (e.g. an unrelated ~/.claude.json)
+    if (!config) {
+      // Valid JSON without a servers object. For project files (dedicated MCP configs the user
+      // authored) this is a mistake worth flagging; global files are usually app state that
+      // simply has no MCP servers (e.g. ~/.claude.json), so skip them silently.
+      if (candidate.scope === 'project') {
+        errors.push({ ...candidate, error: 'No "mcpServers" or "servers" property.' });
+      }
+      continue;
+    }
 
     const serverCount = Object.keys(config.mcpServers).length;
     if (serverCount === 0) empty.push(candidate);
     else discovered.push({ ...candidate, config, serverCount });
   }
 
-  return { discovered, empty, invalid };
+  return { discovered, empty, errors };
 }
 
 /**
  * Discover MCP config files from standard locations.
  * Only returns files that exist and contain at least one server.
- * Files that don't parse are skipped (see `scanMcpConfigFiles().invalid`) — discovery does not fail.
+ * Files that can't be used are skipped (see `scanMcpConfigFiles().errors`) — discovery does not fail.
  *
  * Results are returned in priority order (project-level first, then global),
  * so callers can deterministically resolve collisions by taking the first occurrence.

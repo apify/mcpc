@@ -682,26 +682,39 @@ describe('scanMcpConfigFiles', () => {
     expect(scan.empty).toEqual([]);
   });
 
-  it('does not surface files without a servers field (e.g. ~/.claude.json app state)', () => {
+  it('does not surface global files without a servers field (e.g. ~/.claude.json app state)', () => {
     const { home, cwd } = freshDirs('no-key');
     writeFileSync(join(home, '.claude.json'), JSON.stringify({ numStartups: 5, theme: 'dark' }));
 
     const scan = scanMcpConfigFiles({ homeDir: home, cwd, platform: 'linux' });
     expect(scan.discovered).toEqual([]);
     expect(scan.empty).toEqual([]);
+    expect(scan.errors).toEqual([]);
   });
 
-  it('captures invalid JSON in `invalid` without echoing the file content', () => {
+  it('flags a project file with no servers object as an error', () => {
+    const { home, cwd } = freshDirs('no-servers-project');
+    writeFileSync(join(cwd, 'mcp.json'), JSON.stringify({ x: {} }));
+
+    const scan = scanMcpConfigFiles({ homeDir: home, cwd, platform: 'linux' });
+    expect(scan.discovered).toEqual([]);
+    expect(scan.empty).toEqual([]);
+    expect(scan.errors).toHaveLength(1);
+    expect(scan.errors[0]?.path).toContain('mcp.json');
+    expect(scan.errors[0]?.error).toContain('mcpServers');
+  });
+
+  it('captures invalid JSON in `errors` without echoing the file content', () => {
     const { home, cwd } = freshDirs('bad-json');
     writeFileSync(join(cwd, 'mcp.json'), '!INJECTED_MARKER');
 
     const scan = scanMcpConfigFiles({ homeDir: home, cwd, platform: 'linux' });
     expect(scan.discovered).toEqual([]);
     expect(scan.empty).toEqual([]);
-    expect(scan.invalid).toHaveLength(1);
-    expect(scan.invalid[0]?.path).toContain('mcp.json');
-    expect(scan.invalid[0]?.error.length).toBeGreaterThan(0);
+    expect(scan.errors).toHaveLength(1);
+    expect(scan.errors[0]?.path).toContain('mcp.json');
+    expect(scan.errors[0]?.error.length).toBeGreaterThan(0);
     // The file's content must not be echoed back (layout + prompt-injection safety).
-    expect(scan.invalid[0]?.error).not.toContain('INJECTED_MARKER');
+    expect(scan.errors[0]?.error).not.toContain('INJECTED_MARKER');
   });
 });

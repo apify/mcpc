@@ -1363,7 +1363,7 @@ function aggregateDiscoveredEntries(
  * file is sitting right there among the searched paths.
  */
 function buildNoServersError(scan: McpConfigScan): string {
-  if (scan.empty.length > 0 || scan.invalid.length > 0) {
+  if (scan.empty.length > 0 || scan.errors.length > 0) {
     const lines: string[] = [];
     if (scan.empty.length > 0) {
       lines.push(
@@ -1373,14 +1373,14 @@ function buildNoServersError(scan: McpConfigScan): string {
       );
       for (const c of scan.empty) lines.push(`  ${formatPath(c.path)}`);
     }
-    if (scan.invalid.length > 0) {
+    if (scan.errors.length > 0) {
       if (lines.length > 0) lines.push('');
       lines.push(
-        scan.invalid.length === 1
-          ? `Found a config file, but it isn't valid JSON:`
-          : `Found config files, but they aren't valid JSON:`
+        scan.errors.length === 1
+          ? `Found a config file, but it couldn't be used:`
+          : `Found config files, but they couldn't be used:`
       );
-      for (const c of scan.invalid) lines.push(`  ${formatPath(c.path)}`);
+      for (const c of scan.errors) lines.push(`  ${formatPath(c.path)} — ${c.error}`);
     }
     return (
       `No MCP servers to connect.\n\n` +
@@ -1465,7 +1465,7 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
   // result is filled in inline below.
   if (options.outputMode === 'human') {
     const totalEntries = entries.length + skippedDuplicates.length + skippedStdio.length;
-    const fileCount = discovered.length + scan.empty.length + scan.invalid.length;
+    const fileCount = discovered.length + scan.empty.length + scan.errors.length;
     console.log(
       theme.cyan(
         `Found ${fileCount} MCP config file${fileCount === 1 ? '' : 's'} ` +
@@ -1545,9 +1545,10 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
     console.log(`  ${formatPath(c.path)} ${chalk.dim('(0 servers)')}`);
   }
 
-  // Config files that exist but contain invalid JSON — show the parse error inline.
-  for (const c of scan.invalid) {
-    console.log(`  ${formatPath(c.path)} ${chalk.dim('(invalid format)')}`);
+  // Config files that exist but couldn't be used (bad JSON, no servers, unreadable) — show
+  // the reason inline.
+  for (const c of scan.errors) {
+    console.log(`  ${formatPath(c.path)} ${chalk.dim('(error)')}`);
     console.log(`    ${chalk.dim(c.error)}`);
   }
 

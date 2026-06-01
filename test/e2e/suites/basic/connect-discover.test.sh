@@ -374,15 +374,16 @@ assert_not_contains "$STDOUT" "To include stdio servers"
 test_pass
 
 # =============================================================================
-# Test: A config file with invalid JSON is listed inline as "(invalid format)"
-#       (counted, with the parse error shown), not dropped or warned out of band
+# Test: Unusable config files are listed inline as "(error)" with a reason —
+#       invalid JSON, and a project file missing a servers object — counted,
+#       not dropped or warned out of band (#255)
 # =============================================================================
 
-test_case "invalid-JSON config is listed inline as (invalid format)"
+test_case "unusable config files are listed inline as (error) with a reason"
 run_mcpc "@discover-live-stdio" close || true
-rm -f "$FAKE_CWD/.mcp.json" "$FAKE_CWD/mcp.json" "$FAKE_HOME/.cursor/mcp.json"
+rm -f "$FAKE_CWD/.mcp.json" "$FAKE_CWD/mcp.json" "$FAKE_CWD/mcp_config.json" "$FAKE_HOME/.cursor/mcp.json"
 
-# A valid project config (so discovery proceeds) + a malformed one alongside it.
+# A valid config (so discovery proceeds) + a malformed one + one with no servers object.
 cat > "$FAKE_CWD/.mcp.json" <<EOF
 {
   "mcpServers": {
@@ -391,15 +392,18 @@ cat > "$FAKE_CWD/.mcp.json" <<EOF
 }
 EOF
 printf '!INJECTED_CONTENT not valid' > "$FAKE_CWD/mcp.json"
+printf '{ "x": {} }' > "$FAKE_CWD/mcp_config.json"
 _SESSIONS_CREATED+=("@discover-valid")
 
 run_mcpc_discover connect
-assert_success "discovery should succeed despite an invalid config alongside a valid one"
-assert_contains "$STDOUT" "Found 2 MCP config files"
-# The malformed file is listed in place, marked invalid (not a top-of-output warning).
+assert_success "discovery should succeed despite unusable configs alongside a valid one"
+assert_contains "$STDOUT" "Found 3 MCP config files"
+# Both unusable files are listed in place, marked (error) with a reason.
 normalized_stdout="${STDOUT//\\//}"
-assert_contains "$normalized_stdout" "mcp.json (invalid format)"
-# The file's content must not be echoed back (layout + prompt-injection safety).
+assert_contains "$normalized_stdout" "mcp.json (error)"
+assert_contains "$normalized_stdout" "mcp_config.json (error)"
+assert_contains "$STDOUT" "No \"mcpServers\" or \"servers\" property."
+# The malformed file's content must not be echoed back (layout + prompt-injection safety).
 assert_not_contains "$STDOUT" "INJECTED_CONTENT"
 test_pass
 
