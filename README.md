@@ -205,6 +205,24 @@ The `connect`, `login`, and `logout` commands accept a `<server>` argument in th
 - **Remote URL** (e.g. `mcp.apify.com` or `https://mcp.apify.com`) — scheme defaults to `https://`
 - **Config file entry** (e.g. `~/.vscode/mcp.json:filesystem`) — `file:entry-name` syntax
 
+`connect` additionally supports two **bulk** forms that connect many servers at once:
+
+- **Config file** without an entry (e.g. `~/.vscode/mcp.json`) — connect every server in the file
+- **No argument** (`mcpc connect`) — auto-discover MCP config files in the current directory and
+  your home dir (`.mcp.json`, `mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, `~/.claude.json`,
+  Claude Desktop, Windsurf, Kiro, …) and connect everything found (run `mcpc connect --help` for the
+  full list). Set `APIFY_API_TOKEN` to also connect `mcp.apify.com` as `@apify`.
+
+```bash
+mcpc connect                      # discover standard config files and connect all servers
+mcpc connect ~/.vscode/mcp.json   # connect every server in one file
+```
+
+Bulk connects auto-generate session names (so they don't take an `@session`) and **skip local
+stdio servers by default** — pass `--stdio` to include them. Each discovered config file is listed
+with its servers and their status (`● live`, `● connecting`); files that can't be used are shown as
+`(0 servers)` or `(invalid)` with the reason, rather than silently ignored.
+
 ### MCP commands
 
 All MCP commands go through a named session created with `connect`:
@@ -1061,6 +1079,10 @@ Use the `file:entry` syntax to reference a server from a config file:
 mcpc connect .vscode/mcp.json:apify @my-apify
 mcpc @my-apify tools-list
 ```
+
+`mcpc` also finds these files for you: run `mcpc connect` with no arguments to auto-discover config
+files in standard locations and connect every server, or pass a file without an entry to connect all
+of its servers. See [Server formats](#server-formats).
 
 **Example MCP config JSON file:**
 
