@@ -55,6 +55,7 @@ import {
   formatToolHints,
   formatCallToolResultHuman,
   formatPath,
+  formatConnectStatusBadge,
 } from '../../../src/cli/output.js';
 import type {
   Tool,
@@ -2000,6 +2001,22 @@ describe('formatPath', () => {
   it('escapes characters that stay special inside double quotes', () => {
     expect(formatPath('/tmp/a$b/mcp.json')).toBe('"/tmp/a\\$b/mcp.json"');
     expect(formatPath('/tmp/a b"c/mcp.json')).toBe('"/tmp/a b\\"c/mcp.json"');
+  });
+});
+
+describe('formatConnectStatusBadge', () => {
+  it('uses the session list "live" wording for an already-connected session', () => {
+    expect(formatConnectStatusBadge('active')).toContain('live');
+    expect(formatConnectStatusBadge('active')).not.toContain('active');
+  });
+
+  it('renders connecting / failed states', () => {
+    expect(formatConnectStatusBadge('created')).toContain('connecting');
+    expect(formatConnectStatusBadge('failed')).toContain('failed');
+  });
+
+  it('includes the failure reason when provided', () => {
+    expect(formatConnectStatusBadge('failed', 'boom')).toContain('boom');
   });
 });
 

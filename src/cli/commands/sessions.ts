@@ -1436,44 +1436,6 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
     ...(options.stdio && { stdio: true }),
   });
 
-  const skippedJsonEntries: ConnectResultEntry[] = [
-    ...skippedStdio.map(
-      (s): ConnectResultEntry => ({
-        _mcpc: {
-          sessionName: s.sessionName,
-          configFile: s.configFile,
-          entry: s.entry,
-          status: 'skipped',
-          skipReason: 'stdio',
-        },
-      })
-    ),
-    ...skippedDuplicates.map(
-      (s): ConnectResultEntry => ({
-        _mcpc: {
-          sessionName: s.sessionName,
-          configFile: s.configFile,
-          entry: s.entry,
-          status: 'skipped',
-          skipReason: 'duplicate',
-        },
-      })
-    ),
-  ];
-
-  // Print the header up front (before connecting) for immediate feedback; each entry's
-  // result is filled in inline below.
-  if (options.outputMode === 'human') {
-    const totalEntries = entries.length + skippedDuplicates.length + skippedStdio.length;
-    const fileCount = discovered.length + scan.empty.length + scan.errors.length;
-    console.log(
-      theme.cyan(
-        `Found ${fileCount} MCP config file${fileCount === 1 ? '' : 's'} ` +
-          `with ${totalEntries} server${totalEntries === 1 ? '' : 's'}:`
-      )
-    );
-  }
-
   // Connect all non-skipped entries (quietly) so each server's result can be shown inline
   // next to its config entry. We don't wait for full readiness — a newly spawned session
   // is reported optimistically as "connecting".
@@ -1481,6 +1443,19 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
     entries.length > 0 ? await bulkConnectEntries(entries, options, { printBadges: false }) : [];
 
   if (options.outputMode === 'json') {
+    const toSkipped = (s: SkippedEntry, skipReason: 'stdio' | 'duplicate'): ConnectResultEntry => ({
+      _mcpc: {
+        sessionName: s.sessionName,
+        configFile: s.configFile,
+        entry: s.entry,
+        status: 'skipped',
+        skipReason,
+      },
+    });
+    const skippedJsonEntries = [
+      ...skippedStdio.map((s) => toSkipped(s, 'stdio')),
+      ...skippedDuplicates.map((s) => toSkipped(s, 'duplicate')),
+    ];
     if (entries.length === 0) {
       if (!hasApifyToken) {
         console.log(formatOutput(skippedJsonEntries, 'json'));
@@ -1496,6 +1471,15 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
 
   // Human output: list each discovered config file and annotate every server entry with
   // its connection result (or skip reason) inline, within the context of its config file.
+  const totalEntries = entries.length + skippedDuplicates.length + skippedStdio.length;
+  const fileCount = discovered.length + scan.empty.length + scan.errors.length;
+  console.log(
+    theme.cyan(
+      `Found ${fileCount} MCP config file${fileCount === 1 ? '' : 's'} ` +
+        `with ${totalEntries} server${totalEntries === 1 ? '' : 's'}:`
+    )
+  );
+
   const statusByName = new Map(results.map((r) => [r.sessionName, r] as const));
 
   // A stdio server skipped (no --stdio) may already be live from an earlier
