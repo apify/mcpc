@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `mcpc connect` (with no arguments) no longer silently ignores config files it can't use. Files with an empty servers object are listed as `0 servers`, and files that fail to load — invalid JSON, a project config missing a `mcpServers`/`servers` property, or an unreadable file — are listed as `(error)` with the reason, instead of being dropped or misreported as `No MCP config files found`.
+- `mcpc connect` (with no arguments) no longer silently ignores config files it can't use. Files with an empty servers object are listed as `0 servers`, and files that fail to load — invalid JSON, a project config missing a `mcpServers`/`servers` property, or an unreadable file — are listed as `(invalid)` with the reason, instead of being dropped or misreported as `No MCP config files found`.
 - `mcpc connect` now prints config file paths so they can be copy-pasted directly: paths containing spaces (e.g. macOS `Library/Application Support/...`) are quoted instead of being split when pasted into a shell.
 - `mcpc connect` no longer fails with `socket file not created within timeout` when the bridge is slow to start (CPU-constrained machines, many parallel connects). The startup window is more generous, and a bridge that crashes on startup now reports its exit code immediately instead of stalling until the timeout
 

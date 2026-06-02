@@ -1548,7 +1548,7 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
   // Config files that exist but couldn't be used (bad JSON, no servers, unreadable) — show
   // the reason inline.
   for (const c of scan.errors) {
-    console.log(`  ${formatPath(c.path)} ${chalk.dim('(error)')}`);
+    console.log(`  ${formatPath(c.path)} ${chalk.dim('(invalid)')}`);
     console.log(`    ${chalk.dim(c.error)}`);
   }
 

@@ -374,12 +374,12 @@ assert_not_contains "$STDOUT" "To include stdio servers"
 test_pass
 
 # =============================================================================
-# Test: Unusable config files are listed inline as "(error)" with a reason —
+# Test: Unusable config files are listed inline as "(invalid)" with a reason —
 #       invalid JSON, and a project file missing a servers object — counted,
 #       not dropped or warned out of band (#255)
 # =============================================================================
 
-test_case "unusable config files are listed inline as (error) with a reason"
+test_case "unusable config files are listed inline as (invalid) with a reason"
 run_mcpc "@discover-live-stdio" close || true
 rm -f "$FAKE_CWD/.mcp.json" "$FAKE_CWD/mcp.json" "$FAKE_CWD/mcp_config.json" "$FAKE_HOME/.cursor/mcp.json"
 
@@ -398,10 +398,10 @@ _SESSIONS_CREATED+=("@discover-valid")
 run_mcpc_discover connect
 assert_success "discovery should succeed despite unusable configs alongside a valid one"
 assert_contains "$STDOUT" "Found 3 MCP config files"
-# Both unusable files are listed in place, marked (error) with a reason.
+# Both unusable files are listed in place, marked (invalid) with a reason.
 normalized_stdout="${STDOUT//\\//}"
-assert_contains "$normalized_stdout" "mcp.json (error)"
-assert_contains "$normalized_stdout" "mcp_config.json (error)"
+assert_contains "$normalized_stdout" "mcp.json (invalid)"
+assert_contains "$normalized_stdout" "mcp_config.json (invalid)"
 assert_contains "$STDOUT" "No \"mcpServers\" or \"servers\" property."
 # The malformed file's content must not be echoed back (layout + prompt-injection safety).
 assert_not_contains "$STDOUT" "INJECTED_CONTENT"
