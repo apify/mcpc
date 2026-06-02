@@ -134,25 +134,25 @@ Usage: mcpc [<@session>] [<command>] [options]
 Universal command-line client for the Model Context Protocol (MCP).
 
 Commands:
-  connect <server> [@session]  Connect to an MCP server and start a new named @session
-  close <@session>             Close a session
-  restart <@session>           Restart a session (losing all state)
-  login <server>               Interactively login to a server using OAuth and save profile
-  logout <server>              Delete an OAuth profile for a server
-  clean [resources...]         Clean up mcpc data (sessions, profiles, logs, all)
-  grep <pattern>               Search tools and instructions across all active sessions
-  x402 [subcommand] [args...]  Configure an x402 payment wallet (EXPERIMENTAL)
-  help [command] [subcommand]  Show help for a specific command
+  connect [<server>] [@session]  Connect to an MCP server and start a new named @session
+  close <@session>               Close a session
+  restart <@session>             Restart a session (losing all state)
+  login <server>                 Interactively login to a server using OAuth and save profile
+  logout <server>                Delete an OAuth profile for a server
+  clean [resources...]           Clean up mcpc data (sessions, profiles, logs, all)
+  grep <pattern>                 Search tools and instructions across all active sessions
+  x402 [subcommand] [args...]    Configure an x402 payment wallet (EXPERIMENTAL)
+  help [command] [subcommand]    Show help for a specific command
 
 Options:
-  --json                       Output in JSON format for scripting
-  --verbose                    Enable debug logging
-  --profile <name>             OAuth profile for the server ("default" if not provided)
-  --timeout <seconds>          Request timeout in seconds (default: 300)
-  --max-chars <n>              Truncate output to n characters (ignored in --json mode)
-  --insecure                   Skip TLS certificate verification (for self-signed certs)
-  -v, --version                Output the version number
-  -h, --help                   Display help
+  --json                         Output in JSON format for scripting
+  --verbose                      Enable debug logging
+  --profile <name>               OAuth profile for the server ("default" if not provided)
+  --timeout <seconds>            Request timeout in seconds (default: 300)
+  --max-chars <n>                Truncate output to n characters (ignored in --json mode)
+  --insecure                     Skip TLS certificate verification (for self-signed certs)
+  -v, --version                  Output the version number
+  -h, --help                     Display help
 
 MCP session commands (after connecting):
   <@session>                   Show MCP server info, capabilities, and tools overview
@@ -204,6 +204,26 @@ The `connect`, `login`, and `logout` commands accept a `<server>` argument in th
 
 - **Remote URL** (e.g. `mcp.apify.com` or `https://mcp.apify.com`) — scheme defaults to `https://`
 - **Config file entry** (e.g. `~/.vscode/mcp.json:filesystem`) — `file:entry-name` syntax
+
+`connect` additionally supports two **bulk** forms that connect many servers at once:
+
+- **Config file** without an entry (e.g. `~/.vscode/mcp.json`) — connect every server in the file
+- **No argument** (`mcpc connect`) — auto-discover MCP config files in the current directory and
+  your home dir (`.mcp.json`, `mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, `~/.claude.json`,
+  Claude Desktop, Windsurf, Kiro, …) and connect everything found (run `mcpc connect --help` for the
+  full list). Set `APIFY_API_TOKEN` to also connect `mcp.apify.com` as `@apify`.
+
+```bash
+mcpc connect                      # discover standard config files and connect all servers
+mcpc connect ~/.vscode/mcp.json   # connect every server in one file
+```
+
+Bulk connects auto-generate session names (so they don't take an `@session`) and **skip local
+stdio servers by default** — pass `--stdio` to include them. Each discovered config file is listed
+with its servers and their status (`● live`, `● connecting`); files that can't be used are shown as
+`(0 servers)` or `(invalid)` with the reason, rather than silently ignored. Without `--json` the
+command returns right away without waiting for every connection to finish (still-connecting sessions
+show `● connecting`); `--json` waits and reports each server's details.
 
 ### MCP commands
 
@@ -1061,6 +1081,10 @@ Use the `file:entry` syntax to reference a server from a config file:
 mcpc connect .vscode/mcp.json:apify @my-apify
 mcpc @my-apify tools-list
 ```
+
+`mcpc` also finds these files for you: run `mcpc connect` with no arguments to auto-discover config
+files in standard locations and connect every server, or pass a file without an entry to connect all
+of its servers. See [Server formats](#server-formats).
 
 **Example MCP config JSON file:**
 

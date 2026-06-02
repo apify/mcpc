@@ -12,6 +12,7 @@ import {
   isStdioEntry,
   getStandardMcpConfigPaths,
   discoverMcpConfigFiles,
+  scanMcpConfigFiles,
 } from '../../../src/lib/config.js';
 import { ClientError } from '../../../src/lib/errors.js';
 
@@ -635,5 +636,85 @@ describe('discoverMcpConfigFiles', () => {
     expect(paths[1]).toContain('.vscode/mcp.json');
     expect(paths[2]).toContain('.cursor/mcp.json');
     expect(paths[3]).toContain('.vscode/mcp.json');
+  });
+});
+
+describe('scanMcpConfigFiles', () => {
+  const SCAN_TMP = join(process.cwd(), 'test-tmp-scan');
+
+  beforeEach(() => {
+    rmSync(SCAN_TMP, { recursive: true, force: true });
+    mkdirSync(SCAN_TMP, { recursive: true });
+  });
+
+  afterAll(() => {
+    rmSync(SCAN_TMP, { recursive: true, force: true });
+  });
+
+  function freshDirs(suffix: string): { home: string; cwd: string } {
+    const home = join(SCAN_TMP, `home-${suffix}`);
+    const cwd = join(SCAN_TMP, `cwd-${suffix}`);
+    mkdirSync(home, { recursive: true });
+    mkdirSync(cwd, { recursive: true });
+    return { home, cwd };
+  }
+
+  it('partitions an empty-mcpServers file into `empty`, not `discovered`', () => {
+    const { home, cwd } = freshDirs('empty');
+    writeFileSync(join(cwd, 'mcp.json'), JSON.stringify({ mcpServers: {} }));
+
+    const scan = scanMcpConfigFiles({ homeDir: home, cwd, platform: 'linux' });
+    expect(scan.discovered).toHaveLength(0);
+    expect(scan.empty).toHaveLength(1);
+    expect(scan.empty[0]?.path).toContain('mcp.json');
+  });
+
+  it('returns a populated config under `discovered` with no `empty` entries', () => {
+    const { home, cwd } = freshDirs('usable');
+    writeFileSync(
+      join(cwd, '.mcp.json'),
+      JSON.stringify({ mcpServers: { foo: { url: 'https://foo.example.com' } } })
+    );
+
+    const scan = scanMcpConfigFiles({ homeDir: home, cwd, platform: 'linux' });
+    expect(scan.discovered).toHaveLength(1);
+    expect(scan.discovered[0]?.serverCount).toBe(1);
+    expect(scan.empty).toEqual([]);
+  });
+
+  it('does not surface global files without a servers field (e.g. ~/.claude.json app state)', () => {
+    const { home, cwd } = freshDirs('no-key');
+    writeFileSync(join(home, '.claude.json'), JSON.stringify({ numStartups: 5, theme: 'dark' }));
+
+    const scan = scanMcpConfigFiles({ homeDir: home, cwd, platform: 'linux' });
+    expect(scan.discovered).toEqual([]);
+    expect(scan.empty).toEqual([]);
+    expect(scan.errors).toEqual([]);
+  });
+
+  it('flags a project file with no servers object as an error', () => {
+    const { home, cwd } = freshDirs('no-servers-project');
+    writeFileSync(join(cwd, 'mcp.json'), JSON.stringify({ x: {} }));
+
+    const scan = scanMcpConfigFiles({ homeDir: home, cwd, platform: 'linux' });
+    expect(scan.discovered).toEqual([]);
+    expect(scan.empty).toEqual([]);
+    expect(scan.errors).toHaveLength(1);
+    expect(scan.errors[0]?.path).toContain('mcp.json');
+    expect(scan.errors[0]?.error).toContain('mcpServers');
+  });
+
+  it('captures invalid JSON in `errors` without echoing the file content', () => {
+    const { home, cwd } = freshDirs('bad-json');
+    writeFileSync(join(cwd, 'mcp.json'), '!INJECTED_MARKER');
+
+    const scan = scanMcpConfigFiles({ homeDir: home, cwd, platform: 'linux' });
+    expect(scan.discovered).toEqual([]);
+    expect(scan.empty).toEqual([]);
+    expect(scan.errors).toHaveLength(1);
+    expect(scan.errors[0]?.path).toContain('mcp.json');
+    expect(scan.errors[0]?.error.length).toBeGreaterThan(0);
+    // The file's content must not be echoed back (layout + prompt-injection safety).
+    expect(scan.errors[0]?.error).not.toContain('INJECTED_MARKER');
   });
 });

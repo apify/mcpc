@@ -1341,6 +1341,41 @@ export function formatInfo(message: string): string {
   return theme.cyan(`ℹ ${message}`);
 }
 
+/**
+ * Format a filesystem path for display so it can be copy-pasted into a shell as-is.
+ *
+ * Paths made only of safe characters are returned unchanged; paths containing spaces
+ * or other shell-significant characters are wrapped in double quotes (which work in
+ * POSIX shells and Windows cmd/PowerShell for typical paths). Only the characters that
+ * remain special inside POSIX double quotes are escaped — backslashes are left intact
+ * so Windows paths like `C:\Users\foo bar\mcp.json` stay verbatim.
+ *
+ * For human-readable output only; never use it for `--json` output or actual file I/O.
+ */
+export function formatPath(p: string): string {
+  if (/^[A-Za-z0-9_./:@%+,=~-]+$/.test(p)) return p;
+  return `"${p.replace(/(["`$])/g, '\\$&')}"`;
+}
+
+/**
+ * Format an inline connection-status badge for a session — `● live`, `● connecting`, or
+ * `● failed — <reason>`. Used to annotate each config entry with its bulk-connect result,
+ * matching the session list's green `● live` state exactly. Human output only.
+ */
+export function formatConnectStatusBadge(
+  status: 'active' | 'created' | 'failed',
+  error?: string
+): string {
+  switch (status) {
+    case 'active':
+      return `${theme.green('●')} ${theme.green('live')}`;
+    case 'created':
+      return `${theme.yellow('●')} ${theme.yellow('connecting')}`;
+    case 'failed':
+      return `${theme.red('●')} ${theme.red('failed')}${error ? chalk.dim(` — ${error}`) : ''}`;
+  }
+}
+
 export function formatTaskCommandsHint(
   target: string,
   taskId?: string,

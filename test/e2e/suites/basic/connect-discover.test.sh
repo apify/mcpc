@@ -66,6 +66,36 @@ assert_contains "$STDERR" ".cursor"
 test_pass
 
 # =============================================================================
+# Test: A config that exists but defines no servers is reported clearly,
+#       not misreported as "No MCP config files found" (#255)
+# =============================================================================
+
+test_case "empty config (no servers) reports a clear message, not 'not found'"
+cat > "$FAKE_CWD/mcp.json" <<EOF
+{
+  "mcpServers": {}
+}
+EOF
+
+run_mcpc_discover connect
+assert_failure "connect with an empty config should fail"
+assert_contains "$STDERR" "No MCP servers to connect"
+assert_contains "$STDERR" "defines no servers"
+assert_contains "$STDERR" "mcp.json"
+# Regression: the present-but-empty file must not be reported as missing
+assert_not_contains "$STDERR" "No MCP config files found"
+
+# JSON mode stays machine-readable: empty array, exit 0
+run_mcpc_discover --json connect
+assert_success "json mode with an empty config should exit 0"
+assert_json_valid "$STDOUT"
+empty_len=$(echo "$STDOUT" | jq 'length')
+assert_eq "$empty_len" "0" "json mode should output an empty array"
+
+rm -f "$FAKE_CWD/mcp.json"
+test_pass
+
+# =============================================================================
 # Test: Project-scope .mcp.json is discovered and connected
 # =============================================================================
 
@@ -204,7 +234,8 @@ test_pass
 test_case "re-running discovery reuses existing session (no @shared-2)"
 run_mcpc_discover connect
 assert_success "re-run discovery should succeed"
-assert_contains "$STDOUT" "already active"
+# Already-live sessions are shown inline with the green "live" state
+assert_contains "$STDOUT" "● live"
 
 # Session list must not grow (no @shared-2 / duplicates)
 run_mcpc --json
@@ -223,6 +254,157 @@ test_case "discovered session is usable for tools-list"
 run_mcpc "@shared" tools-list
 assert_success "tools-list should work on discovered session"
 assert_contains "$STDOUT" "echo"
+test_pass
+
+# =============================================================================
+# Test: A config that exists but defines no servers is still listed alongside
+#       configs that do define servers (rather than silently dropped) (#255)
+# =============================================================================
+
+test_case "empty config is listed (0 servers) next to a config that has servers"
+# Start this final case from a clean discovery state.
+run_mcpc "@shared" close || true
+rm -f "$FAKE_CWD/.mcp.json" "$FAKE_CWD/mcp.json" "$FAKE_HOME/.cursor/mcp.json"
+
+# One project config with a server + one empty project config alongside it.
+cat > "$FAKE_CWD/.mcp.json" <<EOF
+{
+  "mcpServers": {
+    "discover-mixed": {
+      "url": "$TEST_SERVER_URL",
+      "headers": { "X-Test": "true" }
+    }
+  }
+}
+EOF
+cat > "$FAKE_CWD/mcp.json" <<EOF
+{
+  "mcpServers": {}
+}
+EOF
+_SESSIONS_CREATED+=("@discover-mixed")
+
+run_mcpc_discover connect
+assert_success "discovery with a populated + empty config should succeed"
+assert_contains "$STDOUT" "Found 2 MCP config files"
+assert_contains "$STDOUT" "@discover-mixed"
+# The empty config must be visibly accounted for, not silently dropped
+assert_contains "$STDOUT" "0 servers"
+test_pass
+
+# =============================================================================
+# Test: connection status is reported inline within each config file — the
+#       connected server shows a status badge, stdio servers are marked skipped
+#       inline, and the --stdio hint follows the listing (not in a separate block)
+# =============================================================================
+
+test_case "status is reported inline per config entry, with the --stdio hint last"
+run_mcpc "@discover-mixed" close || true
+rm -f "$FAKE_CWD/.mcp.json" "$FAKE_CWD/mcp.json" "$FAKE_HOME/.cursor/mcp.json"
+
+# One HTTP server (connects) + one stdio server (skipped without --stdio). The
+# stdio command is never executed because the entry is skipped.
+cat > "$FAKE_CWD/.mcp.json" <<EOF
+{
+  "mcpServers": {
+    "discover-http": { "url": "$TEST_SERVER_URL", "headers": { "X-Test": "true" } },
+    "discover-stdio": { "command": "true", "args": [] }
+  }
+}
+EOF
+_SESSIONS_CREATED+=("@discover-http")
+
+run_mcpc_discover connect
+assert_success "discovery with an http + skipped stdio server should succeed"
+# The connected server shows its status inline; the stdio server is marked inline.
+assert_contains "$STDOUT" "@discover-http"
+assert_contains "$STDOUT" "connecting"
+assert_contains "$STDOUT" "○ skipped (stdio)"
+# Plain note (not a dim "↳" hint) pointing at --stdio.
+assert_contains "$STDOUT" "To include stdio servers, run: mcpc connect --stdio"
+assert_not_contains "$STDOUT" "↳ run: mcpc connect --stdio"
+# No leftover lowercase mid-sentence "skipped" from the old summary line.
+assert_not_contains "$STDOUT" "server. skipped"
+
+# The connected server's inline result must appear before the trailing --stdio hint.
+status_line=$(echo "$STDOUT" | grep -n "@discover-http" | tail -1 | cut -d: -f1)
+hint_line=$(echo "$STDOUT" | grep -n "mcpc connect --stdio" | head -1 | cut -d: -f1)
+if [[ -z "$status_line" || -z "$hint_line" || "$status_line" -gt "$hint_line" ]]; then
+  test_fail "inline server status (line ${status_line:-?}) should appear before the --stdio hint (line ${hint_line:-?})"
+  exit 1
+fi
+test_pass
+
+# =============================================================================
+# Test: A stdio server already live (from a prior `connect --stdio`) is shown
+#       with its live status on a plain `mcpc connect`, not "○ skipped (stdio)",
+#       and the --stdio note is omitted when nothing stdio is unconnected (#255)
+# =============================================================================
+
+test_case "already-live stdio server shows live (not skipped) on a plain connect"
+run_mcpc "@discover-http" close || true
+rm -f "$FAKE_CWD/.mcp.json" "$FAKE_CWD/mcp.json" "$FAKE_HOME/.cursor/mcp.json"
+
+# A local stdio MCP server (no network) so we can make a stdio session live.
+cat > "$FAKE_CWD/.mcp.json" <<EOF
+{
+  "mcpServers": {
+    "discover-live-stdio": {
+      "command": "node",
+      "args": ["$PROJECT_ROOT/test/e2e/server/stdio-server.mjs"]
+    }
+  }
+}
+EOF
+_SESSIONS_CREATED+=("@discover-live-stdio")
+
+# Connect it as a stdio server, then confirm it is live via a ping.
+run_mcpc_discover connect --stdio
+assert_success "connect --stdio should connect the stdio server"
+run_mcpc "@discover-live-stdio" ping
+assert_success "the stdio session should be live and answer ping"
+
+# A plain connect (no --stdio) must show it live, not skipped, and omit the note.
+run_mcpc_discover connect
+assert_success "plain connect should succeed with an already-live stdio server"
+assert_contains "$STDOUT" "@discover-live-stdio"
+assert_contains "$STDOUT" "● live"
+assert_not_contains "$STDOUT" "○ skipped (stdio)"
+assert_not_contains "$STDOUT" "To include stdio servers"
+test_pass
+
+# =============================================================================
+# Test: Unusable config files are listed inline as "(invalid)" with a reason —
+#       invalid JSON, and a project file missing a servers object — counted,
+#       not dropped or warned out of band (#255)
+# =============================================================================
+
+test_case "unusable config files are listed inline as (invalid) with a reason"
+run_mcpc "@discover-live-stdio" close || true
+rm -f "$FAKE_CWD/.mcp.json" "$FAKE_CWD/mcp.json" "$FAKE_CWD/mcp_config.json" "$FAKE_HOME/.cursor/mcp.json"
+
+# A valid config (so discovery proceeds) + a malformed one + one with no servers object.
+cat > "$FAKE_CWD/.mcp.json" <<EOF
+{
+  "mcpServers": {
+    "discover-valid": { "url": "$TEST_SERVER_URL", "headers": { "X-Test": "true" } }
+  }
+}
+EOF
+printf '!INJECTED_CONTENT not valid' > "$FAKE_CWD/mcp.json"
+printf '{ "x": {} }' > "$FAKE_CWD/mcp_config.json"
+_SESSIONS_CREATED+=("@discover-valid")
+
+run_mcpc_discover connect
+assert_success "discovery should succeed despite unusable configs alongside a valid one"
+assert_contains "$STDOUT" "Found 3 MCP config files"
+# Both unusable files are listed in place, marked (invalid) with a reason.
+normalized_stdout="${STDOUT//\\//}"
+assert_contains "$normalized_stdout" "mcp.json (invalid)"
+assert_contains "$normalized_stdout" "mcp_config.json (invalid)"
+assert_contains "$STDOUT" "No \"mcpServers\" or \"servers\" property."
+# The malformed file's content must not be echoed back (layout + prompt-injection safety).
+assert_not_contains "$STDOUT" "INJECTED_CONTENT"
 test_pass
 
 test_done

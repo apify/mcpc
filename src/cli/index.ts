@@ -463,10 +463,10 @@ Run "mcpc --json" to get the same data as \`{ sessions: [...], profiles: [...] }
 Full docs: ${docsUrl}`
   );
 
-  // connect command: mcpc connect <server> [@<name>]
+  // connect command: mcpc connect [<server>] [@session]  (server optional — omit to auto-discover)
   program
     .command('connect [server] [@session]')
-    .usage('<server> [@session]')
+    .usage('[<server>] [@session]')
     .description('Connect to an MCP server and start a new named @session') // keep this short
     .option('-H, --header <header>', 'HTTP header (can be repeated)')
     .option('--profile <name>', 'OAuth profile to use ("default" if skipped)')
@@ -485,13 +485,15 @@ ${chalk.bold('Server formats:')}
   mcp.apify.com                 Remote HTTP server (https:// auto-added)
   ~/.vscode/mcp.json:puppeteer  Config file entry (file:entry)
   ~/.vscode/mcp.json            Config file — connect every entry
-  ${chalk.dim('(no server)')}                  Auto-discover configs and connect everything
+  ${chalk.dim('(no server)'.padEnd(28))}  Auto-discover configs and connect everything
 
 ${chalk.bold('Auto-discovery (no server arg):')}
   Scans ./ and ~ for .mcp.json, mcp.json, mcp_config.json, .cursor/mcp.json,
   .vscode/mcp.json, .kiro/settings/mcp.json, ~/.claude.json,
   ~/.codeium/windsurf/mcp_config.json, plus VS Code & Claude Desktop configs.
   Set APIFY_API_TOKEN to auto-connect mcp.apify.com as @apify.
+  Without --json, returns right away without waiting for connections to
+  finish; --json waits and reports each server's details.
 
 ${chalk.bold('Session name:')}
   Omit @session to auto-generate from the server (mcp.apify.com → @apify)
@@ -536,6 +538,8 @@ ${jsonHelp(
           ...(globalOpts.x402 && { x402: globalOpts.x402 }),
           ...(globalOpts.insecure && { insecure: true }),
         });
+        // Trailing blank line to match the spacing of other commands (human mode only).
+        if (globalOpts.outputMode === 'human') console.log('');
         return;
       }
 
