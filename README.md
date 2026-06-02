@@ -134,25 +134,25 @@ Usage: mcpc [<@session>] [<command>] [options]
 Universal command-line client for the Model Context Protocol (MCP).
 
 Commands:
-  connect <server> [@session]  Connect to an MCP server and start a new named @session
-  close <@session>             Close a session
-  restart <@session>           Restart a session (losing all state)
-  login <server>               Interactively login to a server using OAuth and save profile
-  logout <server>              Delete an OAuth profile for a server
-  clean [resources...]         Clean up mcpc data (sessions, profiles, logs, all)
-  grep <pattern>               Search tools and instructions across all active sessions
-  x402 [subcommand] [args...]  Configure an x402 payment wallet (EXPERIMENTAL)
-  help [command] [subcommand]  Show help for a specific command
+  connect [<server>] [@session]  Connect to an MCP server and start a new named @session
+  close <@session>               Close a session
+  restart <@session>             Restart a session (losing all state)
+  login <server>                 Interactively login to a server using OAuth and save profile
+  logout <server>                Delete an OAuth profile for a server
+  clean [resources...]           Clean up mcpc data (sessions, profiles, logs, all)
+  grep <pattern>                 Search tools and instructions across all active sessions
+  x402 [subcommand] [args...]    Configure an x402 payment wallet (EXPERIMENTAL)
+  help [command] [subcommand]    Show help for a specific command
 
 Options:
-  --json                       Output in JSON format for scripting
-  --verbose                    Enable debug logging
-  --profile <name>             OAuth profile for the server ("default" if not provided)
-  --timeout <seconds>          Request timeout in seconds (default: 300)
-  --max-chars <n>              Truncate output to n characters (ignored in --json mode)
-  --insecure                   Skip TLS certificate verification (for self-signed certs)
-  -v, --version                Output the version number
-  -h, --help                   Display help
+  --json                         Output in JSON format for scripting
+  --verbose                      Enable debug logging
+  --profile <name>               OAuth profile for the server ("default" if not provided)
+  --timeout <seconds>            Request timeout in seconds (default: 300)
+  --max-chars <n>                Truncate output to n characters (ignored in --json mode)
+  --insecure                     Skip TLS certificate verification (for self-signed certs)
+  -v, --version                  Output the version number
+  -h, --help                     Display help
 
 MCP session commands (after connecting):
   <@session>                   Show MCP server info, capabilities, and tools overview
@@ -221,7 +221,9 @@ mcpc connect ~/.vscode/mcp.json   # connect every server in one file
 Bulk connects auto-generate session names (so they don't take an `@session`) and **skip local
 stdio servers by default** — pass `--stdio` to include them. Each discovered config file is listed
 with its servers and their status (`● live`, `● connecting`); files that can't be used are shown as
-`(0 servers)` or `(invalid)` with the reason, rather than silently ignored.
+`(0 servers)` or `(invalid)` with the reason, rather than silently ignored. Without `--json` the
+command returns right away without waiting for every connection to finish (still-connecting sessions
+show `● connecting`); `--json` waits and reports each server's details.
 
 ### MCP commands
 
