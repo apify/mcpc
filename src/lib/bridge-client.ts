@@ -10,7 +10,9 @@
  * NOT responsible for:
  * - Bridge process and socket lifecycle (that's bridge-manager's job)
  * - Health checking (that's bridge-manager's job)
- * - Retry/restart logic (that's SessionClient's job)
+ * - Bridge restart/reconnect logic (that's SessionClient's job). connect() does
+ *   briefly retry a *not-yet-listening* socket right after a bridge spawns, but it
+ *   never restarts a bridge.
  */
 
 import { connect, type Socket } from 'net';
@@ -18,7 +20,7 @@ import { EventEmitter } from 'events';
 import type { IpcMessage, NotificationData, TaskUpdate, X402WalletCredentials } from './types.js';
 import { createLogger } from './logger.js';
 import { NetworkError, ClientError, ServerError, AuthError } from './errors.js';
-import { generateRequestId } from './utils.js';
+import { generateRequestId, sleep } from './utils.js';
 
 const logger = createLogger('bridge-client');
 
@@ -27,6 +29,25 @@ const REQUEST_TIMEOUT = 3 * 60 * 1000;
 
 // Timeout for initial socket connection (5 seconds)
 const CONNECT_TIMEOUT = 5 * 1000;
+
+/**
+ * Default budget for retrying transient connect failures (ECONNREFUSED/ENOENT).
+ * A freshly spawned or just-restarted bridge may not accept connections the instant
+ * its socket file appears — notably a stale socket left by a prior bridge that
+ * reused the same PID, which the new bridge removes and recreates as it starts up.
+ * Retrying briefly rides that out instead of failing the command (e.g. on a rapid
+ * `restart`). Callers connecting to an established bridge that should fail fast pass
+ * `retryTimeoutMs: 0`.
+ */
+const DEFAULT_CONNECT_RETRY_MS = 5_000;
+
+/**
+ * Delay between connect retries: a base plus random jitter, so that many clients
+ * retrying at once (e.g. parallel bridges in tests) don't wake in lockstep and
+ * hammer their sockets on the same cadence. Averages ~75ms.
+ */
+const CONNECT_RETRY_BASE_MS = 50;
+const CONNECT_RETRY_JITTER_MS = 50;
 
 // Maximum IPC buffer size (10 MB) — destroy socket if exceeded
 const MAX_BUFFER_SIZE = 10 * 1024 * 1024;
@@ -50,14 +71,50 @@ export class BridgeClient extends EventEmitter {
   }
 
   /**
-   * Connect to the bridge socket
-   * Throws NetworkError if connection fails or times out
+   * Connect to the bridge socket.
+   *
+   * Transient failures (ECONNREFUSED/ENOENT) are retried for up to `retryTimeoutMs`
+   * (default {@link DEFAULT_CONNECT_RETRY_MS}) to ride out the brief window where a
+   * just-spawned bridge has created its socket file but is not yet accepting
+   * connections. Pass `retryTimeoutMs: 0` to fail fast (e.g. when connecting to an
+   * already-established bridge).
+   *
+   * Throws NetworkError if connection fails or times out.
    */
-  async connect(): Promise<void> {
+  async connect(options?: { retryTimeoutMs?: number }): Promise<void> {
     if (this.socket) {
       return; // Already connected
     }
 
+    const retryTimeoutMs = options?.retryTimeoutMs ?? DEFAULT_CONNECT_RETRY_MS;
+    const deadline = retryTimeoutMs > 0 ? Date.now() + retryTimeoutMs : 0;
+
+    for (;;) {
+      try {
+        await this.connectOnce();
+        return;
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        const transient = code === 'ECONNREFUSED' || code === 'ENOENT';
+        if (deadline > 0 && transient && Date.now() < deadline) {
+          logger.debug(`Bridge socket not ready yet (${code}), retrying...`);
+          await sleep(CONNECT_RETRY_BASE_MS + Math.random() * CONNECT_RETRY_JITTER_MS);
+          continue;
+        }
+        // Preserve an already-typed NetworkError (e.g. timeout); wrap raw socket errors.
+        if (error instanceof NetworkError) {
+          throw error;
+        }
+        throw new NetworkError(`Failed to connect to bridge: ${(error as Error).message}`);
+      }
+    }
+  }
+
+  /**
+   * A single connection attempt. Rejects with the raw socket error (preserving
+   * its `.code`) so connect() can decide whether the failure is retryable.
+   */
+  private connectOnce(): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       logger.debug(`Connecting to bridge socket: ${this.socketPath}`);
 
@@ -96,7 +153,7 @@ export class BridgeClient extends EventEmitter {
         settle(() => {
           logger.debug('Socket connection error:', error.message);
           this.socket = null;
-          reject(new NetworkError(`Failed to connect to bridge: ${error.message}`));
+          reject(error);
         });
       });
     });

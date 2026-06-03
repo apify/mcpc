@@ -387,7 +387,9 @@ async function sendBridgeShutdown(socketPath: string): Promise<boolean> {
     const timeout = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error('shutdown timeout')), 2000)
     );
-    await Promise.race([client.connect(), timeout]);
+    // Fail fast: this targets an already-running bridge, and we force-kill if it's
+    // unreachable — no point retrying a not-yet-listening socket here.
+    await Promise.race([client.connect({ retryTimeoutMs: 0 }), timeout]);
     client.send({ type: 'shutdown' });
     await client.close();
     logger.debug('Sent shutdown IPC message to bridge');
@@ -570,6 +572,7 @@ async function sendAuthCredentialsToBridge(
 
   const client = new BridgeClient(socketPath);
   try {
+    // connect() retries while the freshly-spawned bridge finishes (re)creating its socket.
     await client.connect();
     client.sendAuthCredentials(credentials);
     logger.debug('Auth credentials sent to bridge successfully');

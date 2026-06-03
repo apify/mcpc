@@ -5,7 +5,7 @@
 
 import { createHash } from 'crypto';
 import { execFileSync } from 'child_process';
-import { homedir } from 'os';
+import { homedir, tmpdir } from 'os';
 import { join, resolve, isAbsolute } from 'path';
 import { mkdir, access, constants, rename } from 'fs/promises';
 import { ClientError } from './errors.js';
@@ -58,9 +58,32 @@ export function getBridgesDir(): string {
 }
 
 /**
+ * Maximum usable length, in bytes, of a Unix domain socket path. The OS stores it
+ * in the fixed-size `sockaddr_un.sun_path` buffer — 104 bytes on macOS/BSD and 108
+ * on Linux, including the trailing NUL. Exceeding it makes bind()/connect() fail
+ * with ENAMETOOLONG, which on the bridge surfaces as a crash during startup.
+ */
+const MAX_UNIX_SOCKET_PATH_BYTES = process.platform === 'linux' ? 107 : 103;
+
+/**
+ * Short, collision-free directory for bridge sockets that don't fit under
+ * ~/.mcpc/bridges (see getSocketPath). It lives under the OS temp dir — which is
+ * short on every platform — and is namespaced by a hash of the home dir so that
+ * parallel mcpc instances using different MCPC_HOME_DIR values never collide.
+ */
+export function getShortSocketDir(): string {
+  const homeHash = createHash('sha256').update(getMcpcHome()).digest('hex').slice(0, 12);
+  return join(tmpdir(), `mcpc-${homeHash}`);
+}
+
+/**
  * Get the socket/pipe path for a session's bridge process.
  *
- * On Unix/macOS: Returns a Unix domain socket path in the bridges directory.
+ * On Unix/macOS: Returns a Unix domain socket path in the bridges directory, or —
+ *                when that path would exceed the OS limit (e.g. deep macOS temp
+ *                dirs like /var/folders/..., or a long session name) — a short
+ *                hashed path under the temp dir. The CLI and bridge derive the
+ *                same path deterministically from the same inputs.
  * On Windows: Returns a named pipe path with a hash of the home directory
  *             to avoid conflicts between different mcpc instances.
  *
@@ -77,8 +100,18 @@ export function getSocketPath(sessionName: string, pid: number): string {
     return `\\\\.\\pipe\\mcpc-${homeHash}-${sessionName}${suffix}`;
   }
 
-  // Unix/macOS: use socket file in bridges directory (naturally isolated per home dir)
-  return join(getBridgesDir(), `${sessionName}${suffix}.sock`);
+  // Unix/macOS: prefer a readable socket file in the bridges directory (naturally
+  // isolated per home dir).
+  const preferredPath = join(getBridgesDir(), `${sessionName}${suffix}.sock`);
+  if (Buffer.byteLength(preferredPath) <= MAX_UNIX_SOCKET_PATH_BYTES) {
+    return preferredPath;
+  }
+
+  // The preferred path is too long for the OS socket buffer. Fall back to a short,
+  // fixed-length path under the temp dir; the session name is hashed so the result
+  // stays within the limit regardless of how long the name or home dir is.
+  const nameHash = createHash('sha256').update(sessionName).digest('hex').slice(0, 16);
+  return join(getShortSocketDir(), `${nameHash}${suffix}.sock`);
 }
 
 /**

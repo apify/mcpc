@@ -8,6 +8,7 @@
 import { initProxy, proxyFetch } from '../lib/proxy.js';
 import { createServer, type Server as NetServer, type Socket } from 'net';
 import { unlink } from 'fs/promises';
+import { dirname } from 'path';
 import { createMcpClient, CreateMcpClientOptions, buildClientCapabilities } from '../core/index.js';
 import type { McpClient } from '../core/index.js';
 import type { ServerConfig, IpcMessage, LoggingLevel, X402SchemePreference } from '../lib/index.js';
@@ -15,7 +16,6 @@ import { KEEPALIVE_INTERVAL_MS, X402_SCHEME_PREFERENCES } from '../lib/types.js'
 import { createLogger, setVerbose, initFileLogger, closeFileLogger } from '../lib/index.js';
 import {
   fileExists,
-  getBridgesDir,
   getSocketPath,
   ensureDir,
   cleanupOrphanedLogFiles,
@@ -943,9 +943,12 @@ class BridgeProcess {
    * Create socket server for IPC (Unix domain socket or Windows named pipe)
    */
   private async createSocketServer(): Promise<void> {
-    // Ensure bridges directory exists (for Unix sockets; Windows named pipes don't need this)
+    // Ensure the socket's directory exists (for Unix sockets; Windows named pipes
+    // don't need this). This is normally ~/.mcpc/bridges, but getSocketPath() may
+    // relocate over-long paths to a short dir under the temp dir — create whichever
+    // one applies.
     if (process.platform !== 'win32') {
-      await ensureDir(getBridgesDir());
+      await ensureDir(dirname(this.socketPath));
 
       // Remove existing socket file if it exists (Unix only).
       // Fail on error

@@ -346,12 +346,15 @@ run_mcpc "@discover-http" close || true
 rm -f "$FAKE_CWD/.mcp.json" "$FAKE_CWD/mcp.json" "$FAKE_HOME/.cursor/mcp.json"
 
 # A local stdio MCP server (no network) so we can make a stdio session live.
+# Convert to a native path so Windows' node can resolve it — an MSYS path like
+# /d/a/... is otherwise misread as a relative path on the current drive (#258).
+STDIO_SERVER="$(to_native_path "$PROJECT_ROOT/test/e2e/server/stdio-server.mjs")"
 cat > "$FAKE_CWD/.mcp.json" <<EOF
 {
   "mcpServers": {
     "discover-live-stdio": {
       "command": "node",
-      "args": ["$PROJECT_ROOT/test/e2e/server/stdio-server.mjs"]
+      "args": ["$STDIO_SERVER"]
     }
   }
 }
