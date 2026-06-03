@@ -41,6 +41,14 @@ const CONNECT_TIMEOUT = 5 * 1000;
  */
 const DEFAULT_CONNECT_RETRY_MS = 5_000;
 
+/**
+ * Delay between connect retries: a base plus random jitter, so that many clients
+ * retrying at once (e.g. parallel bridges in tests) don't wake in lockstep and
+ * hammer their sockets on the same cadence. Averages ~75ms.
+ */
+const CONNECT_RETRY_BASE_MS = 50;
+const CONNECT_RETRY_JITTER_MS = 50;
+
 // Maximum IPC buffer size (10 MB) — destroy socket if exceeded
 const MAX_BUFFER_SIZE = 10 * 1024 * 1024;
 
@@ -90,7 +98,7 @@ export class BridgeClient extends EventEmitter {
         const transient = code === 'ECONNREFUSED' || code === 'ENOENT';
         if (deadline > 0 && transient && Date.now() < deadline) {
           logger.debug(`Bridge socket not ready yet (${code}), retrying...`);
-          await sleep(75);
+          await sleep(CONNECT_RETRY_BASE_MS + Math.random() * CONNECT_RETRY_JITTER_MS);
           continue;
         }
         // Preserve an already-typed NetworkError (e.g. timeout); wrap raw socket errors.
