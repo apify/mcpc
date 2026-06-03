@@ -1347,13 +1347,21 @@ export function formatInfo(message: string): string {
  * Paths made only of safe characters are returned unchanged; paths containing spaces
  * or other shell-significant characters are wrapped in double quotes (which work in
  * POSIX shells and Windows cmd/PowerShell for typical paths). Only the characters that
- * remain special inside POSIX double quotes are escaped — backslashes are left intact
- * so Windows paths like `C:\Users\foo bar\mcp.json` stay verbatim.
+ * remain special inside POSIX double quotes are escaped.
+ *
+ * The backslash is the path separator on Windows (safe to paste unquoted into
+ * cmd/PowerShell) but a shell escape character on POSIX, so it counts as a safe
+ * character only on Windows — a plain `C:\Users\foo\mcp.json` stays unquoted there,
+ * while `C:\Users\foo bar\mcp.json` is still quoted because of the space.
  *
  * For human-readable output only; never use it for `--json` output or actual file I/O.
  */
-export function formatPath(p: string): string {
-  if (/^[A-Za-z0-9_./:@%+,=~-]+$/.test(p)) return p;
+export function formatPath(p: string, platform: NodeJS.Platform = process.platform): string {
+  const isSafe =
+    platform === 'win32'
+      ? /^[A-Za-z0-9_./:@%+,=~\\-]+$/.test(p)
+      : /^[A-Za-z0-9_./:@%+,=~-]+$/.test(p);
+  if (isSafe) return p;
   return `"${p.replace(/(["`$])/g, '\\$&')}"`;
 }
 

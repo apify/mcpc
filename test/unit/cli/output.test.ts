@@ -1994,8 +1994,18 @@ describe('formatPath', () => {
     );
   });
 
-  it('preserves backslashes in Windows paths verbatim', () => {
-    expect(formatPath('C:\\Users\\foo bar\\mcp.json')).toBe('"C:\\Users\\foo bar\\mcp.json"');
+  it('leaves plain Windows paths unquoted (backslash is the separator, not special)', () => {
+    expect(formatPath('C:\\Users\\foo\\mcp.json', 'win32')).toBe('C:\\Users\\foo\\mcp.json');
+  });
+
+  it('quotes Windows paths with spaces, preserving backslashes verbatim', () => {
+    expect(formatPath('C:\\Users\\foo bar\\mcp.json', 'win32')).toBe(
+      '"C:\\Users\\foo bar\\mcp.json"'
+    );
+  });
+
+  it('quotes backslash paths on POSIX, where backslash is a shell escape character', () => {
+    expect(formatPath('/tmp/a\\b/mcp.json', 'linux')).toBe('"/tmp/a\\b/mcp.json"');
   });
 
   it('escapes characters that stay special inside double quotes', () => {
