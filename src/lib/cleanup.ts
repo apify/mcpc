@@ -4,7 +4,13 @@
 
 import { readdir, unlink, stat } from 'fs/promises';
 import { join } from 'path';
-import { getLogsDir, getBridgesDir, getSocketPath, fileExists } from './utils.js';
+import {
+  getLogsDir,
+  getBridgesDir,
+  getShortSocketDir,
+  getSocketPath,
+  fileExists,
+} from './utils.js';
 import { createLogger } from './logger.js';
 
 const logger = createLogger('cleanup');
@@ -82,7 +88,8 @@ export async function cleanupOrphanedLogFiles(
 }
 
 /**
- * Clean up orphaned socket files in the bridges directory.
+ * Clean up orphaned socket files (in the bridges directory and the short temp-dir
+ * fallback used for over-long paths; see getSocketPath).
  * With PID-based socket paths (@session.1234.sock), stale sockets can accumulate
  * when a bridge exits without cleanup (e.g. SIGKILL, crash, or orphaned background restart).
  *
@@ -104,11 +111,6 @@ export async function cleanupOrphanedSockets(
     return 0; // Windows named pipes don't leave files
   }
 
-  const bridgesDir = getBridgesDir();
-  if (!(await fileExists(bridgesDir))) {
-    return 0;
-  }
-
   // Build set of active socket paths for fast lookup
   const activeSocketPaths = new Set<string>();
   for (const [name, session] of Object.entries(activeSessions)) {
@@ -120,24 +122,31 @@ export async function cleanupOrphanedSockets(
   const cutoffTime = Date.now() - minAgeSeconds * 1000;
   let deletedCount = 0;
 
-  const files = await readdir(bridgesDir);
-  for (const file of files) {
-    if (!file.endsWith('.sock')) continue;
+  // Sockets normally live in ~/.mcpc/bridges, but getSocketPath() relocates
+  // over-long paths to a short temp dir — scan both so neither location leaks.
+  const socketDirs = [...new Set([getBridgesDir(), getShortSocketDir()])];
+  for (const socketDir of socketDirs) {
+    if (!(await fileExists(socketDir))) continue;
 
-    const filePath = join(bridgesDir, file);
+    const files = await readdir(socketDir);
+    for (const file of files) {
+      if (!file.endsWith('.sock')) continue;
 
-    // Skip sockets that belong to a known active session+PID
-    if (activeSocketPaths.has(filePath)) continue;
+      const filePath = join(socketDir, file);
 
-    try {
-      const fileStats = await stat(filePath);
-      if (fileStats.mtime.getTime() < cutoffTime) {
-        await unlink(filePath);
-        deletedCount++;
-        logger.debug(`Removed orphaned socket: ${file}`);
+      // Skip sockets that belong to a known active session+PID
+      if (activeSocketPaths.has(filePath)) continue;
+
+      try {
+        const fileStats = await stat(filePath);
+        if (fileStats.mtime.getTime() < cutoffTime) {
+          await unlink(filePath);
+          deletedCount++;
+          logger.debug(`Removed orphaned socket: ${file}`);
+        }
+      } catch {
+        // Ignore stat/unlink errors
       }
-    } catch {
-      // Ignore stat/unlink errors
     }
   }
 

@@ -2,7 +2,7 @@
  * Unit tests for utility functions
  */
 
-import { homedir } from 'os';
+import { homedir, tmpdir } from 'os';
 import { join, isAbsolute } from 'path';
 import {
   expandHome,
@@ -10,6 +10,8 @@ import {
   getMcpcHome,
   getSessionsFilePath,
   getBridgesDir,
+  getShortSocketDir,
+  getSocketPath,
   getLogsDir,
   isValidHttpUrl,
   normalizeServerUrl,
@@ -118,6 +120,78 @@ describe('getLogsDir', () => {
   it('should return ~/.mcpc/logs/', () => {
     const dir = getLogsDir();
     expect(dir).toBe(join(homedir(), '.mcpc', 'logs'));
+  });
+});
+
+describe('getSocketPath', () => {
+  const originalEnv = process.env.MCPC_HOME_DIR;
+
+  afterEach(() => {
+    if (originalEnv === undefined) {
+      delete process.env.MCPC_HOME_DIR;
+    } else {
+      process.env.MCPC_HOME_DIR = originalEnv;
+    }
+  });
+
+  // Windows uses named pipes (a different scheme); the path-length fallback is a
+  // Unix-only concern, so these assertions only apply off Windows.
+  const onWindows = process.platform === 'win32';
+
+  it.skipIf(onWindows)('uses a readable socket under the bridges dir for short paths', () => {
+    process.env.MCPC_HOME_DIR = '/tmp/mcpc-short';
+    const socketPath = getSocketPath('my-session', 12345);
+    expect(socketPath).toBe(join(getBridgesDir(), 'my-session.12345.sock'));
+  });
+
+  it.skipIf(onWindows)('relocates over-long socket paths to a short temp-dir path', () => {
+    // A deep home dir pushes the natural path past the OS sun_path limit (104 bytes
+    // on macOS, 108 on Linux) — exactly the case that crashed bridges on macOS CI.
+    process.env.MCPC_HOME_DIR = `/tmp/mcpc-${'x'.repeat(120)}`;
+    const socketPath = getSocketPath('my-session', 12345);
+
+    // Falls back under the short temp dir, not the (over-long) bridges dir.
+    expect(socketPath.startsWith(getShortSocketDir())).toBe(true);
+    expect(socketPath.startsWith(getBridgesDir())).toBe(false);
+    expect(socketPath.endsWith('.12345.sock')).toBe(true);
+
+    // The fallback must itself fit within the most restrictive limit (macOS, 103).
+    expect(Buffer.byteLength(socketPath)).toBeLessThanOrEqual(103);
+  });
+
+  it.skipIf(onWindows)('keeps the fallback bounded even for a max-length session name', () => {
+    process.env.MCPC_HOME_DIR = `/tmp/mcpc-${'x'.repeat(120)}`;
+    const socketPath = getSocketPath('s'.repeat(64), 999999);
+    expect(socketPath.startsWith(getShortSocketDir())).toBe(true);
+    expect(Buffer.byteLength(socketPath)).toBeLessThanOrEqual(103);
+  });
+
+  it.skipIf(onWindows)('derives the same path for the CLI and bridge (deterministic)', () => {
+    process.env.MCPC_HOME_DIR = `/tmp/mcpc-${'x'.repeat(120)}`;
+    expect(getSocketPath('sess', 4242)).toBe(getSocketPath('sess', 4242));
+  });
+});
+
+describe('getShortSocketDir', () => {
+  const originalEnv = process.env.MCPC_HOME_DIR;
+
+  afterEach(() => {
+    if (originalEnv === undefined) {
+      delete process.env.MCPC_HOME_DIR;
+    } else {
+      process.env.MCPC_HOME_DIR = originalEnv;
+    }
+  });
+
+  it('lives under the OS temp dir and is namespaced per home dir', () => {
+    process.env.MCPC_HOME_DIR = '/tmp/home-a';
+    const dirA = getShortSocketDir();
+    process.env.MCPC_HOME_DIR = '/tmp/home-b';
+    const dirB = getShortSocketDir();
+
+    expect(dirA.startsWith(tmpdir())).toBe(true);
+    expect(dirB.startsWith(tmpdir())).toBe(true);
+    expect(dirA).not.toBe(dirB);
   });
 });
 

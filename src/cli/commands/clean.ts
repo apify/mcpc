@@ -9,6 +9,7 @@ import type { OutputMode } from '../../lib/index.js';
 import {
   getMcpcHome,
   getBridgesDir,
+  getShortSocketDir,
   getLogsDir,
   fileExists,
   cleanupOrphanedLogFiles,
@@ -162,8 +163,10 @@ async function cleanAll(): Promise<CleanResult> {
   const mcpcHome = getMcpcHome();
   const bridgesDir = getBridgesDir();
   const logsDir = getLogsDir();
+  // getSocketPath() may relocate over-long socket paths here (under the temp dir).
+  const shortSocketDir = getShortSocketDir();
 
-  for (const dir of [bridgesDir, logsDir]) {
+  for (const dir of [bridgesDir, shortSocketDir, logsDir]) {
     if (await fileExists(dir)) {
       try {
         await rm(dir, { recursive: true, force: true });
