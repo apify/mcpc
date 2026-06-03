@@ -50,16 +50,23 @@ describe.skipIf(onWindows)('BridgeClient.connect retry', () => {
     sockets.length = 0;
   });
 
-  it('retries transient errors until the bridge socket starts listening', async () => {
-    const p = sockPath();
-    const client = new BridgeClient(p);
-    clients.push(client);
+  // Generous timeout (default retry budget equals vitest's default 5s timeout) so
+  // there is headroom for CPU contention when the whole suite runs in parallel.
+  it(
+    'retries transient errors by default until the bridge socket starts listening',
+    { timeout: 20_000 },
+    async () => {
+      const p = sockPath();
+      const client = new BridgeClient(p);
+      clients.push(client);
 
-    // The "bridge" only starts accepting connections after a short delay.
-    setTimeout(() => void listen(p), 300);
+      // The "bridge" only starts accepting connections after a short delay.
+      setTimeout(() => void listen(p), 150);
 
-    await expect(client.connect({ retryTimeoutMs: 5000 })).resolves.toBeUndefined();
-  });
+      // No options: the default retry budget must ride out the not-yet-listening window.
+      await expect(client.connect()).resolves.toBeUndefined();
+    }
+  );
 
   it('gives up with a NetworkError after the retry budget elapses', async () => {
     const p = sockPath(); // nothing ever listens here
@@ -74,13 +81,17 @@ describe.skipIf(onWindows)('BridgeClient.connect retry', () => {
     expect(Date.now() - start).toBeGreaterThanOrEqual(300);
   });
 
-  it('fails fast when no retry budget is given', async () => {
+  it('fails fast when retryTimeoutMs is 0', async () => {
     const p = sockPath(); // nothing listens here
     const client = new BridgeClient(p);
     clients.push(client);
 
     const start = Date.now();
-    await expect(client.connect()).rejects.toThrow(/Failed to connect to bridge/);
-    expect(Date.now() - start).toBeLessThan(1000);
+    await expect(client.connect({ retryTimeoutMs: 0 })).rejects.toThrow(
+      /Failed to connect to bridge/
+    );
+    // Well under the 5s default retry budget — proves it did not retry. The wide
+    // margin keeps this robust under parallel-suite CPU contention.
+    expect(Date.now() - start).toBeLessThan(2500);
   });
 });

@@ -106,16 +106,6 @@ function getBridgeExecutable(): string {
  */
 const BRIDGE_STARTUP_TIMEOUT_MS = 15_000;
 
-/**
- * How long the first connects to a freshly-spawned bridge (credential delivery,
- * health check) keep retrying transient socket errors. waitForFile() only proves
- * the socket *file* exists; a stale socket left by a prior bridge that reused this
- * PID still refuses connections (ECONNREFUSED), and the new bridge briefly removes
- * and recreates the file (ENOENT) before it listens. Retrying for a few seconds
- * waits that out instead of failing the command (e.g. on rapid `restart`).
- */
-const BRIDGE_SOCKET_READY_RETRY_MS = 5_000;
-
 export interface StartBridgeOptions {
   sessionName: string;
   serverConfig: ServerConfig;
@@ -397,7 +387,9 @@ async function sendBridgeShutdown(socketPath: string): Promise<boolean> {
     const timeout = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error('shutdown timeout')), 2000)
     );
-    await Promise.race([client.connect(), timeout]);
+    // Fail fast: this targets an already-running bridge, and we force-kill if it's
+    // unreachable — no point retrying a not-yet-listening socket here.
+    await Promise.race([client.connect({ retryTimeoutMs: 0 }), timeout]);
     client.send({ type: 'shutdown' });
     await client.close();
     logger.debug('Sent shutdown IPC message to bridge');
@@ -580,7 +572,8 @@ async function sendAuthCredentialsToBridge(
 
   const client = new BridgeClient(socketPath);
   try {
-    await client.connect({ retryTimeoutMs: BRIDGE_SOCKET_READY_RETRY_MS });
+    // connect() retries while the freshly-spawned bridge finishes (re)creating its socket.
+    await client.connect();
     client.sendAuthCredentials(credentials);
     logger.debug('Auth credentials sent to bridge successfully');
   } finally {
@@ -616,7 +609,7 @@ async function sendX402WalletToBridge(
 
   const client = new BridgeClient(socketPath);
   try {
-    await client.connect({ retryTimeoutMs: BRIDGE_SOCKET_READY_RETRY_MS });
+    await client.connect();
     client.sendX402Wallet(credentials);
     logger.debug('x402 wallet sent to bridge successfully');
   } finally {
@@ -642,9 +635,7 @@ interface BridgeHealthResult {
 async function checkBridgeHealth(socketPath: string): Promise<BridgeHealthResult> {
   const client = new BridgeClient(socketPath);
   try {
-    // Retry transient errors: a just-restarted bridge may still be (re)creating its
-    // socket when we connect (e.g. a stale socket from a PID-reused prior bridge).
-    await client.connect({ retryTimeoutMs: BRIDGE_SOCKET_READY_RETRY_MS });
+    await client.connect();
     // getServerDetails blocks until MCP client is connected, then returns info
     // If MCP connection fails, the bridge will return an error via IPC
     await client.request('getServerDetails');

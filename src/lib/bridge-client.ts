@@ -10,7 +10,9 @@
  * NOT responsible for:
  * - Bridge process and socket lifecycle (that's bridge-manager's job)
  * - Health checking (that's bridge-manager's job)
- * - Retry/restart logic (that's SessionClient's job)
+ * - Bridge restart/reconnect logic (that's SessionClient's job). connect() does
+ *   briefly retry a *not-yet-listening* socket right after a bridge spawns, but it
+ *   never restarts a bridge.
  */
 
 import { connect, type Socket } from 'net';
@@ -27,6 +29,17 @@ const REQUEST_TIMEOUT = 3 * 60 * 1000;
 
 // Timeout for initial socket connection (5 seconds)
 const CONNECT_TIMEOUT = 5 * 1000;
+
+/**
+ * Default budget for retrying transient connect failures (ECONNREFUSED/ENOENT).
+ * A freshly spawned or just-restarted bridge may not accept connections the instant
+ * its socket file appears — notably a stale socket left by a prior bridge that
+ * reused the same PID, which the new bridge removes and recreates as it starts up.
+ * Retrying briefly rides that out instead of failing the command (e.g. on a rapid
+ * `restart`). Callers connecting to an established bridge that should fail fast pass
+ * `retryTimeoutMs: 0`.
+ */
+const DEFAULT_CONNECT_RETRY_MS = 5_000;
 
 // Maximum IPC buffer size (10 MB) — destroy socket if exceeded
 const MAX_BUFFER_SIZE = 10 * 1024 * 1024;
@@ -52,13 +65,11 @@ export class BridgeClient extends EventEmitter {
   /**
    * Connect to the bridge socket.
    *
-   * @param options.retryTimeoutMs - When set, transient failures (ECONNREFUSED /
-   *   ENOENT) are retried until this budget elapses. This covers the brief window
-   *   right after a bridge is spawned where its socket file may exist but not yet
-   *   accept connections — notably a stale socket left behind by a prior bridge
-   *   that reused the same PID, which the new bridge removes and recreates during
-   *   startup. Callers connecting to an established bridge (per-command requests)
-   *   omit it and fail fast.
+   * Transient failures (ECONNREFUSED/ENOENT) are retried for up to `retryTimeoutMs`
+   * (default {@link DEFAULT_CONNECT_RETRY_MS}) to ride out the brief window where a
+   * just-spawned bridge has created its socket file but is not yet accepting
+   * connections. Pass `retryTimeoutMs: 0` to fail fast (e.g. when connecting to an
+   * already-established bridge).
    *
    * Throws NetworkError if connection fails or times out.
    */
@@ -67,7 +78,8 @@ export class BridgeClient extends EventEmitter {
       return; // Already connected
     }
 
-    const deadline = options?.retryTimeoutMs ? Date.now() + options.retryTimeoutMs : 0;
+    const retryTimeoutMs = options?.retryTimeoutMs ?? DEFAULT_CONNECT_RETRY_MS;
+    const deadline = retryTimeoutMs > 0 ? Date.now() + retryTimeoutMs : 0;
 
     for (;;) {
       try {
