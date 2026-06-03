@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `mcpc connect` now prints config file paths so they can be copy-pasted directly: paths containing spaces (e.g. macOS `Library/Application Support/...`) are quoted instead of being split when pasted into a shell.
 - `mcpc connect` no longer fails with `socket file not created within timeout` when the bridge is slow to start (CPU-constrained machines, many parallel connects). The startup window is more generous, and a bridge that crashes on startup now reports its exit code immediately instead of stalling until the timeout
 - Sessions no longer fail to start with `Bridge process exited during startup` when the mcpc home directory (or `MCPC_HOME_DIR`) resolves to a deep path — notably macOS temp dirs like `/var/folders/...` — or when a session name is very long. The bridge's Unix socket path was exceeding the operating system limit (104 bytes on macOS, 108 on Linux); such paths now fall back to a short location under the system temp directory
+- `mcpc @<session> restart` (and other session startups) no longer intermittently fail with `Failed to connect to bridge: connect ECONNREFUSED` during rapid restarts. The CLI now briefly retries the first connection to a freshly started bridge while it is still (re)creating its socket
 
 ## [0.3.0] - 2026-05-20
 

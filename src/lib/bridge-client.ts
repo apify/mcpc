@@ -18,7 +18,7 @@ import { EventEmitter } from 'events';
 import type { IpcMessage, NotificationData, TaskUpdate, X402WalletCredentials } from './types.js';
 import { createLogger } from './logger.js';
 import { NetworkError, ClientError, ServerError, AuthError } from './errors.js';
-import { generateRequestId } from './utils.js';
+import { generateRequestId, sleep } from './utils.js';
 
 const logger = createLogger('bridge-client');
 
@@ -50,14 +50,51 @@ export class BridgeClient extends EventEmitter {
   }
 
   /**
-   * Connect to the bridge socket
-   * Throws NetworkError if connection fails or times out
+   * Connect to the bridge socket.
+   *
+   * @param options.retryTimeoutMs - When set, transient failures (ECONNREFUSED /
+   *   ENOENT) are retried until this budget elapses. This covers the brief window
+   *   right after a bridge is spawned where its socket file may exist but not yet
+   *   accept connections — notably a stale socket left behind by a prior bridge
+   *   that reused the same PID, which the new bridge removes and recreates during
+   *   startup. Callers connecting to an established bridge (per-command requests)
+   *   omit it and fail fast.
+   *
+   * Throws NetworkError if connection fails or times out.
    */
-  async connect(): Promise<void> {
+  async connect(options?: { retryTimeoutMs?: number }): Promise<void> {
     if (this.socket) {
       return; // Already connected
     }
 
+    const deadline = options?.retryTimeoutMs ? Date.now() + options.retryTimeoutMs : 0;
+
+    for (;;) {
+      try {
+        await this.connectOnce();
+        return;
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        const transient = code === 'ECONNREFUSED' || code === 'ENOENT';
+        if (deadline > 0 && transient && Date.now() < deadline) {
+          logger.debug(`Bridge socket not ready yet (${code}), retrying...`);
+          await sleep(75);
+          continue;
+        }
+        // Preserve an already-typed NetworkError (e.g. timeout); wrap raw socket errors.
+        if (error instanceof NetworkError) {
+          throw error;
+        }
+        throw new NetworkError(`Failed to connect to bridge: ${(error as Error).message}`);
+      }
+    }
+  }
+
+  /**
+   * A single connection attempt. Rejects with the raw socket error (preserving
+   * its `.code`) so connect() can decide whether the failure is retryable.
+   */
+  private connectOnce(): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       logger.debug(`Connecting to bridge socket: ${this.socketPath}`);
 
@@ -96,7 +133,7 @@ export class BridgeClient extends EventEmitter {
         settle(() => {
           logger.debug('Socket connection error:', error.message);
           this.socket = null;
-          reject(new NetworkError(`Failed to connect to bridge: ${error.message}`));
+          reject(error);
         });
       });
     });
