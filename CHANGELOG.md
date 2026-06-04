@@ -12,12 +12,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `mcpc @<session>` now reports the negotiated MCP protocol version and whether the connection is stateful (a stdio process, or an HTTP server that assigned a session id) or stateless (an HTTP server that assigned none — the upcoming `2026-07-28` model). A `stateless` field is exposed under `_mcpc` in the `--json` output of `mcpc @<session>` and `mcpc connect`, and on each session in the session list: `true` when stateless, `false` when stateful, and `null` while the mode is not yet known. Stateless sessions are never marked `expired` on a transient `404` (they hold no session to lose).
 - `mcpc @<session> logs` command to show or follow the bridge log file. Supports `-n/--tail <n>` (default 50), `--follow` to stream new lines, and `--since <duration|iso>` (e.g. `1h`, `30m`, `2026-04-28T12:00:00Z`). Transparently spans rotated files (`.log.1` … `.log.5`) when more lines are needed. With `--json`, returns parsed `{ time, level, context?, msg }` records (continuation lines such as stack traces fold into the preceding entry's `msg`; lines that aren't standard log entries become `{ raw }`); combined with `--follow`, output is JSONL. `mcpc @<session> --json` now also exposes `_mcpc.logPath`. Error messages that previously pointed users to a raw log file path now suggest `mcpc @<session> logs` instead (#205).
 
+### Changed
+
+- `mcpc connect` now waits for every connection to finish before reporting status. Bulk and auto-discovery connects (`mcpc connect`, `mcpc connect <file>`) previously returned immediately with an optimistic `connecting` status in human mode; they now behave like single-server connects and `--json`, showing each server as connected or failed (bounded by `--timeout`) with a progress spinner while connecting.
+
 ### Deprecated
 
 - The `shell` command (`mcpc shell @<session>` and `mcpc @<session> shell`) is deprecated and will be removed in a future release. It is now hidden from `--help` output and prints a deprecation warning when invoked
 
 ### Fixed
 
+- `--timeout` now bounds the wait while a session connects to its server. The bridge health check that runs as a session starts previously ignored `--timeout`, so connecting to a slow or unreachable server could block for up to the 3-minute default regardless of a shorter `--timeout`.
 - `mcpc connect` (with no arguments) no longer silently ignores config files it can't use. Files with an empty servers object are listed as `0 servers`, and files that fail to load — invalid JSON, a project config missing a `mcpServers`/`servers` property, or an unreadable file — are listed as `(invalid)` with the reason, instead of being dropped or misreported as `No MCP config files found`.
 - `mcpc connect` now prints config file paths so they can be copy-pasted directly: paths containing spaces (e.g. macOS `Library/Application Support/...`) are quoted instead of being split when pasted into a shell.
 - `mcpc connect` no longer fails with `socket file not created within timeout` when the bridge is slow to start (CPU-constrained machines, many parallel connects). The startup window is more generous, and a bridge that crashes on startup now reports its exit code immediately instead of stalling until the timeout

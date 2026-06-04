@@ -61,6 +61,7 @@ import {
 } from '../../lib/index.js';
 import { getWallet } from '../../lib/wallets.js';
 import chalk from 'chalk';
+import ora from 'ora';
 import { createLogger } from '../../lib/logger.js';
 import { parseProxyArg } from '../parser.js';
 import { getBridgeLogPath } from '../../lib/log-reader.js';
@@ -546,9 +547,9 @@ export async function connectSession(
     throw error;
   }
 
-  // When skipDetails is set (bulk connect from config file), print success immediately
-  // without waiting for the bridge to complete MCP handshake. The session will auto-recover
-  // if the server is slow or unreachable; the user can check status with `mcpc @session`.
+  // When skipDetails is set (bulk connect), return as soon as the bridge is spawned, without
+  // printing server details or waiting for the MCP handshake here. The bulk caller waits for
+  // readiness afterward (bounded by --timeout) and reports each session as live or failed.
   if (options.skipDetails) {
     if (options.outputMode === 'human' && !options.quiet) {
       console.log(formatSuccess(`Session ${name} ${isReconnect ? 'reconnected' : 'created'}`));
@@ -1085,6 +1086,61 @@ type BulkConnectResult = BulkConnectEntry & {
 };
 
 /**
+ * Wait for a freshly-spawned session's bridge to finish its MCP handshake.
+ *
+ * `getServerDetails` blocks until the bridge's MCP client connects, so this resolves once the
+ * server has responded (or rejects on handshake failure / timeout). The wait is bounded by
+ * `options.timeout` (the `--timeout` value, in seconds); without it the bridge's default request
+ * timeout applies. Output is suppressed (json + hideTarget) so callers control all rendering.
+ */
+async function waitForSessionReady(
+  sessionName: string,
+  options: { verbose?: boolean; timeout?: number }
+): Promise<{ ready: true } | { ready: false; error: string }> {
+  try {
+    await withMcpClient(
+      sessionName,
+      {
+        outputMode: 'json',
+        hideTarget: true,
+        ...(options.verbose && { verbose: options.verbose }),
+        ...(options.timeout !== undefined && { timeout: options.timeout }),
+      },
+      async (client) => {
+        await client.getServerDetails();
+      }
+    );
+    return { ready: true };
+  } catch (error) {
+    return { ready: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/**
+ * Wait for each freshly-spawned ('created') session to finish its MCP handshake, resolving its
+ * status to a terminal state: it stays 'created' if the server responded, or becomes 'failed'
+ * (with the error) otherwise. Already-active and spawn-failed results pass through unchanged.
+ * Waits run in parallel; `onSettled` fires as each entry settles so callers can show progress.
+ */
+async function waitForBulkConnectReady(
+  results: BulkConnectResult[],
+  options: { verbose?: boolean; timeout?: number },
+  onSettled?: () => void
+): Promise<BulkConnectResult[]> {
+  return Promise.all(
+    results.map(async (r): Promise<BulkConnectResult> => {
+      try {
+        if (r.status !== 'created') return r;
+        const ready = await waitForSessionReady(r.sessionName, options);
+        return ready.ready ? r : { ...r, status: 'failed', error: ready.error };
+      } finally {
+        onSettled?.();
+      }
+    })
+  );
+}
+
+/**
  * Connect a list of entries in parallel, printing compact status badges when done.
  * Returns the per-entry results so callers can build summaries and exit codes.
  */
@@ -1114,7 +1170,7 @@ async function bulkConnectEntries(
     )
   );
 
-  const results: BulkConnectResult[] = settled.map((outcome, i) => {
+  let results: BulkConnectResult[] = settled.map((outcome, i) => {
     const base = entries[i]!;
     if (outcome.status === 'fulfilled') {
       return { ...base, status: liveSet.has(base.sessionName) ? 'active' : 'created' };
@@ -1123,6 +1179,21 @@ async function bulkConnectEntries(
     return { ...base, status: 'failed', error };
   });
 
+  // Wait for newly-spawned sessions to finish their MCP handshake before reporting status, so
+  // human output matches --json (which waits in buildBulkConnectEntries) and single-target
+  // connect. The wait is bounded by --timeout; a spinner shows live progress. JSON callers
+  // resolve readiness later, so we only do the explicit wait here for human output.
+  if (options.outputMode === 'human' && results.some((r) => r.status === 'created')) {
+    const total = results.length;
+    let done = 0;
+    const spinner = ora(`Connecting to ${total} server${total === 1 ? '' : 's'}...`).start();
+    results = await waitForBulkConnectReady(results, options, () => {
+      done += 1;
+      spinner.text = `Connecting to servers... (${done}/${total})`;
+    });
+    spinner.stop();
+  }
+
   // Display badges in human mode (callers that render their own per-entry status,
   // e.g. config discovery, pass printBadges: false to suppress this block).
   if (options.outputMode === 'human' && printBadges) {
@@ -1130,7 +1201,7 @@ async function bulkConnectEntries(
       const name = theme.cyan(r.sessionName);
       switch (r.status) {
         case 'created':
-          console.log(`  ${theme.yellow('●')} ${name} ${theme.yellow('connecting')}`);
+          console.log(`  ${theme.green('●')} ${name} ${theme.green('created')}`);
           break;
         case 'active':
           console.log(`  ${theme.green('●')} ${name} ${chalk.dim('already active')}`);
@@ -1153,26 +1224,26 @@ async function bulkConnectEntries(
 function printBulkConnectSummary(
   results: BulkConnectResult[],
   options: { outputMode: OutputMode }
-): { active: number; connecting: number; failed: number } {
+): { active: number; connected: number; failed: number } {
   const active = results.filter((r) => r.status === 'active').length;
-  const connecting = results.filter((r) => r.status === 'created').length;
+  const connected = results.filter((r) => r.status === 'created').length;
   const failed = results.filter((r) => r.status === 'failed').length;
 
   if (options.outputMode === 'human' && results.length > 1) {
     const parts: string[] = [];
+    if (connected > 0) parts.push(`${connected} connected`);
     if (active > 0) parts.push(`${active} already active`);
-    if (connecting > 0) parts.push(`${connecting} connecting`);
     if (failed > 0) parts.push(`${failed} failed`);
     const summary = parts.join(', ');
 
     if (failed === 0) {
       console.log(formatSuccess(summary));
-    } else if (active + connecting > 0) {
+    } else if (active + connected > 0) {
       console.log(formatWarning(summary));
     }
   }
 
-  return { active, connecting, failed };
+  return { active, connected, failed };
 }
 
 /**
@@ -1265,10 +1336,10 @@ export async function connectAllFromConfig(
     return;
   }
 
-  const { active, connecting, failed } = printBulkConnectSummary(results, options);
+  const { active, connected, failed } = printBulkConnectSummary(results, options);
 
   // If ALL servers failed, exit with error
-  if (active + connecting === 0 && failed > 0) {
+  if (active + connected === 0 && failed > 0) {
     throw new ClientError(`Failed to connect any servers from ${configFile}`);
   }
 }
@@ -1445,8 +1516,8 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
   });
 
   // Connect all non-skipped entries (quietly) so each server's result can be shown inline
-  // next to its config entry. We don't wait for full readiness — a newly spawned session
-  // is reported optimistically as "connecting".
+  // next to its config entry. In human mode bulkConnectEntries waits for each handshake to
+  // finish (bounded by --timeout), so the inline status reflects the real result (live/failed).
   const results =
     entries.length > 0 ? await bulkConnectEntries(entries, options, { printBadges: false }) : [];
 
@@ -1606,15 +1677,28 @@ async function maybeConnectApify(
     await connectSession(APIFY_MCP_URL, APIFY_SESSION_NAME, {
       outputMode: options.outputMode,
       ...(options.verbose && { verbose: true }),
+      ...(options.timeout !== undefined && { timeout: options.timeout }),
       headers: [`Authorization: Bearer ${token}`],
       skipDetails: true,
       quiet: true,
       noProfile: true,
     });
+    // Wait for the handshake to finish (bounded by --timeout) so we report the real result,
+    // consistent with the config-server connections above.
     if (options.outputMode === 'human') {
-      console.log(
-        `  ${theme.yellow('●')} ${theme.cyan(APIFY_SESSION_NAME)} ${theme.yellow('connecting')}`
-      );
+      const ready = await waitForSessionReady(APIFY_SESSION_NAME, {
+        ...(options.verbose && { verbose: options.verbose }),
+        ...(options.timeout !== undefined && { timeout: options.timeout }),
+      });
+      if (ready.ready) {
+        console.log(
+          `  ${theme.green('●')} ${theme.cyan(APIFY_SESSION_NAME)} ${theme.green('created')}`
+        );
+      } else {
+        console.log(
+          `  ${theme.red('●')} ${theme.cyan(APIFY_SESSION_NAME)} ${theme.red('failed')}${chalk.dim(` — ${ready.error}`)}`
+        );
+      }
     }
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);

@@ -38,7 +38,7 @@ run_mcpc connect "$CONFIG_FILE"
 assert_success "first connect should succeed"
 assert_contains "$STDOUT" "@alpha"
 assert_contains "$STDOUT" "@bravo"
-assert_contains "$STDOUT" "connecting"
+assert_contains "$STDOUT" "created"
 
 # Verify both sessions exist with names derived from entry names
 run_mcpc --json

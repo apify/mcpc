@@ -630,15 +630,21 @@ interface BridgeHealthResult {
  * This blocks until MCP client is connected, then returns server info
  *
  * @param socketPath - Path to bridge's Unix socket
+ * @param timeout - Optional request timeout in seconds (the `--timeout` value). Without it the
+ *   bridge client's default request timeout applies. The health check is what blocks while a
+ *   server completes (or fails) its handshake, so this is where `--timeout` must take effect.
  * @returns Health check result with error details if unhealthy
  */
-async function checkBridgeHealth(socketPath: string): Promise<BridgeHealthResult> {
+async function checkBridgeHealth(
+  socketPath: string,
+  timeout?: number
+): Promise<BridgeHealthResult> {
   const client = new BridgeClient(socketPath);
   try {
     await client.connect();
     // getServerDetails blocks until MCP client is connected, then returns info
     // If MCP connection fails, the bridge will return an error via IPC
-    await client.request('getServerDetails');
+    await client.request('getServerDetails', undefined, timeout);
     return { healthy: true };
   } catch (error) {
     // Return error details so caller can provide informative message
@@ -661,10 +667,12 @@ async function checkBridgeHealth(socketPath: string): Promise<BridgeHealthResult
  * - If bridge process dies, socket connection fails and we restart
  *
  * @param sessionName - Name of the session
+ * @param timeout - Optional request timeout in seconds (the `--timeout` value), used to bound the
+ *   health-check `getServerDetails` call so a slow/unreachable server doesn't block past it.
  * @returns The socket path of the healthy bridge
  * @throws ClientError if bridge cannot be made healthy
  */
-export async function ensureBridgeReady(sessionName: string): Promise<string> {
+export async function ensureBridgeReady(sessionName: string, timeout?: number): Promise<string> {
   const session = await getSession(sessionName);
 
   if (!session) {
@@ -693,7 +701,7 @@ export async function ensureBridgeReady(sessionName: string): Promise<string> {
 
   if (processAlive && socketPath) {
     // Process alive, try getServerDetails (blocks until MCP connected)
-    const result = await checkBridgeHealth(socketPath);
+    const result = await checkBridgeHealth(socketPath, timeout);
     if (result.healthy) {
       logger.debug(`Bridge for ${sessionName} is healthy`);
       return socketPath;
@@ -729,7 +737,7 @@ export async function ensureBridgeReady(sessionName: string): Promise<string> {
   const newSocketPath = getSocketPath(sessionName, newPid);
 
   // Try getServerDetails on restarted bridge (blocks until MCP connected)
-  const result = await checkBridgeHealth(newSocketPath);
+  const result = await checkBridgeHealth(newSocketPath, timeout);
   if (result.healthy) {
     await updateSession(sessionName, { status: 'active' });
     logger.debug(`Bridge for ${sessionName} passed health check`);

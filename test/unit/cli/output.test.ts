@@ -2020,8 +2020,8 @@ describe('formatConnectStatusBadge', () => {
     expect(formatConnectStatusBadge('active')).not.toContain('active');
   });
 
-  it('renders connecting / failed states', () => {
-    expect(formatConnectStatusBadge('created')).toContain('connecting');
+  it('renders created / failed states', () => {
+    expect(formatConnectStatusBadge('created')).toContain('created');
     expect(formatConnectStatusBadge('failed')).toContain('failed');
   });
 

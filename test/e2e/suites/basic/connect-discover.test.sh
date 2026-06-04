@@ -117,7 +117,7 @@ assert_success "connect with project-scope config should succeed"
 assert_contains "$STDOUT" "Found 1 MCP config file"
 assert_contains "$STDOUT" ".mcp.json"
 assert_contains "$STDOUT" "@discover-project"
-assert_contains "$STDOUT" "connecting"
+assert_contains "$STDOUT" "created"
 test_pass
 
 # =============================================================================
@@ -318,7 +318,7 @@ run_mcpc_discover connect
 assert_success "discovery with an http + skipped stdio server should succeed"
 # The connected server shows its status inline; the stdio server is marked inline.
 assert_contains "$STDOUT" "@discover-http"
-assert_contains "$STDOUT" "connecting"
+assert_contains "$STDOUT" "created"
 assert_contains "$STDOUT" "○ skipped (stdio)"
 # Plain note (not a dim "↳" hint) pointing at --stdio.
 assert_contains "$STDOUT" "To include stdio servers, run: mcpc connect --stdio"

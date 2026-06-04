@@ -466,10 +466,17 @@ export class SessionClient extends EventEmitter implements IMcpClient {
  *
  * Uses ensureBridgeReady() to guarantee the bridge is healthy before connecting.
  * This handles all the restart logic in one place (bridge-manager).
+ *
+ * @param timeout - Optional request timeout in seconds (the `--timeout` value). It bounds the
+ *   health check inside ensureBridgeReady(), which is what blocks while the server completes its
+ *   handshake — so `--timeout` must reach it here, before setRequestTimeout() is applied below.
  */
-export async function createSessionClient(sessionName: string): Promise<SessionClient> {
+export async function createSessionClient(
+  sessionName: string,
+  timeout?: number
+): Promise<SessionClient> {
   // Ensure bridge is healthy (may restart it)
-  const socketPath = await ensureBridgeReady(sessionName);
+  const socketPath = await ensureBridgeReady(sessionName, timeout);
 
   // Connect to the healthy bridge
   const bridgeClient = new BridgeClient(socketPath);
@@ -488,7 +495,7 @@ export async function withSessionClient<T>(
   callback: (client: IMcpClient) => Promise<T>,
   options?: { timeout?: number }
 ): Promise<T> {
-  const client = await createSessionClient(sessionName);
+  const client = await createSessionClient(sessionName, options?.timeout);
 
   if (options?.timeout !== undefined) {
     client.setRequestTimeout(options.timeout);
