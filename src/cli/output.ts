@@ -1366,10 +1366,10 @@ export function formatPath(p: string, platform: NodeJS.Platform = process.platfo
 }
 
 /**
- * Format an inline connection-status badge for a session — `● live`, `● created`, or
- * `● failed — <reason>`. Used to annotate each config entry with its bulk-connect result.
- * Bulk connect waits for each handshake, so a freshly-connected session shows green `● created`
- * and an already-running one shows green `● live`. Human output only.
+ * Format an inline connection-status badge for a session — `● live` or `● failed — <reason>`.
+ * Used to annotate each config entry with its bulk-connect result. Bulk connect waits for each
+ * handshake, so any connected session — freshly created or already running — shows green
+ * `● live`, matching the session list. Human output only.
  */
 export function formatConnectStatusBadge(
   status: 'active' | 'created' | 'failed',
@@ -1377,9 +1377,8 @@ export function formatConnectStatusBadge(
 ): string {
   switch (status) {
     case 'active':
-      return `${theme.green('●')} ${theme.green('live')}`;
     case 'created':
-      return `${theme.green('●')} ${theme.green('created')}`;
+      return `${theme.green('●')} ${theme.green('live')}`;
     case 'failed':
       return `${theme.red('●')} ${theme.red('failed')}${error ? chalk.dim(` — ${error}`) : ''}`;
   }

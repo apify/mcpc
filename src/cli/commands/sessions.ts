@@ -1201,7 +1201,7 @@ async function bulkConnectEntries(
       const name = theme.cyan(r.sessionName);
       switch (r.status) {
         case 'created':
-          console.log(`  ${theme.green('●')} ${name} ${theme.green('created')}`);
+          console.log(`  ${theme.green('●')} ${name} ${theme.green('live')}`);
           break;
         case 'active':
           console.log(`  ${theme.green('●')} ${name} ${chalk.dim('already active')}`);
@@ -1692,7 +1692,7 @@ async function maybeConnectApify(
       });
       if (ready.ready) {
         console.log(
-          `  ${theme.green('●')} ${theme.cyan(APIFY_SESSION_NAME)} ${theme.green('created')}`
+          `  ${theme.green('●')} ${theme.cyan(APIFY_SESSION_NAME)} ${theme.green('live')}`
         );
       } else {
         console.log(
