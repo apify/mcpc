@@ -19,6 +19,7 @@ import type {
   ServerConfig,
   ProxyConfig,
   ServerDetails,
+  SessionStatefulness,
   X402SchemePreference,
 } from '../../lib/types.js';
 import {
@@ -230,12 +231,26 @@ export type ConnectResultEntry = {
     status: 'created' | 'active' | 'failed' | 'skipped';
     skipReason?: 'stdio' | 'duplicate';
     error?: string;
+    stateful?: boolean; // true=stateful, false=stateless; omitted when not yet determined
   };
 } & Partial<
   Pick<ServerDetails, 'protocolVersion' | 'capabilities' | 'serverInfo' | 'instructions'>
 > & {
     toolNames?: string[];
   };
+
+/**
+ * Map the internal three-state `statefulness` enum to the public `--json` `stateful`
+ * boolean: `{ stateful: true }` for stateful connections, `{ stateful: false }` for
+ * stateless ones. Returns `undefined` when the state is `unknown` (not yet determined)
+ * so the field is omitted from output — spreading `undefined` adds nothing.
+ */
+function statefulFlag(
+  statefulness: SessionStatefulness | undefined
+): { stateful: boolean } | undefined {
+  if (!statefulness || statefulness === 'unknown') return undefined;
+  return { stateful: statefulness === 'stateful' };
+}
 
 /**
  * Connect to a session via the bridge and build a populated ConnectResultEntry from
@@ -280,10 +295,7 @@ async function buildConnectResultEntry(
           ...(options.configFile && { configFile: options.configFile }),
           ...(options.entry && { entry: options.entry }),
           status,
-          ...(serverDetails.statefulness &&
-            serverDetails.statefulness !== 'unknown' && {
-              statefulness: serverDetails.statefulness,
-            }),
+          ...statefulFlag(serverDetails.statefulness),
         },
         ...(serverDetails.protocolVersion && { protocolVersion: serverDetails.protocolVersion }),
         ...(serverDetails.capabilities && { capabilities: serverDetails.capabilities }),
@@ -711,10 +723,13 @@ export async function listSessionsAndAuthProfiles(options: {
   const profiles = await listAuthProfiles();
 
   if (options.outputMode === 'json') {
-    // Add bridge status to JSON output
-    const sessionsWithStatus = sessions.map((session) => ({
+    // Add bridge status to JSON output. The persisted `statefulness` enum (stored in
+    // sessions.json) is mapped to the public `stateful` boolean here so the list output
+    // matches `mcpc @<session>` and `mcpc connect`.
+    const sessionsWithStatus = sessions.map(({ statefulness, ...session }) => ({
       ...session,
       status: getBridgeStatus(session),
+      ...statefulFlag(statefulness),
     }));
     console.log(
       formatOutput(
@@ -884,14 +899,14 @@ export async function showServerDetails(
       // for session targets (those starting with "@"); ad-hoc URL/config targets
       // have no persistent bridge log.
       let logPath: string | undefined;
-      let logSize: number | undefined;
+      let logSizeBytes: number | undefined;
       if (target.startsWith('@')) {
         logPath = getBridgeLogPath(target);
         try {
           const st = await stat(logPath);
-          logSize = st.size;
+          logSizeBytes = st.size;
         } catch {
-          // log file doesn't exist yet — leave logSize undefined
+          // log file doesn't exist yet — leave logSizeBytes undefined
         }
       }
 
@@ -902,9 +917,9 @@ export async function showServerDetails(
               sessionName: context.sessionName,
               profileName: context.profileName,
               server,
-              ...(statefulness && statefulness !== 'unknown' && { statefulness }),
+              ...statefulFlag(statefulness),
               ...(logPath && { logPath }),
-              ...(logSize !== undefined && { logSize }),
+              ...(logSizeBytes !== undefined && { logSizeBytes }),
             },
             protocolVersion,
             capabilities,
