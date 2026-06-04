@@ -721,11 +721,11 @@ class BridgeProcess {
     if (serverDetails.protocolVersion) {
       sessionUpdate.protocolVersion = serverDetails.protocolVersion;
     }
-    // Persist statefulness (derived by getServerDetails from the transport + session id) so the
-    // session list can display it without an extra round-trip. stdio is always stateful; HTTP is
+    // Persist the connection mode (derived by getServerDetails from the transport + session id) so
+    // the session list can display it without an extra round-trip. stdio is always stateful; HTTP is
     // stateful/resumable iff the server assigned a session id, else stateless (2026-07-28 model).
-    if (serverDetails.statefulness) {
-      sessionUpdate.statefulness = serverDetails.statefulness;
+    if (serverDetails.connectionMode) {
+      sessionUpdate.connectionMode = serverDetails.connectionMode;
     }
     if (serverDetails.serverInfo) {
       sessionUpdate.serverInfo = serverDetails.serverInfo;

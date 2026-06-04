@@ -3,7 +3,6 @@
  */
 
 import { createServer } from 'net';
-import { stat } from 'fs/promises';
 import {
   OutputMode,
   isValidSessionName,
@@ -19,6 +18,7 @@ import type {
   ServerConfig,
   ProxyConfig,
   ServerDetails,
+  ConnectionMode,
   X402SchemePreference,
 } from '../../lib/types.js';
 import {
@@ -230,12 +230,25 @@ export type ConnectResultEntry = {
     status: 'created' | 'active' | 'failed' | 'skipped';
     skipReason?: 'stdio' | 'duplicate';
     error?: string;
+    stateless?: boolean | null; // true=stateless, false=stateful, null=not yet determined
   };
 } & Partial<
   Pick<ServerDetails, 'protocolVersion' | 'capabilities' | 'serverInfo' | 'instructions'>
 > & {
     toolNames?: string[];
   };
+
+/**
+ * Map the internal `connectionMode` enum to the public `--json` `stateless` field:
+ * `true` for stateless connections, `false` for stateful ones, and `null` when the mode
+ * is unknown / not yet determined. The field is always present, so consumers see a stable
+ * schema (`stateless` is `true | false | null`, never absent on connected targets).
+ */
+function statelessField(connectionMode: ConnectionMode | undefined): { stateless: boolean | null } {
+  if (connectionMode === 'stateless') return { stateless: true };
+  if (connectionMode === 'stateful') return { stateless: false };
+  return { stateless: null };
+}
 
 /**
  * Connect to a session via the bridge and build a populated ConnectResultEntry from
@@ -280,10 +293,7 @@ async function buildConnectResultEntry(
           ...(options.configFile && { configFile: options.configFile }),
           ...(options.entry && { entry: options.entry }),
           status,
-          ...(serverDetails.statefulness &&
-            serverDetails.statefulness !== 'unknown' && {
-              statefulness: serverDetails.statefulness,
-            }),
+          ...statelessField(serverDetails.connectionMode),
         },
         ...(serverDetails.protocolVersion && { protocolVersion: serverDetails.protocolVersion }),
         ...(serverDetails.capabilities && { capabilities: serverDetails.capabilities }),
@@ -711,10 +721,13 @@ export async function listSessionsAndAuthProfiles(options: {
   const profiles = await listAuthProfiles();
 
   if (options.outputMode === 'json') {
-    // Add bridge status to JSON output
-    const sessionsWithStatus = sessions.map((session) => ({
+    // Add bridge status to JSON output. The persisted `connectionMode` enum (stored in
+    // sessions.json) is mapped to the public `stateless` field here so the list output
+    // matches `mcpc @<session>` and `mcpc connect` (null until the mode is known).
+    const sessionsWithStatus = sessions.map(({ connectionMode, ...session }) => ({
       ...session,
       status: getBridgeStatus(session),
+      ...statelessField(connectionMode),
     }));
     console.log(
       formatOutput(
@@ -861,7 +874,8 @@ export async function showServerDetails(
 ): Promise<void> {
   await withMcpClient(target, options, async (client, context) => {
     const serverDetails = await client.getServerDetails();
-    const { serverInfo, capabilities, instructions, protocolVersion, statefulness } = serverDetails;
+    const { serverInfo, capabilities, instructions, protocolVersion, connectionMode } =
+      serverDetails;
 
     // Get tools list (uses bridge cache when available, no extra server call)
     const cachedToolsResult = await client.listAllTools();
@@ -880,19 +894,14 @@ export async function showServerDetails(
         }),
       };
 
-      // Bridge log path/size are useful debug context for callers — only meaningful
-      // for session targets (those starting with "@"); ad-hoc URL/config targets
-      // have no persistent bridge log.
+      // The bridge log path is useful debug context for callers — only meaningful for
+      // session targets (those starting with "@"); ad-hoc URL/config targets have no
+      // persistent bridge log. The size is deliberately not emitted: it's a snapshot
+      // that goes stale as the bridge keeps writing, and callers can stat `logPath`
+      // (or run `mcpc @<session> logs`) for a fresh value when they actually need it.
       let logPath: string | undefined;
-      let logSize: number | undefined;
       if (target.startsWith('@')) {
         logPath = getBridgeLogPath(target);
-        try {
-          const st = await stat(logPath);
-          logSize = st.size;
-        } catch {
-          // log file doesn't exist yet — leave logSize undefined
-        }
       }
 
       console.log(
@@ -902,9 +911,8 @@ export async function showServerDetails(
               sessionName: context.sessionName,
               profileName: context.profileName,
               server,
-              ...(statefulness && statefulness !== 'unknown' && { statefulness }),
+              ...statelessField(connectionMode),
               ...(logPath && { logPath }),
-              ...(logSize !== undefined && { logSize }),
             },
             protocolVersion,
             capabilities,
