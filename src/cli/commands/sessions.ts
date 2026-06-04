@@ -230,7 +230,7 @@ export type ConnectResultEntry = {
     status: 'created' | 'active' | 'failed' | 'skipped';
     skipReason?: 'stdio' | 'duplicate';
     error?: string;
-    stateful?: boolean | null; // true=stateful, false=stateless, null=not yet determined
+    stateless?: boolean | null; // true=stateless, false=stateful, null=not yet determined
   };
 } & Partial<
   Pick<ServerDetails, 'protocolVersion' | 'capabilities' | 'serverInfo' | 'instructions'>
@@ -239,15 +239,15 @@ export type ConnectResultEntry = {
   };
 
 /**
- * Map the internal `connectionMode` enum to the public `--json` `stateful` field:
- * `true` for stateful connections, `false` for stateless ones, and `null` when the mode
+ * Map the internal `connectionMode` enum to the public `--json` `stateless` field:
+ * `true` for stateless connections, `false` for stateful ones, and `null` when the mode
  * is unknown / not yet determined. The field is always present, so consumers see a stable
- * schema (`stateful` is `true | false | null`, never absent on connected targets).
+ * schema (`stateless` is `true | false | null`, never absent on connected targets).
  */
-function statefulField(connectionMode: ConnectionMode | undefined): { stateful: boolean | null } {
-  return {
-    stateful: connectionMode === 'stateful' ? true : connectionMode === 'stateless' ? false : null,
-  };
+function statelessField(connectionMode: ConnectionMode | undefined): { stateless: boolean | null } {
+  if (connectionMode === 'stateless') return { stateless: true };
+  if (connectionMode === 'stateful') return { stateless: false };
+  return { stateless: null };
 }
 
 /**
@@ -293,7 +293,7 @@ async function buildConnectResultEntry(
           ...(options.configFile && { configFile: options.configFile }),
           ...(options.entry && { entry: options.entry }),
           status,
-          ...statefulField(serverDetails.connectionMode),
+          ...statelessField(serverDetails.connectionMode),
         },
         ...(serverDetails.protocolVersion && { protocolVersion: serverDetails.protocolVersion }),
         ...(serverDetails.capabilities && { capabilities: serverDetails.capabilities }),
@@ -722,12 +722,12 @@ export async function listSessionsAndAuthProfiles(options: {
 
   if (options.outputMode === 'json') {
     // Add bridge status to JSON output. The persisted `connectionMode` enum (stored in
-    // sessions.json) is mapped to the public `stateful` field here so the list output
+    // sessions.json) is mapped to the public `stateless` field here so the list output
     // matches `mcpc @<session>` and `mcpc connect` (null until the mode is known).
     const sessionsWithStatus = sessions.map(({ connectionMode, ...session }) => ({
       ...session,
       status: getBridgeStatus(session),
-      ...statefulField(connectionMode),
+      ...statelessField(connectionMode),
     }));
     console.log(
       formatOutput(
@@ -911,7 +911,7 @@ export async function showServerDetails(
               sessionName: context.sessionName,
               profileName: context.profileName,
               server,
-              ...statefulField(connectionMode),
+              ...statelessField(connectionMode),
               ...(logPath && { logPath }),
             },
             protocolVersion,
