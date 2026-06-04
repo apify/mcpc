@@ -500,9 +500,8 @@ ${chalk.bold('Session name:')}
 
 ${chalk.bold('Stdio servers (command-based, run locally):')}
   Config entries spawn the command on connect, even if the handshake
-  later fails — only connect to configs you trust. View the bridge log
-  with: mcpc <@session> logs. Bulk connects skip stdio by default;
-  pass --stdio to include them.
+  later fails — only connect to configs you trust. Bulk connects skip
+  stdio by default; pass --stdio to include them.
 ${jsonHelp(
   'Array of `InitializeResult` objects (one per session), extended with `toolNames` and `_mcpc` metadata',
   '`[{ protocolVersion?, capabilities?, serverInfo?, instructions?, toolNames?, _mcpc: { sessionName, server?, ... }]`',
