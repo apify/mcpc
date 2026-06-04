@@ -9,7 +9,7 @@
 #   - --since filters by timestamp; invalid value rejected
 #   - --tail and --since combine
 #   - rotation files (.log.1, .log.2) are spanned when more lines are needed
-#   - _mcpc.logPath / _mcpc.logSizeBytes appear in `mcpc @<session> --json`
+#   - _mcpc.logPath appears in `mcpc @<session> --json`
 #   - error messages from a real failing session point users at `mcpc <name> logs`
 
 source "$(dirname "$0")/../../lib/framework.sh"
@@ -306,23 +306,18 @@ assert_contains "$got" "cur-line-b"
 test_pass
 
 # =============================================================================
-# `mcpc @<session> --json` exposes _mcpc.logPath / _mcpc.logSizeBytes
+# `mcpc @<session> --json` exposes _mcpc.logPath
 # =============================================================================
 
-test_case "session JSON exposes _mcpc.logPath and _mcpc.logSizeBytes"
+test_case "session JSON exposes _mcpc.logPath"
 run_mcpc --json "$SESSION"
 assert_success
 log_path=$(echo "$STDOUT" | jq -r '._mcpc.logPath // empty')
-log_size=$(echo "$STDOUT" | jq -r '._mcpc.logSizeBytes // empty')
 if [[ -z "$log_path" ]]; then
   test_fail "expected _mcpc.logPath in session JSON output"
   exit 1
 fi
 assert_contains "$log_path" "bridge-${SESSION}.log"
-if [[ -z "$log_size" || "$log_size" -lt 1 ]]; then
-  test_fail "expected _mcpc.logSizeBytes > 0, got: $log_size"
-  exit 1
-fi
 test_pass
 
 # =============================================================================

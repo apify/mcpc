@@ -3,7 +3,6 @@
  */
 
 import { createServer } from 'net';
-import { stat } from 'fs/promises';
 import {
   OutputMode,
   isValidSessionName,
@@ -895,19 +894,14 @@ export async function showServerDetails(
         }),
       };
 
-      // Bridge log path/size are useful debug context for callers — only meaningful
-      // for session targets (those starting with "@"); ad-hoc URL/config targets
-      // have no persistent bridge log.
+      // The bridge log path is useful debug context for callers — only meaningful for
+      // session targets (those starting with "@"); ad-hoc URL/config targets have no
+      // persistent bridge log. The size is deliberately not emitted: it's a snapshot
+      // that goes stale as the bridge keeps writing, and callers can stat `logPath`
+      // (or run `mcpc @<session> logs`) for a fresh value when they actually need it.
       let logPath: string | undefined;
-      let logSizeBytes: number | undefined;
       if (target.startsWith('@')) {
         logPath = getBridgeLogPath(target);
-        try {
-          const st = await stat(logPath);
-          logSizeBytes = st.size;
-        } catch {
-          // log file doesn't exist yet — leave logSizeBytes undefined
-        }
       }
 
       console.log(
@@ -919,7 +913,6 @@ export async function showServerDetails(
               server,
               ...statefulFlag(statefulness),
               ...(logPath && { logPath }),
-              ...(logSizeBytes !== undefined && { logSizeBytes }),
             },
             protocolVersion,
             capabilities,
