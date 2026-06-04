@@ -492,8 +492,6 @@ ${chalk.bold('Auto-discovery (no server arg):')}
   .vscode/mcp.json, .kiro/settings/mcp.json, ~/.claude.json,
   ~/.codeium/windsurf/mcp_config.json, plus VS Code & Claude Desktop configs.
   Set APIFY_API_TOKEN to auto-connect mcp.apify.com as @apify.
-  Without --json, returns right away without waiting for connections to
-  finish; --json waits and reports each server's details.
 
 ${chalk.bold('Session name:')}
   Omit @session to auto-generate from the server (mcp.apify.com → @apify)
@@ -502,9 +500,8 @@ ${chalk.bold('Session name:')}
 
 ${chalk.bold('Stdio servers (command-based, run locally):')}
   Config entries spawn the command on connect, even if the handshake
-  later fails — only connect to configs you trust. View the bridge log
-  with: mcpc <@session> logs. Bulk connects skip stdio by default;
-  pass --stdio to include them.
+  later fails — only connect to configs you trust. Bulk connects skip
+  stdio by default; pass --stdio to include them.
 ${jsonHelp(
   'Array of `InitializeResult` objects (one per session), extended with `toolNames` and `_mcpc` metadata',
   '`[{ protocolVersion?, capabilities?, serverInfo?, instructions?, toolNames?, _mcpc: { sessionName, server?, ... }]`',

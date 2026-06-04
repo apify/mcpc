@@ -2020,8 +2020,9 @@ describe('formatConnectStatusBadge', () => {
     expect(formatConnectStatusBadge('active')).not.toContain('active');
   });
 
-  it('renders connecting / failed states', () => {
-    expect(formatConnectStatusBadge('created')).toContain('connecting');
+  it('renders a freshly-connected ("created") session as "live", plus the failed state', () => {
+    expect(formatConnectStatusBadge('created')).toContain('live');
+    expect(formatConnectStatusBadge('created')).not.toContain('created');
     expect(formatConnectStatusBadge('failed')).toContain('failed');
   });
 
