@@ -18,7 +18,7 @@ import type {
   ServerConfig,
   ProxyConfig,
   ServerDetails,
-  SessionStatefulness,
+  ConnectionMode,
   X402SchemePreference,
 } from '../../lib/types.js';
 import {
@@ -230,7 +230,7 @@ export type ConnectResultEntry = {
     status: 'created' | 'active' | 'failed' | 'skipped';
     skipReason?: 'stdio' | 'duplicate';
     error?: string;
-    stateful?: boolean; // true=stateful, false=stateless; omitted when not yet determined
+    stateful?: boolean | null; // true=stateful, false=stateless, null=not yet determined
   };
 } & Partial<
   Pick<ServerDetails, 'protocolVersion' | 'capabilities' | 'serverInfo' | 'instructions'>
@@ -239,16 +239,15 @@ export type ConnectResultEntry = {
   };
 
 /**
- * Map the internal three-state `statefulness` enum to the public `--json` `stateful`
- * boolean: `{ stateful: true }` for stateful connections, `{ stateful: false }` for
- * stateless ones. Returns `undefined` when the state is `unknown` (not yet determined)
- * so the field is omitted from output — spreading `undefined` adds nothing.
+ * Map the internal `connectionMode` enum to the public `--json` `stateful` field:
+ * `true` for stateful connections, `false` for stateless ones, and `null` when the mode
+ * is unknown / not yet determined. The field is always present, so consumers see a stable
+ * schema (`stateful` is `true | false | null`, never absent on connected targets).
  */
-function statefulFlag(
-  statefulness: SessionStatefulness | undefined
-): { stateful: boolean } | undefined {
-  if (!statefulness || statefulness === 'unknown') return undefined;
-  return { stateful: statefulness === 'stateful' };
+function statefulField(connectionMode: ConnectionMode | undefined): { stateful: boolean | null } {
+  return {
+    stateful: connectionMode === 'stateful' ? true : connectionMode === 'stateless' ? false : null,
+  };
 }
 
 /**
@@ -294,7 +293,7 @@ async function buildConnectResultEntry(
           ...(options.configFile && { configFile: options.configFile }),
           ...(options.entry && { entry: options.entry }),
           status,
-          ...statefulFlag(serverDetails.statefulness),
+          ...statefulField(serverDetails.connectionMode),
         },
         ...(serverDetails.protocolVersion && { protocolVersion: serverDetails.protocolVersion }),
         ...(serverDetails.capabilities && { capabilities: serverDetails.capabilities }),
@@ -722,13 +721,13 @@ export async function listSessionsAndAuthProfiles(options: {
   const profiles = await listAuthProfiles();
 
   if (options.outputMode === 'json') {
-    // Add bridge status to JSON output. The persisted `statefulness` enum (stored in
-    // sessions.json) is mapped to the public `stateful` boolean here so the list output
-    // matches `mcpc @<session>` and `mcpc connect`.
-    const sessionsWithStatus = sessions.map(({ statefulness, ...session }) => ({
+    // Add bridge status to JSON output. The persisted `connectionMode` enum (stored in
+    // sessions.json) is mapped to the public `stateful` field here so the list output
+    // matches `mcpc @<session>` and `mcpc connect` (null until the mode is known).
+    const sessionsWithStatus = sessions.map(({ connectionMode, ...session }) => ({
       ...session,
       status: getBridgeStatus(session),
-      ...statefulFlag(statefulness),
+      ...statefulField(connectionMode),
     }));
     console.log(
       formatOutput(
@@ -875,7 +874,8 @@ export async function showServerDetails(
 ): Promise<void> {
   await withMcpClient(target, options, async (client, context) => {
     const serverDetails = await client.getServerDetails();
-    const { serverInfo, capabilities, instructions, protocolVersion, statefulness } = serverDetails;
+    const { serverInfo, capabilities, instructions, protocolVersion, connectionMode } =
+      serverDetails;
 
     // Get tools list (uses bridge cache when available, no extra server call)
     const cachedToolsResult = await client.listAllTools();
@@ -911,7 +911,7 @@ export async function showServerDetails(
               sessionName: context.sessionName,
               profileName: context.profileName,
               server,
-              ...statefulFlag(statefulness),
+              ...statefulField(connectionMode),
               ...(logPath && { logPath }),
             },
             protocolVersion,

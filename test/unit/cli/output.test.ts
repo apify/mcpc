@@ -1066,7 +1066,7 @@ describe('formatServerDetails', () => {
       protocolVersion: '2026-07-28',
       capabilities: {},
       serverInfo: { name: 'Stateless Server', version: '1.0.0' },
-      statefulness: 'stateless',
+      connectionMode: 'stateless',
     };
 
     const output = formatServerDetails(details, '@s');
@@ -1079,7 +1079,7 @@ describe('formatServerDetails', () => {
       protocolVersion: '2025-11-25',
       capabilities: {},
       serverInfo: { name: 'Stateful Server', version: '1.0.0' },
-      statefulness: 'stateful',
+      connectionMode: 'stateful',
     };
 
     const output = formatServerDetails(details, '@s');
@@ -1087,12 +1087,12 @@ describe('formatServerDetails', () => {
     expect(output).toContain('Protocol: 2025-11-25 (stateful)');
   });
 
-  it('omits the statefulness suffix when it is unknown', () => {
+  it('omits the connection mode suffix when it is unknown', () => {
     const details: ServerDetails = {
       protocolVersion: '2025-11-25',
       capabilities: {},
       serverInfo: { name: 'S', version: '1.0.0' },
-      statefulness: 'unknown',
+      connectionMode: 'unknown',
     };
 
     const output = formatServerDetails(details, '@s');

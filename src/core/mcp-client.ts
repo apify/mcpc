@@ -34,7 +34,7 @@ function getRootCauseMessage(error: Error): string {
   }
   return current.message;
 }
-import type { IMcpClient, ServerDetails, SessionStatefulness, TaskUpdate } from '../lib/types.js';
+import type { IMcpClient, ServerDetails, ConnectionMode, TaskUpdate } from '../lib/types.js';
 import type { Task } from '@modelcontextprotocol/sdk/types.js';
 
 /**
@@ -258,7 +258,7 @@ export class McpClient implements IMcpClient {
     if (capabilities) details.capabilities = capabilities;
     if (serverInfo) details.serverInfo = serverInfo;
     if (instructions) details.instructions = instructions;
-    details.statefulness = this.deriveStatefulness();
+    details.connectionMode = this.deriveConnectionMode();
 
     return Promise.resolve(details);
   }
@@ -277,7 +277,7 @@ export class McpClient implements IMcpClient {
    * stateful/resumable when the server assigned a session id, otherwise stateless (the
    * 2026-07-28 model where any request may hit any server instance).
    */
-  private deriveStatefulness(): SessionStatefulness {
+  private deriveConnectionMode(): ConnectionMode {
     if (!this.hasConnected) return 'unknown';
     // Only the Streamable HTTP transport exposes terminateSession() (it sends an HTTP DELETE);
     // its absence indicates a stdio transport. The method exists on the HTTP transport
@@ -340,7 +340,9 @@ export class McpClient implements IMcpClient {
     // Stateless connections get a time-based expiry as a fallback for absent list_changed
     // pushes; stateful connections keep no expiry (notifications/explicit invalidation drive it).
     this.cachedToolsExpiresAt =
-      this.deriveStatefulness() === 'stateless' ? Date.now() + STATELESS_TOOLS_CACHE_TTL_MS : null;
+      this.deriveConnectionMode() === 'stateless'
+        ? Date.now() + STATELESS_TOOLS_CACHE_TTL_MS
+        : null;
     return { tools: allTools };
   }
 

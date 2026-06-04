@@ -1515,7 +1515,7 @@ export function formatServerDetails(
   const bullet = chalk.dim('*');
   const bt = chalk.gray('`'); // backtick
 
-  const { serverInfo, capabilities, instructions, protocolVersion, statefulness } = details;
+  const { serverInfo, capabilities, instructions, protocolVersion, connectionMode } = details;
 
   // Server info
   if (serverInfo) {
@@ -1527,9 +1527,9 @@ export function formatServerDetails(
 
   // Protocol version + whether the connection is stateful (stateless = 2026-07-28 model,
   // any request may hit any server instance; stateful = stdio process or HTTP session id)
-  const hasMode = statefulness !== undefined && statefulness !== 'unknown';
+  const hasMode = connectionMode !== undefined && connectionMode !== 'unknown';
   if (protocolVersion || hasMode) {
-    const mode = hasMode ? ` (${statefulness})` : '';
+    const mode = hasMode ? ` (${connectionMode})` : '';
     lines.push(chalk.bold('Protocol:') + ` ${protocolVersion ?? 'unknown'}${mode}`);
     lines.push('');
   }
