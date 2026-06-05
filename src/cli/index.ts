@@ -21,6 +21,7 @@ import * as resources from './commands/resources.js';
 import * as skills from './commands/skills.js';
 import * as prompts from './commands/prompts.js';
 import * as sessions from './commands/sessions.js';
+import * as connect from './commands/connect.js';
 import * as logging from './commands/logging.js';
 import * as utilities from './commands/utilities.js';
 import * as logs from './commands/logs.js';
@@ -526,7 +527,7 @@ ${jsonHelp(
               `To connect a specific server, pass a URL or config entry: mcpc connect <server> ${sessionName}`
           );
         }
-        await sessions.connectAllFromStandardConfigs({
+        await connect.connectAllFromStandardConfigs({
           ...globalOpts,
           ...(headers && { headers }),
           ...(opts.proxy && { proxy: opts.proxy as string }),
@@ -557,7 +558,7 @@ ${jsonHelp(
               `To connect a specific entry, use: mcpc connect ${server}:<entry> ${sessionName}`
           );
         }
-        await sessions.connectAllFromConfig(parsed.file, {
+        await connect.connectAllFromConfig(parsed.file, {
           ...globalOpts,
           ...(headers && { headers }),
           ...(opts.proxy && { proxy: opts.proxy as string }),
@@ -571,7 +572,7 @@ ${jsonHelp(
 
       // Auto-generate session name if not provided
       if (!sessionName) {
-        sessionName = await sessions.resolveSessionName(parsed, {
+        sessionName = await connect.resolveSessionName(parsed, {
           outputMode: globalOpts.outputMode,
           ...(globalOpts.profile && { profile: globalOpts.profile }),
           ...(headers && { headers }),
@@ -581,7 +582,7 @@ ${jsonHelp(
 
       if (parsed.type === 'config') {
         // Config file entry: pass entry name as target with config file path
-        await sessions.connectSession(parsed.entry, sessionName, {
+        await connect.connectSession(parsed.entry, sessionName, {
           ...globalOpts,
           ...(headers && { headers }),
           config: parsed.file,
@@ -591,7 +592,7 @@ ${jsonHelp(
           ...(globalOpts.insecure && { insecure: true }),
         });
       } else {
-        await sessions.connectSession(server, sessionName, {
+        await connect.connectSession(server, sessionName, {
           ...globalOpts,
           ...(headers && { headers }),
           proxy: opts.proxy,
