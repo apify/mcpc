@@ -492,7 +492,6 @@ ${chalk.bold('Auto-discovery (no server arg):')}
   Scans ./ and ~ for .mcp.json, mcp.json, mcp_config.json, .cursor/mcp.json,
   .vscode/mcp.json, .kiro/settings/mcp.json, ~/.claude.json,
   ~/.codeium/windsurf/mcp_config.json, plus VS Code & Claude Desktop configs.
-  Set APIFY_API_TOKEN to auto-connect mcp.apify.com as @apify.
 
 ${chalk.bold('Session name:')}
   Omit @session to auto-generate from the server (mcp.apify.com → @apify)
