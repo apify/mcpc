@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The `shell` command (`mcpc shell @<session>` and `mcpc @<session> shell`) is deprecated and will be removed in a future release. It is now hidden from `--help` output and prints a deprecation warning when invoked
 
+### Removed
+
+- `mcpc connect` no longer auto-connects to `mcp.apify.com` as `@apify` when the `APIFY_API_TOKEN` environment variable is set. Connect to it like any other server — `mcpc connect mcp.apify.com` — authenticating with `mcpc login` or `--header "Authorization: Bearer ..."`.
+
 ### Fixed
 
 - `--timeout` now bounds the wait while a session connects to its server. The bridge health check that runs as a session starts previously ignored `--timeout`, so connecting to a slow or unreachable server could block for up to the 3-minute default regardless of a shorter `--timeout`.

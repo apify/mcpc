@@ -1043,20 +1043,12 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
   const scan = scanMcpConfigFiles();
   const { discovered } = scan;
 
-  const hasApifyToken = !!process.env.APIFY_API_TOKEN;
-
-  if (discovered.length === 0 && !hasApifyToken) {
+  if (discovered.length === 0) {
     if (options.outputMode === 'json') {
       console.log(formatOutput([] as ConnectResultEntry[], 'json'));
       return;
     }
     throw new ClientError(buildNoServersError(scan));
-  }
-
-  // No config files but APIFY_API_TOKEN present — connect to Apify only
-  if (discovered.length === 0) {
-    await maybeConnectApify([], [], options);
-    return;
   }
 
   const { entries, skippedDuplicates, skippedStdio } = aggregateDiscoveredEntries(discovered, {
@@ -1075,11 +1067,7 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
       ...skippedDuplicates.map((s) => skippedConnectEntry(s, 'duplicate')),
     ];
     if (entries.length === 0) {
-      if (!hasApifyToken) {
-        console.log(formatOutput(skippedJsonEntries, 'json'));
-        return;
-      }
-      await maybeConnectApify([], [], options);
+      console.log(formatOutput(skippedJsonEntries, 'json'));
       return;
     }
     const resultEntries = await buildBulkConnectEntries(results, options);
@@ -1154,8 +1142,8 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
     console.log(`    ${chalk.dim(c.error)}`);
   }
 
-  // Nothing connectable, nothing already live, and no Apify token — guide the user to --stdio.
-  if (entries.length === 0 && !hasApifyToken && liveSkippedStdio.size === 0) {
+  // Nothing connectable and nothing already live — guide the user to --stdio.
+  if (entries.length === 0 && liveSkippedStdio.size === 0) {
     throw new ClientError(
       `All servers in discovered config files use stdio transport.\n` +
         `Pass --stdio to include them: mcpc connect --stdio`
@@ -1167,84 +1155,10 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
     console.log('\nTo include stdio servers, run: mcpc connect --stdio');
   }
 
-  // Auto-connect to mcp.apify.com when APIFY_API_TOKEN is set
-  await maybeConnectApify(entries, results, options);
-
   // If ALL connectable servers failed, exit with error
   const failed = results.filter((r) => r.status === 'failed').length;
   const succeeded = results.filter((r) => r.status === 'active' || r.status === 'created').length;
   if (entries.length > 0 && succeeded === 0 && failed > 0) {
     throw new ClientError(`Failed to connect any servers from discovered config files`);
-  }
-}
-
-const APIFY_MCP_URL = 'https://mcp.apify.com';
-const APIFY_SESSION_NAME = '@apify';
-
-/**
- * If APIFY_API_TOKEN is set and no @apify session was already handled by config discovery,
- * auto-connect to mcp.apify.com with the token as a Bearer header.
- */
-async function maybeConnectApify(
-  configEntries: BulkConnectEntry[],
-  configResults: BulkConnectResult[],
-  options: BulkConnectOptions
-): Promise<void> {
-  const token = process.env.APIFY_API_TOKEN;
-  if (!token) return;
-
-  // Skip if config discovery already produced an @apify session
-  if (configEntries.some((e) => e.sessionName === APIFY_SESSION_NAME)) return;
-  if (configResults.some((r) => r.sessionName === APIFY_SESSION_NAME)) return;
-
-  // Check if session is already live
-  const existing = await getSession(APIFY_SESSION_NAME);
-  const isLive = existing && getBridgeStatus(existing) === 'live';
-
-  if (options.outputMode === 'human') {
-    console.log(theme.cyan(`\nAPIFY_API_TOKEN detected, connecting to ${APIFY_MCP_URL}...`));
-  }
-
-  if (isLive) {
-    if (options.outputMode === 'human') {
-      console.log(`  ${theme.green('●')} ${theme.cyan(APIFY_SESSION_NAME)} ${theme.green('live')}`);
-    }
-    return;
-  }
-
-  try {
-    await connectSession(APIFY_MCP_URL, APIFY_SESSION_NAME, {
-      outputMode: options.outputMode,
-      ...(options.verbose && { verbose: true }),
-      ...(options.timeout !== undefined && { timeout: options.timeout }),
-      headers: [`Authorization: Bearer ${token}`],
-      skipDetails: true,
-      quiet: true,
-      noProfile: true,
-    });
-    // Wait for the handshake to finish (bounded by --timeout) so we report the real result,
-    // consistent with the config-server connections above.
-    if (options.outputMode === 'human') {
-      const ready = await waitForSessionReady(APIFY_SESSION_NAME, {
-        ...(options.verbose && { verbose: options.verbose }),
-        ...(options.timeout !== undefined && { timeout: options.timeout }),
-      });
-      if (ready.ready) {
-        console.log(
-          `  ${theme.green('●')} ${theme.cyan(APIFY_SESSION_NAME)} ${theme.green('live')}`
-        );
-      } else {
-        console.log(
-          `  ${theme.red('●')} ${theme.cyan(APIFY_SESSION_NAME)} ${theme.red('failed')}${chalk.dim(` — ${ready.error}`)}`
-        );
-      }
-    }
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    if (options.outputMode === 'human') {
-      console.log(
-        `  ${theme.red('●')} ${theme.cyan(APIFY_SESSION_NAME)} ${theme.red('failed')}${chalk.dim(` — ${msg}`)}`
-      );
-    }
   }
 }

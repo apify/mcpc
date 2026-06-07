@@ -211,7 +211,7 @@ The `connect`, `login`, and `logout` commands accept a `<server>` argument in th
 - **No argument** (`mcpc connect`) — auto-discover MCP config files in the current directory and
   your home dir (`.mcp.json`, `mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, `~/.claude.json`,
   Claude Desktop, Windsurf, Kiro, …) and connect everything found (run `mcpc connect --help` for the
-  full list). Set `APIFY_API_TOKEN` to also connect `mcp.apify.com` as `@apify`.
+  full list).
 
 ```bash
 mcpc connect                      # discover standard config files and connect all servers

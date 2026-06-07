@@ -58,7 +58,6 @@ mcpc connect                             # discover standard configs + connect e
   (`mcp.apify.com` → `@apify`). A matching session (same server + auth) is reused.
 - **Stdio (command-based) entries launch a local process on connect** — only connect
   to configs you trust. Bulk connects skip stdio entries unless you pass `--stdio`.
-- Set `APIFY_API_TOKEN` to auto-connect `mcp.apify.com` as `@apify` (used as a Bearer token).
 
 ## Sessions
 
