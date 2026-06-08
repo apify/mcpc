@@ -32,6 +32,15 @@ SKIP_BUILD=false
 RUNTIME="node"
 PATTERNS=()
 
+# Per-test timeout (seconds). A single hung test (e.g. an mcpc invocation that
+# never exits) must never stall the whole run: without a timeout it blocks the
+# parallel runner indefinitely and the CI job keeps going until GitHub's 6h hard
+# kill — and because results are only printed after every test finishes, the log
+# never even reveals which test hung (observed on macOS/Bun). The watchdog kills
+# the offending test, records a failure, and lets the suite finish and name it.
+# Override with E2E_PER_TEST_TIMEOUT for slower environments.
+PER_TEST_TIMEOUT="${E2E_PER_TEST_TIMEOUT:-180}"
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -259,24 +268,63 @@ else
 fi
 echo ""
 
-# Function to run a single test
+# Function to run a single test (with a per-test timeout watchdog)
 run_test() {
   local test_path="$1"
-  local test_id=$(test_name "$test_path")
+  local test_id
+  test_id=$(test_name "$test_path")
   local test_dir="$E2E_RUNS_DIR/$E2E_RUN_ID/$test_id"
 
   # Ensure test directory exists (framework.sh creates it, but be safe)
   mkdir -p "$test_dir"
 
-  # Run the test, output goes to test's directory
-  if bash "$test_path" > "$test_dir/output.log" 2>&1; then
-    echo "0" > "$test_dir/result"
-  else
-    echo "$?" > "$test_dir/result"
+  # Run the test in the background so a watchdog can enforce PER_TEST_TIMEOUT.
+  # A hung test would otherwise block the parallel runner forever; this guarantees
+  # the run always terminates and the failure log points at the culprit.
+  bash "$test_path" > "$test_dir/output.log" 2>&1 &
+  local test_pid=$!
+  local timeout_marker="$test_dir/.timed_out"
+  rm -f "$timeout_marker"
+
+  (
+    sleep "$PER_TEST_TIMEOUT"
+    # Only act if the test is still running. Drop a marker (so run_test can label
+    # the failure once the process is dead and no longer writing to output.log),
+    # then kill the test's direct children (mcpc, test server) and the test shell.
+    # Detached bridge processes are reaped by the end-of-run cleanup.
+    if kill -0 "$test_pid" 2>/dev/null; then
+      : > "$timeout_marker"
+      pkill -P "$test_pid" 2>/dev/null || true
+      kill -9 "$test_pid" 2>/dev/null || true
+    fi
+  ) &
+  local watchdog_pid=$!
+
+  # Capture the test's exit code without tripping `set -e`; a killed test reports
+  # non-zero, which is recorded as a failure.
+  local result=0
+  wait "$test_pid" || result=$?
+
+  # Test finished (or was killed) — stop the watchdog and reap it.
+  kill "$watchdog_pid" 2>/dev/null || true
+  wait "$watchdog_pid" 2>/dev/null || true
+
+  # If the watchdog tripped, the test process is now dead, so appending the
+  # timeout notice here is free of the write race that would clobber it if the
+  # watchdog wrote while the dying test was still flushing its own output.
+  if [[ -f "$timeout_marker" ]]; then
+    {
+      echo ""
+      echo "TIMEOUT: test '$test_id' exceeded ${PER_TEST_TIMEOUT}s limit (killed by run.sh watchdog)"
+    } >> "$test_dir/output.log"
+    rm -f "$timeout_marker"
+    result=137
   fi
+
+  echo "$result" > "$test_dir/result"
 }
 
-export SCRIPT_DIR SUITES_DIR E2E_RUN_ID E2E_RUNS_DIR E2E_SHARED_HOME E2E_ISOLATED_ALL E2E_RUNTIME PROJECT_ROOT NODE_V8_COVERAGE
+export SCRIPT_DIR SUITES_DIR E2E_RUN_ID E2E_RUNS_DIR E2E_SHARED_HOME E2E_ISOLATED_ALL E2E_RUNTIME PROJECT_ROOT NODE_V8_COVERAGE PER_TEST_TIMEOUT
 
 # Run tests
 echo -e "${BLUE}Running tests...${NC}"
@@ -301,8 +349,8 @@ if [[ "$VERBOSE" == "true" ]]; then
   done
 elif _is_windows; then
   # On Windows, export -f is unreliable in Git Bash, so use background jobs.
-  # Each test gets a 5-minute timeout to prevent indefinite hangs.
-  _PER_TEST_TIMEOUT=300
+  # Each test gets a timeout (PER_TEST_TIMEOUT) to prevent indefinite hangs.
+  _PER_TEST_TIMEOUT="$PER_TEST_TIMEOUT"
   _running=0
   for test in "${TESTS[@]}"; do
     test_id=$(test_name "$test")

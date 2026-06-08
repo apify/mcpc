@@ -8,6 +8,9 @@ jobs:
   e2e-linux-node:
     name: E2E tests (Linux, Node.js)
     runs-on: ubuntu-latest
+    # Backstop against a hung test stalling the job until GitHub's 6h hard kill.
+    # The per-test watchdog in run.sh is the primary guard; this is the safety net.
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v6
@@ -34,6 +37,7 @@ jobs:
   e2e-linux-bun:
     name: E2E tests (Linux, Bun)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v6
