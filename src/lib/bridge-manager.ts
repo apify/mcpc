@@ -43,6 +43,7 @@ import {
   readKeychainOAuthTokenInfo,
   readKeychainOAuthClientInfo,
   readKeychainSessionHeaders,
+  readKeychainProxyBearerToken,
 } from './auth/keychain.js';
 import { getAuthProfile } from './auth/profiles.js';
 import { getWallet } from './wallets.js';
@@ -171,12 +172,20 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
   // macOS the Keychain access dialog can block a CLI for far longer than that.
   // Loading credentials here ensures the bridge timer does not race a foreground
   // password prompt — see https://github.com/apify/mcpc/issues/55.
+  // The proxy bearer token is read here (under the CLI's runtime) and delivered to
+  // the bridge via IPC, so the bridge never reads it from the keychain itself — its
+  // only keychain access stays on the sanctioned OAuth-refresh path (see #55).
+  const proxyBearerToken = proxyConfig
+    ? ((await readKeychainProxyBearerToken(sessionName)) ?? undefined)
+    : undefined;
+
   const authCredentials =
-    profileName || headers
+    profileName || headers || proxyBearerToken
       ? await loadAuthCredentials(
           serverConfig.url || serverConfig.command || '',
           profileName,
-          headers
+          headers,
+          proxyBearerToken
         )
       : null;
   const x402Credentials = x402 ? await loadX402WalletCredentials() : null;
@@ -196,11 +205,12 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
   }
 
   // Pass auth profile to bridge
-  // Use dummy placeholder also when headers are provided (no OAuth profile),
-  // so the bridge process waits for headers before connecting to server
+  // Use a dummy placeholder when headers or a proxy bearer token are provided (no
+  // OAuth profile), so the bridge waits for the IPC credentials — which also carry
+  // the proxy bearer token — before connecting and starting its proxy server.
   if (profileName) {
     args.push('--profile', profileName);
-  } else if (headers && Object.keys(headers).length > 0) {
+  } else if ((headers && Object.keys(headers).length > 0) || proxyBearerToken) {
     args.push('--profile', 'dummy');
   }
 
@@ -523,7 +533,8 @@ export async function restartBridge(sessionName: string): Promise<StartBridgeRes
 async function loadAuthCredentials(
   serverUrl: string,
   profileName?: string,
-  headers?: Record<string, string>
+  headers?: Record<string, string>,
+  proxyBearerToken?: string
 ): Promise<AuthCredentials> {
   // Build credentials object
   const credentials: AuthCredentials = {
@@ -565,6 +576,13 @@ async function loadAuthCredentials(
   if (headers) {
     credentials.headers = headers;
     logger.debug(`Including ${Object.keys(headers).length} headers in credentials`);
+  }
+
+  // Add the proxy bearer token if provided, so the bridge configures its proxy
+  // server's auth from the IPC credentials instead of reading the keychain.
+  if (proxyBearerToken) {
+    credentials.proxyBearerToken = proxyBearerToken;
+    logger.debug('Including proxy bearer token in credentials');
   }
 
   return credentials;

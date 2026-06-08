@@ -35,7 +35,6 @@ import { OAuthTokenManager } from '../lib/auth/oauth-token-manager.js';
 import { OAuthProvider } from '../lib/auth/oauth-provider.js';
 import { storeKeychainOAuthTokenInfo, readKeychainOAuthTokenInfo } from '../lib/auth/keychain.js';
 import { updateAuthProfileRefreshedAt } from '../lib/auth/profiles.js';
-import { readKeychainProxyBearerToken } from '../lib/auth/keychain.js';
 import {
   LoggingMessageNotificationSchema,
   type Tool,
@@ -102,6 +101,11 @@ class BridgeProcess {
 
   // HTTP headers (received via IPC, stored in memory only)
   private headers: Record<string, string> | null = null;
+
+  // Bearer token the proxy server requires (received via IPC, stored in memory only).
+  // Read by the CLI before spawn and sent over IPC — never read from the keychain here,
+  // keeping the bridge's only keychain access on the OAuth-refresh path (see #55).
+  private proxyBearerToken: string | null = null;
 
   // x402 wallet for automatic payment signing (received via IPC, stored in memory only)
   private x402Wallet: SignerWallet | null = null;
@@ -259,6 +263,12 @@ class BridgeProcess {
         ...credentials.headers,
       };
       logger.debug(`Stored headers "${Object.keys(this.headers).join(', ')}" in memory`);
+    }
+
+    // Store the proxy bearer token if provided (used by startProxyServer)
+    if (credentials.proxyBearerToken) {
+      this.proxyBearerToken = credentials.proxyBearerToken;
+      logger.debug('Stored proxy bearer token in memory');
     }
 
     // Signal that auth credentials have been received (unblocks startup)
@@ -764,8 +774,10 @@ class BridgeProcess {
 
     const { host, port } = this.options.proxyConfig;
 
-    // Load proxy bearer token from keychain if stored
-    const bearerToken = await readKeychainProxyBearerToken(this.options.sessionName);
+    // The proxy bearer token (if any) was delivered by the CLI over IPC, not read
+    // from the keychain here — keeping bridge keychain access on the OAuth-refresh
+    // path only (see #55).
+    const bearerToken = this.proxyBearerToken;
 
     logger.info(`Starting proxy server on ${host}:${port}`);
     if (bearerToken) {
