@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-06-08
+
 ### Added
 
 - `mcpc @<session>` now reports the negotiated MCP protocol version and whether the connection is stateful (a stdio process, or an HTTP server that assigned a session id) or stateless (an HTTP server that assigned none — the upcoming `2026-07-28` model). A `stateless` field is exposed under `_mcpc` in the `--json` output of `mcpc @<session>` and `mcpc connect`, and on each session in the session list: `true` when stateless, `false` when stateful, and `null` while the mode is not yet known. Stateless sessions are never marked `expired` on a transient `404` (they hold no session to lose).
@@ -303,7 +305,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Interactive shell mode
 - JSON output mode for scripting
 
-[Unreleased]: https://github.com/apify/mcpc/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/apify/mcpc/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/apify/mcpc/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/apify/mcpc/compare/v0.2.6...v0.3.0
 [0.2.6]: https://github.com/apify/mcpc/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/apify/mcpc/compare/v0.2.4...v0.2.5
