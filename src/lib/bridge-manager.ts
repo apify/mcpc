@@ -151,6 +151,19 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
     insecure,
   } = options;
 
+  // --insecure cannot work when the bridge runs under Bun: Bun's fetch ignores
+  // undici's TLS-bypass dispatcher, so certificate verification can't be skipped.
+  // The bridge runs under the same runtime as this CLI, so fail loudly here rather
+  // than letting the flag be silently ineffective (covers connect, restart, and
+  // reconnect — every path that starts a bridge with --insecure).
+  if (insecure && typeof (process.versions as { bun?: string }).bun === 'string') {
+    throw new ClientError(
+      '--insecure is not supported under the Bun runtime: Bun does not honor the TLS-bypass ' +
+        'mcpc relies on, so TLS certificate verification cannot be skipped. Re-run mcpc with ' +
+        'Node to use --insecure, or connect to a server with a valid certificate.'
+    );
+  }
+
   logger.debug(`Launching bridge for session: ${sessionName}`);
 
   // Read all keychain values BEFORE spawning the bridge.
@@ -218,13 +231,20 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
   logger.debug('Bridge executable:', bridgeExecutable);
   logger.debug('Bridge args:', args);
 
-  // Spawn bridge process. stderr is dropped: piping it (to capture a tail for
-  // failure diagnostics) made rapid CLI invocations destabilize the bridge —
-  // child_process pipes are net.Sockets, and the close-from-parent semantics
-  // interacted badly with the bridge's connection handling. The 15s startup
-  // window already gives the bridge time to initialize its file logger for
-  // realistic failure modes, so the per-session log file is sufficient.
-  const bridgeProcess: ChildProcess = spawn('node', [bridgeExecutable, ...args], {
+  // Spawn the bridge under the SAME runtime as the CLI (process.execPath), not a
+  // hardcoded "node". The bridge reads OS-keychain items the CLI wrote (e.g. the
+  // proxy bearer token, session headers on reconnect); macOS keychain ACLs are
+  // per-binary, so a different binary reading the item triggers a Security access
+  // prompt — which blocks forever in headless contexts (CI hung here for 6h with
+  // a bun CLI + node bridge). Matching runtimes keeps a single keychain identity.
+  // It also means a Bun user no longer needs Node on PATH for the bridge to start.
+  //
+  // stderr is dropped: piping it (to capture a tail for failure diagnostics) made
+  // rapid CLI invocations destabilize the bridge — child_process pipes are
+  // net.Sockets, and the close-from-parent semantics interacted badly with the
+  // bridge's connection handling. The 15s startup window already gives the bridge
+  // time to initialize its file logger, so the per-session log file is sufficient.
+  const bridgeProcess: ChildProcess = spawn(process.execPath, [bridgeExecutable, ...args], {
     detached: true,
     stdio: 'ignore',
   });

@@ -22,26 +22,43 @@ run_mcpc "$SESSION_FAIL" tools-list
 assert_failure
 test_pass
 
-# Test: connection with --insecure flag succeeds
-test_case "connect with --insecure succeeds and tools-list works"
-SESSION=$(session_name "insecure-flag")
-run_mcpc connect "$TEST_HTTPS_SERVER_URL" "$SESSION" --header "X-Test: true" --insecure
-assert_success
-_SESSIONS_CREATED+=("$SESSION")
-test_pass
+# --insecure relies on undici's TLS-bypass dispatcher, which Bun's fetch ignores.
+# Since the bridge runs under the same runtime as the CLI, the behaviour differs:
+# under Node the flag works; under Bun mcpc rejects it loudly (rather than silently
+# failing to skip verification).
+RUNTIME="${E2E_RUNTIME:-node}"
 
-# Test: MCP operations work through insecure session
-test_case "tools-list works over insecure session"
-run_xmcpc "$SESSION" tools-list
-assert_success
-assert_contains "$STDOUT" "echo"
-test_pass
+if [ "$RUNTIME" = "bun" ]; then
+  # Test: --insecure is rejected with a clear error under Bun
+  test_case "bun: connect --insecure fails with a clear error"
+  SESSION=$(session_name "insecure-bun")
+  _SESSIONS_CREATED+=("$SESSION") # register for cleanup in case connect left a record
+  run_mcpc connect "$TEST_HTTPS_SERVER_URL" "$SESSION" --header "X-Test: true" --insecure
+  assert_failure
+  assert_contains "$STDERR" "not supported under the Bun runtime"
+  test_pass
+else
+  # Test: connection with --insecure flag succeeds (Node)
+  test_case "connect with --insecure succeeds and tools-list works"
+  SESSION=$(session_name "insecure-flag")
+  run_mcpc connect "$TEST_HTTPS_SERVER_URL" "$SESSION" --header "X-Test: true" --insecure
+  assert_success
+  _SESSIONS_CREATED+=("$SESSION")
+  test_pass
 
-# Test: tool call works
-test_case "tools-call works over insecure session"
-run_mcpc "$SESSION" tools-call echo message:=hello
-assert_success
-assert_contains "$STDOUT" "hello"
-test_pass
+  # Test: MCP operations work through insecure session
+  test_case "tools-list works over insecure session"
+  run_xmcpc "$SESSION" tools-list
+  assert_success
+  assert_contains "$STDOUT" "echo"
+  test_pass
+
+  # Test: tool call works
+  test_case "tools-call works over insecure session"
+  run_mcpc "$SESSION" tools-call echo message:=hello
+  assert_success
+  assert_contains "$STDOUT" "hello"
+  test_pass
+fi
 
 test_done

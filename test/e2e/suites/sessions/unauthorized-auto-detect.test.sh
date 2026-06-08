@@ -54,9 +54,13 @@ tmp_file="$TEST_TMP/sessions.json.$$"
 # (headers are loaded from the keychain, not sessions.json, on restart).
 # Use a native path for require() — on Windows Node treats a leading "/" as the
 # current drive root, so "/d/a/.../keychain.js" resolves to "D:\d\a\..." (wrong).
+#
+# Seed via the SAME runtime the CLI uses ($E2E_RUNTIME), not a hardcoded "node":
+# macOS keychain ACLs are per-binary, so an item written by one binary and read
+# back by another triggers a blocking Security access prompt (hangs headless CI).
 NATIVE_PROJECT_ROOT="$(to_native_path "$PROJECT_ROOT")"
 NATIVE_MCPC_HOME="$(to_native_path "$MCPC_HOME_DIR")"
-node -e "
+"${E2E_RUNTIME:-node}" -e "
   process.env.MCPC_HOME_DIR = '$NATIVE_MCPC_HOME';
   const { storeKeychainSessionHeaders } = require('$NATIVE_PROJECT_ROOT/dist/lib/auth/keychain.js');
   storeKeychainSessionHeaders('$SESSION', {

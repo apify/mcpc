@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `mcpc connect` now waits for every connection to finish before reporting status. Bulk and auto-discovery connects (`mcpc connect`, `mcpc connect <file>`) previously returned immediately with an optimistic `connecting` status in human mode; they now behave like single-server connects and `--json`, showing each server as connected or failed (bounded by `--timeout`) with a progress spinner while connecting.
+- `--insecure` now fails with a clear error under the Bun runtime instead of being silently ineffective: Bun's `fetch` does not honor the TLS-bypass mcpc uses, so certificate verification cannot be skipped under Bun. Run mcpc with Node to use `--insecure`.
 
 ### Deprecated
 
@@ -32,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `mcpc connect` no longer fails with `socket file not created within timeout` when the bridge is slow to start (CPU-constrained machines, many parallel connects). The startup window is more generous, and a bridge that crashes on startup now reports its exit code immediately instead of stalling until the timeout
 - Sessions no longer fail to start with `Bridge process exited during startup` when the mcpc home directory (or `MCPC_HOME_DIR`) resolves to a deep path — notably macOS temp dirs like `/var/folders/...` — or when a session name is very long. The bridge's Unix socket path was exceeding the operating system limit (104 bytes on macOS, 108 on Linux); such paths now fall back to a short location under the system temp directory
 - `mcpc @<session> restart` (and other session startups) no longer intermittently fail with `Failed to connect to bridge: connect ECONNREFUSED` during rapid restarts. The CLI now briefly retries the first connection to a freshly started bridge while it is still (re)creating its socket
+- Sessions no longer hang on macOS under the Bun runtime (e.g. when connecting with `--proxy-bearer-token`, or auto-reconnecting a crashed session). The bridge now runs under the same runtime as the CLI, so OS-keychain items the CLI stored are read back under the same application identity; previously a Bun CLI paired with a Node bridge produced a cross-binary keychain read, which macOS gates with an access prompt that blocks in non-interactive contexts. A Bun user also no longer needs Node installed for the bridge to start.
 
 ## [0.3.0] - 2026-05-20
 
