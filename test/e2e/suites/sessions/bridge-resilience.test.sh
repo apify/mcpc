@@ -3,13 +3,18 @@
 #
 # This suite verifies that the bridge survives a variety of MCP-level errors
 # (unknown tools, bad arguments, missing resources/prompts, server failures)
-# without crashing. It deliberately uses run_mcpc (a single mcpc invocation per
-# check) rather than run_xmcpc (which runs 4 extra --json/--verbose variants for
-# output-invariant checking): the checks here repeat live-bridge session commands
-# many times, and at ~5 process spawns each that made this the slowest e2e test —
-# right at the per-test watchdog limit, and over it on Windows. The output-format
-# invariants are not what this test is about and are covered by basic/output-invariants
-# (the invariant machinery) and basic/errors / basic/auth-errors (the --json error path).
+# without crashing.
+#
+# Most checks use run_mcpc (a single mcpc invocation) rather than run_xmcpc
+# (which runs 4 extra --json/--verbose variants for output-invariant checking).
+# Repeating those variants across every check made this the slowest e2e test —
+# ~5 process spawns each, ~90 spawns total, right at the per-test watchdog limit
+# and over it on Windows. The output-format invariants are mostly orthogonal to
+# resilience, so we keep just two run_xmcpc calls — one success path and one error
+# path — to retain stable invariant coverage on live-bridge MCP commands, and use
+# run_mcpc everywhere else. (The invariant machinery itself is also covered by
+# basic/output-invariants.) Keep run_xmcpc away from the /control/fail-next checks
+# below: its 4 variants would consume the server's fail counter inconsistently.
 
 source "$(dirname "$0")/../../lib/framework.sh"
 test_init "sessions/bridge-resilience" --isolated
@@ -28,14 +33,17 @@ _SESSIONS_CREATED+=("$SESSION")
 test_pass
 
 # Test: verify session works initially
+# run_xmcpc here keeps stable output-invariant coverage on a successful live-bridge command.
 test_case "session works initially"
-run_mcpc "$SESSION" tools-list
+run_xmcpc "$SESSION" tools-list
 assert_success
 test_pass
 
 # Test: calling non-existent tool doesn't kill bridge
+# run_xmcpc here keeps stable output-invariant coverage on a failing live-bridge command
+# (verifies --json error output goes to stderr as valid JSON, with empty stdout).
 test_case "calling non-existent tool doesn't kill bridge"
-run_mcpc "$SESSION" tools-call nonexistent-tool-$RANDOM
+run_xmcpc "$SESSION" tools-call nonexistent-tool-$RANDOM
 assert_failure  # Should fail gracefully
 
 # Session should still work
