@@ -8,6 +8,9 @@ jobs:
   e2e-macos-node:
     name: E2E tests (macOS, Node.js)
     runs-on: macos-latest
+    # Backstop against a hung test stalling the job until GitHub's 6h hard kill.
+    # The per-test watchdog in run.sh is the primary guard; this is the safety net.
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v6
@@ -29,6 +32,7 @@ jobs:
   e2e-macos-bun:
     name: E2E tests (macOS, Bun)
     runs-on: macos-latest
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v6
