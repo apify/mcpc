@@ -15,7 +15,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `mcpc connect` now waits for every connection to finish before reporting status. Bulk and auto-discovery connects (`mcpc connect`, `mcpc connect <file>`) previously returned immediately with an optimistic `connecting` status in human mode; they now behave like single-server connects and `--json`, showing each server as connected or failed (bounded by `--timeout`) with a progress spinner while connecting.
-- `--insecure` now fails with a clear error under the Bun runtime instead of being silently ineffective: Bun's `fetch` does not honor the TLS-bypass mcpc uses, so certificate verification cannot be skipped under Bun. Run mcpc with Node to use `--insecure`.
 
 ### Deprecated
 

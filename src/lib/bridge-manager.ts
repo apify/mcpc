@@ -152,19 +152,6 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
     insecure,
   } = options;
 
-  // --insecure cannot work when the bridge runs under Bun: Bun's fetch ignores
-  // undici's TLS-bypass dispatcher, so certificate verification can't be skipped.
-  // The bridge runs under the same runtime as this CLI, so fail loudly here rather
-  // than letting the flag be silently ineffective (covers connect, restart, and
-  // reconnect — every path that starts a bridge with --insecure).
-  if (insecure && typeof (process.versions as { bun?: string }).bun === 'string') {
-    throw new ClientError(
-      '--insecure is not supported under the Bun runtime: Bun does not honor the TLS-bypass ' +
-        'mcpc relies on, so TLS certificate verification cannot be skipped. Re-run mcpc with ' +
-        'Node to use --insecure, or connect to a server with a valid certificate.'
-    );
-  }
-
   logger.debug(`Launching bridge for session: ${sessionName}`);
 
   // Read all keychain values BEFORE spawning the bridge.
@@ -249,6 +236,13 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
   // a bun CLI + node bridge). Matching runtimes keeps a single keychain identity.
   // It also means a Bun user no longer needs Node on PATH for the bridge to start.
   //
+  // --insecure disables TLS certificate verification in the bridge. initProxy()'s
+  // undici dispatcher (rejectUnauthorized: false) covers Node's fetch, but Bun's
+  // fetch ignores it; NODE_TLS_REJECT_UNAUTHORIZED=0 in the bridge's environment
+  // covers Bun (and is a harmless no-op alongside the dispatcher on Node). Scoped
+  // to this one bridge process. Set via the spawn env so it is in place before the
+  // runtime initializes TLS (a post-startup assignment could be read too late).
+  //
   // stderr is dropped: piping it (to capture a tail for failure diagnostics) made
   // rapid CLI invocations destabilize the bridge — child_process pipes are
   // net.Sockets, and the close-from-parent semantics interacted badly with the
@@ -257,6 +251,7 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
   const bridgeProcess: ChildProcess = spawn(process.execPath, [bridgeExecutable, ...args], {
     detached: true,
     stdio: 'ignore',
+    ...(insecure && { env: { ...process.env, NODE_TLS_REJECT_UNAUTHORIZED: '0' } }),
   });
 
   // Reset the Windows tasklist cache so the freshly spawned PID is observable

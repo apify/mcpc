@@ -168,6 +168,7 @@ class BridgeProcess {
     logger.debug(`  accessToken: ${credentials.accessToken ? 'present' : 'MISSING'}`);
     logger.debug(`  clientId: ${credentials.clientId ? 'present' : 'MISSING'}`);
     logger.debug(`  headers: ${credentials.headers ? Object.keys(credentials.headers).length : 0}`);
+    logger.debug(`  proxyBearerToken: ${credentials.proxyBearerToken ? 'present' : 'absent'}`);
 
     // Set up OAuth token manager if refresh token and client ID are provided
     if (credentials.refreshToken && credentials.clientId) {
