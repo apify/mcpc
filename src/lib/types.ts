@@ -235,7 +235,6 @@ export type IpcMessageType =
   | 'request'
   | 'response'
   | 'shutdown'
-  | 'notification'
   | 'task-update'
   | 'set-auth-credentials'
   | 'set-x402-wallet';
@@ -270,26 +269,6 @@ export interface X402WalletCredentials {
 }
 
 /**
- * Notification types from MCP server
- */
-export type NotificationType =
-  | 'tools/list_changed'
-  | 'resources/list_changed'
-  | 'resources/updated'
-  | 'prompts/list_changed'
-  | 'progress'
-  | 'logging/message'
-  | 'tasks/status';
-
-/**
- * Notification data
- */
-export interface NotificationData {
-  method: NotificationType;
-  params?: unknown;
-}
-
-/**
  * Task status update sent from bridge to CLI during task-augmented tool calls
  */
 export interface TaskUpdate {
@@ -313,7 +292,6 @@ export interface IpcMessage {
   params?: unknown; // Method parameters
   timeout?: number; // Per-request timeout in seconds (overrides default)
   result?: unknown; // Response result
-  notification?: NotificationData; // Notification data (for type='notification')
   taskUpdate?: TaskUpdate; // Task progress update (for type='task-update')
   authCredentials?: AuthCredentials; // Auth credentials (for type='set-auth-credentials')
   x402Wallet?: X402WalletCredentials; // x402 wallet (for type='set-x402-wallet')
@@ -339,7 +317,7 @@ export interface CommandOptions {
   timeout?: number;
   verbose?: boolean;
   insecure?: boolean; // Skip TLS certificate verification (for self-signed certs)
-  hideTarget?: boolean; // Suppress session info prefix (used in interactive shell)
+  hideTarget?: boolean; // Suppress session info prefix
   schema?: string; // Path to expected schema file for validation
   schemaMode?: 'strict' | 'compatible' | 'ignore'; // Schema validation mode
   maxChars?: number; // Maximum output characters for tool/prompt results (truncate if exceeded)

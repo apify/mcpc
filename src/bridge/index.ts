@@ -520,29 +520,6 @@ class BridgeProcess {
   }
 
   /**
-   * Broadcast a notification to all connected clients
-   */
-  private broadcastNotification(method: string, params?: unknown): void {
-    const notification: IpcMessage = {
-      type: 'notification',
-      notification: {
-        method: method as IpcMessage['notification'] extends { method: infer M } ? M : never,
-        params,
-      },
-    };
-
-    const data = JSON.stringify(notification) + '\n';
-
-    for (const socket of this.connections) {
-      try {
-        socket.write(data);
-      } catch (error) {
-        logger.error('Failed to send notification to client:', error);
-      }
-    }
-  }
-
-  /**
    * Update session with notification timestamp for list changes
    */
   private async updateNotificationTimestamp(
@@ -637,8 +614,6 @@ class BridgeProcess {
                 logger.warn('Failed to refresh tools cache:', err);
               });
             }
-            // Broadcast notification to all connected clients
-            this.broadcastNotification('tools/list_changed');
             // Update session with notification timestamp
             this.updateNotificationTimestamp('tools').catch((err) => {
               logger.warn('Failed to update tools notification timestamp:', err);
@@ -649,8 +624,6 @@ class BridgeProcess {
           autoRefresh: true,
           onChanged: (error: Error | null, resources: Resource[] | null) => {
             logger.debug('Resources list changed', { error, count: resources?.length });
-            // Broadcast notification to all connected clients
-            this.broadcastNotification('resources/list_changed');
             // Update session with notification timestamp
             this.updateNotificationTimestamp('resources').catch((err) => {
               logger.warn('Failed to update resources notification timestamp:', err);
@@ -661,8 +634,6 @@ class BridgeProcess {
           autoRefresh: true,
           onChanged: (error: Error | null, prompts: Prompt[] | null) => {
             logger.debug('Prompts list changed', { error, count: prompts?.length });
-            // Broadcast notification to all connected clients
-            this.broadcastNotification('prompts/list_changed');
             // Update session with notification timestamp
             this.updateNotificationTimestamp('prompts').catch((err) => {
               logger.warn('Failed to update prompts notification timestamp:', err);
@@ -688,11 +659,11 @@ class BridgeProcess {
     logger.info('Connected to MCP server');
     logger.debug('MCP client created successfully, authProvider was:', !!clientConfig.authProvider);
 
-    // Forward server logging messages to connected IPC clients
+    // Record server logging messages in the bridge log (viewable via `mcpc @session logs`)
     this.client
       .getSDKClient()
       .setNotificationHandler(LoggingMessageNotificationSchema, (notification) => {
-        this.broadcastNotification('logging/message', notification.params);
+        logger.info('[server log]', notification.params);
       });
 
     // Update session with protocol version, MCP session ID, and lastSeenAt

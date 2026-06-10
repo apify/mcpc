@@ -331,11 +331,8 @@ export async function callTool(
       let capturedTaskId: string | undefined;
       let capturedTaskStatus: TaskUpdate['status'] | undefined;
 
-      // Set up ESC key listener for detaching (TTY + human mode only, not in interactive shell)
-      const escListener = setupEscListener(
-        options.outputMode === 'human' && !process.stdin.isRaw,
-        () => !!capturedTaskId
-      );
+      // Set up ESC key listener for detaching (TTY + human mode only)
+      const escListener = setupEscListener(options.outputMode === 'human', () => !!capturedTaskId);
 
       const escHintText = escListener.promise ? ` ${chalk.dim('(ESC to detach)')}` : '';
 

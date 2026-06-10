@@ -114,7 +114,6 @@ mcpc connect mcp.apify.com @test
 mcpc @test                                            # show server info
 mcpc @test tools-list
 mcpc @test tools-call search-actors keywords:="website crawler"
-mcpc @test shell
 
 # Use JSON mode for scripting
 mcpc --json @test tools-list
@@ -273,17 +272,6 @@ read when no positional args are given and input is piped.
 the whole argument when it contains shell expansions (`"query:=${VAR}"`). For complex
 inputs, prefer piping JSON via stdin.
 
-### Interactive shell
-
-`mcpc` provides an interactive shell for discovery and testing of MCP servers.
-
-```bash
-mcpc @apify shell
-```
-
-Shell commands: `help`, `exit`/`quit`/Ctrl+D, Ctrl+C to cancel.
-Arrow keys navigate history (saved to `~/.mcpc/history`).
-
 ### Grep (search across sessions)
 
 `mcpc grep` searches tools, resources, and prompts across all active sessions or within a single session:
@@ -332,7 +320,7 @@ With `--json` option, `mcpc` always emits only a single JSON object (or array), 
 [MCP specification](https://modelcontextprotocol.io/specification/latest).**
 On success, the JSON object is printed to stdout, on error to stderr.
 
-Note that `--json` is not available for `shell`, `login`, and `mcpc --help` commands.
+Note that `--json` is not available for `login` and `mcpc --help` commands.
 
 ## Sessions
 
@@ -354,7 +342,6 @@ mcpc
 
 # Run MCP commands in the session
 mcpc @apify tools-list
-mcpc @apify shell
 
 # Restart the session (kills and restarts the bridge process)
 mcpc @apify restart    # or: mcpc restart @apify
@@ -938,7 +925,7 @@ mcpc @apify resources-list
 # Read a resource
 mcpc @apify resources-read "file:///config.json"
 
-# Subscribe to resource changes (in shell mode)
+# Subscribe to resource changes
 mcpc @apify resources-subscribe "https://api.example.com/data"
 
 # List resource templates
@@ -985,7 +972,6 @@ never executes hooks, scripts, or other frontmatter-declared behavior.
 When connected via a [session](#sessions), `mcpc` automatically handles `list_changed`
 notifications for tools, resources, and prompts.
 The bridge process tracks when each notification type was last received.
-In [shell mode](#interactive-shell), notifications are displayed in real-time.
 The timestamps are available in JSON output of `mcpc @session --json` under the `_mcpc.notifications`
 field - see [Server instructions](#server-instructions).
 

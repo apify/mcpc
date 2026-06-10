@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- The interactive `shell` command (`mcpc shell @<session>` and `mcpc @<session> shell`), deprecated in 0.3.1, has been removed. Run individual `mcpc @<session> <command>` invocations instead.
+
 ### Fixed
 
 - Sessions no longer hang on macOS under the Bun runtime (e.g. when connecting with `--proxy-bearer-token`, or auto-reconnecting a crashed session). The bridge now runs under the same runtime as the CLI, so OS-keychain items the CLI stored are read back under the same application identity; previously a Bun CLI paired with a Node bridge produced a cross-binary keychain read, which macOS gates with an access prompt that blocks in non-interactive contexts. A Bun user also no longer needs Node installed for the bridge to start.

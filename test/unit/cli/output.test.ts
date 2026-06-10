@@ -1052,8 +1052,6 @@ describe('formatServerDetails', () => {
     expect(output).toContain('mcpc @test resources-read');
     expect(output).toContain('mcpc @test prompts-list');
     expect(output).toContain('mcpc @test logging-set-level');
-    // shell is deprecated and no longer listed
-    expect(output).not.toContain('mcpc @test shell');
 
     // Should contain instructions in code block
     expect(output).toContain('Instructions:');
