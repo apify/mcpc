@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
-- The interactive `shell` command (`mcpc shell @<session>` and `mcpc @<session> shell`), deprecated in 0.3.1, has been removed. Run individual `mcpc @<session> <command>` invocations instead.
+- The interactive `shell` command (`mcpc shell @<session>` and `mcpc @<session> shell`), deprecated in 0.3.1, has been removed. Run individual `mcpc @<session> <command>` invocations instead. Server log messages (`notifications/message`), previously shown only in the shell, are now written to the bridge log — view them with `mcpc @<session> logs`.
 
 ### Fixed
 
