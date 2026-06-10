@@ -254,6 +254,11 @@ export interface AuthCredentials {
   accessToken?: string;
   // HTTP headers (from --header flags, stored in keychain)
   headers?: Record<string, string>;
+  // Bearer token the bridge's proxy server requires (from --proxy-bearer-token).
+  // Read by the CLI before spawn and delivered via IPC so the bridge never reads it
+  // from the keychain itself — keeping the bridge's only keychain access on the
+  // sanctioned OAuth-refresh path (see #55).
+  proxyBearerToken?: string;
 }
 
 /**

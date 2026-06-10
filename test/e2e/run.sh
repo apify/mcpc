@@ -268,6 +268,61 @@ else
 fi
 echo ""
 
+# Print the pids of all descendants of a given pid (recursively).
+# Used to locate the hung mcpc invocation under a timed-out test shell.
+_descendant_pids() {
+  local p="$1" c
+  for c in $(pgrep -P "$p" 2>/dev/null); do
+    echo "$c"
+    _descendant_pids "$c"
+  done
+}
+
+# Capture the state of a hung test's process tree, so a timeout produces an
+# actionable failure log instead of an opaque "killed". Best-effort throughout.
+# Writes to stdout; the caller redirects it to a side file (the test is still
+# running and writing to its own output.log, so we must not race it there).
+_capture_timeout_diagnostics() {
+  local test_pid="$1" test_id="$2" test_dir="$3"
+  local kids
+  kids=$(_descendant_pids "$test_pid")
+
+  echo ""
+  echo "----- TIMEOUT DIAGNOSTICS: $test_id (test pid $test_pid) -----"
+
+  echo "--- hung test process tree ---"
+  # shellcheck disable=SC2086
+  ps -ww -o pid,ppid,etime,command -p "$test_pid" $kids 2>/dev/null | head -40 || true
+
+  echo "--- all mcpc CLI / bridge processes ---"
+  ps -axww -o pid,etime,command 2>/dev/null \
+    | grep -E "dist/cli/index|dist/bridge/index|mcpc-bridge" | grep -v grep | head -30 || true
+
+  # Native stack of each hung descendant. macOS `sample` needs no privileges for
+  # own-user processes and pinpoints the exact syscall/frame the process is stuck on.
+  if command -v sample >/dev/null 2>&1; then
+    for pid in $kids; do
+      echo "--- sample pid=$pid ---"
+      sample "$pid" 1 2>/dev/null | sed -n '1,60p' || true
+    done
+  fi
+
+  # Per-test bridge logs. framework.sh prints the home dir in the test header
+  # ("# Home dir: <path> (<mode>)"), so recover it from the test's own output.
+  local home
+  home=$(grep -m1 '^# Home dir:' "$test_dir/output.log" 2>/dev/null \
+    | sed -e 's/^# Home dir: //' -e 's/ ([a-z]*)$//')
+  echo "--- bridge logs in: ${home:-?}/logs ---"
+  if [[ -n "$home" && -d "$home/logs" ]]; then
+    for f in "$home"/logs/bridge-*.log; do
+      [[ -f "$f" ]] || continue
+      echo "### $(basename "$f")"
+      tail -60 "$f" 2>/dev/null || true
+    done
+  fi
+  echo "----- END DIAGNOSTICS -----"
+}
+
 # Function to run a single test (with a per-test timeout watchdog)
 run_test() {
   local test_path="$1"
@@ -294,6 +349,11 @@ run_test() {
     # Detached bridge processes are reaped by the end-of-run cleanup.
     if kill -0 "$test_pid" 2>/dev/null; then
       : > "$timeout_marker"
+      # Capture the hung process tree's state while it's still alive. Written to a
+      # side file (not output.log) to avoid racing the test's own final writes;
+      # run_test appends it after the kill.
+      _capture_timeout_diagnostics "$test_pid" "$test_id" "$test_dir" \
+        > "$test_dir/.timeout_diag" 2>&1 || true
       pkill -P "$test_pid" 2>/dev/null || true
       kill -9 "$test_pid" 2>/dev/null || true
     fi
@@ -316,8 +376,9 @@ run_test() {
     {
       echo ""
       echo "TIMEOUT: test '$test_id' exceeded ${PER_TEST_TIMEOUT}s limit (killed by run.sh watchdog)"
+      [[ -f "$test_dir/.timeout_diag" ]] && cat "$test_dir/.timeout_diag"
     } >> "$test_dir/output.log"
-    rm -f "$timeout_marker"
+    rm -f "$timeout_marker" "$test_dir/.timeout_diag"
     result=137
   fi
 
@@ -383,7 +444,7 @@ elif _is_windows; then
   wait
 else
   # Parallel execution via xargs (Unix)
-  export -f run_test test_name
+  export -f run_test test_name _capture_timeout_diagnostics _descendant_pids
   printf '%s\n' "${TESTS[@]}" | xargs -P "$PARALLEL" -I {} bash -c 'run_test "$@"' _ {}
 fi
 

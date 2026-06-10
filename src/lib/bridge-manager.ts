@@ -43,6 +43,7 @@ import {
   readKeychainOAuthTokenInfo,
   readKeychainOAuthClientInfo,
   readKeychainSessionHeaders,
+  readKeychainProxyBearerToken,
 } from './auth/keychain.js';
 import { getAuthProfile } from './auth/profiles.js';
 import { getWallet } from './wallets.js';
@@ -158,12 +159,20 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
   // macOS the Keychain access dialog can block a CLI for far longer than that.
   // Loading credentials here ensures the bridge timer does not race a foreground
   // password prompt — see https://github.com/apify/mcpc/issues/55.
+  // The proxy bearer token is read here (under the CLI's runtime) and delivered to
+  // the bridge via IPC, so the bridge never reads it from the keychain itself — its
+  // only keychain access stays on the sanctioned OAuth-refresh path (see #55).
+  const proxyBearerToken = proxyConfig
+    ? ((await readKeychainProxyBearerToken(sessionName)) ?? undefined)
+    : undefined;
+
   const authCredentials =
-    profileName || headers
+    profileName || headers || proxyBearerToken
       ? await loadAuthCredentials(
           serverConfig.url || serverConfig.command || '',
           profileName,
-          headers
+          headers,
+          proxyBearerToken
         )
       : null;
   const x402Credentials = x402 ? await loadX402WalletCredentials() : null;
@@ -183,11 +192,12 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
   }
 
   // Pass auth profile to bridge
-  // Use dummy placeholder also when headers are provided (no OAuth profile),
-  // so the bridge process waits for headers before connecting to server
+  // Use a dummy placeholder when headers or a proxy bearer token are provided (no
+  // OAuth profile), so the bridge waits for the IPC credentials — which also carry
+  // the proxy bearer token — before connecting and starting its proxy server.
   if (profileName) {
     args.push('--profile', profileName);
-  } else if (headers && Object.keys(headers).length > 0) {
+  } else if ((headers && Object.keys(headers).length > 0) || proxyBearerToken) {
     args.push('--profile', 'dummy');
   }
 
@@ -218,15 +228,30 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
   logger.debug('Bridge executable:', bridgeExecutable);
   logger.debug('Bridge args:', args);
 
-  // Spawn bridge process. stderr is dropped: piping it (to capture a tail for
-  // failure diagnostics) made rapid CLI invocations destabilize the bridge —
-  // child_process pipes are net.Sockets, and the close-from-parent semantics
-  // interacted badly with the bridge's connection handling. The 15s startup
-  // window already gives the bridge time to initialize its file logger for
-  // realistic failure modes, so the per-session log file is sufficient.
-  const bridgeProcess: ChildProcess = spawn('node', [bridgeExecutable, ...args], {
+  // Spawn the bridge under the SAME runtime as the CLI (process.execPath), not a
+  // hardcoded "node". The bridge reads OS-keychain items the CLI wrote (e.g. the
+  // proxy bearer token, session headers on reconnect); macOS keychain ACLs are
+  // per-binary, so a different binary reading the item triggers a Security access
+  // prompt — which blocks forever in headless contexts (CI hung here for 6h with
+  // a bun CLI + node bridge). Matching runtimes keeps a single keychain identity.
+  // It also means a Bun user no longer needs Node on PATH for the bridge to start.
+  //
+  // --insecure disables TLS certificate verification in the bridge. initProxy()'s
+  // undici dispatcher (rejectUnauthorized: false) covers Node's fetch, but Bun's
+  // fetch ignores it; NODE_TLS_REJECT_UNAUTHORIZED=0 in the bridge's environment
+  // covers Bun (and is a harmless no-op alongside the dispatcher on Node). Scoped
+  // to this one bridge process. Set via the spawn env so it is in place before the
+  // runtime initializes TLS (a post-startup assignment could be read too late).
+  //
+  // stderr is dropped: piping it (to capture a tail for failure diagnostics) made
+  // rapid CLI invocations destabilize the bridge — child_process pipes are
+  // net.Sockets, and the close-from-parent semantics interacted badly with the
+  // bridge's connection handling. The 15s startup window already gives the bridge
+  // time to initialize its file logger, so the per-session log file is sufficient.
+  const bridgeProcess: ChildProcess = spawn(process.execPath, [bridgeExecutable, ...args], {
     detached: true,
     stdio: 'ignore',
+    ...(insecure && { env: { ...process.env, NODE_TLS_REJECT_UNAUTHORIZED: '0' } }),
   });
 
   // Reset the Windows tasklist cache so the freshly spawned PID is observable
@@ -503,7 +528,8 @@ export async function restartBridge(sessionName: string): Promise<StartBridgeRes
 async function loadAuthCredentials(
   serverUrl: string,
   profileName?: string,
-  headers?: Record<string, string>
+  headers?: Record<string, string>,
+  proxyBearerToken?: string
 ): Promise<AuthCredentials> {
   // Build credentials object
   const credentials: AuthCredentials = {
@@ -545,6 +571,13 @@ async function loadAuthCredentials(
   if (headers) {
     credentials.headers = headers;
     logger.debug(`Including ${Object.keys(headers).length} headers in credentials`);
+  }
+
+  // Add the proxy bearer token if provided, so the bridge configures its proxy
+  // server's auth from the IPC credentials instead of reading the keychain.
+  if (proxyBearerToken) {
+    credentials.proxyBearerToken = proxyBearerToken;
+    logger.debug('Including proxy bearer token in credentials');
   }
 
   return credentials;
