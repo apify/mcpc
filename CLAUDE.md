@@ -62,7 +62,6 @@ mcpc connect mcp.apify.com @test
 mcpc @test                               # show session info
 mcpc @test tools-list                    # list available tools
 mcpc @test tools-call search-actors query:="web crawler"
-mcpc @test shell                         # interactive shell
 
 # Use JSON mode for scripting
 mcpc --json @test tools-list
@@ -77,7 +76,7 @@ mcpc @fs tools-list
 - Delightful for humans and AI agents alike (interactive + scripting)
 - Avoid unnecessary interaction loops, provide sufficient context, yet be concise (save tokens)
 - One clear way to do things (orthogonal commands, no surprises)
-- Do not ask for user input (except `shell` and `login`, no unexpected OAuth flows)
+- Do not ask for user input (except `login`, no unexpected OAuth flows)
 - AI agents must be able to use mcpc without any external agent skills, prompts, or documentation: `--help` output and error messages must provide all the context an agent needs to discover commands, understand arguments, and recover from mistakes
 - Be forgiving, always help users make progress (great errors + guidance)
 - Be consistent with the [MCP specification](https://modelcontextprotocol.io/specification/latest), with `--json` strictly
@@ -139,7 +138,6 @@ mcpc/
 - Argument parsing using Commander.js
 - Output formatting: human-readable (default, with colors/tables) vs `--json` mode
 - Bridge lifecycle: start/connect/stop, auto-restart on crash
-- Interactive shell using Node.js `readline` with command history (`~/.mcpc/history`, last 1000 commands)
 - Configuration file loading (standard MCP JSON format, compatible with Claude Desktop)
 - Credential management via OS keychain (`@napi-rs/keyring` package)
 
@@ -414,7 +412,6 @@ Environment variable substitution supported: `${VAR_NAME}`
 
 - Real MCP server implementations
 - Cross-runtime testing (Node.js and Bun)
-- Interactive shell workflows
 
 **Test utilities:**
 
@@ -555,7 +552,6 @@ All state files are stored in `~/.mcpc/` directory (unless overridden by `MCPC_H
 - `~/.mcpc/sessions.json` - Active sessions with references to auth profiles and active async tasks (file-locked for concurrent access)
 - `~/.mcpc/profiles.json` - Authentication profiles (OAuth metadata, scopes, expiry)
 - `~/.mcpc/bridges/` - Unix domain socket files for bridge processes
-- `~/.mcpc/history` - Interactive shell command history (last 1000 commands)
 - `~/.mcpc/logs/bridge-<session>.log` - Bridge process logs (max 10MB, 5 files)
 - OS keychain - Sensitive credentials (OAuth tokens, bearer tokens, client secrets)
 
@@ -679,15 +675,9 @@ Bridge logs location: `~/.mcpc/logs/bridge-<session>.log`
 - **Target Resolution**: URL/session/config resolution logic (sessions and HTTP servers working)
 - **CLI-to-MCP Integration**: Full integration via direct connection and session bridge
 - **Caching**: In-memory cache with TTL (5min default), automatic invalidation via server notifications
-- **Notification Handling**: Full notification support with forwarding from bridge to clients
+- **Notification Handling**: Full notification support in the bridge process
   - `tools/list_changed`, `resources/list_changed`, `prompts/list_changed` notifications
-  - Automatic cache invalidation on list changes
-  - Real-time notification display in interactive shell with timestamps and color coding
-- **Interactive Shell**: Complete REPL implementation
-  - Command history (saved to `~/.mcpc/history`, last 1000 commands)
-  - Real-time notification display during shell sessions
-  - Persistent notification listener per shell session
-  - Graceful cleanup on exit
+  - Automatic cache invalidation on list changes, timestamps tracked in `sessions.json`
 - **Error Recovery**: Automatic recovery from failures
   - Bridge crash detection and automatic restart
   - Socket reconnection with preserved session state

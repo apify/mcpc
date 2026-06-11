@@ -1,5 +1,5 @@
 #!/bin/bash
-# Test: session management commands (shell, close, restart)
+# Test: session management commands (close, restart)
 
 source "$(dirname "$0")/../../lib/framework.sh"
 test_init "basic/session-commands"
@@ -57,25 +57,6 @@ test_pass
 
 test_case "mcpc restart missing @session errors"
 run_mcpc restart
-assert_failure
-test_pass
-
-# =============================================================================
-# mcpc shell @session  (top-level form)
-# =============================================================================
-
-test_case "mcpc shell @session exits cleanly on EOF"
-SESSION2=$(session_name "shell")
-run_mcpc connect "$TEST_SERVER_URL" "$SESSION2" --header "X-Test: true"
-assert_success
-_SESSIONS_CREATED+=("$SESSION2")
-# Send EOF immediately; readline closes, shell exits 0
-echo -n "" | run_mcpc shell "$SESSION2"
-assert_success
-test_pass
-
-test_case "mcpc shell missing @session errors"
-run_mcpc shell
 assert_failure
 test_pass
 

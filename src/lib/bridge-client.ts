@@ -17,7 +17,7 @@
 
 import { connect, type Socket } from 'net';
 import { EventEmitter } from 'events';
-import type { IpcMessage, NotificationData, TaskUpdate, X402WalletCredentials } from './types.js';
+import type { IpcMessage, TaskUpdate, X402WalletCredentials } from './types.js';
 import { createLogger } from './logger.js';
 import { NetworkError, ClientError, ServerError, AuthError } from './errors.js';
 import { generateRequestId, sleep } from './utils.js';
@@ -245,11 +245,6 @@ export class BridgeClient extends EventEmitter {
       const update: TaskUpdate = message.taskUpdate;
       logger.debug(`Received task update for request ${message.id}:`, update.status);
       this.emit(`task-update:${message.id}`, update);
-    } else if (message.type === 'notification' && message.notification) {
-      // Emit notification event
-      const notification: NotificationData = message.notification;
-      logger.debug('Received notification:', notification.method);
-      this.emit('notification', notification);
     }
     // Ignore other message types (health-ok, etc.)
   }

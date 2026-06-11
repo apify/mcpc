@@ -18,7 +18,6 @@ import type { ServerConfig, ConnectionMode } from '../../lib/types.js';
 import {
   formatOutput,
   formatSuccess,
-  formatWarning,
   formatError,
   formatSessionLine,
   formatServerDetails,
@@ -477,16 +476,4 @@ export async function restartSession(
     }
     throw error;
   }
-}
-
-/**
- * Open an interactive shell for a target
- */
-export async function openShell(target: string): Promise<void> {
-  console.error(
-    formatWarning('The "shell" command is deprecated and will be removed in a future release.')
-  );
-  // Import shell dynamically to avoid circular dependencies
-  const { startShell } = await import('../shell.js');
-  await startShell(target);
 }

@@ -112,7 +112,6 @@ export const KNOWN_COMMANDS = [
   'connect',
   'close',
   'restart',
-  'shell',
   'clean',
   'grep',
   'x402',
@@ -123,7 +122,6 @@ export const KNOWN_COMMANDS = [
  */
 export const KNOWN_SESSION_COMMANDS = [
   'help',
-  'shell',
   'close',
   'restart',
   'tools-list',

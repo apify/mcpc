@@ -629,18 +629,6 @@ ${jsonHelp(
       await sessions.restartSession(sessionName, getOptionsFromCommand(command));
     });
 
-  // shell command: mcpc shell @<session> (deprecated, hidden from help)
-  program
-    .command('shell [@session]', { hidden: true })
-    .usage('<@session>')
-    .description('Open interactive shell for a session (deprecated)')
-    .action(async (sessionName) => {
-      if (!sessionName) {
-        throw new ClientError('Missing required argument: @session\n\nExample: mcpc shell @myapp');
-      }
-      await sessions.openShell(sessionName);
-    });
-
   // login command: mcpc login <server>
   program
     .command('login [server]')
@@ -878,14 +866,11 @@ ${jsonHelp('`[{ sessionName, tools?: Tool[], resources?: Resource[], prompts?: P
   return program;
 }
 
-/** Commands that don't support --json output. */
-const NO_JSON_COMMANDS = new Set(['shell']);
-
 /**
  * Tune a command's help display: add --json option and hide --help.
  */
 function tuneCommandHelp(cmd: Command): void {
-  if (!NO_JSON_COMMANDS.has(cmd.name()) && !cmd.options.some((o) => o.long === '--json')) {
+  if (!cmd.options.some((o) => o.long === '--json')) {
     cmd.option('--json', 'Output in JSON format');
   }
   cmd.helpOption('-h, --help', 'Display help');
@@ -925,14 +910,6 @@ function registerSessionCommands(program: Command, session: string): void {
     .description('Show available commands and options.')
     .action((_options, command) => {
       command.parent.outputHelp();
-    });
-
-  // Shell command (deprecated, hidden from help)
-  program
-    .command('shell', { hidden: true })
-    .description('Launch interactive MCP shell (deprecated).')
-    .action(async () => {
-      await sessions.openShell(session);
     });
 
   // Close command

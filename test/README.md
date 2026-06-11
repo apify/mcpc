@@ -64,8 +64,7 @@ test/unit/
 ├── cli/                    # CLI module tests
 │   ├── index.test.ts
 │   ├── output.test.ts
-│   ├── parser.test.ts
-│   └── shell.test.ts
+│   └── parser.test.ts
 ├── core/                   # Core module tests
 │   ├── factory.test.ts
 │   └── transports.test.ts

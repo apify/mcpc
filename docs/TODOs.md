@@ -66,7 +66,7 @@ Syntax errors: mcpc call linear_list_issues instead of mcpc @linear tools-call l
   automatically update the -o file on changes, without it just keep track of changed files in
   bridge process' cache, and report in resources-list/resources-read operatio
 
-- Add support for "mcpc close @session", "mcpc restart @session" and "mcpc shell @session" aliases - add info only to "mcpc help restart" or "mcpc 
+- Add support for "mcpc close @session" and "mcpc restart @session" aliases - add info only to "mcpc help restart" or "mcpc 
   help close", no need to mention this in main --help
   
 - Add ASCII diagrams to README to help explain major concepts: tool calling, auth, bridge process, etc.

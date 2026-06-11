@@ -5,7 +5,6 @@
  * Responsibilities:
  * - Implements IMcpClient interface by forwarding to bridge
  * - Simple one-shot retry on socket failure (restart bridge once)
- * - Forwards notifications from bridge
  *
  * NOT responsible for:
  * - Bridge lifecycle management (that's bridge-manager's job)
@@ -13,7 +12,6 @@
  * - Complex retry logic (keep it simple: fail or restart once)
  */
 
-import { EventEmitter } from 'events';
 import type {
   ListToolsResult,
   CallToolResult,
@@ -23,7 +21,6 @@ import type {
   GetPromptResult,
   LoggingLevel,
   IMcpClient,
-  NotificationData,
   ServerDetails,
   TaskUpdate,
   GetTaskResult,
@@ -44,16 +41,14 @@ const logger = createLogger('session-client');
  * Wrapper that makes BridgeClient compatible with McpClient interface
  * Implements IMcpClient by sending requests to bridge process via IPC
  */
-export class SessionClient extends EventEmitter implements IMcpClient {
+export class SessionClient implements IMcpClient {
   private bridgeClient: BridgeClient;
   private sessionName: string;
   private requestTimeout?: number; // Per-request timeout in seconds
 
   constructor(sessionName: string, bridgeClient: BridgeClient) {
-    super();
     this.sessionName = sessionName;
     this.bridgeClient = bridgeClient;
-    this.setupNotificationForwarding();
   }
 
   /**
@@ -61,16 +56,6 @@ export class SessionClient extends EventEmitter implements IMcpClient {
    */
   setRequestTimeout(timeout: number): void {
     this.requestTimeout = timeout;
-  }
-
-  /**
-   * Set up notification forwarding from bridge client
-   */
-  private setupNotificationForwarding(): void {
-    this.bridgeClient.on('notification', (notification: NotificationData) => {
-      logger.debug(`Forwarding notification: ${notification.method}`);
-      this.emit('notification', notification);
-    });
   }
 
   /**
@@ -108,7 +93,6 @@ export class SessionClient extends EventEmitter implements IMcpClient {
       // Reconnect using the new bridge's PID-based socket path
       const socketPath = getSocketPath(this.sessionName, newPid);
       this.bridgeClient = new BridgeClient(socketPath);
-      this.setupNotificationForwarding();
       await this.bridgeClient.connect();
       await updateSession(this.sessionName, { status: 'active' });
 
@@ -342,7 +326,6 @@ export class SessionClient extends EventEmitter implements IMcpClient {
 
       const socketPath = getSocketPath(this.sessionName, newPid);
       this.bridgeClient = new BridgeClient(socketPath);
-      this.setupNotificationForwarding();
       await this.bridgeClient.connect();
 
       if (capturedTaskId) {
