@@ -28,6 +28,7 @@ export async function login(
     clientSecret?: string;
     clientMetadataUrl?: string | false;
     callbackPort?: number;
+    callbackHost?: string;
   }
 ): Promise<void> {
   try {
@@ -63,6 +64,20 @@ export async function login(
       resolvedClientMetadataUrl = DEFAULT_CLIENT_METADATA_URL;
     }
 
+    // The hosted CIMD registers only 127.0.0.1 redirect URIs, so a CIMD-capable
+    // server would reject the localhost form with a redirect_uri mismatch.
+    if (
+      options.callbackHost === 'localhost' &&
+      resolvedClientMetadataUrl === DEFAULT_CLIENT_METADATA_URL
+    ) {
+      throw new Error(
+        '--callback-host localhost cannot be used with the default hosted CIMD, which only ' +
+          'registers 127.0.0.1 redirect URIs. Use --client-id (pre-registered client), ' +
+          '--client-metadata-url (custom CIMD listing localhost redirect URIs), or ' +
+          '--no-client-metadata-url (Dynamic Client Registration)'
+      );
+    }
+
     if (options.outputMode === 'human') {
       console.log(formatInfo(`Starting OAuth authentication for ${normalizedUrl}`));
       console.log(formatInfo(`Profile: ${theme.magenta(profileName)}`));
@@ -88,7 +103,8 @@ export async function login(
       profileName,
       options.scope,
       clientCredentials,
-      options.callbackPort
+      options.callbackPort,
+      options.callbackHost
     );
 
     if (options.outputMode === 'human') {

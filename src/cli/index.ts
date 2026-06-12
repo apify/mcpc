@@ -30,6 +30,7 @@ import * as tasks from './commands/tasks.js';
 import * as grepCmd from './commands/grep.js';
 import { handleX402Command } from './commands/x402.js';
 import { clean } from './commands/clean.js';
+import { MCPC_OAUTH_CALLBACK_HOSTS, MCPC_OAUTH_CALLBACK_PORTS } from '../lib/auth/oauth-utils.js';
 import type { OutputMode, X402SchemePreference } from '../lib/index.js';
 import { X402_SCHEME_PREFERENCES } from '../lib/index.js';
 import {
@@ -643,13 +644,23 @@ ${jsonHelp(
       'HTTPS URL of an OAuth CIMD (default: https://apify.github.io/mcpc/client-metadata.json)'
     )
     .option('--no-client-metadata-url', 'Disable CIMD; force DCR on CIMD-capable servers')
-    .option('--callback-port <port>', 'Loopback port for OAuth callback (default: 13316–13325)')
+    .option(
+      '--callback-port <port>',
+      `Loopback port for OAuth callback (default: first free of ${MCPC_OAUTH_CALLBACK_PORTS.join(', ')})`
+    )
+    .option(
+      '--callback-host <host>',
+      'Host in the OAuth callback redirect URI: 127.0.0.1 (default) or localhost'
+    )
     .addHelpText(
       'after',
       `
 ${chalk.bold('OAuth client registration approaches:')}
 
   1. Pre-registration: --client-id (and optionally --client-secret).
+     If the client's registered redirect URI uses localhost instead of
+     127.0.0.1 (e.g. http://localhost:3118/callback), add
+     --callback-host localhost --callback-port 3118 to match it.
   2. Client ID Metadata Documents (CIMD): used by default. mcpc ships with a
      hosted CIMD at https://apify.github.io/mcpc/client-metadata.json
      which identifies all mcpc installs as the same client. Override with
@@ -680,6 +691,13 @@ ${jsonHelp('Interactive prompts are written to stderr, stdout contains a clean J
         }
         callbackPort = parsed;
       }
+      if (opts.callbackHost && !MCPC_OAUTH_CALLBACK_HOSTS.includes(opts.callbackHost as string)) {
+        throw new ClientError(
+          `Invalid --callback-host value: "${opts.callbackHost as string}". ` +
+            `Must be one of: ${MCPC_OAUTH_CALLBACK_HOSTS.join(', ')} ` +
+            '(loopback only — a non-loopback host would send the OAuth callback off this machine).'
+        );
+      }
       await auth.login(server, {
         profile: opts.profile,
         scope: opts.scope,
@@ -687,6 +705,7 @@ ${jsonHelp('Interactive prompts are written to stderr, stdout contains a clean J
         clientSecret: opts.clientSecret,
         clientMetadataUrl: opts.clientMetadataUrl,
         ...(callbackPort !== undefined ? { callbackPort } : {}),
+        ...(opts.callbackHost ? { callbackHost: opts.callbackHost as string } : {}),
         ...getOptionsFromCommand(command),
       });
     });
