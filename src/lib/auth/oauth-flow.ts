@@ -406,7 +406,8 @@ export async function performOAuthFlow(
   profileName: string,
   scope?: string,
   clientCredentials?: { clientId?: string; clientSecret?: string; clientMetadataUrl?: string },
-  callbackPort?: number
+  callbackPort?: number,
+  callbackHost?: string
 ): Promise<OAuthFlowResult> {
   logger.debug(`Starting OAuth flow for ${serverUrl} (profile: ${profileName})`);
 
@@ -426,7 +427,12 @@ export async function performOAuthFlow(
   // When --callback-port is set, use that exact port. Otherwise try the
   // fixed mcpc port list that matches the hosted CIMD's redirect_uris.
   const port = await findAvailablePort(callbackPort ? [callbackPort] : MCPC_OAUTH_CALLBACK_PORTS);
-  const redirectUrl = `http://127.0.0.1:${port}/callback`;
+  // --callback-host only changes the redirect URI string handed to the
+  // authorization server (some pre-registered clients accept only the
+  // `localhost` form). The callback server below always binds the loopback
+  // IP literal, never a hostname, per RFC 8252 §8.3 — browsers that resolve
+  // localhost to ::1 first fall back to 127.0.0.1 on connection refusal.
+  const redirectUrl = `http://${callbackHost || '127.0.0.1'}:${port}/callback`;
 
   logger.debug(`Using redirect URL: ${redirectUrl}`);
 

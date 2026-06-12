@@ -22,6 +22,15 @@ export const DEFAULT_CLIENT_METADATA_URL = 'https://apify.github.io/mcpc/client-
 export const MCPC_OAUTH_CALLBACK_PORTS: readonly number[] = [13316, 31613, 16133] as const;
 
 /**
+ * Hosts accepted for the OAuth callback redirect URI (--callback-host).
+ * Loopback names only: a non-loopback host in the redirect URI would send
+ * the authorization code off-machine. The IP literal is the default per
+ * RFC 8252 §8.3; `localhost` exists for pre-registered clients whose
+ * redirect URI was registered with the hostname form (#269).
+ */
+export const MCPC_OAUTH_CALLBACK_HOSTS: readonly string[] = ['127.0.0.1', 'localhost'] as const;
+
+/**
  * OAuth token endpoint response (per OAuth 2.0 spec - uses snake_case)
  */
 export interface OAuthTokenResponse {

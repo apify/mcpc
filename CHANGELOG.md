@@ -7,12 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `mcpc login --callback-host <host>` to set the host used in the OAuth callback redirect URI: `127.0.0.1` (default) or `localhost`, for servers whose pre-registered OAuth client only accepts the `localhost` form. The callback server itself still binds only to the loopback IP (#269).
+
 ### Removed
 
 - The interactive `shell` command (`mcpc shell @<session>` and `mcpc @<session> shell`), deprecated in 0.3.1, has been removed. Run individual `mcpc @<session> <command>` invocations instead. Server log messages (`notifications/message`), previously shown only in the shell, are now written to the bridge log — view them with `mcpc @<session> logs`.
 
 ### Fixed
 
+- The hosted OAuth Client ID Metadata Document now includes the required `client_id` property, so authorization servers that validate CIMD documents per spec no longer reject `mcpc login` with the default client identity (#271).
 - Sessions no longer hang on macOS under the Bun runtime (e.g. when connecting with `--proxy-bearer-token`, or auto-reconnecting a crashed session). The bridge now runs under the same runtime as the CLI, so OS-keychain items the CLI stored are read back under the same application identity; previously a Bun CLI paired with a Node bridge produced a cross-binary keychain read, which macOS gates with an access prompt that blocks in non-interactive contexts. A Bun user also no longer needs Node installed for the bridge to start.
 
 ## [0.3.1] - 2026-06-08

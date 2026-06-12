@@ -479,6 +479,10 @@ mcpc login mcp.apify.com
 # Pre-registered OAuth client (public or confidential) — skips CIMD.
 mcpc login mcp.example.com --client-id <id> [--client-secret <secret>]
 
+# Pre-registered client whose redirect URI was registered with localhost
+# instead of 127.0.0.1 (e.g. http://localhost:3118/callback).
+mcpc login mcp.example.com --client-id <id> --callback-host localhost --callback-port 3118
+
 # Custom CIMD: override the default with your own hosted document.
 mcpc login mcp.example.com --client-metadata-url https://example.com/my-client.json
 
