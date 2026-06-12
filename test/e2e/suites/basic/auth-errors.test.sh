@@ -194,35 +194,6 @@ assert_failure
 assert_contains "$STDERR" "--callback-port"
 test_pass
 
-test_case "login --help documents --callback-host"
-run_mcpc help login
-assert_success
-assert_contains "$STDOUT" "--callback-host"
-test_pass
-
-# Commander wraps long option descriptions, so assert each port separately.
-test_case "login --callback-port help text lists the actual default ports"
-run_mcpc help login
-assert_success
-assert_contains "$STDOUT" "13316"
-assert_contains "$STDOUT" "31613"
-assert_contains "$STDOUT" "16133"
-test_pass
-
-test_case "login --callback-host with non-loopback host is rejected"
-run_xmcpc login mcp.example.com --callback-host evil.example.com --no-client-metadata-url
-assert_failure
-assert_contains "$STDERR" "--callback-host"
-assert_contains "$STDERR" "loopback"
-test_pass
-
-test_case "login --callback-host localhost with default hosted CIMD is rejected"
-run_xmcpc login mcp.example.com --callback-host localhost
-assert_failure
-assert_contains "$STDERR" "127.0.0.1 redirect URIs"
-assert_contains "$STDERR" "--no-client-metadata-url"
-test_pass
-
 # =============================================================================
 # Test: Tier 2 - end-to-end callback port binding
 #

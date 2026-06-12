@@ -691,12 +691,19 @@ ${jsonHelp('Interactive prompts are written to stderr, stdout contains a clean J
         }
         callbackPort = parsed;
       }
-      if (opts.callbackHost && !MCPC_OAUTH_CALLBACK_HOSTS.includes(opts.callbackHost as string)) {
-        throw new ClientError(
-          `Invalid --callback-host value: "${opts.callbackHost as string}". ` +
-            `Must be one of: ${MCPC_OAUTH_CALLBACK_HOSTS.join(', ')} ` +
-            '(loopback only — a non-loopback host would send the OAuth callback off this machine).'
-        );
+      let callbackHost: string | undefined;
+      if (opts.callbackHost) {
+        // URI hosts are case-insensitive (RFC 3986 §3.2.2), but redirect_uri
+        // matching at the authorization server is an exact string comparison,
+        // so normalize to lowercase rather than passing the casing through.
+        callbackHost = (opts.callbackHost as string).toLowerCase();
+        if (!MCPC_OAUTH_CALLBACK_HOSTS.includes(callbackHost)) {
+          throw new ClientError(
+            `Invalid --callback-host value: "${opts.callbackHost as string}". ` +
+              `Must be one of: ${MCPC_OAUTH_CALLBACK_HOSTS.join(', ')} ` +
+              '(loopback only — a non-loopback host would send the OAuth callback off this machine).'
+          );
+        }
       }
       await auth.login(server, {
         profile: opts.profile,
@@ -705,7 +712,7 @@ ${jsonHelp('Interactive prompts are written to stderr, stdout contains a clean J
         clientSecret: opts.clientSecret,
         clientMetadataUrl: opts.clientMetadataUrl,
         ...(callbackPort !== undefined ? { callbackPort } : {}),
-        ...(opts.callbackHost ? { callbackHost: opts.callbackHost as string } : {}),
+        ...(callbackHost ? { callbackHost } : {}),
         ...getOptionsFromCommand(command),
       });
     });
