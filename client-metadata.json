@@ -1,4 +1,5 @@
 {
+  "client_id": "https://apify.github.io/mcpc/client-metadata.json",
   "client_name": "mcpc",
   "client_uri": "https://github.com/apify/mcpc",
   "logo_uri": "https://apify.github.io/mcpc/client-logo.svg",

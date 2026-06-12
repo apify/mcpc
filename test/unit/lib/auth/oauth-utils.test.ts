@@ -6,6 +6,7 @@ import type { MockInstance } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import {
+  DEFAULT_CLIENT_METADATA_URL,
   discoverTokenEndpoint,
   MCPC_OAUTH_CALLBACK_PORTS,
 } from '../../../../src/lib/auth/oauth-utils.js';
@@ -158,7 +159,11 @@ describe('MCPC_OAUTH_CALLBACK_PORTS / client-metadata.json consistency', () => {
   const PROJECT_ROOT = resolve(__dirname, '../../../..');
   const metadata = JSON.parse(
     readFileSync(resolve(PROJECT_ROOT, 'client-metadata.json'), 'utf-8')
-  ) as { redirect_uris: string[] };
+  ) as { client_id: string; redirect_uris: string[] };
+
+  it('client_id matches the hosted document URL (required by CIMD spec)', () => {
+    expect(metadata.client_id).toBe(DEFAULT_CLIENT_METADATA_URL);
+  });
 
   it('every callback port has a matching loopback redirect_uri in client-metadata.json', () => {
     const expectedUris = MCPC_OAUTH_CALLBACK_PORTS.map(
