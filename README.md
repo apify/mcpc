@@ -162,8 +162,8 @@ MCP session commands (after connecting):
   <@session> prompts-list
   <@session> prompts-get <name> [arg:=val ... | <json> | <stdin]
   <@session> resources-list
-  <@session> resources-read <uri>
-  <@session> resources-subscribe <uri>
+  <@session> resources-read <uri> [-o <file> | --raw]
+  <@session> resources-subscribe <uri> <file>
   <@session> resources-unsubscribe <uri>
   <@session> resources-templates-list
   <@session> skills-list
@@ -926,14 +926,32 @@ Access server-provided data sources by URI:
 # List available resources
 mcpc @apify resources-list
 
-# Read a resource
+# Read a resource (pretty view; binary content is summarized, never dumped)
 mcpc @apify resources-read "file:///config.json"
 
-# Subscribe to resource changes
-mcpc @apify resources-subscribe "https://api.example.com/data"
+# Print just the content for piping
+mcpc @apify resources-read "file:///config.json" --raw | jq .
+
+# Save a resource to a local file (binary-safe, decodes base64 blobs)
+mcpc @apify resources-read "file:///logo.png" -o logo.png
 
 # List resource templates
 mcpc @apify resources-templates-list
+```
+
+Subscriptions keep a local file in sync with a server resource. On subscribe, mcpc downloads
+the resource to the file; afterwards the session bridge rewrites the file whenever the server
+sends a `notifications/resources/updated` notification for the URI (the bridge re-reads the
+resource, as the notification carries no content). Requires the server capability
+`resources.subscribe`; subscriptions are re-established automatically when the session
+reconnects or restarts, and are listed in `mcpc @session` output.
+
+```bash
+# Keep ./config.json in sync with the server resource
+mcpc @apify resources-subscribe "file:///config.json" ./config.json
+
+# Stop syncing — the local file is kept as-is
+mcpc @apify resources-unsubscribe "file:///config.json"
 ```
 
 #### Skills

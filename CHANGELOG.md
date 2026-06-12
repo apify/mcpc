@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `mcpc login --callback-host <host>` to set the host used in the OAuth callback redirect URI: `127.0.0.1` (default) or `localhost`, for servers whose pre-registered OAuth client only accepts the `localhost` form. The callback server itself still binds only to the loopback IP (#269).
+- `resources-read` can now save resources to a local file with `-o <file>` (binary-safe, decodes base64 `blob` content) and print bare content for piping with `--raw`. The default human view shows text content in a fenced block and summarizes binary content instead of dumping it to the terminal.
+
+### Changed
+
+- `resources-subscribe <uri> <file>` now keeps a local file in sync with the resource: it downloads the resource to `<file>` and the session bridge rewrites the file whenever the server announces a change (`notifications/resources/updated`). Subscriptions survive session restarts and are shown in `mcpc @<session>` output. `resources-unsubscribe` stops the syncing and keeps the file. Previously these commands only sent the subscribe/unsubscribe requests without acting on the notifications.
+- `resources-read --max-size <bytes>` was removed; the option was accepted but never enforced. Use `--max-chars` to limit human-readable output.
 
 ### Removed
 

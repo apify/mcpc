@@ -21,8 +21,11 @@
  *   GET  /health - health check
  *   GET  /control/get-deleted-sessions - list session IDs that received DELETE
  *   GET  /control/get-active-sessions - list active MCP session IDs
+ *   GET  /control/get-subscriptions - resource URIs subscribed per session
  *   POST /control/fail-next?count=N - fail next N MCP requests
  *   POST /control/expire-session - expire current session
+ *   POST /control/bump-counter - increment test://dynamic/counter + notify subscribers
+ *   POST /control/notify-resource-updated?uri=U - send resources/updated to all sessions
  *   POST /control/reset - reset all control state
  */
 
@@ -33,6 +36,8 @@ import {
   ListToolsRequestSchema,
   ListResourcesRequestSchema,
   ReadResourceRequestSchema,
+  SubscribeRequestSchema,
+  UnsubscribeRequestSchema,
   ListPromptsRequestSchema,
   GetPromptRequestSchema,
   ListResourceTemplatesRequestSchema,
@@ -61,6 +66,15 @@ const SKILLS_NO_INDEX = process.env.SKILLS_NO_INDEX === 'true';
 let failNextCount = 0;
 let sessionExpired = false;
 const deletedSessions: string[] = [];
+
+// Mutable counter resource state (bumped via /control/bump-counter)
+let counterValue = 0;
+
+// Deterministic binary payload for test://static/binary (not valid UTF-8)
+const BINARY_PAYLOAD = Buffer.from([0x00, 0x01, 0x02, 0x03, 0xfc, 0xfd, 0xfe, 0xff]);
+
+// Resource URIs subscribed per MCP server instance (resources/subscribe)
+const serverSubscriptions = new WeakMap<Server, Set<string>>();
 
 // Test data
 const TOOLS = [
@@ -166,6 +180,18 @@ const RESOURCES = [
     name: 'Current Time',
     description: 'Returns current timestamp',
     mimeType: 'text/plain',
+  },
+  {
+    uri: 'test://dynamic/counter',
+    name: 'Counter Resource',
+    description: 'Mutable counter for subscription tests (bump via /control/bump-counter)',
+    mimeType: 'text/plain',
+  },
+  {
+    uri: 'test://static/binary',
+    name: 'Binary Resource',
+    description: 'A small binary test resource (blob content)',
+    mimeType: 'application/octet-stream',
   },
 ];
 
@@ -640,6 +666,24 @@ function createMcpServer(): Server {
         };
       }
 
+      if (uri === 'test://dynamic/counter') {
+        return {
+          contents: [{ uri, mimeType: 'text/plain', text: `counter=${counterValue}` }],
+        };
+      }
+
+      if (uri === 'test://static/binary') {
+        return {
+          contents: [
+            {
+              uri,
+              mimeType: 'application/octet-stream',
+              blob: BINARY_PAYLOAD.toString('base64'),
+            },
+          ],
+        };
+      }
+
       // Skill resources (SEP-2640). May include the well-known
       // skill://index.json plus per-skill SKILL.md files.
       const skillContent = SKILL_CONTENTS[uri];
@@ -651,6 +695,36 @@ function createMcpServer(): Server {
 
       throw new Error(`Resource not found: ${uri}`);
     });
+
+    // Resource subscriptions (resources/subscribe, resources/unsubscribe).
+    // Subscribed URIs are tracked per server instance so control endpoints can
+    // send notifications/resources/updated to the right sessions.
+    const subscribedUris = new Set<string>();
+    server.setRequestHandler(SubscribeRequestSchema, async (request) => {
+      await maybeDelay();
+      if (shouldFail()) {
+        throw new Error('Simulated failure');
+      }
+
+      const { uri } = request.params;
+      const known = [...RESOURCES, ...SKILLS_RESOURCES].some((r) => r.uri === uri);
+      if (!known) {
+        throw new Error(`Resource not found: ${uri}`);
+      }
+      subscribedUris.add(uri);
+      return {};
+    });
+
+    server.setRequestHandler(UnsubscribeRequestSchema, async (request) => {
+      await maybeDelay();
+      if (shouldFail()) {
+        throw new Error('Simulated failure');
+      }
+
+      subscribedUris.delete(request.params.uri);
+      return {};
+    });
+    serverSubscriptions.set(server, subscribedUris);
   } // end if (!NO_RESOURCES)
 
   // Prompts (only register handlers if capability is enabled)
@@ -742,6 +816,16 @@ async function main() {
           res.end(JSON.stringify({ activeSessions: Array.from(transports.keys()) }));
           return;
         }
+        if (action === 'get-subscriptions') {
+          // Resource URIs subscribed per active MCP session
+          const subscriptions: Record<string, string[]> = {};
+          for (const [sessionId, server] of mcpServers) {
+            subscriptions[sessionId] = Array.from(serverSubscriptions.get(server) ?? []);
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ subscriptions }));
+          return;
+        }
         res.writeHead(404);
         res.end('Unknown control action');
         return;
@@ -772,6 +856,7 @@ async function main() {
           failNextCount = 0;
           sessionExpired = false;
           deletedSessions.length = 0;
+          counterValue = 0;
           res.writeHead(200);
           res.end('State reset');
           return;
@@ -793,6 +878,32 @@ async function main() {
           res.writeHead(200);
           res.end('Sent resources/list_changed notification');
           return;
+
+        case 'bump-counter': {
+          // Increment the counter resource and notify sessions subscribed to it
+          counterValue++;
+          const uri = 'test://dynamic/counter';
+          await Promise.all(
+            [...mcpServers.values()]
+              .filter((s) => serverSubscriptions.get(s)?.has(uri))
+              .map((s) => s.sendResourceUpdated({ uri }).catch(() => {}))
+          );
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ counter: counterValue }));
+          return;
+        }
+
+        case 'notify-resource-updated': {
+          // Fault injection: send notifications/resources/updated to ALL sessions,
+          // regardless of server-side subscription state (exercises client filtering)
+          const uri = url.searchParams.get('uri') || 'test://dynamic/counter';
+          await Promise.all(
+            [...mcpServers.values()].map((s) => s.sendResourceUpdated({ uri }).catch(() => {}))
+          );
+          res.writeHead(200);
+          res.end(`Sent resources/updated for ${uri}`);
+          return;
+        }
 
         default:
           res.writeHead(404);

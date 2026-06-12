@@ -44,10 +44,12 @@ test_pass
 test_case "resources-list fetches all pages"
 run_xmcpc "$SESSION" resources-list
 assert_success
-# Server has 3 resources
+# Server has 5 resources
 assert_contains "$STDOUT" "Hello Resource"
 assert_contains "$STDOUT" "JSON Resource"
 assert_contains "$STDOUT" "Current Time"
+assert_contains "$STDOUT" "Counter Resource"
+assert_contains "$STDOUT" "Binary Resource"
 test_pass
 
 # Test: resources-list --json returns all resources
@@ -56,7 +58,7 @@ run_xmcpc "$SESSION" resources-list --json
 assert_success
 # Returns array directly
 resource_count=$(echo "$STDOUT" | jq 'length')
-assert_eq "$resource_count" "3" "should have all 3 resources"
+assert_eq "$resource_count" "5" "should have all 5 resources"
 test_pass
 
 # Test: prompts-list fetches all pages

@@ -37,11 +37,13 @@ import { storeKeychainOAuthTokenInfo, readKeychainOAuthTokenInfo } from '../lib/
 import { updateAuthProfileRefreshedAt } from '../lib/auth/profiles.js';
 import {
   LoggingMessageNotificationSchema,
+  ResourceUpdatedNotificationSchema,
   type Tool,
   type Resource,
   type Prompt,
   type Task,
 } from '@modelcontextprotocol/sdk/types.js';
+import { ResourceSyncManager } from './resource-sync.js';
 import type { TaskUpdate } from '../lib/types.js';
 import { createRequire } from 'module';
 const { version: mcpcVersion } = createRequire(import.meta.url)('../../package.json') as {
@@ -115,6 +117,9 @@ class BridgeProcess {
 
   // Active async tasks (in-memory, also persisted to disk for crash recovery)
   private activeTasks: Map<string, Task> = new Map();
+
+  // Resource→file sync for resources-subscribe (created once the MCP client connects)
+  private resourceSync: ResourceSyncManager | null = null;
 
   // Promise to track when auth credentials are received (for startup sequencing)
   private authCredentialsReceived: Promise<void> | null = null;
@@ -436,6 +441,10 @@ class BridgeProcess {
         // Signal that MCP client is ready (unblocks pending requests)
         // Only signal after both MCP connection AND proxy server are ready
         this.mcpClientReadyResolver();
+
+        // Re-establish persisted resource subscriptions in the background —
+        // failures are recorded per subscription, never block startup
+        void this.restoreResourceSubscriptions();
       } catch (error) {
         // Signal that MCP connection or proxy startup failed (rejects pending requests with actual error)
         // Don't exit immediately - stay alive briefly so CLI can receive the error
@@ -666,6 +675,25 @@ class BridgeProcess {
         logger.info('[server log]', notification.params);
       });
 
+    // Resource→file sync (resources-subscribe): load persisted subscriptions and
+    // re-sync local files when the server announces a resource changed. Per the MCP
+    // spec the updated notification carries only the URI — the client re-reads.
+    const client = this.client;
+    this.resourceSync = new ResourceSyncManager({
+      readResource: (uri) => client.readResource(uri),
+      persist: (entries) =>
+        updateSession(this.options.sessionName, { resourceSubscriptions: entries }),
+      logger: createLogger('resource-sync'),
+    });
+    const sessionData = await getSession(this.options.sessionName);
+    this.resourceSync.load(sessionData?.resourceSubscriptions);
+    this.client
+      .getSDKClient()
+      .setNotificationHandler(ResourceUpdatedNotificationSchema, (notification) => {
+        logger.debug(`Resource updated notification: ${notification.params.uri}`);
+        this.resourceSync?.handleUpdated(notification.params.uri);
+      });
+
     // Update session with protocol version, MCP session ID, and lastSeenAt
     const serverDetails = await this.client.getServerDetails();
     const newMcpSessionId = this.client.getMcpSessionId();
@@ -732,6 +760,34 @@ class BridgeProcess {
         }
         logger.warn('Failed to pre-populate tools cache:', err);
       });
+    }
+  }
+
+  /**
+   * Re-establish resource subscriptions persisted in sessions.json after a
+   * bridge (re)start: re-subscribe on the server, then re-sync each local file
+   * since updates may have been missed while the bridge was down. Per-entry
+   * failures are recorded on the subscription (shown by `mcpc @session`) and
+   * never tear down the session.
+   */
+  private async restoreResourceSubscriptions(): Promise<void> {
+    const sync = this.resourceSync;
+    const client = this.client;
+    if (!sync || !client) return;
+    const entries = sync.list();
+    if (entries.length === 0) return;
+
+    logger.info(`Restoring ${entries.length} resource subscription(s)...`);
+    for (const entry of entries) {
+      try {
+        await client.subscribeResource(entry.uri);
+      } catch (error) {
+        const message = `Re-subscribe failed: ${(error as Error).message}`;
+        logger.warn(`${message} (${entry.uri})`);
+        await sync.recordError(entry.uri, message).catch(() => {});
+        continue;
+      }
+      await sync.resync(entry.uri);
     }
   }
 
@@ -1270,14 +1326,53 @@ class BridgeProcess {
         }
 
         case 'subscribeResource': {
-          const params = message.params as { uri: string };
-          result = await this.client.subscribeResource(params.uri);
+          // Subscribe + sync the resource to a local file: subscribe on the server,
+          // download the current content, then keep rewriting the file on
+          // notifications/resources/updated (see ResourceSyncManager).
+          const params = message.params as { uri: string; filePath: string };
+          if (!params?.uri || !params?.filePath) {
+            throw new ClientError('subscribeResource requires uri and filePath');
+          }
+          if (!this.resourceSync) {
+            throw new NetworkError('MCP client not connected');
+          }
+          const details = await this.client.getServerDetails();
+          if (!details.capabilities?.resources?.subscribe) {
+            throw new ClientError(
+              `Server does not support resource subscriptions (no resources.subscribe capability).\n` +
+                `To download the resource once instead, run:\n` +
+                `  mcpc ${this.options.sessionName} resources-read ${params.uri} -o <file>`
+            );
+          }
+          await this.client.subscribeResource(params.uri);
+          try {
+            result = await this.resourceSync.add(params.uri, params.filePath);
+          } catch (error) {
+            // Initial sync failed (bad path, unreadable resource) — roll back the
+            // server-side subscription so no orphaned subscription keeps notifying
+            await this.client.unsubscribeResource(params.uri).catch(() => {});
+            throw error;
+          }
           break;
         }
 
         case 'unsubscribeResource': {
           const params = message.params as { uri: string };
-          result = await this.client.unsubscribeResource(params.uri);
+          if (!this.resourceSync) {
+            throw new NetworkError('MCP client not connected');
+          }
+          // Remove the local subscription first (throws ClientError when unknown) —
+          // this alone guarantees the file stops being rewritten. The synced file is kept.
+          const entry = await this.resourceSync.remove(params.uri);
+          // Best-effort server-side unsubscribe; local sync is already stopped, so a
+          // server error (e.g. lost subscription state) must not fail the command.
+          await this.client.unsubscribeResource(params.uri).catch((error) => {
+            logger.warn(
+              `Server unsubscribe failed for ${params.uri} (local sync stopped anyway):`,
+              error
+            );
+          });
+          result = { uri: params.uri, file: entry.filePath };
           break;
         }
 

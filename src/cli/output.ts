@@ -22,6 +22,7 @@ import type {
   ServerDetails,
   Task,
   CallToolResult,
+  ResourceSubscriptionEntry,
 } from '../lib/types.js';
 import { extractAllTextContent } from './tool-result.js';
 import { getSession } from '../lib/sessions.js';
@@ -712,6 +713,33 @@ export function formatToolCallExample(tool: Tool, sessionName?: string): string 
 }
 
 /**
+ * Format time ago in human-friendly way
+ */
+export function formatTimeAgo(isoDate: string | undefined): string {
+  if (!isoDate) return '';
+
+  const date = new Date(isoDate);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffSecs = Math.floor(diffMs / 1000);
+  const diffMins = Math.floor(diffSecs / 60);
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffSecs < 60) return 'just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays === 1) return 'yesterday';
+  if (diffDays < 7) return `${diffDays} days ago`;
+  if (diffDays < 30) {
+    const weeks = Math.floor(diffDays / 7);
+    return `${weeks} ${weeks === 1 ? 'week' : 'weeks'} ago`;
+  }
+  const months = Math.floor(diffDays / 30);
+  return `${months} ${months === 1 ? 'month' : 'months'} ago`;
+}
+
+/**
  * Format a list of resources with Markdown-like display
  */
 export function formatResources(resources: Resource[]): string {
@@ -823,6 +851,61 @@ export function formatResourceTemplateDetail(template: ResourceTemplate): string
   }
 
   return lines.join('\n');
+}
+
+/**
+ * Format the contents of a `resources/read` result for human display
+ * (the default `resources-read` view). Text content is shown in a fenced
+ * block; binary (blob) content is summarized — never dumped to the terminal.
+ */
+export function formatResourceContents(
+  requestedUri: string,
+  result: ReadResourceResult,
+  options?: { sessionName?: string; maxChars?: number }
+): string {
+  const lines: string[] = [];
+
+  if (result.contents.length === 0) {
+    lines.push(chalk.gray('(resource returned no contents)'));
+  }
+
+  result.contents.forEach((item, index) => {
+    if (index > 0) {
+      lines.push('');
+      lines.push(chalk.dim('---'));
+    }
+
+    lines.push(`${chalk.bold('Resource:')} ${inBackticks(item.uri || requestedUri)}`);
+    if (item.mimeType) {
+      lines.push(`${chalk.bold('MIME type:')} ${theme.yellow(item.mimeType)}`);
+    }
+
+    if ('text' in item && typeof item.text === 'string') {
+      lines.push('');
+      lines.push(chalk.gray('````'));
+      lines.push(item.text);
+      lines.push(chalk.gray('````'));
+    } else if ('blob' in item && typeof item.blob === 'string') {
+      const bytes = Buffer.from(item.blob, 'base64').length;
+      const target = options?.sessionName || '<@session>';
+      lines.push(`${chalk.bold('Size:')} ${bytes} bytes (binary)`);
+      lines.push('');
+      lines.push(chalk.gray('(binary content not shown)'));
+      lines.push(
+        chalk.dim(
+          `  ↳ save to a file: mcpc ${target} resources-read ${item.uri || requestedUri} -o <file>`
+        )
+      );
+    } else {
+      lines.push(chalk.gray('(no content)'));
+    }
+  });
+
+  let output = lines.join('\n');
+  if (options?.maxChars) {
+    output = truncateOutput(output, options.maxChars);
+  }
+  return output;
 }
 
 /**
@@ -1509,7 +1592,8 @@ export function formatJsonError(error: Error, code: number): string {
 export function formatServerDetails(
   details: ServerDetails,
   target: string,
-  tools?: Tool[]
+  tools?: Tool[],
+  resourceSubscriptions?: ResourceSubscriptionEntry[]
 ): string {
   const lines: string[] = [];
   const bullet = chalk.dim('*');
@@ -1609,6 +1693,20 @@ export function formatServerDetails(
     lines.push('');
   }
 
+  // Active resource→file syncs created with resources-subscribe
+  if (resourceSubscriptions && resourceSubscriptions.length > 0) {
+    lines.push(chalk.bold('Resource subscriptions:'));
+    for (const sub of resourceSubscriptions) {
+      const status = sub.lastError
+        ? theme.red(`sync failing: ${sub.lastError}`)
+        : sub.lastSyncedAt
+          ? chalk.dim(`synced ${formatTimeAgo(sub.lastSyncedAt)}`)
+          : chalk.dim('not synced yet');
+      lines.push(`${bullet} ${inBackticks(sub.uri)} → ${sub.filePath} (${status})`);
+    }
+    lines.push('');
+  }
+
   // Tools list (from bridge cache, no extra server call)
   if (tools && tools.length > 0) {
     lines.push(formatToolsCompact(tools, { sessionName: target }));
@@ -1628,7 +1726,10 @@ export function formatServerDetails(
 
   if (capabilities?.resources) {
     commands.push(`${bullet} ${bt}mcpc ${target} resources-list${bt}`);
-    commands.push(`${bullet} ${bt}mcpc ${target} resources-read <uri>${bt}`);
+    commands.push(`${bullet} ${bt}mcpc ${target} resources-read <uri> [-o <file>]${bt}`);
+    if (capabilities.resources.subscribe) {
+      commands.push(`${bullet} ${bt}mcpc ${target} resources-subscribe <uri> <file>${bt}`);
+    }
   }
 
   // Surface skills commands when the server advertises the extension, OR
