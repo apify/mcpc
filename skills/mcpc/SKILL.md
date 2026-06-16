@@ -1,7 +1,7 @@
 ---
 name: mcpc
 description: Use the mcpc CLI to work with MCP (Model Context Protocol) servers from the shell - connect to a server as a persistent session, then list and call tools, read resources, get prompts, and run async tasks. Use --json for scripting and code mode. Reach for this whenever interacting with MCP servers, calling MCP tools, or accessing MCP resources programmatically.
-allowed-tools: Bash(mcpc:*), Bash(node dist/cli/index.js:*), Read, Grep
+allowed-tools: Bash(mcpc:*), Read, Grep
 ---
 
 # mcpc: MCP command-line client
@@ -185,14 +185,31 @@ mcpc @sandboxed tools-list
 A proxy does not make an untrusted server safe — stdio servers still touch your system,
 and HTTP servers still hold your credentials. Only connect to servers you trust.
 
-## Agent skills (experimental)
+## Server-published skills (experimental)
 
-Some servers publish agent skills (draft MCP extension, SEP-2640):
+Distinct from this guide: some MCP **servers** publish their own agent skills
+(draft MCP extension, SEP-2640). Read them with:
 
 ```bash
 mcpc @apify skills-list
 mcpc @apify skills-get <name> --raw    # print the SKILL.md markdown (pipe to a file or an LLM)
 ```
+
+(`mcpc guide` documents mcpc itself; `skills-list` / `skills-get` fetch skills from the server.)
+
+## Global flags worth knowing
+
+```bash
+--json                  # machine-readable, MCP-spec-shaped output (code mode)
+--verbose               # protocol-level debug logging (JSON-RPC, transport)
+--profile <name>        # OAuth profile to use ("default" if omitted)
+--no-profile            # connect anonymously, ignoring saved profiles
+--timeout <seconds>     # request timeout (default: 300)
+--max-chars <n>         # truncate human-readable output to n chars (ignored with --json)
+--insecure              # skip TLS verification (self-signed certs only)
+```
+
+`mcpc` also has experimental `--x402` auto-payment for paid MCP tools — see `mcpc help x402`.
 
 ## Debugging
 
@@ -211,7 +228,10 @@ mcpc clean                                # tidy stale sessions/logs (also: mcpc
 - `3` — network error
 - `4` — authentication error
 
-## Example script
+## Full reference
 
-See [`docs/examples/company-lookup.sh`](../examples/company-lookup.sh) for a complete,
-AI-generated "code mode" script that validates prerequisites and calls MCP tools with `--json`.
+Everything above plus the complete command/flag listing for every command:
+
+```bash
+mcpc guide --full
+```

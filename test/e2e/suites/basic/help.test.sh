@@ -26,6 +26,48 @@ assert_success
 assert_contains "$STDOUT" "--help"
 test_pass
 
+# Test: --help points AI agents at the guide
+test_case "--help points agents at mcpc guide"
+run_mcpc --help
+assert_success
+assert_contains "$STDOUT" "mcpc guide"
+test_pass
+
+# =============================================================================
+# guide command
+# =============================================================================
+
+# Test: mcpc guide prints the usage guide
+test_case "guide prints the usage guide"
+run_mcpc guide
+assert_success
+assert_contains "$STDOUT" "name: mcpc"
+assert_contains "$STDOUT" "Mental model"
+test_pass
+
+# Test: mcpc guide --full appends the command reference
+test_case "guide --full appends the command reference"
+run_mcpc guide --full
+assert_success
+assert_contains "$STDOUT" "Mental model"
+assert_contains "$STDOUT" "full command reference"
+test_pass
+
+# Test: mcpc guide --json wraps the guide
+test_case "guide --json wraps the guide"
+run_mcpc guide --json
+assert_success
+assert_json_valid "$STDOUT"
+assert_json "$STDOUT" '.content'
+test_pass
+
+# Test: mcpc guide --path prints the shipped guide directory
+test_case "guide --path prints a skills/mcpc directory"
+run_mcpc guide --path
+assert_success
+assert_contains "$STDOUT" "skills/mcpc"
+test_pass
+
 # Test: --version shows version
 test_case "--version shows version"
 run_mcpc --version

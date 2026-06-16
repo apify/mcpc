@@ -128,11 +128,17 @@ mcpc @fs tools-list
 <!-- AUTO-GENERATED: mcpc --help -->
 
 ```
+Start here (AI agents): run mcpc guide for a compact, version-matched guide to
+  using mcpc — mental model, common workflows, and code-mode examples. Read it before
+  driving mcpc. Add --full to also get the complete command reference.
+
 Usage: mcpc [<@session>] [<command>] [options]
 
 Universal command-line client for the Model Context Protocol (MCP).
 
 Commands:
+  guide                          Print the agent usage guide (mental model, workflows, code-mode
+                                 examples)
   connect [<server>] [@session]  Connect to an MCP server and start a new named @session
   close <@session>               Close a session
   restart <@session>             Restart a session (losing all state)
@@ -679,12 +685,29 @@ and both can easily perform destructive actions or leak credentials on their own
 
 ### Agent skills
 
-To help Claude Code use `mcpc`, you can install this [Claude skill](./docs/claude-skill/README.md):
+`mcpc` ships a built-in agent guide that always matches the installed version:
 
-<!-- TODO: Add also AGENTS.md, GitHub skills etc. -->
+```bash
+mcpc guide            # mental model, common workflows, code-mode examples
+mcpc guide --full     # everything above plus the complete command reference
+```
 
-`mcpc` also acts as a **client for skills served by MCP servers** (experimental, SEP-2640) — see
-[Skills](#skills) for the `skills-list` / `skills-get` commands.
+No setup is needed: `mcpc --help` points AI agents at `mcpc guide`, so an agent discovers and
+loads the guide on its own before driving the CLI.
+
+If you'd rather have the skill installed persistently (e.g. for Claude Code or any agent that
+loads `SKILL.md` files), `mcpc guide` prints a valid `SKILL.md` — just redirect it into your
+skills directory:
+
+```bash
+mkdir -p ~/.claude/skills/mcpc
+mcpc guide > ~/.claude/skills/mcpc/SKILL.md
+```
+
+That copy is a snapshot; re-run it after upgrading mcpc to refresh it.
+
+Separately, `mcpc` also acts as a **client for skills served by MCP servers** (experimental,
+SEP-2640) — see [Skills](#skills) for the `skills-list` / `skills-get` commands.
 
 ## Agentic payments (x402)
 
