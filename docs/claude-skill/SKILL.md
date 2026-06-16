@@ -130,9 +130,10 @@ mcpc --json @apify tools-call search-actors keywords:="scraper" \
 
 ```bash
 mcpc @apify resources-list
-mcpc @apify resources-read "file:///path/to/file"   # -o <file> to save, --max-size <bytes>
+mcpc @apify resources-read "file:///path/to/file"   # -o <file> to save (binary-safe), --raw to pipe
 mcpc @apify resources-templates-list
-mcpc @apify resources-subscribe <uri>               # and resources-unsubscribe <uri>
+mcpc @apify resources-subscribe <uri> <file>        # keep local <file> in sync with the resource
+mcpc @apify resources-unsubscribe <uri>             # stop syncing, keep the file
 
 mcpc @apify prompts-list
 mcpc @apify prompts-get <name> arg1:=value1         # same argument styles as tools-call

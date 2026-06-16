@@ -304,7 +304,10 @@ export async function getSkill(
 ): Promise<void> {
   const uri = resolveSkillUri(name);
 
-  await withMcpClient(target, options, async (client) => {
+  // --raw output must stay bare for piping — suppress the [session] prefix line
+  const clientOptions = options.raw ? { ...options, hideTarget: true } : options;
+
+  await withMcpClient(target, clientOptions, async (client) => {
     const result = await client.readResource(uri);
 
     if (options.outputMode === 'json') {

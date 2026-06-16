@@ -82,7 +82,6 @@ const OPTIONS_WITH_VALUES = [
   '--callback-port',
   '-o',
   '--output',
-  '--max-size',
   '--amount',
   '--expiry',
 ];

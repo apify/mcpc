@@ -445,8 +445,8 @@ ${chalk.bold('MCP session commands (after connecting):')}
   <@session> ${theme.cyan('prompts-list')}
   <@session> ${theme.cyan('prompts-get')} <name> [arg:=val ... | <json> | <stdin]
   <@session> ${theme.cyan('resources-list')}
-  <@session> ${theme.cyan('resources-read')} <uri>
-  <@session> ${theme.cyan('resources-subscribe')} <uri>
+  <@session> ${theme.cyan('resources-read')} <uri> [-o <file> | --raw]
+  <@session> ${theme.cyan('resources-subscribe')} <uri> <file>
   <@session> ${theme.cyan('resources-unsubscribe')} <uri>
   <@session> ${theme.cyan('resources-templates-list')}
   <@session> ${theme.cyan('skills-list')}
@@ -1177,36 +1177,59 @@ ${toolsCallCombinedJsonHelp}`
   program
     .command('resources-read <uri>')
     .description('Read an MCP resource by URI.')
-    .option('-o, --output <file>', 'Write resource to file')
-    .option('--max-size <bytes>', 'Maximum resource size in bytes')
+    .option('-o, --output <file>', 'Save the resource to a file (decodes binary content)')
+    .option('--raw', 'Print only the resource content, suitable for piping')
     .addHelpText(
       'after',
-      jsonHelp(
-        '`ReadResourceResult` object',
-        '`{ contents: [{ uri, mimeType?, text? | blob? }] }`',
-        `${SCHEMA_BASE}#readresourceresult`
-      )
+      `
+${chalk.bold('Output:')}
+  Default: pretty view; binary (blob) content is summarized, never dumped.
+  --raw prints the bare content (binary requires a redirect or -o).
+  -o <file> saves the content; base64 \`blob\` data is decoded to bytes.
+  If the server returns multiple content items, --raw and -o use the item
+  matching <uri> (or the first one) — use --json to get all items.
+${jsonHelp(
+  '`ReadResourceResult` object',
+  '`{ contents: [{ uri, mimeType?, text? | blob? }] }`',
+  `${SCHEMA_BASE}#readresourceresult`
+)}
+  With \`-o\`: \`{ uri, file, bytes, mimeType? }\` summary instead.
+`
     )
     .action(async (uri, options, command) => {
       await resources.getResource(session, uri, {
         output: options.output,
-        maxSize: options.maxSize,
+        ...(options.raw && { raw: true }),
         ...getOptionsFromCommand(command),
       });
     });
 
   program
-    .command('resources-subscribe <uri>')
-    .description('Subscribe to MCP resource updates.')
-    .addHelpText('after', jsonHelp('`{ subscribed: true, uri: string }`'))
-    .action(async (uri, _options, command) => {
-      await resources.subscribeResource(session, uri, getOptionsFromCommand(command));
+    .command('resources-subscribe <uri> <file>')
+    .description('Subscribe to an MCP resource and keep a local file in sync with it.')
+    .addHelpText(
+      'after',
+      `
+${chalk.bold('Behavior:')}
+  Downloads the resource to <file> now; afterwards the session bridge rewrites
+  the file whenever the server announces a change for <uri> (the MCP
+  notifications/resources/updated flow). Requires the server capability
+  \`resources.subscribe\` — check with \`mcpc ${session}\`. Subscriptions are
+  re-established automatically when the session reconnects or restarts.
+  Subscribing to the same <uri> again just changes the target <file>.
+
+${chalk.bold('Example:')}
+  mcpc ${session} resources-subscribe file:///app/config.json ./config.json
+${jsonHelp('`{ subscribed: true, uri, file, bytes, mimeType? }`')}`
+    )
+    .action(async (uri, file, _options, command) => {
+      await resources.subscribeResource(session, uri, file, getOptionsFromCommand(command));
     });
 
   program
     .command('resources-unsubscribe <uri>')
-    .description('Unsubscribe from MCP resource updates.')
-    .addHelpText('after', jsonHelp('`{ unsubscribed: true, uri: string }`'))
+    .description('Stop syncing a subscribed MCP resource (keeps the local file).')
+    .addHelpText('after', jsonHelp('`{ unsubscribed: true, uri, file }`'))
     .action(async (uri, _options, command) => {
       await resources.unsubscribeResource(session, uri, getOptionsFromCommand(command));
     });

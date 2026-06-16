@@ -26,6 +26,8 @@ import type {
   GetTaskResult,
   ListTasksResult,
   CancelTaskResult,
+  ResourceSyncResult,
+  ResourceUnsubscribeResult,
 } from './types.js';
 import type { ListResourceTemplatesResult } from '@modelcontextprotocol/sdk/types.js';
 import { BridgeClient } from './bridge-client.js';
@@ -208,22 +210,37 @@ export class SessionClient implements IMcpClient {
     );
   }
 
-  async subscribeResource(uri: string): Promise<void> {
+  /**
+   * Subscribe to a resource and keep a local file in sync with it.
+   * The bridge performs an initial download to filePath and rewrites the file
+   * whenever the server sends notifications/resources/updated for the URI.
+   *
+   * @param filePath - Absolute target path (resolve user input in the CLI —
+   *   the bridge process has a different cwd)
+   */
+  async subscribeResource(uri: string, filePath: string): Promise<ResourceSyncResult> {
     return this.withRetry(
       () =>
-        this.bridgeClient
-          .request('subscribeResource', { uri }, this.requestTimeout)
-          .then(() => undefined),
+        this.bridgeClient.request(
+          'subscribeResource',
+          { uri, filePath },
+          this.requestTimeout
+        ) as Promise<ResourceSyncResult>,
       'subscribeResource'
     );
   }
 
-  async unsubscribeResource(uri: string): Promise<void> {
+  /**
+   * Stop syncing a subscribed resource. The synced file is kept as-is.
+   */
+  async unsubscribeResource(uri: string): Promise<ResourceUnsubscribeResult> {
     return this.withRetry(
       () =>
-        this.bridgeClient
-          .request('unsubscribeResource', { uri }, this.requestTimeout)
-          .then(() => undefined),
+        this.bridgeClient.request(
+          'unsubscribeResource',
+          { uri },
+          this.requestTimeout
+        ) as Promise<ResourceUnsubscribeResult>,
       'unsubscribeResource'
     );
   }
@@ -475,7 +492,7 @@ export async function createSessionClient(
  */
 export async function withSessionClient<T>(
   sessionName: string,
-  callback: (client: IMcpClient) => Promise<T>,
+  callback: (client: SessionClient) => Promise<T>,
   options?: { timeout?: number }
 ): Promise<T> {
   const client = await createSessionClient(sessionName, options?.timeout);

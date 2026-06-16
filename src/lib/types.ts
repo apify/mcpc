@@ -177,6 +177,7 @@ export interface SessionData {
   proxy?: ProxyConfig; // Proxy server configuration (if enabled)
   notifications?: SessionNotifications; // Last list change notification timestamps
   activeTasks?: Record<string, ActiveTaskEntry>; // Active async tasks for crash recovery
+  resourceSubscriptions?: Record<string, ResourceSubscriptionEntry>; // Resource→file syncs, keyed by URI
   // Timestamps (ISO 8601 strings)
   createdAt: string; // When the session was created
   lastSeenAt?: string; // Last successful server response (ping, command, etc.)
@@ -190,6 +191,38 @@ export interface ActiveTaskEntry {
   taskId: string;
   toolName: string;
   createdAt: string;
+}
+
+/**
+ * A resource subscription that keeps a local file in sync with a server resource.
+ * Created by `resources-subscribe <uri> <file>`. The bridge re-reads the resource
+ * and rewrites the file whenever the server sends `notifications/resources/updated`.
+ * Persisted in sessions.json so subscriptions survive bridge restarts.
+ */
+export interface ResourceSubscriptionEntry {
+  uri: string;
+  filePath: string; // Absolute path of the local sync target
+  subscribedAt: string; // ISO 8601
+  lastSyncedAt?: string; // ISO 8601 — last successful file write
+  lastError?: string; // Last sync/re-subscribe failure (cleared on next success)
+}
+
+/**
+ * Result of subscribing a resource to a local file (returned by the bridge)
+ */
+export interface ResourceSyncResult {
+  uri: string;
+  file: string; // Absolute path of the local sync target
+  bytes: number; // Size of the synced content in bytes
+  mimeType?: string;
+}
+
+/**
+ * Result of unsubscribing a resource (returned by the bridge; the file is kept)
+ */
+export interface ResourceUnsubscribeResult {
+  uri: string;
+  file: string; // Absolute path of the local file that is kept
 }
 
 /**
@@ -399,8 +432,9 @@ export interface IMcpClient {
   listResources(cursor?: string): Promise<ListResourcesResult>;
   listResourceTemplates(cursor?: string): Promise<ListResourceTemplatesResult>;
   readResource(uri: string): Promise<ReadResourceResult>;
-  subscribeResource(uri: string): Promise<void>;
-  unsubscribeResource(uri: string): Promise<void>;
+  // Note: resource subscriptions (resources-subscribe/-unsubscribe) are not part of this
+  // interface — they sync files via the persistent bridge process and live on SessionClient.
+  // McpClient keeps the raw protocol ops (subscribeResource/unsubscribeResource) for the bridge.
   listPrompts(cursor?: string): Promise<ListPromptsResult>;
   getPrompt(name: string, args?: Record<string, string>): Promise<GetPromptResult>;
   setLoggingLevel(level: LoggingLevel): Promise<void>;

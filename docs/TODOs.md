@@ -62,10 +62,6 @@ Syntax errors: mcpc call linear_list_issues instead of mcpc @linear tools-call l
 
 - Unify colors used across all helps and commands for: profile (violet), commands (turqois?), session, tool names, param names
 
-- Implement resources-subscribe/resources-unsubscribe, --o file command properly, --max-size
-  automatically update the -o file on changes, without it just keep track of changed files in
-  bridge process' cache, and report in resources-list/resources-read operatio
-
 - Add support for "mcpc close @session" and "mcpc restart @session" aliases - add info only to "mcpc help restart" or "mcpc 
   help close", no need to mention this in main --help
   

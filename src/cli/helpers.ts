@@ -3,7 +3,9 @@
  * Provides target resolution and MCP client management
  */
 
-import type { IMcpClient, OutputMode, ServerConfig } from '../lib/types.js';
+import type { OutputMode, ServerConfig } from '../lib/types.js';
+// Type-only import — the runtime module is still loaded lazily inside withMcpClient
+import type { SessionClient } from '../lib/session-client.js';
 import { ClientError } from '../lib/errors.js';
 import { normalizeServerUrl, isValidSessionName, getServerHost } from '../lib/utils.js';
 import { setVerbose, createLogger } from '../lib/logger.js';
@@ -144,6 +146,9 @@ export interface McpClientContext {
  * Execute an operation with an MCP client via a named session
  * The target must be a valid session name (starts with @)
  *
+ * The callback receives the concrete SessionClient (which implements IMcpClient),
+ * so session-only operations like resource subscriptions are available too.
+ *
  * @param target - Session name (e.g. @apify)
  * @param options - CLI options (verbose, outputMode, etc.)
  * @param callback - Async function that receives the connected client and context
@@ -156,7 +161,7 @@ export async function withMcpClient<T>(
     hideTarget?: boolean;
     timeout?: number;
   },
-  callback: (client: IMcpClient, context: McpClientContext) => Promise<T>
+  callback: (client: SessionClient, context: McpClientContext) => Promise<T>
 ): Promise<T> {
   if (!isValidSessionName(target)) {
     throw new ClientError(

@@ -549,7 +549,7 @@ On failure, the error message includes instructions on how to login. This ensure
 
 All state files are stored in `~/.mcpc/` directory (unless overridden by `MCPC_HOME_DIR` environment variable):
 
-- `~/.mcpc/sessions.json` - Active sessions with references to auth profiles and active async tasks (file-locked for concurrent access)
+- `~/.mcpc/sessions.json` - Active sessions with references to auth profiles, active async tasks, and resource subscriptions (file-locked for concurrent access)
 - `~/.mcpc/profiles.json` - Authentication profiles (OAuth metadata, scopes, expiry)
 - `~/.mcpc/bridges/` - Unix domain socket files for bridge processes
 - `~/.mcpc/logs/bridge-<session>.log` - Bridge process logs (max 10MB, 5 files)
@@ -678,6 +678,11 @@ Bridge logs location: `~/.mcpc/logs/bridge-<session>.log`
 - **Notification Handling**: Full notification support in the bridge process
   - `tools/list_changed`, `resources/list_changed`, `prompts/list_changed` notifications
   - Automatic cache invalidation on list changes, timestamps tracked in `sessions.json`
+  - `resources/updated` notifications drive resource→file sync for `resources-subscribe`
+- **Resource Subscriptions**: `resources-subscribe <uri> <file>` keeps a local file in sync
+  - Bridge downloads the resource on subscribe and rewrites the file on each `notifications/resources/updated` (re-reads the resource; the notification carries no content)
+  - Subscriptions persisted in `sessions.json` (`resourceSubscriptions`), re-established and re-synced on bridge restart
+  - `resources-unsubscribe <uri>` stops the sync and keeps the file; sync state shown in `mcpc @session`
 - **Error Recovery**: Automatic recovery from failures
   - Bridge crash detection and automatic restart
   - Socket reconnection with preserved session state
@@ -695,7 +700,6 @@ Bridge logs location: `~/.mcpc/logs/bridge-<session>.log`
 
 - **Package Resolution**: Find and run local MCP packages automatically
 - **Tab Completion**: Shell completions for commands, tool names, and resource URIs
-- **Resource File Output**: `-o <file>` flag for `resources-read` command
 
 ### 📋 Implementation Approach
 

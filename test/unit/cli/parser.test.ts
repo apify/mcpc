@@ -342,7 +342,6 @@ describe('optionTakesValue', () => {
     expect(optionTakesValue('--client-secret')).toBe(true);
     expect(optionTakesValue('-o')).toBe(true);
     expect(optionTakesValue('--output')).toBe(true);
-    expect(optionTakesValue('--max-size')).toBe(true);
     expect(optionTakesValue('--amount')).toBe(true);
     expect(optionTakesValue('--expiry')).toBe(true);
   });
@@ -420,9 +419,9 @@ describe('validateOptions', () => {
     expect(() => validateOptions(['login', 'mcp.apify.com', '--scope', 'read'])).not.toThrow();
     // --amount, --expiry for x402 sign
     expect(() => validateOptions(['x402', 'sign', 'data', '--amount', '1.0'])).not.toThrow();
-    // -o/--output, --max-size for resources-read
+    // -o/--output for resources-read
     expect(() =>
-      validateOptions(['@session', 'resources-read', 'uri', '-o', 'out.txt', '--max-size', '1024'])
+      validateOptions(['@session', 'resources-read', 'uri', '-o', 'out.txt'])
     ).not.toThrow();
   });
 
