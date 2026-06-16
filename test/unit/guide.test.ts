@@ -3,8 +3,8 @@
  *
  * Doubles as a guard: `guideDir()` resolves the shipped guide relative to the
  * module, so these tests fail loudly if `skills/mcpc/SKILL.md` goes missing or
- * the relative path breaks (e.g. someone adds a `files` allowlist that drops
- * `skills/`). The published-tarball layout is verified separately via packing.
+ * the relative path breaks. That the file is actually included in the published
+ * npm tarball is verified by packaging.test.ts.
  */
 
 import { existsSync, readFileSync } from 'fs';
