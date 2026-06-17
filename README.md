@@ -8,19 +8,23 @@
 [![License](https://img.shields.io/npm/l/@apify/mcpc.svg)](https://github.com/apify/mcpc/blob/main/LICENSE)
 
 `mcpc` is a command-line client for the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)
-that maps MCP operations to intuitive commands for interactive shell use, scripting, and AI agents.
+that maps every MCP operation to an intuitive command for interactive shell use, scripting, and AI agents.
+Connect to any MCP server over stdio or Streamable HTTP, log in with OAuth 2.1 or bearer tokens, keep
+long-lived sessions to many servers alive in parallel, and drive their tools, resources, prompts, and
+async tasks, all from your terminal, with readable output by default and clean `--json` for scripts.
 
-`mcpc` is your new Swiss Army knife for MCP. It's great for manual inspection and debugging of MCP servers,
-as well as for agents to leverage all modern MCP capabilities through the most universal
-coding interface: the UNIX shell.
+`mcpc` is your new Swiss Army knife for MCP. Reach for it to manually inspect and debug MCP servers,
+to script repeatable MCP workflows in plain shell, or to give AI coding agents the full power of modern
+MCP through the most universal interface there is: the UNIX shell. No SDK, no boilerplate, no glue code.
+Just one command that humans and agents alike can pick up from `--help` alone.
 
 **Key features:**
 
-- 🔧 **Full MCP support** - HTTP/stdio transports, instructions, tools, async tasks, resources, prompts, ...
-- 🔄 **Persistent sessions** - Keep multiple stateful connections alive simultaneously.
+- 🔧 **Full MCP support** - Tools, prompts, resources, async tasks, skills, notifications, and logging over stdio and Streamable HTTP.
+- 🔄 **Persistent sessions** - Keep multiple stateful connections to different servers alive in parallel.
 - 🗺️ **Progressive tool discovery** - Find relevant MCP tools on the fly to save tokens and increase accuracy.
 - 🔌 **Code mode** - JSON output composes with `jq`, `xargs`, and shell pipelines for MCP workflows as shell scripts.
-- 🔒 **Secure** - Full OAuth 2.1 support with CMID and DCR, uses OS keychain for credentials storage.
+- 🔒 **Secure** - Full OAuth 2.1 support with CIMD and DCR, uses OS keychain for credentials storage.
 - 🤖 **AI sandboxing** - Proxy MCP server connections to protect credentials from AI-generated code.
 - 🪶 **Lightweight** - Minimal dependencies, works on Mac/Win/Linux, doesn't use LLMs on its own.
 - 💸 **Agentic payments** - Experimental support for the [x402](https://www.x402.org/) protocol on [Base](https://www.base.org/).
@@ -790,7 +794,11 @@ If any request returns HTTP 402, the middleware transparently signs and retries.
 
 ## MCP support
 
-`mcpc` is built on the official [MCP SDK for TypeScript](https://github.com/modelcontextprotocol/typescript-sdk) and supports most [MCP protocol features](https://modelcontextprotocol.io/specification/latest).
+`mcpc` aims to be the most complete MCP client on the command line. It's built on the official
+[MCP SDK for TypeScript](https://github.com/modelcontextprotocol/typescript-sdk) and supports all the
+major client-facing features of the [MCP specification](https://modelcontextprotocol.io/specification/latest),
+from tools, resources, and prompts to the newest additions like async tasks and skills. Each is exposed as
+a first-class command with consistent human-readable and `--json` output.
 
 ### Transport
 
@@ -818,6 +826,8 @@ The bridge process manages the full MCP session lifecycle:
 - Recovers transparently from network disconnections and bridge process crashes
 
 ### MCP feature support
+
+Where `mcpc` stands on each part of the MCP specification:
 
 | **Feature**                                        | **Status**                         |
 | :------------------------------------------------- | :--------------------------------- |
@@ -882,16 +892,16 @@ and includes the `_mcpc` field with relevant server/session metadata.
 
 #### Tools
 
-List, inspect, and call server-provided tools:
+Tools are the heart of MCP, and `mcpc` gives you the whole toolbox to discover, inspect, validate, and call them:
 
 ```bash
-# List available tools (only names and attributes - useful for dynamic discovery)
+# List tools (compact view): names, one-line descriptions, and safety/task hints
 mcpc @apify tools-list
 
-# List available tools (full details including input/output args and description)
+# List tools with full input/output schemas and descriptions
 mcpc @apify tools-list --full
 
-# Get tool schema with full details
+# Inspect a single tool's schema, annotations, and a ready-to-run example
 mcpc @apify tools-get search-actors
 
 # Call a tool with arguments
@@ -903,6 +913,28 @@ mcpc @apify tools-call create-task '{"name": "my-task", "options": {"memory": 10
 # Load arguments from stdin
 cat data.json | mcpc @apify tools-call bulk-import
 ```
+
+The compact `tools-list` is built for **[progressive tool discovery](#grep-search-across-sessions)**:
+instead of loading every tool's full schema into an agent's context up front, list just names and
+summaries, use `mcpc grep` to find the right tool for the task, and pull its full schema with
+`tools-get` only when you need it. Fewer tokens, less context rot, better accuracy. And listings never
+go stale: the [session](#sessions) bridge handles `tools/list_changed`
+[notifications](#list-change-notifications) and refreshes its cache automatically, so you always see the
+server's current tools.
+
+`mcpc` surfaces everything modern MCP tools can express:
+
+- **Safety annotations**: `read-only`, `destructive`, `idempotent`, and `open-world` hints are shown
+  right next to each tool, so a human or an agent can tell a harmless query from a dangerous mutation
+  before calling it.
+- **Structured output**: `structuredContent` is pretty-printed as JSON and output schemas are shown
+  with `--full`, so scripts can rely on machine-readable results, not just text.
+- **Rich result content**: text, images, audio, and [resource links or embedded resources](#resources)
+  in tool results are all rendered (binary is summarized, never dumped to your terminal).
+- **Async tasks**: long-running tools can run in the background as [async tasks](#async-tasks); each
+  tool's task support is flagged as `[task:optional]`, `[task:required]`, or `[task:forbidden]`.
+- **Schema validation**: pin a tool's schema with `--schema` to catch breaking changes in CI and
+  scripts before they bite (see [Schema validation](#schema-validation)).
 
 #### Prompts
 
@@ -1293,22 +1325,22 @@ See [CONTRIBUTING](./CONTRIBUTING.md) for development setup, architecture overvi
 
 ### MCP CLI clients
 
-<!-- Stars, contributors, commits, and activity as of May 2026. -->
+<!-- Stars, contributors, commits, and activity as of June 2026. -->
 
 | Tool                                                                    | Lang   | Stars | Contrib / Commits | Active | Tools | Resources | Prompts | Tasks | Code mode | Sessions | OAuth | Stdio | HTTP | Tool search | x402 | LLM |
 | ----------------------------------------------------------------------- | ------ | ----: | ----------------: | ------ | ----- | --------- | ------- | ----- | --------- | -------- | ----- | ----- | ---- | ----------- | ---- | --- |
-| **[apify/mcpc](https://github.com/apify/mcpc)**                         | TS     |  ~590 |          8 / ~640 | ✅     | ✅    | ✅        | ✅      | ✅    | ✅        | ✅       | ✅    | ✅    | ✅   | ✅          | ✅   | —   |
-| [steipete/mcporter](https://github.com/steipete/mcporter)               | TS     | ~4.4k |         29 / ~650 | ✅     | ✅    | —         | —       | —     | ✅        | ✅       | ✅    | ✅    | ✅   | —           | —    | —   |
-| [knowsuchagency/mcp2cli](https://github.com/knowsuchagency/mcp2cli)     | Python | ~2.1k |          11 / ~91 | ✅     | ✅    | ✅        | ✅      | —     | ✅        | ✅       | ✅    | ✅    | ✅   | ✅          | —    | —   |
-| [IBM/mcp-cli](https://github.com/IBM/mcp-cli)                           | Python | ~2.0k |         24 / ~790 | ✅     | ✅    | ✅        | ✅      | —     | ✅        | ✅       | ✅    | ✅    | ✅   | —           | —    | ✅  |
-| [f/mcptools](https://github.com/f/mcptools)                             | Go     | ~1.6k |         15 / ~175 | ⚠️     | ✅    | ✅        | ✅      | —     | ✅        | —        | —     | ✅    | ✅   | —           | —    | —   |
-| [philschmid/mcp-cli](https://github.com/philschmid/mcp-cli)             | TS     | ~1.1k |           3 / ~30 | ⚠️     | ✅    | —         | —       | —     | ✅        | ✅       | —     | ✅    | ✅   | ✅          | —    | —   |
-| [adhikasp/mcp-client-cli](https://github.com/adhikasp/mcp-client-cli)   | Python |  ~670 |          6 / ~110 | ⚠️     | ✅    | ✅        | ✅      | —     | —         | —        | —     | ✅    | —    | —           | —    | ✅  |
-| [thellimist/clihub](https://github.com/thellimist/clihub)               | Go     |  ~670 |           1 / ~60 | ✅     | ✅    | —         | —       | —     | —         | —        | ✅    | ✅    | ✅   | ✅          | —    | —   |
-| [wong2/mcp-cli](https://github.com/wong2/mcp-cli)                       | JS     |  ~430 |           4 / ~63 | ⚠️     | ✅    | ✅        | ✅      | —     | —         | —        | ✅    | —     | ✅   | —           | —    | —   |
-| [mcpshim/mcpshim](https://github.com/mcpshim/mcpshim)                   | Go     |   ~58 |           1 / ~13 | ✅     | ✅    | —         | —       | —     | ✅        | ✅       | ✅    | —     | ✅   | ✅          | —    | —   |
-| [evantahler/mcpx](https://github.com/evantahler/mcpx)                   | TS     |   ~32 |          2 / ~100 | ✅     | ✅    | ✅        | ✅      | ✅    | ✅        | —        | ✅    | ✅    | ✅   | ✅          | —    | —   |
-| [EstebanForge/mcp-cli-ent](https://github.com/EstebanForge/mcp-cli-ent) | Go     |   ~15 |           3 / ~46 | ✅     | ✅    | —         | —       | —     | ✅        | ✅       | —     | ✅    | ✅   | ✅          | —    | —   |
+| **[apify/mcpc](https://github.com/apify/mcpc)**                         | TS     |  ~690 |          9 / ~684 | ✅     | ✅    | ✅        | ✅      | ✅    | ✅        | ✅       | ✅    | ✅    | ✅   | ✅          | ✅   | —   |
+| [steipete/mcporter](https://github.com/steipete/mcporter)               | TS     | ~4.7k |         29 / ~712 | ✅     | ✅    | —         | —       | —     | ✅        | ✅       | ✅    | ✅    | ✅   | —           | —    | —   |
+| [knowsuchagency/mcp2cli](https://github.com/knowsuchagency/mcp2cli)     | Python | ~2.2k |          11 / ~94 | ✅     | ✅    | ✅        | ✅      | —     | ✅        | ✅       | ✅    | ✅    | ✅   | ✅          | —    | —   |
+| [IBM/mcp-cli](https://github.com/IBM/mcp-cli)                           | Python | ~2.0k |         24 / ~788 | ⚠️     | ✅    | ✅        | ✅      | —     | ✅        | ✅       | ✅    | ✅    | ✅   | —           | —    | ✅  |
+| [f/mcptools](https://github.com/f/mcptools)                             | Go     | ~1.6k |         15 / ~174 | ⚠️     | ✅    | ✅        | ✅      | —     | ✅        | —        | —     | ✅    | ✅   | —           | —    | —   |
+| [philschmid/mcp-cli](https://github.com/philschmid/mcp-cli)             | TS     | ~1.2k |           3 / ~30 | ⚠️     | ✅    | —         | —       | —     | ✅        | ✅       | —     | ✅    | ✅   | ✅          | —    | —   |
+| [adhikasp/mcp-client-cli](https://github.com/adhikasp/mcp-client-cli)   | Python |  ~680 |          6 / ~113 | ⚠️     | ✅    | ✅        | ✅      | —     | —         | —        | —     | ✅    | —    | —           | —    | ✅  |
+| [thellimist/clihub](https://github.com/thellimist/clihub)               | Go     |  ~670 |           1 / ~60 | ⚠️     | ✅    | —         | —       | —     | —         | —        | ✅    | ✅    | ✅   | ✅          | —    | —   |
+| [wong2/mcp-cli](https://github.com/wong2/mcp-cli)                       | JS     |  ~440 |           4 / ~67 | ✅     | ✅    | ✅        | ✅      | —     | —         | —        | ✅    | —     | ✅   | —           | —    | —   |
+| [mcpshim/mcpshim](https://github.com/mcpshim/mcpshim)                   | Go     |   ~61 |           1 / ~13 | ⚠️     | ✅    | —         | —       | —     | ✅        | ✅       | ✅    | —     | ✅   | ✅          | —    | —   |
+| [evantahler/mcpx](https://github.com/evantahler/mcpx)                   | TS     |   ~32 |          2 / ~108 | ✅     | ✅    | ✅        | ✅      | ✅    | ✅        | —        | ✅    | ✅    | ✅   | ✅          | —    | —   |
+| [EstebanForge/mcp-cli-ent](https://github.com/EstebanForge/mcp-cli-ent) | Go     |   ~15 |           3 / ~55 | ✅     | ✅    | —         | —       | —     | ✅        | ✅       | —     | ✅    | ✅   | ✅          | —    | —   |
 
 **Legend:** ✅ = supported, ⚠️ = stale (no commits in 3+ months), **Contrib / Commits** = contributors / total commits, **Tasks** = [async tasks](https://modelcontextprotocol.io/specification/latest/server/utilities/tasks), **x402** = [x402 payment protocol](https://www.x402.org/) support, **LLM** = requires/uses an LLM.
 
@@ -1327,9 +1359,9 @@ These resources describe the "code mode" pattern (replacing many tool definition
 - [Advanced tool use](https://www.anthropic.com/engineering/advanced-tool-use) - Anthropic's engineering post on tool search
   - [Claude tool search](https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool) - Claude platform docs
 - [Dynamic context discovery](https://cursor.com/blog/dynamic-context-discovery) - Cursor's approach to dynamic tool discovery
-- [cmcp](https://github.com/assimelha/cmcp) (~27 stars, Rust) - MCP proxy aggregating servers behind `search()` + `execute()`
-- [cloudflare-mcp](https://github.com/mattzcarey/cloudflare-mcp) (~124 stars, TS) - MCP server for the Cloudflare API using code mode
-- [infinite-mcp](https://github.com/day50-dev/infinite-mcp) (Python) - Meta-MCP server that exposes 1000+ pre-indexed MCP servers via semantic search and dynamic tool discovery
+- [cmcp](https://github.com/assimelha/cmcp) (~29 stars, Rust) - MCP proxy aggregating servers behind `search()` + `execute()`
+- [cloudflare-mcp](https://github.com/mattzcarey/cloudflare-mcp) (~129 stars, TS) - MCP server for the Cloudflare API using code mode
+- [infinite-mcp](https://github.com/day50-dev/infinite-mcp) (~6 stars, Python) - Meta-MCP server that exposes 1000+ pre-indexed MCP servers via semantic search and dynamic tool discovery
 
 ### Other
 
