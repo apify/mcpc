@@ -10,11 +10,18 @@ import {
   formatWarning,
   theme,
 } from '../output.js';
-import type { CommandOptions } from '../../lib/types.js';
+import type { CommandOptions, OutputMode } from '../../lib/types.js';
 import { deleteAuthProfiles } from '../../lib/auth/profiles.js';
 import { performOAuthFlow } from '../../lib/auth/oauth-flow.js';
 import { getServerHost, normalizeServerUrl, validateProfileName } from '../../lib/utils.js';
 import { DEFAULT_AUTH_PROFILE, DEFAULT_CLIENT_METADATA_URL } from '../../lib/auth/oauth-utils.js';
+import type { OAuthClientCredentialsInfo } from '../../lib/auth/keychain.js';
+import {
+  loginClientCredentials,
+  validateKeyAlgorithm,
+  resolvePrivateKeyPem,
+  DEFAULT_KEY_ALGORITHM,
+} from '../../lib/auth/client-credentials.js';
 
 /**
  * Authenticate with a server and create/update auth profile
@@ -24,8 +31,11 @@ export async function login(
   options: CommandOptions & {
     profile?: string;
     scope?: string;
+    grant?: string;
     clientId?: string;
     clientSecret?: string;
+    clientKey?: string;
+    clientKeyAlg?: string;
     clientMetadataUrl?: string | false;
     callbackPort?: number;
     callbackHost?: string;
@@ -36,6 +46,26 @@ export async function login(
     const profileName = options.profile || DEFAULT_AUTH_PROFILE;
 
     validateProfileName(profileName);
+
+    // Resolve the grant type (default: the interactive authorization-code flow).
+    const grant = options.grant ?? 'authorization-code';
+    if (grant !== 'authorization-code' && grant !== 'client-credentials') {
+      throw new Error(
+        `Invalid --grant "${grant}". Supported values: authorization-code (default), client-credentials.`
+      );
+    }
+
+    if (grant === 'client-credentials') {
+      await loginWithClientCredentials(normalizedUrl, profileName, options);
+      return;
+    }
+
+    // --- Interactive authorization-code flow (default) ---
+
+    // --client-key / --client-key-alg only apply to the client-credentials grant.
+    if (options.clientKey || options.clientKeyAlg) {
+      throw new Error('--client-key/--client-key-alg require --grant client-credentials');
+    }
 
     if (options.clientSecret && !options.clientId) {
       throw new Error('--client-secret requires --client-id');
@@ -134,6 +164,91 @@ export async function login(
       console.error(formatOutput({ error: errorMessage }, 'json'));
     }
     process.exit(4); // Authentication error
+  }
+}
+
+/**
+ * Non-interactive login using the OAuth client-credentials grant.
+ * Validates the supplied credentials against the server, stores them, and writes
+ * the profile. No browser and no user interaction. Throws on invalid flag
+ * combinations; the caller's try/catch maps errors to exit code 4.
+ */
+async function loginWithClientCredentials(
+  normalizedUrl: string,
+  profileName: string,
+  options: {
+    outputMode: OutputMode;
+    scope?: string;
+    clientId?: string;
+    clientSecret?: string;
+    clientKey?: string;
+    clientKeyAlg?: string;
+    clientMetadataUrl?: string | false;
+    callbackPort?: number;
+    callbackHost?: string;
+  }
+): Promise<void> {
+  if (!options.clientId) {
+    throw new Error('--grant client-credentials requires --client-id');
+  }
+
+  const clientSecret = options.clientSecret;
+  const clientKey = options.clientKey;
+  if (!!clientSecret === !!clientKey) {
+    throw new Error(
+      'With --grant client-credentials, provide exactly one of --client-secret ' +
+        '(client_secret_basic) or --client-key (private_key_jwt)'
+    );
+  }
+
+  // Browser-flow-only options have no meaning for the client-credentials grant.
+  if (typeof options.clientMetadataUrl === 'string') {
+    throw new Error('--client-metadata-url cannot be used with --grant client-credentials');
+  }
+  if (options.callbackPort !== undefined || options.callbackHost !== undefined) {
+    throw new Error(
+      '--callback-port/--callback-host cannot be used with --grant client-credentials'
+    );
+  }
+
+  const info: OAuthClientCredentialsInfo = { clientId: options.clientId };
+  if (options.scope) {
+    info.scope = options.scope;
+  }
+  if (clientSecret) {
+    info.clientSecret = clientSecret;
+  } else if (clientKey) {
+    const alg = options.clientKeyAlg || DEFAULT_KEY_ALGORITHM;
+    validateKeyAlgorithm(alg);
+    info.privateKeyPem = await resolvePrivateKeyPem(clientKey);
+    info.keyAlg = alg;
+  }
+
+  if (options.outputMode === 'human') {
+    console.log(formatInfo(`Authenticating with client-credentials grant for ${normalizedUrl}`));
+    console.log(formatInfo(`Profile: ${theme.magenta(profileName)}`));
+  }
+
+  const result = await loginClientCredentials(normalizedUrl, profileName, info);
+
+  if (options.outputMode === 'human') {
+    console.log(formatSuccess('Authentication successful!'));
+    console.log(formatInfo(`Profile ${theme.magenta(profileName)} saved`));
+    if (result.scopes && result.scopes.length > 0) {
+      console.log(formatInfo(`Scopes: ${result.scopes.join(', ')}`));
+    }
+  } else {
+    console.log(
+      formatOutput(
+        {
+          profile: profileName,
+          serverUrl: normalizedUrl,
+          grant: 'client_credentials',
+          scopes: result.scopes,
+        },
+        'json'
+      )
+    );
   }
 }
 

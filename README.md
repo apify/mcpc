@@ -136,7 +136,7 @@ Commands:
   connect [<server>] [@session]  Connect to an MCP server and start a new named @session
   close <@session>               Close a session
   restart <@session>             Restart a session (losing all state)
-  login <server>                 Interactively login to a server using OAuth and save profile
+  login <server>                 Log in to a server using OAuth and save a profile
   logout <server>                Delete an OAuth profile for a server
   clean [resources...]           Clean up mcpc data (sessions, profiles, logs, all)
   grep <pattern>                 Search tools and instructions across all active sessions

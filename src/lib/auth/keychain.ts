@@ -178,6 +178,20 @@ export interface OAuthClientInfo {
   clientSecret?: string;
 }
 
+/**
+ * Client-credentials grant material for a profile (machine-to-machine auth).
+ * Stored separately from OAuthClientInfo (which holds DCR/CIMD client registration
+ * for the authorization-code flow) so the two grants never clobber each other.
+ * Exactly one of `clientSecret` / `privateKeyPem` is set.
+ */
+export interface OAuthClientCredentialsInfo {
+  clientId: string;
+  clientSecret?: string; // client_secret_basic variant
+  privateKeyPem?: string; // private_key_jwt variant (RFC 7523), PEM-encoded
+  keyAlg?: string; // JWT signing algorithm for the private_key_jwt variant
+  scope?: string; // space-separated scopes requested by the grant
+}
+
 export interface OAuthTokenInfo {
   accessToken: string;
   refreshToken?: string;
@@ -196,6 +210,9 @@ const oauthClientAccount = (serverUrl: string, profileName: string): string =>
 
 const oauthTokensAccount = (serverUrl: string, profileName: string): string =>
   `auth-profile:${getServerHost(serverUrl)}:${profileName}:tokens`;
+
+const oauthClientCredentialsAccount = (serverUrl: string, profileName: string): string =>
+  `auth-profile:${getServerHost(serverUrl)}:${profileName}:client-credentials`;
 
 const sessionHeadersAccount = (sessionName: string): string => `session:${sessionName}:headers`;
 
@@ -294,6 +311,37 @@ export async function removeKeychainOAuthTokenInfo(
 ): Promise<boolean> {
   logger.debug(`Deleting OAuth tokens for ${profileName} @ ${serverUrl}`);
   return keychainDelete(oauthTokensAccount(serverUrl, profileName));
+}
+
+/** Store client-credentials grant material for an auth profile. */
+export async function storeKeychainClientCredentials(
+  serverUrl: string,
+  profileName: string,
+  info: OAuthClientCredentialsInfo
+): Promise<void> {
+  logger.debug(`Storing client-credentials material for ${profileName} @ ${serverUrl}`);
+  await keychainSet(oauthClientCredentialsAccount(serverUrl, profileName), JSON.stringify(info));
+}
+
+/** Read client-credentials grant material for an auth profile. */
+export async function readKeychainClientCredentials(
+  serverUrl: string,
+  profileName: string
+): Promise<OAuthClientCredentialsInfo | undefined> {
+  logger.debug(`Retrieving client-credentials material for ${profileName} @ ${serverUrl}`);
+  return keychainGetParsed<OAuthClientCredentialsInfo>(
+    oauthClientCredentialsAccount(serverUrl, profileName),
+    'client-credentials material'
+  );
+}
+
+/** Delete client-credentials grant material for an auth profile. */
+export async function removeKeychainClientCredentials(
+  serverUrl: string,
+  profileName: string
+): Promise<boolean> {
+  logger.debug(`Deleting client-credentials material for ${profileName} @ ${serverUrl}`);
+  return keychainDelete(oauthClientCredentialsAccount(serverUrl, profileName));
 }
 
 /** Store custom HTTP headers for a session. */

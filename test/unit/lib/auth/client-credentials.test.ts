@@ -1,0 +1,97 @@
+/**
+ * Unit tests for the OAuth client-credentials helpers
+ * (src/lib/auth/client-credentials.ts).
+ *
+ * Covers the pure / local pieces — algorithm validation, private-key resolution,
+ * and SDK provider selection. The full login + token-fetch flow (network) is
+ * exercised by the e2e suite.
+ */
+
+import { tmpdir } from 'os';
+import { join } from 'path';
+import { mkdtemp, writeFile, rm } from 'fs/promises';
+import { generateKeyPairSync } from 'crypto';
+import {
+  validateKeyAlgorithm,
+  resolvePrivateKeyPem,
+  createClientCredentialsProvider,
+  DEFAULT_KEY_ALGORITHM,
+} from '../../../../src/lib/auth/client-credentials.js';
+import { ClientError } from '../../../../src/lib/errors.js';
+
+describe('validateKeyAlgorithm', () => {
+  it('accepts supported algorithms', () => {
+    for (const alg of ['RS256', 'RS512', 'PS256', 'ES256', 'ES384', 'EdDSA']) {
+      expect(() => validateKeyAlgorithm(alg)).not.toThrow();
+    }
+  });
+
+  it('rejects unsupported algorithms with a ClientError', () => {
+    expect(() => validateKeyAlgorithm('HS256')).toThrow(ClientError);
+    expect(() => validateKeyAlgorithm('bogus')).toThrow(/Supported algorithms/);
+  });
+
+  it('defaults to RS256', () => {
+    expect(DEFAULT_KEY_ALGORITHM).toBe('RS256');
+    expect(() => validateKeyAlgorithm(DEFAULT_KEY_ALGORITHM)).not.toThrow();
+  });
+});
+
+describe('resolvePrivateKeyPem', () => {
+  let dir: string;
+
+  beforeAll(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'mcpc-cc-key-'));
+  });
+
+  afterAll(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('returns a literal PEM unchanged', async () => {
+    const pem = '-----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY-----\n';
+    expect(await resolvePrivateKeyPem(pem)).toBe(pem);
+  });
+
+  it('reads a PEM from a file path', async () => {
+    const pem = '-----BEGIN PRIVATE KEY-----\nFROMFILE\n-----END PRIVATE KEY-----\n';
+    const path = join(dir, 'key.pem');
+    await writeFile(path, pem);
+    expect(await resolvePrivateKeyPem(path)).toBe(pem);
+  });
+
+  it('throws a ClientError for a missing file', async () => {
+    await expect(resolvePrivateKeyPem(join(dir, 'does-not-exist.pem'))).rejects.toThrow(
+      ClientError
+    );
+  });
+});
+
+describe('createClientCredentialsProvider', () => {
+  it('builds a ClientCredentialsProvider for the secret variant', () => {
+    const provider = createClientCredentialsProvider({
+      clientId: 'svc',
+      clientSecret: 's3cr3t',
+      scope: 'read',
+    });
+    expect(provider.constructor.name).toBe('ClientCredentialsProvider');
+  });
+
+  it('builds a PrivateKeyJwtProvider for the key variant', () => {
+    const { privateKey } = generateKeyPairSync('rsa', {
+      modulusLength: 2048,
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+    });
+    const provider = createClientCredentialsProvider({
+      clientId: 'svc',
+      privateKeyPem: privateKey,
+      keyAlg: 'RS256',
+    });
+    expect(provider.constructor.name).toBe('PrivateKeyJwtProvider');
+  });
+
+  it('throws when neither a secret nor a key is present', () => {
+    expect(() => createClientCredentialsProvider({ clientId: 'svc' })).toThrow(ClientError);
+  });
+});
