@@ -270,7 +270,7 @@ async function main(): Promise<void> {
         console.log('To view server capabilities and tools, run: mcpc @session');
       }
       console.log('For usage information, run: mcpc --help');
-      console.log('AI agents: run "mcpc guide" for a usage guide.');
+      console.log('AI agents: run "mcpc help --full" for a usage guide.');
       console.log('');
     }
     await closeFileLogger();
@@ -437,9 +437,9 @@ function createTopLevelProgram(): Command {
 
   program.addHelpText(
     'before',
-    `${chalk.bold('Start here (AI agents):')} run ${theme.cyan('mcpc guide')} for a compact, version-matched guide to
-  using mcpc — mental model, common workflows, and code-mode examples. Read it before
-  driving mcpc. Add ${theme.cyan('--full')} to also get the complete command reference.
+    `${chalk.bold('Start here (AI agents):')} run ${theme.cyan('mcpc help --full')} for a compact, version-matched
+  guide to using mcpc — mental model, common workflows, and code-mode examples. Read it
+  before driving mcpc.
 `
   );
 
@@ -474,34 +474,6 @@ Run "mcpc --json" to get the same data as \`{ sessions: [...], profiles: [...] }
 
 Full docs: ${docsUrl}`
   );
-
-  // guide command: mcpc guide [--full] — print the baked-in agent usage guide
-  program
-    .command('guide')
-    .description('Print the agent usage guide (mental model, workflows, code-mode examples)')
-    .option('--full', 'Also append the complete command reference')
-    .option('--raw', 'Print only the Markdown (no JSON wrapping, no truncation)')
-    .option('--path', 'Print the path to the shipped guide directory and exit')
-    .addHelpText(
-      'after',
-      `
-${chalk.bold('Why:')}
-  The guide ships with mcpc and is served from the CLI, so it always matches the
-  installed version. Pipe it straight into an agent skills directory if you like:
-  mcpc guide > ~/.claude/skills/mcpc/SKILL.md
-${jsonHelp('`{ name: "mcpc", content: string }` (the guide Markdown). --raw prints just the Markdown.')}`
-    )
-    .action((opts, command) => {
-      if (opts.path) {
-        console.log(guide.guideDir());
-        return;
-      }
-      guide.printGuide({
-        ...getOptionsFromCommand(command),
-        ...(opts.raw && { raw: true }),
-        ...(opts.full && { fullReference: renderCommandReference() }),
-      });
-    });
 
   // connect command: mcpc connect [<server>] [@session]  (server optional — omit to auto-discover)
   program
@@ -870,44 +842,55 @@ ${jsonHelp('`[{ sessionName, tools?: Tool[], resources?: Resource[], prompts?: P
     // eslint-disable-next-line @typescript-eslint/no-empty-function
     .action(() => {});
 
-  // help command: mcpc help [command] (supports "help x402 sign" etc.)
+  // help command: mcpc help [command] (supports "help x402 sign"); --full prints the agent guide
   program
     .command('help [command] [subcommand]')
-    .description('Show help for a specific command')
-    .action(async (cmdName?: string, subcommand?: string) => {
-      if (!cmdName) {
-        program.outputHelp();
-        return;
-      }
+    .description('Show help for a command, or the full agent usage guide with --full')
+    .option('--full', 'Print the full agent usage guide (mental model, workflows, examples)')
+    .action(
+      async (
+        cmdName: string | undefined,
+        subcommand: string | undefined,
+        opts: { full?: boolean }
+      ) => {
+        if (opts.full && !cmdName) {
+          guide.printGuide();
+          return;
+        }
+        if (!cmdName) {
+          program.outputHelp();
+          return;
+        }
 
-      // x402 has its own Commander program with full subcommand help
-      if (cmdName === 'x402') {
-        const helpArgs = subcommand ? [subcommand, '--help'] : ['--help'];
-        await handleX402Command(helpArgs);
-        return;
-      }
+        // x402 has its own Commander program with full subcommand help
+        if (cmdName === 'x402') {
+          const helpArgs = subcommand ? [subcommand, '--help'] : ['--help'];
+          await handleX402Command(helpArgs);
+          return;
+        }
 
-      // Check top-level commands
-      const topLevelCmd = program.commands.find(
-        (c) => c.name() === cmdName || c.aliases().includes(cmdName)
-      );
-      if (topLevelCmd) {
-        tuneCommandHelp(topLevelCmd);
-        topLevelCmd.outputHelp();
-        return;
-      }
+        // Check top-level commands
+        const topLevelCmd = program.commands.find(
+          (c) => c.name() === cmdName || c.aliases().includes(cmdName)
+        );
+        if (topLevelCmd) {
+          tuneCommandHelp(topLevelCmd);
+          topLevelCmd.outputHelp();
+          return;
+        }
 
-      // Check session subcommands
-      if (showSessionCommandHelp(cmdName)) return;
+        // Check session subcommands
+        if (showSessionCommandHelp(cmdName)) return;
 
-      console.error(`Unknown command: ${cmdName}`);
-      const suggestion = suggestCommand(cmdName, [...KNOWN_COMMANDS, ...KNOWN_SESSION_COMMANDS]);
-      if (suggestion) {
-        console.error(`\nDid you mean: mcpc help ${suggestion}`);
+        console.error(`Unknown command: ${cmdName}`);
+        const suggestion = suggestCommand(cmdName, [...KNOWN_COMMANDS, ...KNOWN_SESSION_COMMANDS]);
+        if (suggestion) {
+          console.error(`\nDid you mean: mcpc help ${suggestion}`);
+        }
+        console.error(`Run "mcpc --help" for usage information.`);
+        process.exit(1);
       }
-      console.error(`Run "mcpc --help" for usage information.`);
-      process.exit(1);
-    });
+    );
 
   // Default action (no args) — list sessions
   program.action(async () => {
@@ -923,49 +906,12 @@ ${jsonHelp('`[{ sessionName, tools?: Tool[], resources?: Resource[], prompts?: P
         console.log('To view server capabilities and tools, run: mcpc @session');
       }
       console.log('For usage information, run: mcpc --help');
-      console.log('AI agents: run "mcpc guide" for a usage guide.');
+      console.log('AI agents: run "mcpc help --full" for a usage guide.');
       console.log('');
     }
   });
 
   return program;
-}
-
-/**
- * Strip ANSI color codes so the generated reference is plain Markdown.
- */
-function stripAnsi(text: string): string {
-  // eslint-disable-next-line no-control-regex
-  return text.replace(/\x1b\[[0-9;]*m/g, '');
-}
-
-/**
- * Render the complete command reference for `mcpc guide --full` by reusing
- * each command's own help text (top-level + every @session subcommand). Built
- * on demand from the live Commander programs, so it can never drift from the
- * actual command definitions.
- */
-function renderCommandReference(): string {
-  const fenced = (help: string): string => `\`\`\`\n${stripAnsi(help).trimEnd()}\n\`\`\``;
-  const blocks: string[] = ['# mcpc full command reference', '', '## mcpc'];
-
-  const top = createTopLevelProgram();
-  blocks.push(fenced(top.helpInformation()));
-  for (const cmd of top.commands) {
-    if (cmd.name() === 'help' || cmd.name() === 'guide') continue;
-    tuneCommandHelp(cmd);
-    blocks.push(`## mcpc ${cmd.name()}`, fenced(cmd.helpInformation()));
-  }
-
-  const session = createSessionProgram();
-  registerSessionCommands(session, '<@session>');
-  for (const cmd of session.commands) {
-    if (cmd.name() === 'help') continue;
-    tuneCommandHelp(cmd);
-    blocks.push(`## mcpc <@session> ${cmd.name()}`, fenced(cmd.helpInformation()));
-  }
-
-  return blocks.join('\n\n');
 }
 
 /**

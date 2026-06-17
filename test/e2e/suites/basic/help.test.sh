@@ -27,45 +27,30 @@ assert_contains "$STDOUT" "--help"
 test_pass
 
 # Test: --help points AI agents at the guide
-test_case "--help points agents at mcpc guide"
+test_case "--help points agents at mcpc help --full"
 run_mcpc --help
 assert_success
-assert_contains "$STDOUT" "mcpc guide"
+assert_contains "$STDOUT" "mcpc help --full"
 test_pass
 
 # =============================================================================
-# guide command
+# help --full (agent guide)
 # =============================================================================
 
-# Test: mcpc guide prints the usage guide
-test_case "guide prints the usage guide"
-run_mcpc guide
+# Test: mcpc help --full prints the usage guide
+test_case "help --full prints the usage guide"
+run_mcpc help --full
 assert_success
 assert_contains "$STDOUT" "name: mcpc"
 assert_contains "$STDOUT" "Mental model"
 test_pass
 
-# Test: mcpc guide --full appends the command reference
-test_case "guide --full appends the command reference"
-run_mcpc guide --full
+# Test: mcpc help (no args) still shows the overview, not the guide
+test_case "help with no args shows the command overview"
+run_mcpc help
 assert_success
-assert_contains "$STDOUT" "Mental model"
-assert_contains "$STDOUT" "full command reference"
-test_pass
-
-# Test: mcpc guide --json wraps the guide
-test_case "guide --json wraps the guide"
-run_mcpc guide --json
-assert_success
-assert_json_valid "$STDOUT"
-assert_json "$STDOUT" '.content'
-test_pass
-
-# Test: mcpc guide --path prints the shipped guide directory
-test_case "guide --path prints a skills/mcpc directory"
-run_mcpc guide --path
-assert_success
-assert_contains "$STDOUT" "skills/mcpc"
+assert_contains "$STDOUT" "Usage:"
+assert_not_contains "$STDOUT" "Mental model"
 test_pass
 
 # Test: --version shows version

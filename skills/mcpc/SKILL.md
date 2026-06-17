@@ -195,7 +195,7 @@ mcpc @apify skills-list
 mcpc @apify skills-get <name> --raw    # print the SKILL.md markdown (pipe to a file or an LLM)
 ```
 
-(`mcpc guide` documents mcpc itself; `skills-list` / `skills-get` fetch skills from the server.)
+(`mcpc help --full` documents mcpc itself; `skills-list` / `skills-get` fetch skills from the server.)
 
 ## Global flags worth knowing
 
@@ -230,8 +230,9 @@ mcpc clean                                # tidy stale sessions/logs (also: mcpc
 
 ## Full reference
 
-Everything above plus the complete command/flag listing for every command:
+Every command and flag is self-documenting — ask the CLI:
 
 ```bash
-mcpc guide --full
+mcpc --help            # all commands + global options
+mcpc help <command>    # full help for one command (e.g. mcpc help connect)
 ```

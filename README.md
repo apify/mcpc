@@ -128,17 +128,15 @@ mcpc @fs tools-list
 <!-- AUTO-GENERATED: mcpc --help -->
 
 ```
-Start here (AI agents): run mcpc guide for a compact, version-matched guide to
-  using mcpc — mental model, common workflows, and code-mode examples. Read it before
-  driving mcpc. Add --full to also get the complete command reference.
+Start here (AI agents): run mcpc help --full for a compact, version-matched
+  guide to using mcpc — mental model, common workflows, and code-mode examples. Read it
+  before driving mcpc.
 
 Usage: mcpc [<@session>] [<command>] [options]
 
 Universal command-line client for the Model Context Protocol (MCP).
 
 Commands:
-  guide                          Print the agent usage guide (mental model, workflows, code-mode
-                                 examples)
   connect [<server>] [@session]  Connect to an MCP server and start a new named @session
   close <@session>               Close a session
   restart <@session>             Restart a session (losing all state)
@@ -147,7 +145,7 @@ Commands:
   clean [resources...]           Clean up mcpc data (sessions, profiles, logs, all)
   grep <pattern>                 Search tools and instructions across all active sessions
   x402 [subcommand] [args...]    Configure an x402 payment wallet (EXPERIMENTAL)
-  help [command] [subcommand]    Show help for a specific command
+  help [command] [subcommand]    Show help for a command, or the full agent usage guide with --full
 
 Options:
   --json                         Output in JSON format for scripting
@@ -688,20 +686,19 @@ and both can easily perform destructive actions or leak credentials on their own
 `mcpc` ships a built-in agent guide that always matches the installed version:
 
 ```bash
-mcpc guide            # mental model, common workflows, code-mode examples
-mcpc guide --full     # everything above plus the complete command reference
+mcpc help --full      # mental model, common workflows, code-mode examples
 ```
 
-No setup is needed: `mcpc --help` points AI agents at `mcpc guide`, so an agent discovers and
-loads the guide on its own before driving the CLI.
+No setup is needed: `mcpc --help` points AI agents at `mcpc help --full`, so an agent discovers
+and loads the guide on its own before driving the CLI.
 
 If you'd rather have the skill installed persistently (e.g. for Claude Code or any agent that
-loads `SKILL.md` files), `mcpc guide` prints a valid `SKILL.md` — just redirect it into your
-skills directory:
+loads `SKILL.md` files), `mcpc help --full` prints a valid `SKILL.md` — just redirect it into
+your skills directory:
 
 ```bash
 mkdir -p ~/.claude/skills/mcpc
-mcpc guide > ~/.claude/skills/mcpc/SKILL.md
+mcpc help --full > ~/.claude/skills/mcpc/SKILL.md
 ```
 
 That copy is a snapshot; re-run it after upgrading mcpc to refresh it.

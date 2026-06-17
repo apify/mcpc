@@ -1,9 +1,9 @@
 /**
  * Guard for what the published npm package actually contains.
  *
- * `mcpc guide` reads skills/mcpc/SKILL.md from the installed tree at runtime, so
- * that file MUST ship in the tarball — otherwise every `npx`/global install of
- * `mcpc guide` throws at runtime while in-repo tests stay green. The file ships
+ * `mcpc help --full` reads skills/mcpc/SKILL.md from the installed tree at runtime,
+ * so that file MUST ship in the tarball — otherwise every `npx`/global install of
+ * `mcpc help --full` throws at runtime while in-repo tests stay green. The file ships
  * today only because there is no `files` allowlist and `.npmignore` omits
  * `skills/`; this test fails loudly if that ever changes.
  *
@@ -32,7 +32,7 @@ function packedPaths(): string[] {
 }
 
 describe('published package contents', () => {
-  it('includes the guide and bin so a fresh install can run `mcpc guide`', () => {
+  it('includes the guide and bin so a fresh install can run `mcpc help --full`', () => {
     const paths = packedPaths();
     expect(paths).toContain('skills/mcpc/SKILL.md');
     expect(paths).toContain('bin/mcpc');

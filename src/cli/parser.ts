@@ -107,7 +107,6 @@ const KNOWN_OPTIONS = [
  */
 export const KNOWN_COMMANDS = [
   'help',
-  'guide',
   'login',
   'logout',
   'connect',
