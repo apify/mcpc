@@ -94,4 +94,23 @@ describe('createClientCredentialsProvider', () => {
   it('throws when neither a secret nor a key is present', () => {
     expect(() => createClientCredentialsProvider({ clientId: 'svc' })).toThrow(ClientError);
   });
+
+  it('pins the token endpoint via discoveryState when provided', async () => {
+    const provider = createClientCredentialsProvider({
+      clientId: 'svc',
+      clientSecret: 's3cr3t',
+      tokenEndpoint: 'https://auth.example.com/oauth/token',
+    });
+    expect(typeof provider.discoveryState).toBe('function');
+    const state = await provider.discoveryState?.();
+    expect(state?.authorizationServerUrl).toBe('https://auth.example.com');
+    expect(state?.authorizationServerMetadata?.token_endpoint).toBe(
+      'https://auth.example.com/oauth/token'
+    );
+  });
+
+  it('leaves discoveryState undefined when no token endpoint is pinned', () => {
+    const provider = createClientCredentialsProvider({ clientId: 'svc', clientSecret: 's3cr3t' });
+    expect(provider.discoveryState).toBeUndefined();
+  });
 });

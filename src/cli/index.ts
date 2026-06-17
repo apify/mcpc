@@ -649,6 +649,10 @@ ${jsonHelp(
     )
     .option('--client-key-alg <alg>', 'JWT signing algorithm for --client-key (default: RS256)')
     .option(
+      '--token-endpoint <url>',
+      'OAuth token endpoint (client-credentials only; auto-discovered if omitted)'
+    )
+    .option(
       '--client-metadata-url <url>',
       'HTTPS URL of an OAuth CIMD (default: https://apify.github.io/mcpc/client-metadata.json)'
     )
@@ -692,7 +696,9 @@ ${chalk.bold('Machine-to-machine (client-credentials grant):')}
       --client-id my-svc --client-key ./key.pem --client-key-alg RS256
 
   --client-secret uses client_secret_basic; --client-key signs a JWT assertion
-  (private_key_jwt, RFC 7523). The profile is then used like any other:
+  (private_key_jwt, RFC 7523). The token endpoint is auto-discovered; pin it with
+  --token-endpoint <url> for servers without discoverable metadata. The profile is
+  then used like any other:
   mcpc connect mcp.example.com @svc --profile default
 
   See https://modelcontextprotocol.io/extensions/auth/oauth-client-credentials
@@ -738,6 +744,7 @@ ${jsonHelp('Interactive prompts are written to stderr, stdout contains a clean J
         clientSecret: opts.clientSecret,
         clientKey: opts.clientKey,
         clientKeyAlg: opts.clientKeyAlg,
+        tokenEndpoint: opts.tokenEndpoint,
         clientMetadataUrl: opts.clientMetadataUrl,
         ...(callbackPort !== undefined ? { callbackPort } : {}),
         ...(callbackHost ? { callbackHost } : {}),

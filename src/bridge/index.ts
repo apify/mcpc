@@ -194,6 +194,7 @@ class BridgeProcess {
         ...(credentials.privateKeyPem ? { privateKeyPem: credentials.privateKeyPem } : {}),
         ...(credentials.keyAlg ? { keyAlg: credentials.keyAlg } : {}),
         ...(credentials.scope ? { scope: credentials.scope } : {}),
+        ...(credentials.tokenEndpoint ? { tokenEndpoint: credentials.tokenEndpoint } : {}),
       });
       this.usesClientCredentials = true;
       logger.debug('Client-credentials provider created for SDK transport');

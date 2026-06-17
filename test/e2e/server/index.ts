@@ -66,6 +66,9 @@ const SKILLS_NO_INDEX = process.env.SKILLS_NO_INDEX === 'true';
 const WITH_OAUTH = process.env.WITH_OAUTH === 'true';
 const OAUTH_CLIENT_ID = process.env.OAUTH_CLIENT_ID || 'test-client';
 const OAUTH_CLIENT_SECRET = process.env.OAUTH_CLIENT_SECRET || 's3cr3t';
+// When true, serve /token but NOT the .well-known metadata, so discovery fails and
+// only an explicit --token-endpoint can locate the token endpoint.
+const OAUTH_NO_METADATA = process.env.OAUTH_NO_METADATA === 'true';
 
 // Control state (manipulated via /control/* endpoints)
 let failNextCount = 0;
@@ -932,7 +935,11 @@ async function main() {
     // OAuth client-credentials endpoints (opt-in via WITH_OAUTH). These must be
     // reachable without a Bearer token, so they precede the REQUIRE_AUTH check.
     if (WITH_OAUTH) {
-      if (url.pathname === '/.well-known/oauth-authorization-server' && req.method === 'GET') {
+      if (
+        !OAUTH_NO_METADATA &&
+        url.pathname === '/.well-known/oauth-authorization-server' &&
+        req.method === 'GET'
+      ) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(
           JSON.stringify({

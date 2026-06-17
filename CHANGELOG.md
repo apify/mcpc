@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `mcpc login --grant client-credentials` adds machine-to-machine OAuth (no browser) for headless use such as CI/CD and daemons, implementing the `io.modelcontextprotocol/oauth-client-credentials` extension. Authenticate with a client secret (`--client-id`/`--client-secret`) or a signed JWT assertion (`--client-key`/`--client-key-alg`, RFC 7523); the saved profile is then used by `connect` like any other, fetching and refreshing access tokens automatically.
+- `mcpc login --grant client-credentials` adds machine-to-machine OAuth (no browser) for headless use such as CI/CD and daemons, implementing the `io.modelcontextprotocol/oauth-client-credentials` extension. Authenticate with a client secret (`--client-id`/`--client-secret`) or a signed JWT assertion (`--client-key`/`--client-key-alg`, RFC 7523); the saved profile is then used by `connect` like any other, fetching and refreshing access tokens automatically. The token endpoint is auto-discovered, or pin it with `--token-endpoint <url>` for servers without discoverable metadata.
 - `mcpc login --callback-host <host>` to set the host used in the OAuth callback redirect URI: `127.0.0.1` (default) or `localhost`, for servers whose pre-registered OAuth client only accepts the `localhost` form. The callback server itself still binds only to the loopback IP (#269).
 - `resources-read` can now save resources to a local file with `-o <file>` (binary-safe, decodes base64 `blob` content) and print bare content for piping with `--raw`. The default human view shows text content in a fenced block and summarizes binary content instead of dumping it to the terminal.
 

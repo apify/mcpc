@@ -18,6 +18,7 @@ run_mcpc help login
 assert_success
 assert_contains "$STDOUT" "client-credentials"
 assert_contains "$STDOUT" "--client-key"
+assert_contains "$STDOUT" "--token-endpoint"
 test_pass
 
 test_case "client-credentials grant without --client-id is rejected"
@@ -42,6 +43,12 @@ test_case "unknown --grant value is rejected"
 run_xmcpc login "$TEST_SERVER_URL" --grant bogus
 assert_failure
 assert_contains "$STDERR" "Invalid --grant"
+test_pass
+
+test_case "--token-endpoint without --grant client-credentials is rejected"
+run_xmcpc login "$TEST_SERVER_URL" --token-endpoint https://auth.example.com/token
+assert_failure
+assert_contains "$STDERR" "only supported with --grant client-credentials"
 test_pass
 
 # --- Happy path: client_secret variant ---

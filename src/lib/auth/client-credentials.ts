@@ -19,7 +19,11 @@ import {
   ClientCredentialsProvider,
   PrivateKeyJwtProvider,
 } from '@modelcontextprotocol/sdk/client/auth-extensions.js';
-import { fetchToken, type OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
+import {
+  fetchToken,
+  type OAuthClientProvider,
+  type OAuthDiscoveryState,
+} from '@modelcontextprotocol/sdk/client/auth.js';
 import type { AuthorizationServerMetadata } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { AuthProfile } from '../types.js';
@@ -30,7 +34,7 @@ import { createLogger } from '../logger.js';
 import type { OAuthClientCredentialsInfo } from './keychain.js';
 import { storeKeychainClientCredentials } from './keychain.js';
 import { getAuthProfile, saveAuthProfile } from './profiles.js';
-import { discoverAuthServerMetadata } from './oauth-utils.js';
+import { discoverAuthServerMetadata, type AuthServerMetadata } from './oauth-utils.js';
 
 const logger = createLogger('client-credentials');
 
@@ -91,26 +95,61 @@ export async function resolvePrivateKeyPem(keyValue: string): Promise<string> {
 export function createClientCredentialsProvider(
   info: OAuthClientCredentialsInfo
 ): OAuthClientProvider {
+  let provider: OAuthClientProvider;
   if (info.privateKeyPem) {
-    return new PrivateKeyJwtProvider({
+    provider = new PrivateKeyJwtProvider({
       clientId: info.clientId,
       privateKey: info.privateKeyPem,
       algorithm: info.keyAlg || DEFAULT_KEY_ALGORITHM,
       clientName: CLIENT_NAME,
       ...(info.scope ? { scope: info.scope } : {}),
     });
-  }
-  if (info.clientSecret) {
-    return new ClientCredentialsProvider({
+  } else if (info.clientSecret) {
+    provider = new ClientCredentialsProvider({
       clientId: info.clientId,
       clientSecret: info.clientSecret,
       clientName: CLIENT_NAME,
       ...(info.scope ? { scope: info.scope } : {}),
     });
+  } else {
+    throw new ClientError(
+      'Client-credentials profile is missing both a client secret and a private key.'
+    );
   }
-  throw new ClientError(
-    'Client-credentials profile is missing both a client secret and a private key.'
-  );
+
+  // When the token endpoint is pinned (--token-endpoint), supply it as OAuth discovery
+  // state so the SDK's auth() skips metadata discovery and posts straight to it. This is
+  // the only thing that works for servers without discoverable authorization-server metadata.
+  const tokenEndpoint = info.tokenEndpoint;
+  if (tokenEndpoint) {
+    provider.discoveryState = () => buildPinnedDiscoveryState(tokenEndpoint);
+  }
+
+  return provider;
+}
+
+/**
+ * Build OAuth discovery state that pins a known token endpoint, bypassing RFC 9728 /
+ * RFC 8414 discovery. The authorization_endpoint / response_types_supported fields are
+ * unused by the client-credentials grant but are required by the SDK's metadata validation.
+ */
+function buildPinnedDiscoveryState(tokenEndpoint: string): OAuthDiscoveryState {
+  const origin = new URL(tokenEndpoint).origin;
+  return {
+    authorizationServerUrl: origin,
+    authorizationServerMetadata: {
+      issuer: origin,
+      authorization_endpoint: `${origin}/authorize`,
+      token_endpoint: tokenEndpoint,
+      response_types_supported: ['code'],
+      grant_types_supported: ['client_credentials'],
+      token_endpoint_auth_methods_supported: [
+        'client_secret_basic',
+        'client_secret_post',
+        'private_key_jwt',
+      ],
+    } as AuthorizationServerMetadata,
+  };
 }
 
 /**
@@ -122,12 +161,19 @@ async function validateClientCredentials(
   serverUrl: string,
   info: OAuthClientCredentialsInfo
 ): Promise<string[] | undefined> {
-  const metadata = await discoverAuthServerMetadata(serverUrl);
-  if (!metadata?.token_endpoint) {
-    throw new AuthError(
-      `Could not find an OAuth token endpoint for ${serverUrl}. ` +
-        `The server does not appear to expose OAuth authorization-server metadata.`
-    );
+  let metadata: AuthServerMetadata | undefined;
+  if (info.tokenEndpoint) {
+    // Token endpoint pinned via --token-endpoint: skip discovery entirely.
+    metadata = { token_endpoint: info.tokenEndpoint };
+  } else {
+    metadata = await discoverAuthServerMetadata(serverUrl);
+    if (!metadata?.token_endpoint) {
+      throw new AuthError(
+        `Could not find an OAuth token endpoint for ${serverUrl}. ` +
+          `The server does not appear to expose OAuth authorization-server metadata. ` +
+          `Pass --token-endpoint <url> to specify it explicitly.`
+      );
+    }
   }
 
   const provider = createClientCredentialsProvider(info);

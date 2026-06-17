@@ -309,6 +309,7 @@ export interface AuthCredentials {
   privateKeyPem?: string; // private_key_jwt variant (RFC 7523): PEM-encoded signing key
   keyAlg?: string; // JWT signing algorithm for the private_key_jwt variant (e.g. RS256)
   scope?: string; // space-separated scopes requested by the client-credentials grant
+  tokenEndpoint?: string; // explicit token endpoint (--token-endpoint); bypasses discovery
   // HTTP headers (from --header flags, stored in keychain)
   headers?: Record<string, string>;
   // Bearer token the bridge's proxy server requires (from --proxy-bearer-token).

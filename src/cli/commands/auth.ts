@@ -36,6 +36,7 @@ export async function login(
     clientSecret?: string;
     clientKey?: string;
     clientKeyAlg?: string;
+    tokenEndpoint?: string;
     clientMetadataUrl?: string | false;
     callbackPort?: number;
     callbackHost?: string;
@@ -48,7 +49,8 @@ export async function login(
     validateProfileName(profileName);
 
     // Resolve the grant type (default: the interactive authorization-code flow).
-    const grant = options.grant ?? 'authorization-code';
+    // Accept both hyphen and underscore spellings (e.g. "client_credentials").
+    const grant = (options.grant ?? 'authorization-code').toLowerCase().replace(/_/g, '-');
     if (grant !== 'authorization-code' && grant !== 'client-credentials') {
       throw new Error(
         `Invalid --grant "${grant}". Supported values: authorization-code (default), client-credentials.`
@@ -62,9 +64,12 @@ export async function login(
 
     // --- Interactive authorization-code flow (default) ---
 
-    // --client-key / --client-key-alg only apply to the client-credentials grant.
+    // --client-key / --client-key-alg / --token-endpoint only apply to client-credentials.
     if (options.clientKey || options.clientKeyAlg) {
       throw new Error('--client-key/--client-key-alg require --grant client-credentials');
+    }
+    if (options.tokenEndpoint) {
+      throw new Error('--token-endpoint is only supported with --grant client-credentials');
     }
 
     if (options.clientSecret && !options.clientId) {
@@ -183,6 +188,7 @@ async function loginWithClientCredentials(
     clientSecret?: string;
     clientKey?: string;
     clientKeyAlg?: string;
+    tokenEndpoint?: string;
     clientMetadataUrl?: string | false;
     callbackPort?: number;
     callbackHost?: string;
@@ -214,6 +220,14 @@ async function loginWithClientCredentials(
   const info: OAuthClientCredentialsInfo = { clientId: options.clientId };
   if (options.scope) {
     info.scope = options.scope;
+  }
+  if (options.tokenEndpoint) {
+    try {
+      void new URL(options.tokenEndpoint);
+    } catch {
+      throw new Error(`Invalid --token-endpoint: "${options.tokenEndpoint}" is not a valid URL`);
+    }
+    info.tokenEndpoint = options.tokenEndpoint;
   }
   if (clientSecret) {
     info.clientSecret = clientSecret;

@@ -556,6 +556,7 @@ async function loadAuthCredentials(
         if (cc.privateKeyPem) credentials.privateKeyPem = cc.privateKeyPem;
         if (cc.keyAlg) credentials.keyAlg = cc.keyAlg;
         if (cc.scope) credentials.scope = cc.scope;
+        if (cc.tokenEndpoint) credentials.tokenEndpoint = cc.tokenEndpoint;
         logger.debug(`Found client-credentials material for profile ${profileName}`);
       } else {
         logger.warn(

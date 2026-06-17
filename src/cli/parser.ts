@@ -80,6 +80,7 @@ const OPTIONS_WITH_VALUES = [
   '--client-secret',
   '--client-key',
   '--client-key-alg',
+  '--token-endpoint',
   '--client-metadata-url',
   '--no-client-metadata-url',
   '--callback-port',

@@ -190,6 +190,7 @@ export interface OAuthClientCredentialsInfo {
   privateKeyPem?: string; // private_key_jwt variant (RFC 7523), PEM-encoded
   keyAlg?: string; // JWT signing algorithm for the private_key_jwt variant
   scope?: string; // space-separated scopes requested by the grant
+  tokenEndpoint?: string; // explicit token endpoint (--token-endpoint); skips discovery
 }
 
 export interface OAuthTokenInfo {
