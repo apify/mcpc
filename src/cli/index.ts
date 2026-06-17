@@ -849,50 +849,44 @@ ${jsonHelp('`[{ sessionName, tools?: Tool[], resources?: Resource[], prompts?: P
     .command('help [command] [subcommand]')
     .description('Show help for a command, or the full agent usage guide with --full')
     .option('--full', 'Print the full agent usage guide (mental model, workflows, examples)')
-    .action(
-      async (
-        cmdName: string | undefined,
-        subcommand: string | undefined,
-        opts: { full?: boolean }
-      ) => {
-        if (opts.full && !cmdName) {
-          guide.printGuide();
-          return;
-        }
-        if (!cmdName) {
-          program.outputHelp();
-          return;
-        }
-
-        // x402 has its own Commander program with full subcommand help
-        if (cmdName === 'x402') {
-          const helpArgs = subcommand ? [subcommand, '--help'] : ['--help'];
-          await handleX402Command(helpArgs);
-          return;
-        }
-
-        // Check top-level commands
-        const topLevelCmd = program.commands.find(
-          (c) => c.name() === cmdName || c.aliases().includes(cmdName)
-        );
-        if (topLevelCmd) {
-          tuneCommandHelp(topLevelCmd);
-          topLevelCmd.outputHelp();
-          return;
-        }
-
-        // Check session subcommands
-        if (showSessionCommandHelp(cmdName)) return;
-
-        console.error(`Unknown command: ${cmdName}`);
-        const suggestion = suggestCommand(cmdName, [...KNOWN_COMMANDS, ...KNOWN_SESSION_COMMANDS]);
-        if (suggestion) {
-          console.error(`\nDid you mean: mcpc help ${suggestion}`);
-        }
-        console.error(`Run "mcpc --help" for usage information.`);
-        process.exit(1);
+    .action(async (cmdName?: string, subcommand?: string, opts?: { full?: boolean }) => {
+      if (opts?.full && !cmdName) {
+        guide.printGuide();
+        return;
       }
-    );
+      if (!cmdName) {
+        program.outputHelp();
+        return;
+      }
+
+      // x402 has its own Commander program with full subcommand help
+      if (cmdName === 'x402') {
+        const helpArgs = subcommand ? [subcommand, '--help'] : ['--help'];
+        await handleX402Command(helpArgs);
+        return;
+      }
+
+      // Check top-level commands
+      const topLevelCmd = program.commands.find(
+        (c) => c.name() === cmdName || c.aliases().includes(cmdName)
+      );
+      if (topLevelCmd) {
+        tuneCommandHelp(topLevelCmd);
+        topLevelCmd.outputHelp();
+        return;
+      }
+
+      // Check session subcommands
+      if (showSessionCommandHelp(cmdName)) return;
+
+      console.error(`Unknown command: ${cmdName}`);
+      const suggestion = suggestCommand(cmdName, [...KNOWN_COMMANDS, ...KNOWN_SESSION_COMMANDS]);
+      if (suggestion) {
+        console.error(`\nDid you mean: mcpc help ${suggestion}`);
+      }
+      console.error(`Run "mcpc --help" for usage information.`);
+      process.exit(1);
+    });
 
   // Default action (no args) — list sessions
   program.action(async () => {

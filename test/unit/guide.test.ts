@@ -1,23 +1,16 @@
 /**
  * Unit tests for the agent guide printed by `mcpc help --full`.
  *
- * Doubles as a guard: `guideDir()` resolves the shipped guide relative to the
- * module, so these tests fail loudly if `skills/mcpc/SKILL.md` goes missing or
- * the relative path breaks. That the file is actually included in the published
- * npm tarball is verified by packaging.test.ts.
+ * Doubles as a guard: `readGuide()` resolves the shipped guide relative to the
+ * module and throws if it is missing, so these tests fail loudly if
+ * `skills/mcpc/SKILL.md` goes missing or the relative path breaks. That the file
+ * is actually included in the published npm tarball is verified by
+ * packaging.test.ts.
  */
 
-import { existsSync, readFileSync } from 'fs';
-import { join } from 'path';
-import { guideDir, readGuide, printGuide } from '../../src/cli/commands/guide.js';
+import { readGuide, printGuide } from '../../src/cli/commands/guide.js';
 
 describe('agent guide', () => {
-  it('ships SKILL.md in the resolved guide directory', () => {
-    const skillPath = join(guideDir(), 'SKILL.md');
-    expect(existsSync(skillPath)).toBe(true);
-    expect(readFileSync(skillPath, 'utf8')).toContain('name: mcpc');
-  });
-
   it('reads the guide markdown with frontmatter and key sections', () => {
     const md = readGuide();
     expect(md).toContain('name: mcpc');

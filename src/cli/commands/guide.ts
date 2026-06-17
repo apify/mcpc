@@ -16,7 +16,7 @@ import { ClientError } from '../../lib/errors.js';
  * `<pkg>/src/cli/commands/guide.ts` in dev) — both sit three levels below the
  * package root, so the same relative path works either way.
  */
-export function guideDir(): string {
+function guideDir(): string {
   return join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'skills', 'mcpc');
 }
 
