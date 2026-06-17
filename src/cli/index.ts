@@ -472,6 +472,8 @@ ${chalk.bold('MCP session commands (after connecting):')}
 Run "mcpc" without arguments to show active sessions and OAuth profiles.
 Run "mcpc --json" to get the same data as \`{ sessions: [...], profiles: [...] }\`.
 
+${chalk.bold('AI agents:')} run ${theme.cyan('mcpc help --full')} for the full usage guide before driving mcpc.
+
 Full docs: ${docsUrl}`
   );
 
