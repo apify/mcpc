@@ -42,6 +42,7 @@ import {
   formatServerDetails,
   formatResources,
   formatResourceDetail,
+  formatResourceContents,
   formatResourceTemplates,
   formatResourceTemplateDetail,
   formatPrompts,
@@ -1163,9 +1164,64 @@ describe('formatServerDetails', () => {
     // Should show resources with subscribe feature
     expect(output).toContain('resources (supports subscribe)');
 
-    // Should show resources commands
+    // Should show resources commands, including subscribe (capability present)
     expect(output).toContain('mcpc @res resources-list');
     expect(output).toContain('mcpc @res resources-read');
+    expect(output).toContain('mcpc @res resources-subscribe <uri> <file>');
+  });
+
+  it('should not list resources-subscribe command without the subscribe capability', () => {
+    const details: ServerDetails = {
+      capabilities: {
+        resources: { listChanged: true },
+      },
+      serverInfo: { name: 'Resource Server', version: '2.0.0' },
+    };
+
+    const output = formatServerDetails(details, '@res');
+
+    expect(output).toContain('mcpc @res resources-read');
+    expect(output).not.toContain('resources-subscribe');
+  });
+
+  it('should list active resource subscriptions with sync status', () => {
+    const details: ServerDetails = {
+      capabilities: { resources: { subscribe: true } },
+      serverInfo: { name: 'Resource Server', version: '2.0.0' },
+    };
+    const subscriptions = [
+      {
+        uri: 'test://config',
+        filePath: '/tmp/config.json',
+        subscribedAt: new Date().toISOString(),
+        lastSyncedAt: new Date().toISOString(),
+      },
+      {
+        uri: 'test://broken',
+        filePath: '/tmp/broken.json',
+        subscribedAt: new Date().toISOString(),
+        lastError: 'Re-subscribe failed: nope',
+      },
+    ];
+
+    const output = formatServerDetails(details, '@res', undefined, subscriptions);
+
+    expect(output).toContain('Resource subscriptions:');
+    expect(output).toContain('test://config');
+    expect(output).toContain('/tmp/config.json');
+    expect(output).toContain('synced just now');
+    expect(output).toContain('sync failing: Re-subscribe failed: nope');
+  });
+
+  it('should omit the resource subscriptions section when there are none', () => {
+    const details: ServerDetails = {
+      capabilities: { resources: { subscribe: true } },
+      serverInfo: { name: 'Resource Server', version: '2.0.0' },
+    };
+
+    const output = formatServerDetails(details, '@res', undefined, []);
+
+    expect(output).not.toContain('Resource subscriptions:');
   });
 
   it('should format empty instructions as no Instructions section', () => {
@@ -1364,6 +1420,70 @@ describe('formatResourceDetail', () => {
     expect(output).not.toContain('MIME type:');
     // No description section when description is missing
     expect(output).not.toContain('Description:');
+  });
+});
+
+describe('formatResourceContents', () => {
+  it('shows text content in a fenced block with metadata', () => {
+    const result = {
+      contents: [{ uri: 'test://hello', mimeType: 'text/plain', text: 'Hello, World!' }],
+    };
+
+    const output = formatResourceContents('test://hello', result);
+
+    expect(output).toContain('Resource: `test://hello`');
+    expect(output).toContain('MIME type: text/plain');
+    expect(output).toContain('````');
+    expect(output).toContain('Hello, World!');
+  });
+
+  it('summarizes binary content instead of dumping it', () => {
+    const blob = Buffer.from([0, 1, 2, 255]).toString('base64');
+    const result = {
+      contents: [{ uri: 'test://bin', mimeType: 'image/png', blob }],
+    };
+
+    const output = formatResourceContents('test://bin', result, { sessionName: '@s' });
+
+    expect(output).toContain('Resource: `test://bin`');
+    expect(output).toContain('MIME type: image/png');
+    expect(output).toContain('4 bytes (binary)');
+    expect(output).toContain('(binary content not shown)');
+    expect(output).toContain('mcpc @s resources-read test://bin -o <file>');
+    expect(output).not.toContain(blob);
+  });
+
+  it('separates multiple content items', () => {
+    const result = {
+      contents: [
+        { uri: 'test://a', text: 'first' },
+        { uri: 'test://b', text: 'second' },
+      ],
+    };
+
+    const output = formatResourceContents('test://a', result);
+
+    expect(output).toContain('test://a');
+    expect(output).toContain('test://b');
+    expect(output).toContain('first');
+    expect(output).toContain('second');
+    expect(output).toContain('---');
+  });
+
+  it('handles empty contents', () => {
+    const output = formatResourceContents('test://empty', { contents: [] });
+    expect(output).toContain('(resource returned no contents)');
+  });
+
+  it('truncates output with maxChars', () => {
+    const result = {
+      contents: [{ uri: 'test://long', text: 'x'.repeat(5000) }],
+    };
+
+    const output = formatResourceContents('test://long', result, { maxChars: 100 });
+
+    expect(output.length).toBeLessThan(400);
+    expect(output).toContain('truncated');
   });
 });
 

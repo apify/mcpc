@@ -873,6 +873,24 @@ server_notify_resources_changed() {
   curl -s -X POST "$TEST_SERVER_URL/control/notify-resources-changed" >/dev/null
 }
 
+# Server control: bump test://dynamic/counter and notify subscribed sessions
+# Prints the new counter value as JSON: {"counter":N}
+server_bump_counter() {
+  curl -s -X POST "$TEST_SERVER_URL/control/bump-counter"
+}
+
+# Server control: send resources/updated for a URI to ALL sessions
+# (regardless of server-side subscription state — exercises client filtering)
+server_notify_resource_updated() {
+  local uri="${1:-test://dynamic/counter}"
+  curl -s -X POST "$TEST_SERVER_URL/control/notify-resource-updated?uri=$uri" >/dev/null
+}
+
+# Server control: get resource URIs subscribed per session (JSON)
+server_get_subscriptions() {
+  curl -s "$TEST_SERVER_URL/control/get-subscriptions"
+}
+
 # Add server cleanup to trap
 _original_cleanup=$(trap -p EXIT | sed "s/trap -- '\(.*\)' EXIT/\1/")
 trap 'stop_test_server; '"$_original_cleanup" EXIT

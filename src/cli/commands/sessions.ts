@@ -21,6 +21,7 @@ import {
   formatError,
   formatSessionLine,
   formatServerDetails,
+  formatTimeAgo,
   theme,
 } from '../output.js';
 import { withMcpClient, resolveAuthProfile } from '../helpers.js';
@@ -43,6 +44,9 @@ import { createLogger } from '../../lib/logger.js';
 import { getBridgeLogPath } from '../../lib/log-reader.js';
 
 const logger = createLogger('sessions');
+
+// Re-exported for existing importers (moved to output.ts so formatServerDetails can use it)
+export { formatTimeAgo } from '../output.js';
 
 /**
  * Map the internal `connectionMode` enum to the public `--json` `stateless` field:
@@ -118,33 +122,6 @@ export function formatBridgeStatus(status: DisplayStatus): { dot: string; text: 
     case 'expired':
       return { dot: theme.red('○'), text: theme.red('expired') };
   }
-}
-
-/**
- * Format time ago in human-friendly way
- */
-export function formatTimeAgo(isoDate: string | undefined): string {
-  if (!isoDate) return '';
-
-  const date = new Date(isoDate);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffSecs = Math.floor(diffMs / 1000);
-  const diffMins = Math.floor(diffSecs / 60);
-  const diffHours = Math.floor(diffMins / 60);
-  const diffDays = Math.floor(diffHours / 24);
-
-  if (diffSecs < 60) return 'just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays === 1) return 'yesterday';
-  if (diffDays < 7) return `${diffDays} days ago`;
-  if (diffDays < 30) {
-    const weeks = Math.floor(diffDays / 7);
-    return `${weeks} ${weeks === 1 ? 'week' : 'weeks'} ago`;
-  }
-  const months = Math.floor(diffDays / 30);
-  return `${months} ${months === 1 ? 'month' : 'months'} ago`;
 }
 
 /**
@@ -325,8 +302,13 @@ export async function showServerDetails(
     const cachedToolsResult = await client.listAllTools();
     const tools = cachedToolsResult.tools;
 
+    // Active resource→file syncs (resources-subscribe), maintained by the bridge
+    // in sessions.json — read from disk, no server round-trip needed
+    const sessionData = target.startsWith('@') ? await getSession(target) : undefined;
+    const resourceSubscriptions = Object.values(sessionData?.resourceSubscriptions ?? {});
+
     if (options.outputMode === 'human') {
-      console.log(formatServerDetails(serverDetails, target, tools));
+      console.log(formatServerDetails(serverDetails, target, tools, resourceSubscriptions));
     } else {
       // JSON output MUST match MCP InitializeResult structure!
       // See https://modelcontextprotocol.io/specification/2025-11-25/schema#initializeresult
@@ -357,6 +339,7 @@ export async function showServerDetails(
               server,
               ...statelessField(connectionMode),
               ...(logPath && { logPath }),
+              ...(resourceSubscriptions.length > 0 && { resourceSubscriptions }),
             },
             protocolVersion,
             capabilities,
@@ -449,7 +432,7 @@ export async function restartSession(
       console.log(formatSuccess(`Session ${name} restarted`));
       console.log(
         chalk.dim(
-          'Note: previous session state was lost (e.g. added tools, resource subscriptions, async tasks)'
+          'Note: previous session state was lost (e.g. added tools, async tasks); resource subscriptions are re-established automatically'
         )
       );
     }

@@ -2,8 +2,12 @@
  * Resources command handlers
  */
 
-import { formatOutput, formatSuccess } from '../output.js';
+import chalk from 'chalk';
+import { formatOutput, formatSuccess, formatWarning, formatResourceContents } from '../output.js';
 import { withMcpClient } from '../helpers.js';
+import { resolvePath } from '../../lib/utils.js';
+import { selectResourceContent, writeResourceFile } from '../../lib/resource-content.js';
+import { ClientError } from '../../lib/errors.js';
 import type { CommandOptions } from '../../lib/types.js';
 
 /**
@@ -58,7 +62,13 @@ export async function listResourceTemplates(
 }
 
 /**
- * Get a resource by URI
+ * Read a resource by URI.
+ *
+ * Output modes:
+ * - default (human): pretty view; binary (blob) content is summarized, never dumped
+ * - --raw: bare content to stdout for piping; binary requires a redirect (or -o)
+ * - -o <file>: save the content to a file, decoding base64 blobs to bytes
+ * - --json: full MCP ReadResourceResult (with -o: a small summary object instead)
  */
 export async function getResource(
   target: string,
@@ -66,33 +76,74 @@ export async function getResource(
   options: CommandOptions & {
     output?: string;
     raw?: boolean;
-    maxSize?: number;
   }
 ): Promise<void> {
-  await withMcpClient(target, options, async (client, _context) => {
+  // --raw output must stay bare for piping — suppress the [session] prefix line
+  const clientOptions = options.raw && !options.output ? { ...options, hideTarget: true } : options;
+
+  await withMcpClient(target, clientOptions, async (client, _context) => {
     const result = await client.readResource(uri);
 
-    // If output file is specified, write to file
+    // -o/--output: write the resource to a local file (binary-safe)
     if (options.output) {
-      // TODO: Write resource contents to file
-      throw new Error('--output flag not implemented yet');
-    }
+      const filePath = resolvePath(options.output);
+      const content = selectResourceContent(result, uri);
+      await writeResourceFile(filePath, content.data);
 
-    // If raw mode, output just the content
-    if (options.raw && result.contents.length > 0) {
-      const firstContent = result.contents[0];
-      if (firstContent) {
-        if ('text' in firstContent && firstContent.text) {
-          console.log(firstContent.text);
-        } else if ('blob' in firstContent && firstContent.blob) {
-          console.log(firstContent.blob);
+      const mimeSuffix = content.mimeType ? `, ${content.mimeType}` : '';
+      if (options.outputMode === 'json') {
+        console.log(
+          formatOutput(
+            {
+              uri,
+              file: filePath,
+              bytes: content.data.length,
+              ...(content.mimeType && { mimeType: content.mimeType }),
+            },
+            'json'
+          )
+        );
+      } else {
+        console.log(
+          formatSuccess(`Saved ${uri} to ${filePath} (${content.data.length} bytes${mimeSuffix})`)
+        );
+        if (content.totalContents > 1) {
+          console.log(
+            formatWarning(
+              `Resource returned ${content.totalContents} content items; saved only ${content.uri}. Use --json to see all items.`
+            )
+          );
         }
       }
       return;
     }
 
+    // --json: full MCP result (takes precedence over --raw, same as skills-get)
+    if (options.outputMode === 'json') {
+      console.log(formatOutput(result, 'json'));
+      return;
+    }
+
+    // --raw: bare content for piping
+    if (options.raw) {
+      const content = selectResourceContent(result, uri);
+      if (content.binary) {
+        if (process.stdout.isTTY) {
+          throw new ClientError(
+            `Binary content (${content.mimeType || 'unknown type'}, ${content.data.length} bytes) would mess up the terminal.\n` +
+              `Redirect stdout (mcpc ${target} resources-read ${uri} --raw > file) or save with -o <file>.`
+          );
+        }
+        process.stdout.write(content.data);
+      } else {
+        console.log(content.data.toString('utf-8'));
+      }
+      return;
+    }
+
     console.log(
-      formatOutput(result, options.outputMode, {
+      formatResourceContents(uri, result, {
+        sessionName: target,
         ...(options.maxChars && { maxChars: options.maxChars }),
       })
     );
@@ -100,26 +151,41 @@ export async function getResource(
 }
 
 /**
- * Subscribe to resource updates
+ * Subscribe to a resource and keep a local file in sync with it.
+ *
+ * Downloads the resource to the file now; afterwards the session bridge rewrites
+ * the file whenever the server sends notifications/resources/updated for the URI
+ * (per the MCP spec the notification carries no content, so the bridge re-reads).
  */
 export async function subscribeResource(
   target: string,
   uri: string,
+  file: string,
   options: CommandOptions
 ): Promise<void> {
+  // Resolve against the CLI's cwd — the bridge process has a different cwd
+  const filePath = resolvePath(file);
+
   await withMcpClient(target, options, async (client, _context) => {
-    await client.subscribeResource(uri);
+    const result = await client.subscribeResource(uri, filePath);
 
     if (options.outputMode === 'human') {
+      const mimeSuffix = result.mimeType ? `, ${result.mimeType}` : '';
       console.log(formatSuccess(`Subscribed to resource: ${uri}`));
+      console.log(`  Synced to ${result.file} (${result.bytes} bytes${mimeSuffix})`);
+      console.log(chalk.dim('  The file is updated automatically while the session is connected.'));
+      console.log(chalk.dim(`  ↳ check sync status: mcpc ${target}`));
+      console.log(
+        chalk.dim(`  ↳ stop syncing (keeps the file): mcpc ${target} resources-unsubscribe ${uri}`)
+      );
     } else {
-      console.log(formatOutput({ subscribed: true, uri }, 'json'));
+      console.log(formatOutput({ subscribed: true, ...result }, 'json'));
     }
   });
 }
 
 /**
- * Unsubscribe from resource updates
+ * Stop syncing a subscribed resource. The synced local file is kept as-is.
  */
 export async function unsubscribeResource(
   target: string,
@@ -127,12 +193,13 @@ export async function unsubscribeResource(
   options: CommandOptions
 ): Promise<void> {
   await withMcpClient(target, options, async (client, _context) => {
-    await client.unsubscribeResource(uri);
+    const result = await client.unsubscribeResource(uri);
 
     if (options.outputMode === 'human') {
       console.log(formatSuccess(`Unsubscribed from resource: ${uri}`));
+      console.log(`  File kept: ${result.file}`);
     } else {
-      console.log(formatOutput({ unsubscribed: true, uri }, 'json'));
+      console.log(formatOutput({ unsubscribed: true, ...result }, 'json'));
     }
   });
 }

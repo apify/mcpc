@@ -54,7 +54,7 @@ run_mcpc --json "$SESSION" resources-list
 assert_success
 assert_json_valid "$STDOUT"
 assert_json "$STDOUT" '. | type == "array"'
-assert_json "$STDOUT" '. | length == 3'
+assert_json "$STDOUT" '. | length == 5'
 test_pass
 
 test_case "resources-list --json contains expected fields"
@@ -109,6 +109,86 @@ test_pass
 test_case "resources-read unknown resource fails"
 run_mcpc "$SESSION" resources-read "test://nonexistent"
 assert_failure
+test_pass
+
+# =============================================================================
+# Test: resources-read binary content, --raw, and -o (file output)
+# =============================================================================
+
+# Expected bytes of test://static/binary (base64 AAECA/z9/v8=)
+EXPECTED_BIN="$TEST_TMP/expected-binary.bin"
+printf '\x00\x01\x02\x03\xfc\xfd\xfe\xff' > "$EXPECTED_BIN"
+
+test_case "resources-read binary resource shows summary, not raw bytes"
+run_mcpc "$SESSION" resources-read "test://static/binary"
+assert_success
+assert_contains "$STDOUT" "application/octet-stream"
+assert_contains "$STDOUT" "binary"
+assert_contains "$STDOUT" "8 bytes"
+# The base64 payload must not be dumped into the pretty view
+if [[ "$STDOUT" == *"AAECA/z9/v8="* ]]; then
+  test_fail "binary content should not be printed in human mode"
+  exit 1
+fi
+test_pass
+
+test_case "resources-read --raw prints bare text content"
+run_mcpc "$SESSION" resources-read "test://static/hello" --raw
+assert_success
+assert_eq "$STDOUT" "Hello, World!" "raw output should be the exact content"
+test_pass
+
+test_case "resources-read --raw pipes binary bytes when stdout is not a TTY"
+# Bypass run_mcpc: binary output contains NUL bytes that bash variables drop
+OUT_RAW="$TEST_TMP/binary-raw.bin"
+set +e
+$MCPC "$SESSION" resources-read "test://static/binary" --raw > "$OUT_RAW" 2>/dev/null
+RAW_EXIT=$?
+set -e
+assert_eq "$RAW_EXIT" "0" "raw binary read should succeed when stdout is redirected"
+if ! cmp -s "$EXPECTED_BIN" "$OUT_RAW"; then
+  test_fail "piped raw binary output should match the decoded blob bytes"
+  exit 1
+fi
+test_pass
+
+test_case "resources-read -o saves text resource to file"
+OUT_TEXT="$TEST_TMP/hello-resource.txt"
+run_mcpc "$SESSION" resources-read "test://static/hello" -o "$OUT_TEXT"
+assert_success
+assert_contains "$STDOUT" "Saved"
+assert_file_exists "$OUT_TEXT"
+assert_eq "$(cat "$OUT_TEXT")" "Hello, World!" "saved file should contain the resource text"
+test_pass
+
+test_case "resources-read -o decodes binary blob to exact bytes"
+OUT_BIN="$TEST_TMP/binary-resource.bin"
+run_mcpc "$SESSION" resources-read "test://static/binary" -o "$OUT_BIN"
+assert_success
+assert_file_exists "$OUT_BIN"
+if ! cmp -s "$EXPECTED_BIN" "$OUT_BIN"; then
+  test_fail "saved binary file should match the decoded blob bytes"
+  exit 1
+fi
+test_pass
+
+test_case "resources-read -o --json prints summary object"
+OUT_JSON="$TEST_TMP/hello-resource2.txt"
+run_mcpc --json "$SESSION" resources-read "test://static/hello" -o "$OUT_JSON"
+assert_success
+assert_json_valid "$STDOUT"
+assert_json "$STDOUT" '.uri == "test://static/hello"'
+assert_json "$STDOUT" '.bytes == 13'
+assert_json "$STDOUT" '.mimeType == "text/plain"'
+assert_json "$STDOUT" '.file | length > 0'
+assert_file_exists "$OUT_JSON"
+test_pass
+
+test_case "resources-read -o creates parent directories"
+OUT_NESTED="$TEST_TMP/nested/dir/resource.txt"
+run_mcpc "$SESSION" resources-read "test://static/hello" -o "$OUT_NESTED"
+assert_success
+assert_file_exists "$OUT_NESTED"
 test_pass
 
 # =============================================================================
