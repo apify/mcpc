@@ -803,7 +803,7 @@ Where `mcpc` stands on each part of the MCP specification:
 | **Feature**                                        | **Status**                         |
 | :------------------------------------------------- | :--------------------------------- |
 | 🔌 **Transport**                                   | ✅ stdio and Streamable HTTP       |
-| 🔑 [**Authorization**](#authentication)            | ✅ Supported                       |
+| 🔑 [**Authorization**](#authentication)            | ✅ Bearer + OAuth 2.1              |
 | 🔄 [**Sessions**](#sessions)                       | ✅ Supported                       |
 | 📖 [**Instructions**](#server-instructions)        | ✅ Supported                       |
 | 🔧 [**Tools**](#tools)                             | ✅ Supported                       |
