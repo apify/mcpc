@@ -23,7 +23,7 @@ test_pass
 test_case "bare mcpc shows usage hint"
 run_mcpc
 assert_success
-assert_contains "$STDOUT" "--help"
+assert_contains "$STDOUT" "mcpc help"
 test_pass
 
 # Test: --help points AI agents at the guide

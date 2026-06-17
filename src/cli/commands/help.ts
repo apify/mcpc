@@ -12,8 +12,8 @@ import { ClientError } from '../../lib/errors.js';
 
 /**
  * Directory holding the shipped guide content (`skills/mcpc`). This module
- * resolves to `<pkg>/dist/cli/commands/guide.js` once built (and
- * `<pkg>/src/cli/commands/guide.ts` in dev) — both sit three levels below the
+ * resolves to `<pkg>/dist/cli/commands/help.js` once built (and
+ * `<pkg>/src/cli/commands/help.ts` in dev) — both sit three levels below the
  * package root, so the same relative path works either way.
  */
 function guideDir(): string {

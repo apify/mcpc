@@ -132,9 +132,8 @@ mcpc @fs tools-list
 <!-- AUTO-GENERATED: mcpc --help -->
 
 ```
-Start here (AI agents): run mcpc help --full for a compact, version-matched
-  guide to using mcpc — mental model, common workflows, and code-mode examples. Read it
-  before driving mcpc.
+AI agents: mcpc help --full prints a compact, version-matched guide to mcpc
+  (mental model, common workflows, code-mode examples) — load it if you need it.
 
 Usage: mcpc [<@session>] [<command>] [options]
 
@@ -186,8 +185,6 @@ MCP session commands (after connecting):
 
 Run "mcpc" without arguments to show active sessions and OAuth profiles.
 Run "mcpc --json" to get the same data as `{ sessions: [...], profiles: [...] }`.
-
-AI agents: run mcpc help --full for the full usage guide before driving mcpc.
 ```
 
 ### General actions
@@ -692,11 +689,11 @@ and both can easily perform destructive actions or leak credentials on their own
 `mcpc` ships a built-in agent guide that always matches the installed version:
 
 ```bash
-mcpc help --full      # mental model, common workflows, code-mode examples
+mcpc help --full
 ```
 
-No setup is needed: `mcpc --help` points AI agents at `mcpc help --full`, so an agent discovers
-and loads the guide on its own before driving the CLI.
+No setup is needed: `mcpc help` mentions `mcpc help --full`, so an agent can discover and load
+the guide on its own when it needs it.
 
 If you'd rather have the skill installed persistently (e.g. for Claude Code or any agent that
 loads `SKILL.md` files), `mcpc help --full` prints a valid `SKILL.md` — just redirect it into

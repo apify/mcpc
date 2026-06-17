@@ -36,6 +36,6 @@ describe('published package contents', () => {
     const paths = packedPaths();
     expect(paths).toContain('skills/mcpc/SKILL.md');
     expect(paths).toContain('bin/mcpc');
-    expect(paths).toContain('dist/cli/commands/guide.js');
+    expect(paths).toContain('dist/cli/commands/help.js');
   }, 60_000);
 });

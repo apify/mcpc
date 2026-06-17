@@ -19,7 +19,7 @@ import { formatJson, formatJsonError, rainbow, theme } from './output.js';
 import * as tools from './commands/tools.js';
 import * as resources from './commands/resources.js';
 import * as skills from './commands/skills.js';
-import * as guide from './commands/guide.js';
+import * as help from './commands/help.js';
 import * as prompts from './commands/prompts.js';
 import * as sessions from './commands/sessions.js';
 import * as connect from './commands/connect.js';
@@ -269,8 +269,8 @@ async function main(): Promise<void> {
       if (hasSessions) {
         console.log('To view server capabilities and tools, run: mcpc @session');
       }
-      console.log('For usage information, run: mcpc --help');
-      console.log('AI agents: run "mcpc help --full" for a usage guide.');
+      console.log('For usage overview, run: mcpc help');
+      console.log('For full usage information, run: mcpc help --full');
       console.log('');
     }
     await closeFileLogger();
@@ -437,9 +437,8 @@ function createTopLevelProgram(): Command {
 
   program.addHelpText(
     'before',
-    `${chalk.bold('Start here (AI agents):')} run ${theme.cyan('mcpc help --full')} for a compact, version-matched
-  guide to using mcpc — mental model, common workflows, and code-mode examples. Read it
-  before driving mcpc.
+    `${chalk.bold('AI agents:')} ${theme.cyan('mcpc help --full')} prints a compact, version-matched guide to mcpc
+  (mental model, common workflows, code-mode examples) — load it if you need it.
 `
   );
 
@@ -471,8 +470,6 @@ ${chalk.bold('MCP session commands (after connecting):')}
 
 Run "mcpc" without arguments to show active sessions and OAuth profiles.
 Run "mcpc --json" to get the same data as \`{ sessions: [...], profiles: [...] }\`.
-
-${chalk.bold('AI agents:')} run ${theme.cyan('mcpc help --full')} for the full usage guide before driving mcpc.
 
 Full docs: ${docsUrl}`
   );
@@ -851,7 +848,7 @@ ${jsonHelp('`[{ sessionName, tools?: Tool[], resources?: Resource[], prompts?: P
     .option('--full', 'Print the full agent usage guide (mental model, workflows, examples)')
     .action(async (cmdName?: string, subcommand?: string, opts?: { full?: boolean }) => {
       if (opts?.full && !cmdName) {
-        guide.printGuide();
+        help.printGuide();
         return;
       }
       if (!cmdName) {
@@ -901,8 +898,8 @@ ${jsonHelp('`[{ sessionName, tools?: Tool[], resources?: Resource[], prompts?: P
       if (hasSessions) {
         console.log('To view server capabilities and tools, run: mcpc @session');
       }
-      console.log('For usage information, run: mcpc --help');
-      console.log('AI agents: run "mcpc help --full" for a usage guide.');
+      console.log('For usage overview, run: mcpc help');
+      console.log('For full usage information, run: mcpc help --full');
       console.log('');
     }
   });

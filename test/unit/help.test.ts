@@ -8,7 +8,7 @@
  * packaging.test.ts.
  */
 
-import { readGuide, printGuide } from '../../src/cli/commands/guide.js';
+import { readGuide, printGuide } from '../../src/cli/commands/help.js';
 
 describe('agent guide', () => {
   it('reads the guide markdown with frontmatter and key sections', () => {
