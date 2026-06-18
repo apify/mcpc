@@ -270,7 +270,7 @@ async function main(): Promise<void> {
         console.log('To view server capabilities and tools, run: mcpc @session');
       }
       console.log('For usage overview, run: mcpc help');
-      console.log('For full usage information, run: mcpc help --full');
+      console.log('For the agent skill guide, run: mcpc help --skill');
       console.log('');
     }
     await closeFileLogger();
@@ -429,18 +429,11 @@ function createTopLevelProgram(): Command {
     .option('--json', 'Output in JSON format for scripting')
     .option('--verbose', 'Enable debug logging')
     .option('--profile <name>', 'OAuth profile for the server ("default" if not provided)')
-    .option('--timeout <seconds>', 'Request timeout in seconds (default: 300)')
+    .option('--timeout <seconds>', 'Request timeout in seconds')
     .option('--max-chars <n>', 'Truncate output to n characters (ignored in --json mode)')
     .option('--insecure', 'Skip TLS certificate verification (for self-signed certs)')
     .version(mcpcVersion, '-v, --version', 'Output the version number')
     .helpOption('-h, --help', 'Display help');
-
-  program.addHelpText(
-    'before',
-    `${chalk.bold('AI agents:')} ${theme.cyan('mcpc help --full')} prints a compact, version-matched guide to mcpc
-  (mental model, common workflows, code-mode examples) — load it if you need it.
-`
-  );
 
   program.addHelpText(
     'after',
@@ -470,6 +463,7 @@ ${chalk.bold('MCP session commands (after connecting):')}
 
 Run "mcpc" without arguments to show active sessions and OAuth profiles.
 Run "mcpc --json" to get the same data as \`{ sessions: [...], profiles: [...] }\`.
+Run "mcpc help --skill" to print a full agent usage guide (mental model, workflows, examples).
 
 Full docs: ${docsUrl}`
   );
@@ -841,13 +835,18 @@ ${jsonHelp('`[{ sessionName, tools?: Tool[], resources?: Resource[], prompts?: P
     // eslint-disable-next-line @typescript-eslint/no-empty-function
     .action(() => {});
 
-  // help command: mcpc help [command] (supports "help x402 sign"); --full prints the agent guide
+  // help command: mcpc help [command] (supports "help x402 sign"); --skill prints the agent guide
   program
     .command('help [command] [subcommand]')
-    .description('Show help for a command, or the full agent usage guide with --full')
-    .option('--full', 'Print the full agent usage guide (mental model, workflows, examples)')
-    .action(async (cmdName?: string, subcommand?: string, opts?: { full?: boolean }) => {
-      if (opts?.full && !cmdName) {
+    .description('Show help for a command, or the agent skill guide with --skill')
+    .option('--skill', 'Print the agent skill guide (mental model, workflows, examples)')
+    .action(async (cmdName?: string, subcommand?: string, opts?: { skill?: boolean }) => {
+      if (opts?.skill) {
+        if (cmdName) {
+          throw new ClientError(
+            'mcpc help --skill prints the agent skill guide and takes no command name'
+          );
+        }
         help.printGuide();
         return;
       }
@@ -884,25 +883,6 @@ ${jsonHelp('`[{ sessionName, tools?: Tool[], resources?: Resource[], prompts?: P
       console.error(`Run "mcpc --help" for usage information.`);
       process.exit(1);
     });
-
-  // Default action (no args) — list sessions
-  program.action(async () => {
-    const opts = program.opts();
-    const json = opts.json || getJsonFromEnv();
-    if (json) setJsonMode(true);
-    const { hasSessions } = await sessions.listSessionsAndAuthProfiles({
-      outputMode: json ? 'json' : 'human',
-    });
-    if (!json) {
-      console.log('');
-      if (hasSessions) {
-        console.log('To view server capabilities and tools, run: mcpc @session');
-      }
-      console.log('For usage overview, run: mcpc help');
-      console.log('For full usage information, run: mcpc help --full');
-      console.log('');
-    }
-  });
 
   return program;
 }
@@ -1441,7 +1421,7 @@ function createSessionProgram(): Command {
     .option('--json', 'Output in JSON format for scripting and code mode')
     .option('--verbose', 'Enable debug logging')
     .option('--profile <name>', 'OAuth profile override')
-    .option('--timeout <seconds>', 'Request timeout in seconds (default: 300)')
+    .option('--timeout <seconds>', 'Request timeout in seconds')
     .option('--max-chars <n>', 'Truncate output to n characters (ignored in --json mode)')
     .option('--insecure', 'Skip TLS certificate verification (for self-signed certs)')
     .addHelpText(

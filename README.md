@@ -132,9 +132,6 @@ mcpc @fs tools-list
 <!-- AUTO-GENERATED: mcpc --help -->
 
 ```
-AI agents: mcpc help --full prints a compact, version-matched guide to mcpc
-  (mental model, common workflows, code-mode examples) — load it if you need it.
-
 Usage: mcpc [<@session>] [<command>] [options]
 
 Universal command-line client for the Model Context Protocol (MCP).
@@ -148,13 +145,13 @@ Commands:
   clean [resources...]           Clean up mcpc data (sessions, profiles, logs, all)
   grep <pattern>                 Search tools and instructions across all active sessions
   x402 [subcommand] [args...]    Configure an x402 payment wallet (EXPERIMENTAL)
-  help [command] [subcommand]    Show help for a command, or the full agent usage guide with --full
+  help [command] [subcommand]    Show help for a command, or the agent skill guide with --skill
 
 Options:
   --json                         Output in JSON format for scripting
   --verbose                      Enable debug logging
   --profile <name>               OAuth profile for the server ("default" if not provided)
-  --timeout <seconds>            Request timeout in seconds (default: 300)
+  --timeout <seconds>            Request timeout in seconds
   --max-chars <n>                Truncate output to n characters (ignored in --json mode)
   --insecure                     Skip TLS certificate verification (for self-signed certs)
   -v, --version                  Output the version number
@@ -185,6 +182,7 @@ MCP session commands (after connecting):
 
 Run "mcpc" without arguments to show active sessions and OAuth profiles.
 Run "mcpc --json" to get the same data as `{ sessions: [...], profiles: [...] }`.
+Run "mcpc help --skill" to print a full agent usage guide (mental model, workflows, examples).
 ```
 
 ### General actions
@@ -686,22 +684,22 @@ and both can easily perform destructive actions or leak credentials on their own
 
 ### Agent skills
 
-`mcpc` ships a built-in agent guide that always matches the installed version:
+`mcpc` ships a built-in agent skill that always matches the installed version:
 
 ```bash
-mcpc help --full
+mcpc help --skill
 ```
 
-No setup is needed: `mcpc help` mentions `mcpc help --full`, so an agent can discover and load
+No setup is needed: `mcpc help` mentions `mcpc help --skill`, so an agent can discover and load
 the guide on its own when it needs it.
 
 If you'd rather have the skill installed persistently (e.g. for Claude Code or any agent that
-loads `SKILL.md` files), `mcpc help --full` prints a valid `SKILL.md` — just redirect it into
+loads `SKILL.md` files), `mcpc help --skill` prints a valid `SKILL.md` — just redirect it into
 your skills directory:
 
 ```bash
 mkdir -p ~/.claude/skills/mcpc
-mcpc help --full > ~/.claude/skills/mcpc/SKILL.md
+mcpc help --skill > ~/.claude/skills/mcpc/SKILL.md
 ```
 
 That copy is a snapshot; re-run it after upgrading mcpc to refresh it.

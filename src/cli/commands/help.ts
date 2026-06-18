@@ -1,5 +1,5 @@
 /**
- * The baked-in agent usage guide, printed by `mcpc help --full`.
+ * The baked-in agent skill guide, printed by `mcpc help --skill`.
  *
  * The guide ships with the package (skills/mcpc/SKILL.md) and is read at
  * runtime so its content always matches the installed mcpc version.
@@ -11,10 +11,10 @@ import { dirname, join } from 'node:path';
 import { ClientError } from '../../lib/errors.js';
 
 /**
- * Directory holding the shipped guide content (`skills/mcpc`). This module
- * resolves to `<pkg>/dist/cli/commands/help.js` once built (and
- * `<pkg>/src/cli/commands/help.ts` in dev) — both sit three levels below the
- * package root, so the same relative path works either way.
+ * Directory holding the shipped guide content (`skills/mcpc`). This module lives
+ * in `<pkg>/dist/cli/commands/` once built (and `<pkg>/src/cli/commands/` in
+ * dev) — both are three directories deep, so `../../../skills/mcpc` resolves to
+ * the package root's `skills/mcpc` either way.
  */
 function guideDir(): string {
   return join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'skills', 'mcpc');
@@ -24,6 +24,7 @@ function guideDir(): string {
 export function readGuide(): string {
   const path = join(guideDir(), 'SKILL.md');
   try {
+    // Trim so printGuide()'s console.log yields exactly one trailing newline.
     return readFileSync(path, 'utf8').trimEnd();
   } catch (error) {
     throw new ClientError(
@@ -33,7 +34,7 @@ export function readGuide(): string {
   }
 }
 
-/** `mcpc help --full` — print the agent usage guide as Markdown. */
+/** `mcpc help --skill` — print the agent skill guide as Markdown. */
 export function printGuide(): void {
   console.log(readGuide());
 }

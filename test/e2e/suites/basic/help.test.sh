@@ -24,22 +24,23 @@ test_case "bare mcpc shows usage hint"
 run_mcpc
 assert_success
 assert_contains "$STDOUT" "mcpc help"
+assert_contains "$STDOUT" "mcpc help --skill"
 test_pass
 
 # Test: --help points AI agents at the guide
-test_case "--help points agents at mcpc help --full"
+test_case "--help points agents at mcpc help --skill"
 run_mcpc --help
 assert_success
-assert_contains "$STDOUT" "mcpc help --full"
+assert_contains "$STDOUT" "mcpc help --skill"
 test_pass
 
 # =============================================================================
-# help --full (agent guide)
+# help --skill (agent skill guide)
 # =============================================================================
 
-# Test: mcpc help --full prints the usage guide
-test_case "help --full prints the usage guide"
-run_mcpc help --full
+# Test: mcpc help --skill prints the skill guide
+test_case "help --skill prints the skill guide"
+run_mcpc help --skill
 assert_success
 assert_contains "$STDOUT" "name: mcpc"
 assert_contains "$STDOUT" "Mental model"
@@ -51,6 +52,14 @@ run_mcpc help
 assert_success
 assert_contains "$STDOUT" "Usage:"
 assert_not_contains "$STDOUT" "Mental model"
+test_pass
+
+# Test: mcpc help --skill with a command name is rejected, not silently ignored
+test_case "help --skill with a command name errors"
+run_mcpc help --skill connect
+assert_failure
+assert_not_contains "$STDOUT" "Mental model"
+assert_contains "$STDERR" "takes no command name"
 test_pass
 
 # Test: --version shows version
