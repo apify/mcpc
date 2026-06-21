@@ -803,7 +803,7 @@ Where `mcpc` stands on each part of the MCP specification:
 | **Feature**                                        | **Status**                                |
 | :------------------------------------------------- | :---------------------------------------- |
 | 🔌 **Transport**                                   | ✅ stdio and Streamable HTTP              |
-| 🔑 [**Authorization**](#authentication)            | ✅ Bearer + OAuth 2.1 (DCR, CIMD, custom) |
+| 🔑 [**Authorization**](#authentication)            | ✅ Bearer + OAuth 2.1 — auth code & client credentials (DCR, CIMD) |
 | 🔄 [**Sessions**](#sessions)                       | ✅ Supported                              |
 | 📖 [**Instructions**](#server-instructions)        | ✅ Supported                              |
 | 🔧 [**Tools**](#tools)                             | ✅ Supported                              |
@@ -819,6 +819,13 @@ Where `mcpc` stands on each part of the MCP specification:
 | ❓ **Elicitation**                                 | 🚧 Planned                                |
 | 🔤 **Completion**                                  | 🚧 Planned                                |
 | 🤖 **Sampling**                                    | ❌ Not applicable (no LLM access)         |
+
+Beyond the interactive browser login, the **Authorization** row above also covers the OAuth
+**client-credentials** grant (the [`io.modelcontextprotocol/oauth-client-credentials`](https://modelcontextprotocol.io/extensions/auth/oauth-client-credentials)
+extension) for non-interactive, machine-to-machine use such as CI/CD and daemons — no browser:
+`mcpc login <server> --grant client-credentials --client-id <id> --client-secret <secret>`
+(or a private-key JWT assertion via `--client-key`, RFC 7523). Access tokens are fetched and
+refreshed automatically; pin a non-discoverable token endpoint with `--token-endpoint <url>`.
 
 #### Server instructions
 
