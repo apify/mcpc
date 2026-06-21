@@ -1,7 +1,7 @@
 ---
 name: mcpc
 description: Use the mcpc CLI to work with MCP (Model Context Protocol) servers from the shell - connect to a server as a persistent session, then list and call tools, read resources, get prompts, and run async tasks. Use --json for scripting and code mode. Reach for this whenever interacting with MCP servers, calling MCP tools, or accessing MCP resources programmatically.
-allowed-tools: Bash(mcpc:*), Bash(node dist/cli/index.js:*), Read, Grep
+allowed-tools: Bash(mcpc:*), Read, Grep
 ---
 
 # mcpc: MCP command-line client
@@ -24,7 +24,7 @@ Everything is self-documenting — when unsure, ask the CLI:
 ```bash
 mcpc --help                       # all commands + global options
 mcpc help connect                 # help for one command
-mcpc @apify tools-call foo --help # print a specific tool's input schema
+mcpc @apify tools-call foo --help # that tool's details + schema
 ```
 
 ## First steps
@@ -39,10 +39,10 @@ mcpc @apify tools-call <tool> q:="hi"  # call a tool
 
 ## Connecting
 
-Server formats accepted by `connect` / `login` / `logout`:
+Server formats accepted by `connect`:
 
 - `mcp.example.com` — remote HTTP server (`https://` is added automatically)
-- `localhost:8080` or `127.0.0.1:8080` — local HTTP server (`http://` is the default for localhost)
+- `localhost:8080` or `127.0.0.1:8080` — local HTTP server (`http://` is the default for `localhost` and `127.0.0.1`)
 - `~/.vscode/mcp.json:filesystem` — a single entry from a config file (`file:entry`)
 - `~/.vscode/mcp.json` — connect **every** entry in a config file
 - _(no server)_ — auto-discover standard configs and connect all of them
@@ -58,6 +58,8 @@ mcpc connect                             # discover standard configs + connect e
   (`mcp.apify.com` → `@apify`). A matching session (same server + auth) is reused.
 - **Stdio (command-based) entries launch a local process on connect** — only connect
   to configs you trust. Bulk connects skip stdio entries unless you pass `--stdio`.
+- `login` / `logout` only accept an MCP server URL (a bare host or full
+  `http(s)://` URL) — not config files or auto-discovery.
 
 ## Sessions
 
@@ -73,6 +75,7 @@ mcpc close @apify        # tear the session down
 
 - 🟢 **live** — ready to use
 - 🟡 **connecting** / **reconnecting** — transient; retry in a moment
+- 🟡 **disconnected** — bridge alive but the server has gone quiet; retry to reconnect
 - 🟡 **crashed** — bridge process died; auto-restarts on next use
 - 🔴 **unauthorized** — auth failed; run `mcpc login <server>` then `mcpc restart @session`
 - 🔴 **expired** — server dropped the session; run `mcpc restart @session`
@@ -83,10 +86,11 @@ mcpc close @apify        # tear the session down
 mcpc @apify tools-list                  # compact list with inline param signatures
 mcpc @apify tools-list --full           # full JSON schemas
 mcpc @apify tools-get <tool>            # one tool's details + schema
-mcpc @apify tools-call <tool> --help    # shortcut: print just that tool's input schema
+mcpc @apify tools-call <tool> --help    # shortcut for tools-get: that tool's details + schema
 
 mcpc grep "search"                      # search tools + instructions across ALL sessions
-mcpc @apify grep "actor" --resources    # search one session; --tools/--resources/--prompts, -E regex
+mcpc @apify grep "actor" --resources    # search one session
+# grep filters: --tools/--resources/--prompts/--instructions, -E regex, -s case-sensitive, -m <n> max
 ```
 
 Prefer progressive discovery: `grep` to find the right tool, then `tools-get` for its
@@ -136,14 +140,15 @@ mcpc @apify resources-subscribe <uri> <file>        # keep local <file> in sync 
 mcpc @apify resources-unsubscribe <uri>             # stop syncing, keep the file
 
 mcpc @apify prompts-list
-mcpc @apify prompts-get <name> arg1:=value1         # same argument styles as tools-call
+mcpc @apify prompts-get <name> arg1:=value1         # same argument syntax as tools-call (values coerced to strings)
 ```
 
 ## Async tasks (long-running tools)
 
 ```bash
-mcpc @apify tools-call <tool> --task <args>     # run as a task with a progress spinner;
-                                                # Ctrl+C leaves it running and prints the task ID
+mcpc @apify tools-call <tool> --task <args>     # run as a task with a progress spinner; Ctrl+C (or
+                                                # ESC) leaves it running and prints the task ID.
+                                                # Falls back to a normal sync call if the server has no task support.
 mcpc @apify tools-call <tool> --detach <args>   # start and return the task ID immediately
 mcpc @apify tasks-list
 mcpc @apify tasks-get <taskId>                  # status
@@ -186,14 +191,32 @@ mcpc @sandboxed tools-list
 A proxy does not make an untrusted server safe — stdio servers still touch your system,
 and HTTP servers still hold your credentials. Only connect to servers you trust.
 
-## Agent skills (experimental)
+## Server-published skills (experimental)
 
-Some servers publish agent skills (draft MCP extension, SEP-2640):
+Distinct from this guide: some MCP **servers** publish their own agent skills
+(draft MCP extension, SEP-2640). Read them with:
 
 ```bash
 mcpc @apify skills-list
 mcpc @apify skills-get <name> --raw    # print the SKILL.md markdown (pipe to a file or an LLM)
 ```
+
+(`mcpc help --skill` documents mcpc itself; `skills-list` / `skills-get` fetch skills from the server.)
+
+## Global flags worth knowing
+
+```bash
+--json                  # machine-readable, MCP-spec-shaped output (code mode)
+--verbose               # protocol-level debug logging (JSON-RPC, transport)
+--profile <name>        # OAuth profile to use ("default" if omitted)
+--timeout <seconds>     # request timeout in seconds
+--max-chars <n>         # truncate human-readable output to n chars (ignored with --json)
+--insecure              # skip TLS verification (self-signed certs only)
+```
+
+(`--no-profile`, `--stdio`, `--proxy`, and `-H` are options of `connect`, not global flags.)
+
+`mcpc` also has experimental `--x402` auto-payment for paid MCP tools — see `mcpc help x402`.
 
 ## Debugging
 
@@ -211,8 +234,3 @@ mcpc clean                                # tidy stale sessions/logs (also: mcpc
 - `2` — server error (tool failed, resource not found)
 - `3` — network error
 - `4` — authentication error
-
-## Example script
-
-See [`docs/examples/company-lookup.sh`](../examples/company-lookup.sh) for a complete,
-AI-generated "code mode" script that validates prerequisites and calls MCP tools with `--json`.

@@ -23,7 +23,43 @@ test_pass
 test_case "bare mcpc shows usage hint"
 run_mcpc
 assert_success
-assert_contains "$STDOUT" "--help"
+assert_contains "$STDOUT" "mcpc help"
+assert_contains "$STDOUT" "mcpc help --skill"
+test_pass
+
+# Test: --help points AI agents at the guide
+test_case "--help points agents at mcpc help --skill"
+run_mcpc --help
+assert_success
+assert_contains "$STDOUT" "mcpc help --skill"
+test_pass
+
+# =============================================================================
+# help --skill (agent skill guide)
+# =============================================================================
+
+# Test: mcpc help --skill prints the skill guide
+test_case "help --skill prints the skill guide"
+run_mcpc help --skill
+assert_success
+assert_contains "$STDOUT" "name: mcpc"
+assert_contains "$STDOUT" "Mental model"
+test_pass
+
+# Test: mcpc help (no args) still shows the overview, not the guide
+test_case "help with no args shows the command overview"
+run_mcpc help
+assert_success
+assert_contains "$STDOUT" "Usage:"
+assert_not_contains "$STDOUT" "Mental model"
+test_pass
+
+# Test: mcpc help --skill with a command name is rejected, not silently ignored
+test_case "help --skill with a command name errors"
+run_mcpc help --skill connect
+assert_failure
+assert_not_contains "$STDOUT" "Mental model"
+assert_contains "$STDERR" "takes no command name"
 test_pass
 
 # Test: --version shows version
