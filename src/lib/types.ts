@@ -233,14 +233,28 @@ export interface SessionsStorage {
 }
 
 /**
+ * OAuth grant type used by a profile.
+ * - authorization_code: interactive, browser-based flow (the default; assumed when absent)
+ * - client_credentials: machine-to-machine flow (no user), per the MCP extension
+ *   `io.modelcontextprotocol/oauth-client-credentials`
+ */
+export type OAuthGrant = 'authorization_code' | 'client_credentials';
+
+/**
  * Authentication profile data stored in ~/.mcpc/profiles.json
  * Only OAuth authentication is supported for profiles
- * NOTE: Tokens are stored securely in OS keychain, not in this file
+ * NOTE: Tokens and client-credentials secrets are stored securely in the OS
+ * keychain, not in this file
  */
 export interface AuthProfile {
   name: string;
   serverUrl: string;
   authType: 'oauth';
+  /**
+   * OAuth grant the profile authenticates with. Absent ⇒ 'authorization_code'
+   * (backward compatible with profiles written before client-credentials support).
+   */
+  oauthGrant?: OAuthGrant;
   // OAuth metadata
   oauthIssuer: string;
   scopes?: string[];
@@ -284,6 +298,18 @@ export interface AuthCredentials {
   refreshToken?: string;
   // OAuth access token (used as static Bearer token when no refresh token available)
   accessToken?: string;
+  /**
+   * OAuth grant for this profile. When 'client_credentials', the bridge builds an
+   * SDK client-credentials provider from the fields below instead of using the
+   * refresh-token / access-token flow above.
+   */
+  oauthGrant?: OAuthGrant;
+  // Client-credentials grant material (machine-to-machine; sent via IPC, never CLI args)
+  clientSecret?: string; // client_secret_basic variant
+  privateKeyPem?: string; // private_key_jwt variant (RFC 7523): PEM-encoded signing key
+  keyAlg?: string; // JWT signing algorithm for the private_key_jwt variant (e.g. RS256)
+  scope?: string; // space-separated scopes requested by the client-credentials grant
+  tokenEndpoint?: string; // explicit token endpoint (--token-endpoint); bypasses discovery
   // HTTP headers (from --header flags, stored in keychain)
   headers?: Record<string, string>;
   // Bearer token the bridge's proxy server requires (from --proxy-bearer-token).

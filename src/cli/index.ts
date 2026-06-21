@@ -634,11 +634,24 @@ ${jsonHelp(
   program
     .command('login [server]')
     .usage('<server>')
-    .description('Interactively login to a server using OAuth and save profile')
+    .description('Log in to a server using OAuth and save a profile')
     .option('--profile <name>', 'Profile name (default: "default")')
     .option('--scope <scopes>', 'OAuth scopes to request (e.g. --scope "read write")')
+    .option(
+      '--grant <type>',
+      'OAuth grant: authorization-code (default, interactive) or client-credentials (machine-to-machine)'
+    )
     .option('--client-id <id>', 'Pre-registered OAuth client ID (skips CIMD and DCR)')
     .option('--client-secret <secret>', 'Pre-registered OAuth client secret (requires --client-id)')
+    .option(
+      '--client-key <pem-or-path>',
+      'Private key (PEM file path or literal) for the private_key_jwt client-credentials variant'
+    )
+    .option('--client-key-alg <alg>', 'JWT signing algorithm for --client-key (default: RS256)')
+    .option(
+      '--token-endpoint <url>',
+      'OAuth token endpoint (client-credentials only; auto-discovered if omitted)'
+    )
     .option(
       '--client-metadata-url <url>',
       'HTTPS URL of an OAuth CIMD (default: https://apify.github.io/mcpc/client-metadata.json)'
@@ -671,6 +684,24 @@ ${chalk.bold('OAuth client registration approaches:')}
      "registration_endpoint" and CIMD is not supported or disabled.
 
   See https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization
+
+${chalk.bold('Machine-to-machine (client-credentials grant):')}
+  For headless use (CI/CD, daemons) with no browser or user. Requires
+  --grant client-credentials, --client-id, and one credential format:
+
+    mcpc login mcp.example.com --grant client-credentials \\
+      --client-id my-svc --client-secret s3cr3t --scope "read write"
+
+    mcpc login mcp.example.com --grant client-credentials \\
+      --client-id my-svc --client-key ./key.pem --client-key-alg RS256
+
+  --client-secret uses client_secret_basic; --client-key signs a JWT assertion
+  (private_key_jwt, RFC 7523). The token endpoint is auto-discovered; pin it with
+  --token-endpoint <url> for servers without discoverable metadata. The profile is
+  then used like any other:
+  mcpc connect mcp.example.com @svc --profile default
+
+  See https://modelcontextprotocol.io/extensions/auth/oauth-client-credentials
 
 ${jsonHelp('Interactive prompts are written to stderr, stdout contains a clean JSON object', '`{ profile, serverUrl, scopes }`')}
 `
@@ -708,8 +739,12 @@ ${jsonHelp('Interactive prompts are written to stderr, stdout contains a clean J
       await auth.login(server, {
         profile: opts.profile,
         scope: opts.scope,
+        grant: opts.grant,
         clientId: opts.clientId,
         clientSecret: opts.clientSecret,
+        clientKey: opts.clientKey,
+        clientKeyAlg: opts.clientKeyAlg,
+        tokenEndpoint: opts.tokenEndpoint,
         clientMetadataUrl: opts.clientMetadataUrl,
         ...(callbackPort !== undefined ? { callbackPort } : {}),
         ...(callbackHost ? { callbackHost } : {}),

@@ -61,6 +61,14 @@ const NO_RESOURCES = process.env.NO_RESOURCES === 'true';
 const NO_PROMPTS = process.env.NO_PROMPTS === 'true';
 const WITH_SKILLS = process.env.WITH_SKILLS === 'true';
 const SKILLS_NO_INDEX = process.env.SKILLS_NO_INDEX === 'true';
+// OAuth client-credentials grant test endpoints (metadata + /token). Opt-in so
+// other suites are unaffected. Expected credentials default to test values.
+const WITH_OAUTH = process.env.WITH_OAUTH === 'true';
+const OAUTH_CLIENT_ID = process.env.OAUTH_CLIENT_ID || 'test-client';
+const OAUTH_CLIENT_SECRET = process.env.OAUTH_CLIENT_SECRET || 's3cr3t';
+// When true, serve /token but NOT the .well-known metadata, so discovery fails and
+// only an explicit --token-endpoint can locate the token endpoint.
+const OAUTH_NO_METADATA = process.env.OAUTH_NO_METADATA === 'true';
 
 // Control state (manipulated via /control/* endpoints)
 let failNextCount = 0;
@@ -365,6 +373,18 @@ function paginate<T>(items: T[], cursor?: string): { items: T[]; nextCursor?: st
     return { items: pageItems, nextCursor: String(endIndex) };
   }
   return { items: pageItems };
+}
+
+// Read a request body to a string (for the form-encoded /token endpoint).
+function readBody(req: http.IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let data = '';
+    req.on('data', (chunk) => {
+      data += chunk;
+    });
+    req.on('end', () => resolve(data));
+    req.on('error', reject);
+  });
 }
 
 // Helper for artificial latency
@@ -909,6 +929,77 @@ async function main() {
           res.writeHead(404);
           res.end('Unknown control action');
           return;
+      }
+    }
+
+    // OAuth client-credentials endpoints (opt-in via WITH_OAUTH). These must be
+    // reachable without a Bearer token, so they precede the REQUIRE_AUTH check.
+    if (WITH_OAUTH) {
+      if (
+        !OAUTH_NO_METADATA &&
+        url.pathname === '/.well-known/oauth-authorization-server' &&
+        req.method === 'GET'
+      ) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            issuer: `http://localhost:${PORT}`,
+            // authorization_endpoint + response_types_supported are required by RFC 8414;
+            // the SDK validates the full metadata document even for the token-only path.
+            authorization_endpoint: `http://localhost:${PORT}/authorize`,
+            token_endpoint: `http://localhost:${PORT}/token`,
+            response_types_supported: ['code'],
+            grant_types_supported: ['client_credentials'],
+            token_endpoint_auth_methods_supported: ['client_secret_basic', 'private_key_jwt'],
+          })
+        );
+        return;
+      }
+
+      if (url.pathname === '/token' && req.method === 'POST') {
+        const params = new URLSearchParams(await readBody(req));
+        if (params.get('grant_type') !== 'client_credentials') {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'unsupported_grant_type' }));
+          return;
+        }
+
+        // Accept either client_secret_basic, client_secret_post, or private_key_jwt.
+        // The JWT assertion's signature is not verified here — presence is enough to
+        // prove the client (mcpc + SDK) built and sent it correctly.
+        let authed = false;
+        const authz = req.headers.authorization;
+        if (authz?.startsWith('Basic ')) {
+          const decoded = Buffer.from(authz.slice('Basic '.length), 'base64').toString('utf8');
+          const sep = decoded.indexOf(':');
+          const id = decodeURIComponent(decoded.slice(0, sep));
+          const secret = decodeURIComponent(decoded.slice(sep + 1));
+          authed = id === OAUTH_CLIENT_ID && secret === OAUTH_CLIENT_SECRET;
+        } else if (params.get('client_assertion') && params.get('client_assertion_type')) {
+          authed = true;
+        } else if (params.get('client_id') && params.get('client_secret')) {
+          authed =
+            params.get('client_id') === OAUTH_CLIENT_ID &&
+            params.get('client_secret') === OAUTH_CLIENT_SECRET;
+        }
+
+        if (!authed) {
+          res.writeHead(401, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'invalid_client' }));
+          return;
+        }
+
+        const scope = params.get('scope');
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            access_token: `cc-token-${Date.now()}`,
+            token_type: 'Bearer',
+            expires_in: 3600,
+            ...(scope ? { scope } : {}),
+          })
+        );
+        return;
       }
     }
 
