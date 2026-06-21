@@ -147,7 +147,7 @@ Options:
   --json                         Output in JSON format for scripting
   --verbose                      Enable debug logging
   --profile <name>               OAuth profile for the server ("default" if not provided)
-  --timeout <seconds>            Request timeout in seconds
+  --timeout <seconds>            Request timeout in seconds (default: 60)
   --max-chars <n>                Truncate output to n characters (ignored in --json mode)
   --insecure                     Skip TLS certificate verification (for self-signed certs)
   -v, --version                  Output the version number
