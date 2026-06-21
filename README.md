@@ -9,14 +9,10 @@
 
 `mcpc` is a command-line client for the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)
 that maps every MCP operation to an intuitive command for interactive shell use, scripting, and AI agents.
-Connect to any MCP server over stdio or Streamable HTTP, log in with OAuth 2.1 or bearer tokens, keep
-long-lived sessions to many servers alive in parallel, and drive their tools, resources, prompts, and
-async tasks, all from your terminal, with readable output by default and clean `--json` for scripts.
 
 `mcpc` is your new Swiss Army knife for MCP. Reach for it to manually inspect and debug MCP servers,
 to script repeatable MCP workflows in plain shell, or to give AI coding agents the full power of modern
-MCP through the most universal interface there is: the UNIX shell. No SDK, no boilerplate, no glue code.
-Just one command that humans and agents alike can pick up from `--help` alone.
+MCP through the most universal interface there is: the UNIX shell.
 
 **Key features:**
 
@@ -817,51 +813,29 @@ major client-facing features of the [MCP specification](https://modelcontextprot
 from tools, resources, and prompts to the newest additions like async tasks and skills. Each is exposed as
 a first-class command with consistent human-readable and `--json` output.
 
-### Transport
-
-- **stdio**: Direct bidirectional JSON-RPC communication over
-  stdio server from the [config file](#mcp-server-config-file).
-- **Streamable HTTP**: Fully supported.
-- **HTTP with SSE** (deprecated): Legacy mode, not supported.
-
-### Authorization
-
-- [Anonymous access](#anonymous-access)
-- [HTTP header authorization](#bearer-token-authentication)
-- [OAuth 2.1](#oauth-profiles)
-
-### MCP session
-
-The bridge process manages the full MCP session lifecycle:
-
-- Performs initialization handshake (`initialize` → `initialized`)
-- Negotiates protocol version and capabilities
-- Fetches server-provided `instructions`
-- Maintains persistent HTTP connections with bidirectional streaming, or stdio bidirectional pipe to subprocess
-- Handles `MCP-Protocol-Version` and `MCP-Session-Id` headers automatically
-- Handles multiple concurrent requests
-- Recovers transparently from network disconnections and bridge process crashes
-
 ### MCP feature support
 
 Where `mcpc` stands on each part of the MCP specification:
 
-| **Feature**                                        | **Status**                         |
-| :------------------------------------------------- | :--------------------------------- |
-| 📖 [**Instructions**](#server-instructions)        | ✅ Supported                       |
-| 🔧 [**Tools**](#tools)                             | ✅ Supported                       |
-| 💬 [**Prompts**](#prompts)                         | ✅ Supported                       |
-| 📦 [**Resources**](#resources)                     | ✅ Supported                       |
-| 🧠 [**Skills**](#skills)                           | 🧪 Experimental (SEP-2640)         |
-| 📝 [**Logging**](#server-logs)                     | ✅ Supported (deprecated by MCP)   |
-| 🔔 [**Notifications**](#list-change-notifications) | ✅ Supported                       |
-| 📄 [**Pagination**](#pagination)                   | ✅ Supported                       |
-| 🏓 [**Ping**](#ping)                               | ✅ Supported                       |
-| ⏳ [**Async tasks**](#async-tasks)                 | ✅ Supported                       |
-| 📁 **Roots**                                       | ❌ Not planned (deprecated by MCP) |
-| ❓ **Elicitation**                                 | 🚧 Planned                         |
-| 🔤 **Completion**                                  | 🚧 Planned                         |
-| 🤖 **Sampling**                                    | ❌ Not applicable (no LLM access)  |
+| **Feature**                                        | **Status**                                |
+| :------------------------------------------------- | :---------------------------------------- |
+| 🔌 **Transport**                                   | ✅ stdio and Streamable HTTP              |
+| 🔑 [**Authorization**](#authentication)            | ✅ Bearer + OAuth 2.1 (DCR, CIMD, custom) |
+| 🔄 [**Sessions**](#sessions)                       | ✅ Supported                              |
+| 📖 [**Instructions**](#server-instructions)        | ✅ Supported                              |
+| 🔧 [**Tools**](#tools)                             | ✅ Supported                              |
+| 💬 [**Prompts**](#prompts)                         | ✅ Supported                              |
+| 📦 [**Resources**](#resources)                     | ✅ Supported                              |
+| 🧠 [**Skills**](#skills)                           | 🧪 Experimental (SEP-2640)                |
+| 📝 [**Logging**](#server-logs)                     | ✅ Supported (deprecated by MCP)          |
+| 🔔 [**Notifications**](#list-change-notifications) | ✅ Supported                              |
+| 📄 [**Pagination**](#pagination)                   | ✅ Supported                              |
+| 🏓 [**Ping**](#ping)                               | ✅ Supported                              |
+| ⏳ [**Async tasks**](#async-tasks)                 | ✅ Supported                              |
+| 📁 **Roots**                                       | ❌ Not planned (deprecated by MCP)        |
+| ❓ **Elicitation**                                 | 🚧 Planned                                |
+| 🔤 **Completion**                                  | 🚧 Planned                                |
+| 🤖 **Sampling**                                    | ❌ Not applicable (no LLM access)         |
 
 #### Server instructions
 
