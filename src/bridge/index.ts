@@ -33,8 +33,10 @@ import { getSession, loadSessions, updateSession } from '../lib/sessions.js';
 import type { AuthCredentials, X402WalletCredentials } from '../lib/types.js';
 import { OAuthTokenManager } from '../lib/auth/oauth-token-manager.js';
 import { OAuthProvider } from '../lib/auth/oauth-provider.js';
+import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
 import { storeKeychainOAuthTokenInfo, readKeychainOAuthTokenInfo } from '../lib/auth/keychain.js';
 import { updateAuthProfileRefreshedAt } from '../lib/auth/profiles.js';
+import { createClientCredentialsProvider } from '../lib/auth/client-credentials.js';
 import {
   LoggingMessageNotificationSchema,
   ResourceUpdatedNotificationSchema,
@@ -98,8 +100,13 @@ class BridgeProcess {
   // OAuth token manager (created when CLI sends auth credentials via IPC)
   private tokenManager: OAuthTokenManager | null = null;
 
-  // OAuth provider for SDK transport (wraps tokenManager)
-  private authProvider: OAuthProvider | null = null;
+  // OAuth provider for SDK transport. Either mcpc's OAuthProvider (authorization-code
+  // runtime mode, wraps tokenManager) or an SDK client-credentials provider.
+  private authProvider: OAuthClientProvider | null = null;
+
+  // True when authProvider is a client-credentials provider — drives the
+  // `oauth-client-credentials` extension capability declaration on initialize.
+  private usesClientCredentials = false;
 
   // HTTP headers (received via IPC, stored in memory only)
   private headers: Record<string, string> | null = null;
@@ -172,11 +179,27 @@ class BridgeProcess {
     logger.debug(`  refreshToken: ${credentials.refreshToken ? 'present' : 'MISSING'}`);
     logger.debug(`  accessToken: ${credentials.accessToken ? 'present' : 'MISSING'}`);
     logger.debug(`  clientId: ${credentials.clientId ? 'present' : 'MISSING'}`);
+    logger.debug(`  oauthGrant: ${credentials.oauthGrant ?? 'authorization_code'}`);
+    logger.debug(`  clientSecret: ${credentials.clientSecret ? 'present' : 'absent'}`);
+    logger.debug(`  privateKey: ${credentials.privateKeyPem ? 'present' : 'absent'}`);
     logger.debug(`  headers: ${credentials.headers ? Object.keys(credentials.headers).length : 0}`);
     logger.debug(`  proxyBearerToken: ${credentials.proxyBearerToken ? 'present' : 'absent'}`);
 
-    // Set up OAuth token manager if refresh token and client ID are provided
-    if (credentials.refreshToken && credentials.clientId) {
+    // Client-credentials grant: build the SDK provider that fetches + refreshes
+    // tokens itself. No token manager / no static header — the SDK transport drives it.
+    if (credentials.oauthGrant === 'client_credentials' && credentials.clientId) {
+      this.authProvider = createClientCredentialsProvider({
+        clientId: credentials.clientId,
+        ...(credentials.clientSecret ? { clientSecret: credentials.clientSecret } : {}),
+        ...(credentials.privateKeyPem ? { privateKeyPem: credentials.privateKeyPem } : {}),
+        ...(credentials.keyAlg ? { keyAlg: credentials.keyAlg } : {}),
+        ...(credentials.scope ? { scope: credentials.scope } : {}),
+        ...(credentials.tokenEndpoint ? { tokenEndpoint: credentials.tokenEndpoint } : {}),
+      });
+      this.usesClientCredentials = true;
+      logger.debug('Client-credentials provider created for SDK transport');
+      // Set up OAuth token manager if refresh token and client ID are provided
+    } else if (credentials.refreshToken && credentials.clientId) {
       this.tokenManager = new OAuthTokenManager({
         serverUrl: credentials.serverUrl,
         profileName: credentials.profileName,
@@ -602,7 +625,7 @@ class BridgeProcess {
     const clientConfig: CreateMcpClientOptions = {
       clientInfo: { name: 'mcpc', version: mcpcVersion },
       serverConfig,
-      capabilities: buildClientCapabilities(),
+      capabilities: buildClientCapabilities({ clientCredentials: this.usesClientCredentials }),
       // Pass auth provider for automatic token refresh (HTTP transport only)
       ...(this.authProvider && { authProvider: this.authProvider }),
       // Pass session ID for resumption (HTTP transport only)

@@ -147,6 +147,54 @@ describe('OS keychain available', () => {
     await storeKeychainProxyBearerToken('s', 'tok');
     await expect(readFile(credFile())).rejects.toThrow();
   });
+
+  it('stores and retrieves client-credentials material', async () => {
+    const { storeKeychainClientCredentials, readKeychainClientCredentials } = await loadKeychain();
+
+    const info = { clientId: 'svc', clientSecret: 's3cr3t', scope: 'read write' };
+    await storeKeychainClientCredentials('https://example.com', 'default', info);
+    expect(await readKeychainClientCredentials('https://example.com', 'default')).toEqual(info);
+  });
+
+  it('deletes client-credentials material', async () => {
+    const {
+      storeKeychainClientCredentials,
+      removeKeychainClientCredentials,
+      readKeychainClientCredentials,
+    } = await loadKeychain();
+
+    await storeKeychainClientCredentials('https://example.com', 'default', {
+      clientId: 'svc',
+      privateKeyPem: '-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----',
+      keyAlg: 'RS256',
+    });
+    expect(await removeKeychainClientCredentials('https://example.com', 'default')).toBe(true);
+    expect(await readKeychainClientCredentials('https://example.com', 'default')).toBeUndefined();
+  });
+
+  it('keeps client-credentials material separate from authorization-code client info', async () => {
+    const {
+      storeKeychainClientCredentials,
+      storeKeychainOAuthClientInfo,
+      readKeychainClientCredentials,
+      readKeychainOAuthClientInfo,
+    } = await loadKeychain();
+
+    await storeKeychainOAuthClientInfo('https://example.com', 'default', { clientId: 'ac-client' });
+    await storeKeychainClientCredentials('https://example.com', 'default', {
+      clientId: 'cc-client',
+      clientSecret: 's',
+    });
+
+    // Distinct keychain accounts — neither overwrites the other.
+    expect((await readKeychainOAuthClientInfo('https://example.com', 'default'))?.clientId).toBe(
+      'ac-client'
+    );
+    expect((await readKeychainClientCredentials('https://example.com', 'default'))?.clientId).toBe(
+      'cc-client'
+    );
+    expect(keychainStore.size).toBe(2);
+  });
 });
 
 // ---------------------------------------------------------------------------

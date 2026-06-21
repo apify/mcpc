@@ -42,12 +42,24 @@ export interface OAuthTokenResponse {
 }
 
 /**
- * Discover OAuth token endpoint from server
- * Tries standard well-known endpoints per OAuth 2.0 and OpenID Connect specs
- * First tries path-based discovery, then falls back to root-based discovery
- * (some servers like Notion host metadata at root instead of path)
+ * Authorization server metadata (RFC 8414 / OpenID Connect discovery). Only the
+ * fields mcpc reads are typed; the rest are preserved for pass-through to the SDK.
  */
-export async function discoverTokenEndpoint(serverUrl: string): Promise<string | undefined> {
+export interface AuthServerMetadata {
+  token_endpoint?: string;
+  token_endpoint_auth_methods_supported?: string[];
+  [key: string]: unknown;
+}
+
+/**
+ * Discover OAuth authorization-server metadata from a server.
+ * Tries standard well-known endpoints per OAuth 2.0 and OpenID Connect specs.
+ * First tries path-based discovery, then falls back to root-based discovery
+ * (some servers like Notion host metadata at root instead of path).
+ */
+export async function discoverAuthServerMetadata(
+  serverUrl: string
+): Promise<AuthServerMetadata | undefined> {
   serverUrl = serverUrl.replace(/\/+$/, '');
 
   // Try path-based discovery first (e.g., https://example.com/mcp/.well-known/...)
@@ -75,10 +87,10 @@ export async function discoverTokenEndpoint(serverUrl: string): Promise<string |
       });
 
       if (response.ok) {
-        const metadata = (await response.json()) as { token_endpoint?: string };
+        const metadata = (await response.json()) as AuthServerMetadata;
         if (metadata.token_endpoint) {
           logger.debug(`Found token endpoint: ${metadata.token_endpoint}`);
-          return metadata.token_endpoint;
+          return metadata;
         }
       }
     } catch {
@@ -87,6 +99,14 @@ export async function discoverTokenEndpoint(serverUrl: string): Promise<string |
   }
 
   return undefined;
+}
+
+/**
+ * Discover OAuth token endpoint from server.
+ * Thin wrapper over discoverAuthServerMetadata() for callers that only need the URL.
+ */
+export async function discoverTokenEndpoint(serverUrl: string): Promise<string | undefined> {
+  return (await discoverAuthServerMetadata(serverUrl))?.token_endpoint;
 }
 
 /**

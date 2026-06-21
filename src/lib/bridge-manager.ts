@@ -42,6 +42,7 @@ import { BridgeClient } from './bridge-client.js';
 import {
   readKeychainOAuthTokenInfo,
   readKeychainOAuthClientInfo,
+  readKeychainClientCredentials,
   readKeychainSessionHeaders,
   readKeychainProxyBearerToken,
 } from './auth/keychain.js';
@@ -543,7 +544,26 @@ async function loadAuthCredentials(
     logger.debug(`Looking up auth profile ${profileName} for ${serverUrl}`);
 
     const profile = await getAuthProfile(serverUrl, profileName);
-    if (profile) {
+    if (profile?.oauthGrant === 'client_credentials') {
+      // Client-credentials grant: load the stored secret/key so the bridge can
+      // build the SDK provider that fetches and refreshes tokens itself.
+      const cc = await readKeychainClientCredentials(profile.serverUrl, profileName);
+      if (cc?.clientId) {
+        credentials.serverUrl = profile.serverUrl;
+        credentials.oauthGrant = 'client_credentials';
+        credentials.clientId = cc.clientId;
+        if (cc.clientSecret) credentials.clientSecret = cc.clientSecret;
+        if (cc.privateKeyPem) credentials.privateKeyPem = cc.privateKeyPem;
+        if (cc.keyAlg) credentials.keyAlg = cc.keyAlg;
+        if (cc.scope) credentials.scope = cc.scope;
+        if (cc.tokenEndpoint) credentials.tokenEndpoint = cc.tokenEndpoint;
+        logger.debug(`Found client-credentials material for profile ${profileName}`);
+      } else {
+        logger.warn(
+          `Profile ${profileName} uses the client-credentials grant but no material was found in the keychain`
+        );
+      }
+    } else if (profile) {
       // Load tokens from keychain
       const tokens = await readKeychainOAuthTokenInfo(profile.serverUrl, profileName);
       if (tokens) {

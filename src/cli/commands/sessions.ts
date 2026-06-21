@@ -206,14 +206,18 @@ export async function listSessionsAndAuthProfiles(options: {
       for (const profile of profiles) {
         const hostStr = getServerHost(profile.serverUrl);
         const nameStr = theme.magenta(profile.name);
-        const userStr = profile.userEmail || profile.userName || '';
+        // Client-credentials profiles have no user identity; label the grant instead.
+        const annotation =
+          profile.userEmail ||
+          profile.userName ||
+          (profile.oauthGrant === 'client_credentials' ? 'client credentials' : '');
         // Show refreshedAt if available, otherwise createdAt
         const timeAgo = formatTimeAgo(profile.refreshedAt || profile.createdAt);
         const timeLabel = profile.refreshedAt ? 'refreshed' : 'created';
 
         let line = `  ${hostStr} / ${nameStr}`;
-        if (userStr) {
-          line += chalk.dim(` (${userStr})`);
+        if (annotation) {
+          line += chalk.dim(` (${annotation})`);
         }
         if (timeAgo) {
           line += chalk.dim(`, ${timeLabel} ${timeAgo}`);

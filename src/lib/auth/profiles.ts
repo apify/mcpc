@@ -19,7 +19,11 @@ import { loadSessions } from '../sessions.js';
 import { withFileLock } from '../file-lock.js';
 import { createLogger } from '../logger.js';
 import { ClientError } from '../errors.js';
-import { removeKeychainOAuthClientInfo, removeKeychainOAuthTokenInfo } from './keychain.js';
+import {
+  removeKeychainOAuthClientInfo,
+  removeKeychainOAuthTokenInfo,
+  removeKeychainClientCredentials,
+} from './keychain.js';
 
 const logger = createLogger('auth-profiles');
 
@@ -282,6 +286,7 @@ export async function deleteAuthProfiles(
         try {
           await removeKeychainOAuthClientInfo(profile.serverUrl, profile.name);
           await removeKeychainOAuthTokenInfo(profile.serverUrl, profile.name);
+          await removeKeychainClientCredentials(profile.serverUrl, profile.name);
           logger.debug(
             `Removed keychain entries for profile: ${profile.name} on ${getServerHost(profile.serverUrl)}`
           );
