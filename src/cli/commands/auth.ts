@@ -169,11 +169,14 @@ export async function login(
     } else {
       console.error(formatOutput({ error: errorMessage }, 'json'));
     }
-    // `login` runs OAuth/token requests in this process, leaving idle keep-alive
-    // sockets in undici's pool. Drain them before the forced exit so the teardown
-    // doesn't trip a Windows libuv async-handle assertion onto stderr (see closeProxy).
+    // `login` runs OAuth/token requests in this process. A forced process.exit()
+    // here races libuv's handle teardown on Windows and aborts with an async-handle
+    // assertion that corrupts the --json error output. Instead, drain undici's pool
+    // (closes idle keep-alive sockets for a prompt exit) and let the event loop exit
+    // on its own via process.exitCode — the same clean teardown the success path uses.
     await closeProxy();
-    process.exit(4); // Authentication error
+    process.exitCode = 4; // Authentication error
+    return;
   }
 }
 

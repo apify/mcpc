@@ -65,23 +65,22 @@ export function proxyFetch(input: string | URL | Request, init?: RequestInit): P
 /**
  * Forcefully close the proxy dispatcher and all of its pooled connections.
  *
- * Call this right before a forced `process.exit()` on any path where the CLI
- * process itself made HTTP requests (e.g. the `login` token/OAuth calls). Those
- * requests leave idle keep-alive sockets in undici's connection pool; exiting
- * while they are still open races libuv's handle teardown on Windows and aborts
- * the process with an async-handle assertion (`uv_async_send` on a closing
- * handle, `src\win\async.c`). That stray native abort message lands on stderr
- * and corrupts otherwise-valid `--json` error output. Draining the pool first
- * makes the subsequent exit clean.
+ * Call this on any path where the CLI process itself made HTTP requests (e.g. the
+ * `login` token/OAuth calls) and is about to exit. Those requests leave idle
+ * keep-alive sockets in undici's connection pool; closing them lets the event
+ * loop empty so the process exits promptly on its own (set `process.exitCode`
+ * and return — do NOT call `process.exit()`, which races libuv's handle teardown
+ * on Windows and aborts with an async-handle assertion, `uv_async_send` on a
+ * closing handle in `src\win\async.c`, corrupting `--json` error output).
  *
  * `destroy()` resolves near-instantly for idle keep-alive sockets, but it is
  * raced against a short timeout so a stuck connection can never stall the CLI's
  * exit. Best-effort throughout: teardown errors (including a late rejection that
  * lands after the timeout wins) are ignored.
  *
- * The drain is only needed to avoid the Node/libuv exit crash on Windows. Some
- * runtimes (e.g. Bun's undici shim) don't implement `destroy()` on the
- * dispatcher and don't need the drain, so this no-ops where it's unavailable.
+ * Some runtimes (e.g. Bun's undici shim) don't implement `destroy()` on the
+ * dispatcher; this no-ops where it's unavailable (those runtimes drain promptly
+ * on their own anyway).
  */
 const CLOSE_TIMEOUT_MS = 100;
 
