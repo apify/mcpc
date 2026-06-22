@@ -11,10 +11,12 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { mkdtemp, writeFile, rm } from 'fs/promises';
 import { generateKeyPairSync } from 'crypto';
+import { InvalidClientError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
 import {
   validateKeyAlgorithm,
   resolvePrivateKeyPem,
   createClientCredentialsProvider,
+  describeAuthError,
   DEFAULT_KEY_ALGORITHM,
 } from '../../../../src/lib/auth/client-credentials.js';
 import { ClientError } from '../../../../src/lib/errors.js';
@@ -112,5 +114,33 @@ describe('createClientCredentialsProvider', () => {
   it('leaves discoveryState undefined when no token endpoint is pinned', () => {
     const provider = createClientCredentialsProvider({ clientId: 'svc', clientSecret: 's3cr3t' });
     expect(provider.discoveryState).toBeUndefined();
+  });
+});
+
+describe('describeAuthError', () => {
+  it('falls back to the OAuth error code when the message is empty', () => {
+    // A wrong client secret yields invalid_client with no error_description,
+    // so the SDK leaves the message empty — we must surface the code instead.
+    expect(describeAuthError(new InvalidClientError(''))).toBe('invalid_client');
+  });
+
+  it('prefers a non-empty error message over the code', () => {
+    expect(describeAuthError(new InvalidClientError('client authentication failed'))).toBe(
+      'client authentication failed'
+    );
+  });
+
+  it('uses the error message for plain errors', () => {
+    expect(describeAuthError(new Error('boom'))).toBe('boom');
+  });
+
+  it('falls back to the error name when message and code are absent', () => {
+    const err = new Error('');
+    err.name = 'WeirdError';
+    expect(describeAuthError(err)).toBe('WeirdError');
+  });
+
+  it('stringifies non-Error values', () => {
+    expect(describeAuthError('nope')).toBe('nope');
   });
 });

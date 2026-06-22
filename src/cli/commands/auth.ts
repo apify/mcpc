@@ -14,6 +14,7 @@ import type { CommandOptions, OutputMode } from '../../lib/types.js';
 import { deleteAuthProfiles } from '../../lib/auth/profiles.js';
 import { performOAuthFlow } from '../../lib/auth/oauth-flow.js';
 import { getServerHost, normalizeServerUrl, validateProfileName } from '../../lib/utils.js';
+import { closeProxy } from '../../lib/proxy.js';
 import { DEFAULT_AUTH_PROFILE, DEFAULT_CLIENT_METADATA_URL } from '../../lib/auth/oauth-utils.js';
 import type { OAuthClientCredentialsInfo } from '../../lib/auth/keychain.js';
 import {
@@ -168,6 +169,10 @@ export async function login(
     } else {
       console.error(formatOutput({ error: errorMessage }, 'json'));
     }
+    // `login` runs OAuth/token requests in this process, leaving idle keep-alive
+    // sockets in undici's pool. Drain them before the forced exit so the teardown
+    // doesn't trip a Windows libuv async-handle assertion onto stderr (see closeProxy).
+    await closeProxy();
     process.exit(4); // Authentication error
   }
 }

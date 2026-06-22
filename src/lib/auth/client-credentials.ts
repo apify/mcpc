@@ -153,6 +153,30 @@ function buildPinnedDiscoveryState(tokenEndpoint: string): OAuthDiscoveryState {
 }
 
 /**
+ * Build a human-readable reason from an error thrown by the SDK's token request.
+ *
+ * OAuth failures from the authorization server (e.g. a wrong client secret) arrive
+ * as an OAuthError subclass carrying a machine-readable `errorCode` such as
+ * `invalid_client`. When the server omits `error_description` the SDK leaves
+ * `error.message` empty, so fall back to that code rather than reporting a bare,
+ * empty reason. Non-OAuth errors fall back to their message or string form.
+ */
+export function describeAuthError(error: unknown): string {
+  if (error instanceof Error) {
+    const message = error.message.trim();
+    if (message) {
+      return message;
+    }
+    const code = (error as { errorCode?: unknown }).errorCode;
+    if (typeof code === 'string' && code) {
+      return code;
+    }
+    return error.name;
+  }
+  return String(error);
+}
+
+/**
  * Perform a one-off client-credentials token request to validate the supplied
  * material and learn the granted scopes. Uses the same SDK provider the bridge
  * uses at runtime, so a successful validation guarantees the session will connect.
@@ -185,7 +209,7 @@ async function validateClientCredentials(
     logger.debug('Client-credentials validation token request succeeded');
     return tokens.scope ? tokens.scope.split(' ') : undefined;
   } catch (error) {
-    throw new AuthError(`Client-credentials authentication failed: ${(error as Error).message}`);
+    throw new AuthError(`Client-credentials authentication failed: ${describeAuthError(error)}`);
   }
 }
 
