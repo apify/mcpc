@@ -78,13 +78,17 @@ export function proxyFetch(input: string | URL | Request, init?: RequestInit): P
  * raced against a short timeout so a stuck connection can never stall the CLI's
  * exit. Best-effort throughout: teardown errors (including a late rejection that
  * lands after the timeout wins) are ignored.
+ *
+ * The drain is only needed to avoid the Node/libuv exit crash on Windows. Some
+ * runtimes (e.g. Bun's undici shim) don't implement `destroy()` on the
+ * dispatcher and don't need the drain, so this no-ops where it's unavailable.
  */
 const CLOSE_TIMEOUT_MS = 100;
 
 export async function closeProxy(): Promise<void> {
   const agent = proxyAgent;
   proxyAgent = undefined;
-  if (!agent) {
+  if (!agent || typeof agent.destroy !== 'function') {
     return;
   }
   // Swallow any (possibly late) teardown error so it can't surface as an
