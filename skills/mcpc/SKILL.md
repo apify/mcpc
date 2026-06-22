@@ -209,7 +209,7 @@ mcpc @apify skills-get <name> --raw    # print the SKILL.md markdown (pipe to a 
 --json                  # machine-readable, MCP-spec-shaped output (code mode)
 --verbose               # protocol-level debug logging (JSON-RPC, transport)
 --profile <name>        # OAuth profile to use ("default" if omitted)
---timeout <seconds>     # request timeout in seconds
+--timeout <seconds>     # request timeout in seconds (default: 60)
 --max-chars <n>         # truncate human-readable output to n chars (ignored with --json)
 --insecure              # skip TLS verification (self-signed certs only)
 ```

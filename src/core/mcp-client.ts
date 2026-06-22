@@ -79,8 +79,8 @@ export interface McpClientOptions extends ClientOptions {
   logger?: Logger;
 
   /**
-   * Request timeout in milliseconds for MCP operations
-   * If not specified, uses SDK default (60 seconds)
+   * Request timeout in milliseconds for MCP operations.
+   * Defaults to DEFAULT_REQUEST_TIMEOUT_MS (60 seconds) when not specified.
    */
   requestTimeout?: number;
 }
@@ -91,6 +91,16 @@ export interface McpClientOptions extends ClientOptions {
 interface TransportWithTermination extends Transport {
   terminateSession?: () => Promise<void>;
 }
+
+/**
+ * Default request timeout in milliseconds (60 seconds).
+ *
+ * Pinned explicitly instead of relying on the MCP SDK's built-in default, so the
+ * documented `--timeout` default (shown as "default: 60" in the CLI help) stays
+ * accurate even if the SDK changes its own default. A config-file `timeout` or
+ * the `--timeout` flag overrides it (via the constructor / setRequestTimeout()).
+ */
+const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
 
 /**
  * MCP Client wrapper class
@@ -104,7 +114,7 @@ export class McpClient implements IMcpClient {
   private mcpSessionId?: string;
   private transport?: TransportWithTermination;
   private hasConnected = false;
-  private requestTimeout?: number;
+  private requestTimeout: number = DEFAULT_REQUEST_TIMEOUT_MS;
   private cachedTools: Tool[] | null = null;
   private cachedToolsExpiresAt: number | null = null;
 
@@ -140,10 +150,12 @@ export class McpClient implements IMcpClient {
   }
 
   /**
-   * Get request options with timeout if configured
+   * Request options applied to every SDK call. Always carries an explicit
+   * timeout (DEFAULT_REQUEST_TIMEOUT_MS unless overridden) so requests never
+   * fall back to the SDK's own default.
    */
-  private getRequestOptions(): { timeout?: number } | undefined {
-    return this.requestTimeout ? { timeout: this.requestTimeout } : undefined;
+  private getRequestOptions(): { timeout: number } {
+    return { timeout: this.requestTimeout };
   }
 
   /**

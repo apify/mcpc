@@ -429,7 +429,7 @@ function createTopLevelProgram(): Command {
     .option('--json', 'Output in JSON format for scripting')
     .option('--verbose', 'Enable debug logging')
     .option('--profile <name>', 'OAuth profile for the server ("default" if not provided)')
-    .option('--timeout <seconds>', 'Request timeout in seconds')
+    .option('--timeout <seconds>', 'Request timeout in seconds (default: 60)')
     .option('--max-chars <n>', 'Truncate output to n characters (ignored in --json mode)')
     .option('--insecure', 'Skip TLS certificate verification (for self-signed certs)')
     .version(mcpcVersion, '-v, --version', 'Output the version number')
@@ -1456,7 +1456,7 @@ function createSessionProgram(): Command {
     .option('--json', 'Output in JSON format for scripting and code mode')
     .option('--verbose', 'Enable debug logging')
     .option('--profile <name>', 'OAuth profile override')
-    .option('--timeout <seconds>', 'Request timeout in seconds')
+    .option('--timeout <seconds>', 'Request timeout in seconds (default: 60)')
     .option('--max-chars <n>', 'Truncate output to n characters (ignored in --json mode)')
     .option('--insecure', 'Skip TLS certificate verification (for self-signed certs)')
     .addHelpText(
