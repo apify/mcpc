@@ -817,25 +817,25 @@ a first-class command with consistent human-readable and `--json` output.
 
 Where `mcpc` stands on each part of the MCP specification:
 
-| **Feature**                                        | **Status**                                |
-| :------------------------------------------------- | :---------------------------------------- |
-| 🔌 **Transport**                                   | ✅ stdio and Streamable HTTP              |
-| 🔑 [**Authorization**](#authentication)            | ✅ Bearer + OAuth 2.1 — auth code & client credentials (DCR, CIMD) |
-| 🔄 [**Sessions**](#sessions)                       | ✅ Supported                              |
-| 📖 [**Instructions**](#server-instructions)        | ✅ Supported                              |
-| 🔧 [**Tools**](#tools)                             | ✅ Supported                              |
-| 💬 [**Prompts**](#prompts)                         | ✅ Supported                              |
-| 📦 [**Resources**](#resources)                     | ✅ Supported                              |
-| 🧠 [**Skills**](#skills)                           | 🧪 Experimental (SEP-2640)                |
-| 📝 [**Logging**](#server-logs)                     | ✅ Supported (deprecated by MCP)          |
-| 🔔 [**Notifications**](#list-change-notifications) | ✅ Supported                              |
-| 📄 [**Pagination**](#pagination)                   | ✅ Supported                              |
-| 🏓 [**Ping**](#ping)                               | ✅ Supported                              |
-| ⏳ [**Async tasks**](#async-tasks)                 | ✅ Supported                              |
-| 📁 **Roots**                                       | ❌ Not planned (deprecated by MCP)        |
-| ❓ **Elicitation**                                 | 🚧 Planned                                |
-| 🔤 **Completion**                                  | 🚧 Planned                                |
-| 🤖 **Sampling**                                    | ❌ Not applicable (no LLM access)         |
+| **Feature**                                         | **Status**                                                       |
+|:----------------------------------------------------|:-----------------------------------------------------------------|
+| 🔌 **Transport**                                    | ✅ stdio and Streamable HTTP                                      |
+| 🔑 [**Authorization**](#authentication)             | ✅ Bearer + OAuth 2.1 (client credentials, DCR, CIMD, auth code)  |
+| 🔄 [**Sessions**](#sessions)                        | ✅ Supported                                                      |
+| 📖 [**Server instructions**](#server-instructions) | ✅ Supported                                                      |
+| 🔧 [**Tools**](#tools)                              | ✅ Supported                                                      |
+| ⏳ [**Async tasks**](#async-tasks)                   | ✅ Supported                                                      |
+| 💬 [**Prompts**](#prompts)                          | ✅ Supported                                                      |
+| 📦 [**Resources**](#resources)                      | ✅ Supported                                                      |
+| 🧠 [**Skills**](#skills)                            | 🧪 Experimental (SEP-2640)                                       |
+| 📝 [**Logging**](#server-logs)                      | ✅ Supported (deprecated by MCP)                                  |
+| 🔔 [**Notifications**](#list-change-notifications)  | ✅ Supported                                                      |
+| 📄 [**Pagination**](#pagination)                    | ✅ Supported                                                      |
+| 🏓 [**Ping**](#ping)                                | ✅ Supported                                                      |
+| 📁 **Roots**                                        | ❌ Not planned (deprecated by MCP)                                |
+| ❓ **Elicitation**                                   | 🚧 Planned                                                       |
+| 🔤 **Completion**                                   | 🚧 Planned                                                       |
+| 🤖 **Sampling**                                     | ❌ Not applicable (no LLM access)                                 |
 
 Beyond the interactive browser login, the **Authorization** row above also covers the OAuth
 **client-credentials** grant (the [`io.modelcontextprotocol/oauth-client-credentials`](https://modelcontextprotocol.io/extensions/auth/oauth-client-credentials)

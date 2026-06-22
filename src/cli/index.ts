@@ -439,10 +439,10 @@ function createTopLevelProgram(): Command {
     'after',
     `
 ${chalk.bold('MCP session commands (after connecting):')}
-  <@session>                   Show MCP server info, capabilities, and tools overview
-  <@session> ${theme.cyan('grep')} <pattern>    Search tools and instructions
-  <@session> ${theme.cyan('tools-list')}        List all server tools
-  <@session> ${theme.cyan('tools-get')} <name>  Get tool details and schema
+  <@session>                     Show MCP server info, capabilities, and tools overview
+  <@session> ${theme.cyan('grep')} <pattern>      Search tools and instructions
+  <@session> ${theme.cyan('tools-list')}          List all server tools
+  <@session> ${theme.cyan('tools-get')} <name>    Get tool details and schema
   <@session> ${theme.cyan('tools-call')} <name> [arg:=val ... | <json> | <stdin]
   <@session> ${theme.cyan('prompts-list')}
   <@session> ${theme.cyan('prompts-get')} <name> [arg:=val ... | <json> | <stdin]
