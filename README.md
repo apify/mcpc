@@ -16,7 +16,7 @@ MCP through the most universal interface there is: the UNIX shell.
 
 **Key features:**
 
-- 🔧 **Full MCP support** - Tools, prompts, resources, async tasks, skills, notifications, and logging over stdio and Streamable HTTP.
+- 🔧 [**Full MCP support**](#mcp-support) - Tools, prompts, resources, async tasks, skills, notifications, and logging over stdio and Streamable HTTP.
 - 🔄 **Persistent sessions** - Keep multiple stateful connections to different servers alive in parallel.
 - 🗺️ **Progressive tool discovery** - Find relevant MCP tools on the fly to save tokens and increase accuracy.
 - 🔌 **Code mode** - JSON output composes with `jq`, `xargs`, and shell pipelines for MCP workflows as shell scripts.
@@ -817,25 +817,25 @@ a first-class command with consistent human-readable and `--json` output.
 
 Where `mcpc` stands on each part of the MCP specification:
 
-| **Feature**                                         | **Status**                                                       |
-|:----------------------------------------------------|:-----------------------------------------------------------------|
-| 🔌 **Transport**                                    | ✅ stdio and Streamable HTTP                                      |
-| 🔑 [**Authorization**](#authentication)             | ✅ Bearer + OAuth 2.1 (client credentials, DCR, CIMD, auth code)  |
-| 🔄 [**Sessions**](#sessions)                        | ✅ Supported                                                      |
-| 📖 [**Server instructions**](#server-instructions) | ✅ Supported                                                      |
-| 🔧 [**Tools**](#tools)                              | ✅ Supported                                                      |
+| **Feature**                                          | **Status**                                                       |
+|:-----------------------------------------------------|:-----------------------------------------------------------------|
+| 🔌 **Transport**                                     | ✅ stdio and Streamable HTTP                                      |
+| 🔑 [**Authorization**](#authentication)              | ✅ Bearer + OAuth 2.1 (client credentials, DCR, CIMD, auth code)  |
+| 🔄 [**Sessions**](#sessions)                         | ✅ Supported (with automatic keepalive)                           |
+| 📖 [**Server instructions**](#server-instructions)   | ✅ Supported                                                      |
+| 🔧 [**Tools**](#tools)                               | ✅ Supported (incl. list changed notifications)                   |
 | ⏳ [**Async tasks**](#async-tasks)                   | ✅ Supported                                                      |
-| 💬 [**Prompts**](#prompts)                          | ✅ Supported                                                      |
-| 📦 [**Resources**](#resources)                      | ✅ Supported                                                      |
-| 🧠 [**Skills**](#skills)                            | 🧪 Experimental (SEP-2640)                                       |
-| 📝 [**Logging**](#server-logs)                      | ✅ Supported (deprecated by MCP)                                  |
-| 🔔 [**Notifications**](#list-change-notifications)  | ✅ Supported                                                      |
-| 📄 [**Pagination**](#pagination)                    | ✅ Supported                                                      |
-| 🏓 [**Ping**](#ping)                                | ✅ Supported                                                      |
-| 📁 **Roots**                                        | ❌ Not planned (deprecated by MCP)                                |
+| 💬 [**Prompts**](#prompts)                           | ✅ Supported (incl. list changed notifications)                   |
+| 📦 [**Resources**](#resources)                       | ✅ Supported (incl. subscriptions and list changed notifications) |
+| 🧠 [**Skills**](#skills)                             | 🧪 Experimental (SEP-2640)                                       |
+| 📝 [**Logging**](#server-logs)                       | ✅ Supported (deprecated by MCP)                                  |
+| 🔔 [**Notifications**](#list-change-notifications)   | ✅ Supported                                                      |
+| 📄 [**Pagination**](#pagination)                     | ✅ Supported                                                      |
+| 🏓 [**Ping**](#ping)                                 | ✅ Supported                                                      |
+| 📁 **Roots**                                         | ❌ Not planned (deprecated by MCP)                                |
 | ❓ **Elicitation**                                   | 🚧 Planned                                                       |
-| 🔤 **Completion**                                   | 🚧 Planned                                                       |
-| 🤖 **Sampling**                                     | ❌ Not applicable (no LLM access)                                 |
+| 🔤 **Completion**                                    | 🚧 Planned                                                       |
+| 🤖 **Sampling**                                      | ❌ Not applicable (no LLM access)                                 |
 
 Beyond the interactive browser login, the **Authorization** row above also covers the OAuth
 **client-credentials** grant (the [`io.modelcontextprotocol/oauth-client-credentials`](https://modelcontextprotocol.io/extensions/auth/oauth-client-credentials)
