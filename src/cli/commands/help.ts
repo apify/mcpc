@@ -1,5 +1,5 @@
 /**
- * The baked-in agent skill guide, printed by `mcpc help --skill`.
+ * The baked-in agent skill, printed by `mcpc help --skill`.
  *
  * The guide ships with the package (skills/mcpc/SKILL.md) and is read at
  * runtime so its content always matches the installed mcpc version.
@@ -34,7 +34,7 @@ export function readGuide(): string {
   }
 }
 
-/** `mcpc help --skill` — print the agent skill guide as Markdown. */
+/** `mcpc help --skill` — print the agent skill as Markdown. */
 export function printGuide(): void {
   console.log(readGuide());
 }

@@ -1,5 +1,5 @@
 /**
- * Unit tests for the agent skill guide printed by `mcpc help --skill`.
+ * Unit tests for the agent skill printed by `mcpc help --skill`.
  *
  * Doubles as a guard: `readGuide()` resolves the shipped guide relative to the
  * module and throws if it is missing, so these tests fail loudly if
@@ -10,7 +10,7 @@
 
 import { readGuide, printGuide } from '../../src/cli/commands/help.js';
 
-describe('agent skill guide', () => {
+describe('agent skill', () => {
   it('reads the guide markdown with frontmatter and key sections', () => {
     const md = readGuide();
     expect(md).toContain('name: mcpc');

@@ -35,11 +35,11 @@ assert_contains "$STDOUT" "mcpc help --skill"
 test_pass
 
 # =============================================================================
-# help --skill (agent skill guide)
+# help --skill (agent skill)
 # =============================================================================
 
-# Test: mcpc help --skill prints the skill guide
-test_case "help --skill prints the skill guide"
+# Test: mcpc help --skill prints the agent skill
+test_case "help --skill prints the agent skill"
 run_mcpc help --skill
 assert_success
 assert_contains "$STDOUT" "name: mcpc"

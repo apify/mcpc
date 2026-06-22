@@ -270,7 +270,7 @@ async function main(): Promise<void> {
         console.log('To view server capabilities and tools, run: mcpc @session');
       }
       console.log('For usage overview, run: mcpc help');
-      console.log('For the agent skill guide, run: mcpc help --skill');
+      console.log('For the full agent skill, run: mcpc help --skill');
       console.log('');
     }
     await closeFileLogger();
@@ -873,13 +873,13 @@ ${jsonHelp('`[{ sessionName, tools?: Tool[], resources?: Resource[], prompts?: P
   // help command: mcpc help [command] (supports "help x402 sign"); --skill prints the agent guide
   program
     .command('help [command] [subcommand]')
-    .description('Show help for a command, or the agent skill guide with --skill')
-    .option('--skill', 'Print the agent skill guide (mental model, workflows, examples)')
+    .description('Show help for a command, or the agent skill with --skill')
+    .option('--skill', 'Print the agent skill (mental model, workflows, examples)')
     .action(async (cmdName?: string, subcommand?: string, opts?: { skill?: boolean }) => {
       if (opts?.skill) {
         if (cmdName) {
           throw new ClientError(
-            'mcpc help --skill prints the agent skill guide and takes no command name'
+            'mcpc help --skill prints the agent skill and takes no command name'
           );
         }
         help.printGuide();
