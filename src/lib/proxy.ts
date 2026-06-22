@@ -13,12 +13,7 @@
  *    EnvHttpProxyAgent dispatcher, for use in code that bypasses the global dispatcher.
  */
 
-import {
-  EnvHttpProxyAgent,
-  setGlobalDispatcher,
-  fetch as undiciFetch,
-  type Dispatcher,
-} from 'undici';
+import { EnvHttpProxyAgent, setGlobalDispatcher, type Dispatcher } from 'undici';
 
 let proxyAgent: Dispatcher | undefined;
 
@@ -44,13 +39,25 @@ export function initProxy(options?: { insecure?: boolean }): void {
  * (e.g., MCP SDK transport, OAuth calls).
  *
  * Falls back to a default EnvHttpProxyAgent if initProxy() was not called.
+ *
+ * Note: this uses the *global* `fetch`, not undici's exported `fetch`, passing the
+ * proxy dispatcher via the `dispatcher` init option (which the global fetch honors).
+ * undici's exported fetch returns its own `Response` class, which is NOT an instance of
+ * the global `Response`. Consumers that branch on `input instanceof Response` — notably
+ * the MCP SDK's OAuth error parser — then mis-handle the result: they skip reading the
+ * body, stringify the Response object to "[object Response]", and leave the undici body
+ * stream unconsumed (which crashes the process on exit on Windows). Returning a global
+ * `Response` keeps those checks working and the body properly drained.
  */
-export function proxyFetch(
-  input: Parameters<typeof undiciFetch>[0],
-  init?: Parameters<typeof undiciFetch>[1]
-): ReturnType<typeof undiciFetch> {
+export function proxyFetch(input: string | URL | Request, init?: RequestInit): Promise<Response> {
   if (!proxyAgent) {
     proxyAgent = new EnvHttpProxyAgent();
   }
-  return undiciFetch(input, { ...init, dispatcher: proxyAgent });
+  // The cast bridges the type-only version skew between the runtime `undici` package's
+  // Dispatcher and the `undici-types` Dispatcher baked into @types/node's global fetch;
+  // EnvHttpProxyAgent is a valid dispatcher for the global fetch at runtime.
+  return fetch(input, {
+    ...init,
+    dispatcher: proxyAgent as unknown as NonNullable<RequestInit['dispatcher']>,
+  });
 }

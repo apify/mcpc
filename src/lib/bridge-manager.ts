@@ -363,8 +363,9 @@ export async function stopBridge(
     try {
       if (process.platform === 'win32') {
         // On Windows, SIGTERM calls TerminateProcess (immediate kill, no cleanup).
-        // For graceful shutdown (closeSession), send IPC message first so bridge
-        // can send HTTP DELETE. For restart, just kill immediately.
+        // For graceful shutdown (closeSession / explicit restart), send an IPC message
+        // first so the bridge can send HTTP DELETE to terminate its MCP session before
+        // exiting. Without it the server-side session (and its subscriptions) is orphaned.
         if (options?.graceful) {
           const socketPath = getSocketPath(sessionName, session.pid);
           const shutdownOk = await sendBridgeShutdown(socketPath);

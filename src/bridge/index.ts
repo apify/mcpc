@@ -614,7 +614,7 @@ class BridgeProcess {
         // McpClient caches tools in-memory after the first listAllTools call
         return this.client?.getCachedTools()?.find((t: Tool) => t.name === name);
       };
-      customFetch = createX402FetchMiddleware(proxyFetch as FetchLike, {
+      customFetch = createX402FetchMiddleware(proxyFetch, {
         wallet,
         getToolByName,
         paymentCache: this.x402PaymentCache,
