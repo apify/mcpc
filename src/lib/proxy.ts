@@ -61,3 +61,27 @@ export function proxyFetch(input: string | URL | Request, init?: RequestInit): P
     dispatcher: proxyAgent as unknown as NonNullable<RequestInit['dispatcher']>,
   });
 }
+
+/**
+ * Forcefully close the proxy dispatcher and all of its pooled connections.
+ *
+ * Call this right before a forced `process.exit()` on any path where the CLI
+ * process itself made HTTP requests (e.g. the `login` token/OAuth calls). Those
+ * requests leave idle keep-alive sockets in undici's connection pool; exiting
+ * while they are still open races libuv's handle teardown on Windows and aborts
+ * the process with an async-handle assertion (`uv_async_send` on a closing
+ * handle, `src\win\async.c`). That stray native abort message lands on stderr
+ * and corrupts otherwise-valid `--json` error output. Draining the pool first
+ * makes the subsequent exit clean. Best-effort: teardown errors are ignored.
+ */
+export async function closeProxy(): Promise<void> {
+  const agent = proxyAgent;
+  proxyAgent = undefined;
+  if (agent) {
+    try {
+      await agent.destroy();
+    } catch {
+      // Best-effort cleanup on the way out — nothing useful to do if it fails.
+    }
+  }
+}
