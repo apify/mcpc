@@ -154,10 +154,10 @@ Options:
   -h, --help                     Display help
 
 MCP session commands (after connecting):
-  <@session>                   Show MCP server info, capabilities, and tools overview
-  <@session> grep <pattern>    Search tools and instructions
-  <@session> tools-list        List all server tools
-  <@session> tools-get <name>  Get tool details and schema
+  <@session>                     Show MCP server info, capabilities, and tools overview
+  <@session> grep <pattern>      Search tools and instructions
+  <@session> tools-list          List all server tools
+  <@session> tools-get <name>    Get tool details and schema
   <@session> tools-call <name> [arg:=val ... | <json> | <stdin]
   <@session> prompts-list
   <@session> prompts-get <name> [arg:=val ... | <json> | <stdin]
