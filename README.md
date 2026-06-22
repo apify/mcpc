@@ -1,6 +1,6 @@
 # mcpc — a universal MCP CLI client
 
-![mcpc logo](https://apify.github.io/mcpc/client-logo.svg?v=2)
+![mcpc logo](https://apify.github.io/mcpc/client-logo.svg?v=3)
 
 [![npm version](https://img.shields.io/npm/v/@apify/mcpc.svg)](https://www.npmjs.com/package/@apify/mcpc)
 [![npm downloads](https://img.shields.io/npm/dm/@apify/mcpc.svg)](https://www.npmjs.com/package/@apify/mcpc)
