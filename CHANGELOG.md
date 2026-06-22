@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The hosted OAuth Client ID Metadata Document now includes the required `client_id` property, so authorization servers that validate CIMD documents per spec no longer reject `mcpc login` with the default client identity (#271).
 - Sessions no longer hang on macOS under the Bun runtime (e.g. when connecting with `--proxy-bearer-token`, or auto-reconnecting a crashed session). The bridge now runs under the same runtime as the CLI, so OS-keychain items the CLI stored are read back under the same application identity; previously a Bun CLI paired with a Node bridge produced a cross-binary keychain read, which macOS gates with an access prompt that blocks in non-interactive contexts. A Bun user also no longer needs Node installed for the bridge to start.
+- OAuth login failures now report the authorization server's actual error (e.g. `invalid_client`) instead of an opaque `[object Response]` message, and no longer crash the process on Windows when a token request is rejected.
+- `mcpc <session> restart` now terminates the previous MCP session on the server before reconnecting, so the old session and its resource subscriptions are no longer left orphaned (previously leaked on Windows).
 
 ## [0.3.1] - 2026-06-08
 

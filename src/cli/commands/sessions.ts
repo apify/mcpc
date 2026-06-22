@@ -377,9 +377,13 @@ export async function restartSession(
       console.log(theme.yellow(`Restarting session ${name}...`));
     }
 
-    // Stop the bridge (even if it's alive)
+    // Stop the bridge (even if it's alive). Graceful so the old bridge sends an HTTP DELETE
+    // to terminate its MCP session before exiting: an explicit restart starts a *fresh*
+    // session (see the note below), so the previous server-side session must be released
+    // rather than orphaned. On Windows SIGTERM is an immediate kill, so graceful mode sends
+    // an IPC shutdown first; on Unix SIGTERM already triggers graceful shutdown.
     try {
-      await stopBridge(name);
+      await stopBridge(name, { graceful: true });
     } catch {
       // Bridge may already be stopped
     }
