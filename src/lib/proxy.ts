@@ -72,16 +72,34 @@ export function proxyFetch(input: string | URL | Request, init?: RequestInit): P
  * the process with an async-handle assertion (`uv_async_send` on a closing
  * handle, `src\win\async.c`). That stray native abort message lands on stderr
  * and corrupts otherwise-valid `--json` error output. Draining the pool first
- * makes the subsequent exit clean. Best-effort: teardown errors are ignored.
+ * makes the subsequent exit clean.
+ *
+ * `destroy()` resolves near-instantly for idle keep-alive sockets, but it is
+ * raced against a short timeout so a stuck connection can never stall the CLI's
+ * exit. Best-effort throughout: teardown errors (including a late rejection that
+ * lands after the timeout wins) are ignored.
  */
+const CLOSE_TIMEOUT_MS = 100;
+
 export async function closeProxy(): Promise<void> {
   const agent = proxyAgent;
   proxyAgent = undefined;
-  if (agent) {
-    try {
-      await agent.destroy();
-    } catch {
-      // Best-effort cleanup on the way out — nothing useful to do if it fails.
+  if (!agent) {
+    return;
+  }
+  // Swallow any (possibly late) teardown error so it can't surface as an
+  // unhandled rejection when the timeout below wins the race.
+  const destroyed = agent.destroy().catch(() => {});
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, CLOSE_TIMEOUT_MS);
+    timer.unref?.();
+  });
+  try {
+    await Promise.race([destroyed, timeout]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
     }
   }
 }
