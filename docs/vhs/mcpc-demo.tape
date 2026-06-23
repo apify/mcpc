@@ -17,7 +17,9 @@
 # Notes:
 #   - `2>/dev/null` on connect just hides a "keychain unavailable" notice shown
 #     on machines without a keyring daemon (CI/containers); drop it on a desktop.
-#   - `| head` trims the chattier outputs so each step fits on screen.
+#   - `| head` trims the chattier outputs so each step fits on screen. mcpc turns
+#     off color when its stdout is a pipe, so the setup exports FORCE_COLOR=3 to
+#     keep the recording colorful despite the pipes.
 #   - Drop the `-H` line and point at any public MCP server to record anonymously.
 #   - Focused, single-feature demos live alongside this one (quickstart.tape,
 #     tools.tape, scripting.tape, grep.tape, proxy.tape).
@@ -45,6 +47,9 @@ Set Framerate       24
 # Hidden setup: clean prompt, no scrollback, fresh state
 Hide
 Type "export PS1='$ '"
+Enter
+# Force ANSI color through pipes (| head, | jq) — mcpc disables color when not a TTY
+Type "export FORCE_COLOR=3"
 Enter
 Type "mcpc @apify close 2>/dev/null; true"
 Enter

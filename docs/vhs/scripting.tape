@@ -22,6 +22,9 @@ Set BorderRadius    8
 Hide
 Type "export PS1='$ '"
 Enter
+# Force ANSI color through pipes (| jq, | head) — mcpc disables color when not a TTY
+Type "export FORCE_COLOR=3"
+Enter
 Type "mcpc connect mcp.apify.com @apify --header \"Authorization: Bearer ${APIFY_TOKEN}\" >/dev/null 2>&1 || true"
 Enter
 Type "clear"

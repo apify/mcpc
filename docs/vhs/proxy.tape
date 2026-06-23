@@ -21,6 +21,9 @@ Set BorderRadius    8
 Hide
 Type "export PS1='$ '"
 Enter
+# Force ANSI color through pipes (| head) — mcpc disables color when not a TTY
+Type "export FORCE_COLOR=3"
+Enter
 Type "mcpc @relay close 2>/dev/null; mcpc @sandbox close 2>/dev/null; true"
 Enter
 Type "clear"
