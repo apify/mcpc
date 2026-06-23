@@ -1,4 +1,4 @@
-# mcpc demo — flagship overview
+# mcpc demo — flagship overview (≤30s, basic interactions)
 #
 # Generate the GIF with VHS (https://github.com/charmbracelet/vhs):
 #
@@ -10,13 +10,17 @@
 # Prerequisites:
 #   - VHS:  brew install vhs   (or see https://github.com/charmbracelet/vhs#installation)
 #   - mcpc: npm install -g @apify/mcpc
-#   - jq:   brew install jq    (for the scripting section)
-#   - Auth: export APIFY_TOKEN=... (or remove the --header line to use anonymous access)
+#   - jq:   brew install jq    (for the code-mode section)
+#   - Auth: export APIFY_TOKEN=...   (use a short-lived token from a TEST account,
+#           never a production one — see skills/record-demo/SKILL.md)
 #
-# This is a template — adapt the commands below for your own server,
-# tools, and audience. Use the focused tapes in this folder
-# (quickstart.tape, tools.tape, scripting.tape, grep.tape, proxy.tape)
-# as a starting point for shorter, single-feature demos.
+# Notes:
+#   - `2>/dev/null` on connect just hides a "keychain unavailable" notice shown
+#     on machines without a keyring daemon (CI/containers); drop it on a desktop.
+#   - `| head` trims the chattier outputs so each step fits on screen.
+#   - Drop the `-H` line and point at any public MCP server to record anonymously.
+#   - Focused, single-feature demos live alongside this one (quickstart.tape,
+#     tools.tape, scripting.tape, grep.tape, proxy.tape).
 
 Output mcpc-demo.gif
 
@@ -27,153 +31,65 @@ Set Shell           "bash"
 Set FontFamily      "JetBrains Mono"
 Set FontSize        16
 Set Width           1100
-Set Height          650
+Set Height          680
 Set Padding         20
-Set TypingSpeed     50ms
+Set TypingSpeed     36ms
 Set PlaybackSpeed   1.0
 Set Theme           "Catppuccin Mocha"
 Set WindowBar       Colorful
 Set WindowBarSize   32
 Set BorderRadius    8
 Set CursorBlink     true
+Set Framerate       24
 
 # Hidden setup: clean prompt, no scrollback, fresh state
 Hide
 Type "export PS1='$ '"
 Enter
-Type "mcpc @apify close 2>/dev/null; mcpc @fs close 2>/dev/null; true"
+Type "mcpc @apify close 2>/dev/null; true"
 Enter
 Type "clear"
 Enter
 Show
 
-# 1. Discover mcpc
-Type "# mcpc — a universal MCP CLI client"
-Sleep 800ms
+# 1. Connect to a remote MCP server
+Type "# Connect to any MCP server as a session"
+Sleep 200ms
 Enter
-Sleep 600ms
+Type 'mcpc connect mcp.apify.com @apify -H "Authorization: Bearer $APIFY_TOKEN" 2>/dev/null | head -13'
+Sleep 150ms
+Enter
+Sleep 3000ms
 
-Type "mcpc --help | head -25"
-Sleep 400ms
+# 2. List available tools
+Type "# List the tools it exposes"
+Sleep 200ms
 Enter
-Sleep 4s
+Type "mcpc @apify tools-list | head -12"
+Sleep 150ms
+Enter
+Sleep 1600ms
 
-Type "clear"
-Enter
-Sleep 300ms
-
-# 2. List sessions and OAuth profiles
-Type "# No sessions or profiles yet"
-Sleep 600ms
-Enter
-Sleep 400ms
-
-Type "mcpc"
-Sleep 400ms
-Enter
-Sleep 3s
-
-# 3. Connect to a remote MCP server
-Type "# Connect to Apify's MCP server as session @apify"
-Sleep 600ms
-Enter
-Sleep 400ms
-
-Type 'mcpc connect mcp.apify.com @apify --header "Authorization: Bearer ${APIFY_TOKEN}"'
-Sleep 400ms
-Enter
-Sleep 3s
-
-# 4. Server info, capabilities, instructions
-Type "# Show server capabilities and instructions"
-Sleep 600ms
-Enter
-Sleep 400ms
-
-Type "mcpc @apify"
-Sleep 400ms
-Enter
-Sleep 4s
-
-Type "clear"
-Enter
-Sleep 300ms
-
-# 5. List available tools
-Type "# List available tools"
-Sleep 600ms
-Enter
-Sleep 400ms
-
-Type "mcpc @apify tools-list | head -15"
-Sleep 400ms
-Enter
-Sleep 4s
-
-# 6. Dynamic tool discovery
-Type "clear"
-Enter
-Type "# Find tools by keyword — useful for AI agents"
-Sleep 600ms
-Enter
-Sleep 400ms
-
-Type 'mcpc @apify grep "scraper"'
-Sleep 400ms
-Enter
-Sleep 4s
-
-# 7. Inspect a tool's schema
-Type "clear"
-Enter
-Type "# Inspect a tool's input schema"
-Sleep 600ms
-Enter
-Sleep 400ms
-
-Type "mcpc @apify tools-get search-actors"
-Sleep 400ms
-Enter
-Sleep 5s
-
-# 8. Call a tool
-Type "clear"
-Enter
+# 3. Call a tool with typed arguments
 Type "# Call a tool with key:=value arguments"
-Sleep 600ms
+Sleep 200ms
 Enter
-Sleep 400ms
+Type 'mcpc @apify tools-call search-actors keywords:="web scraper" limit:=3 | head -16'
+Sleep 150ms
+Enter
+Sleep 2100ms
 
-Type 'mcpc @apify tools-call search-actors keywords:="web scraper" limit:=3'
-Sleep 400ms
+# 4. JSON mode + jq for scripting (code mode)
+Type "# --json composes with jq (code mode)"
+Sleep 200ms
 Enter
-Sleep 5s
-
-# 9. JSON mode + jq for scripting (code mode)
-Type "clear"
-Enter
-Type "# JSON mode composes with jq for scripts and agents"
-Sleep 600ms
-Enter
-Sleep 400ms
-
 Type "mcpc --json @apify tools-list | jq -r '.[].name' | head -5"
-Sleep 400ms
+Sleep 150ms
 Enter
-Sleep 4s
+Sleep 1600ms
 
-# 10. Close the session
-Type "# Close the session when done"
-Sleep 600ms
-Enter
-Sleep 400ms
-
+# 5. Close the session
 Type "mcpc @apify close"
-Sleep 400ms
+Sleep 150ms
 Enter
-Sleep 2s
-
-Type "# Learn more: https://github.com/apify/mcpc"
-Sleep 2s
-Enter
-Sleep 1500ms
+Sleep 1200ms

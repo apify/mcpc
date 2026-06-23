@@ -37,3 +37,6 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+
+# Generated VHS demo recordings (only docs/images/mcpc-demo.gif is committed)
+docs/vhs/*.gif

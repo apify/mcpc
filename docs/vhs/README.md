@@ -11,14 +11,17 @@ a real shell session; VHS replays it, captures the output, and renders a GIF
 - **mcpc** — `npm install -g @apify/mcpc`
 - **jq** — needed by `scripting.tape`
 - **Auth (optional)** — `export APIFY_TOKEN=...` if you want the demos to hit
-  the authenticated Apify MCP server. Drop the `--header` line from the tape
-  to record an anonymous session against any public MCP server instead.
+  the authenticated Apify MCP server. Use a **short-lived token from a test
+  account, never a production one** (see
+  [`skills/record-demo`](../../skills/record-demo/SKILL.md)). Drop the `-H` /
+  `--header` line from the tape to record an anonymous session against any
+  public MCP server instead.
 
 ## Tapes
 
 | File | Records | Notes |
 | ---- | ------- | ----- |
-| [`mcpc-demo.tape`](./mcpc-demo.tape) | Flagship overview: discover → connect → tools → grep → call → JSON → close | Source for `docs/images/mcpc-demo.gif` |
+| [`mcpc-demo.tape`](./mcpc-demo.tape) | Flagship overview (≤30s): connect → tools → call → JSON → close | Source for `docs/images/mcpc-demo.gif` |
 | [`quickstart.tape`](./quickstart.tape) | Minimal "connect, list, call" flow | Hero-sized GIF for README top |
 | [`tools.tape`](./tools.tape) | `tools-list`, `tools-get`, `tools-call`, inline JSON, stdin | |
 | [`scripting.tape`](./scripting.tape) | `--json` piped through `jq` and `xargs` (code mode) | |
@@ -73,6 +76,10 @@ The other tapes use the same Set block so they look consistent side by side.
   GIF before committing. VHS does not run inside CI by default; the tapes
   are version-controlled but the GIFs they produce are not (the main
   `docs/images/mcpc-demo.gif` is checked in separately).
+- Recording headless (a container or CI, especially as root)? VHS drives a
+  Chromium that needs `--no-sandbox`, and mcpc prints a keychain notice without
+  a keyring daemon. Both are handled in
+  [`skills/record-demo`](../../skills/record-demo/SKILL.md).
 
 See the [VHS documentation](https://github.com/charmbracelet/vhs#vhs-command-reference)
 for the full list of directives (`Type`, `Sleep`, `Enter`, `Hide`, `Show`,
