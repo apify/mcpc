@@ -24,8 +24,11 @@ Set BorderRadius    8
 Hide
 Type "export PS1='$ '"
 Enter
-# Force ANSI color through pipes (| head) — mcpc disables color when not a TTY
+# Force vivid color through pipes (| head): mcpc disables color off a TTY,
+# and basic-16 would mute the palette, so COLORTERM keeps the real truecolor hex.
 Type "export FORCE_COLOR=3"
+Enter
+Type "export COLORTERM=truecolor"
 Enter
 Type "mcpc @apify close 2>/dev/null; true"
 Enter
@@ -41,6 +44,10 @@ Sleep 400ms
 Enter
 Sleep 3s
 
+Hide
+Type "clear"
+Enter
+Show
 Type "# List the tools the server exposes"
 Sleep 500ms
 Enter
@@ -49,6 +56,10 @@ Sleep 400ms
 Enter
 Sleep 4s
 
+Hide
+Type "clear"
+Enter
+Show
 Type "# Call one of them with typed key:=value arguments"
 Sleep 500ms
 Enter
@@ -57,6 +68,10 @@ Sleep 400ms
 Enter
 Sleep 5s
 
+Hide
+Type "clear"
+Enter
+Show
 Type "mcpc @apify close"
 Enter
 Sleep 2s

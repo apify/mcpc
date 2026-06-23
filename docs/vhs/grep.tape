@@ -21,8 +21,11 @@ Set BorderRadius    8
 Hide
 Type "export PS1='$ '"
 Enter
-# Force ANSI color for consistency with the other tapes (mcpc disables color when not a TTY)
+# Force vivid color for consistency with the other tapes: mcpc disables color off a
+# TTY, and basic-16 would mute the palette, so COLORTERM keeps the real truecolor hex.
 Type "export FORCE_COLOR=3"
+Enter
+Type "export COLORTERM=truecolor"
 Enter
 Type "mcpc connect mcp.apify.com @apify --header \"Authorization: Bearer ${APIFY_TOKEN}\" >/dev/null 2>&1 || true"
 Enter

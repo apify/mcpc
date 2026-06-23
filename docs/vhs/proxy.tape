@@ -21,8 +21,11 @@ Set BorderRadius    8
 Hide
 Type "export PS1='$ '"
 Enter
-# Force ANSI color through pipes (| head) — mcpc disables color when not a TTY
+# Force vivid color through pipes (| head): mcpc disables color off a TTY,
+# and basic-16 would mute the palette, so COLORTERM keeps the real truecolor hex.
 Type "export FORCE_COLOR=3"
+Enter
+Type "export COLORTERM=truecolor"
 Enter
 Type "mcpc @relay close 2>/dev/null; mcpc @sandbox close 2>/dev/null; true"
 Enter

@@ -17,9 +17,10 @@
 # Notes:
 #   - `2>/dev/null` on connect just hides a "keychain unavailable" notice shown
 #     on machines without a keyring daemon (CI/containers); drop it on a desktop.
-#   - `| head` trims the chattier outputs so each step fits on screen. mcpc turns
-#     off color when its stdout is a pipe, so the setup exports FORCE_COLOR=3 to
-#     keep the recording colorful despite the pipes.
+#   - The screen is cleared (hidden) before each step so commands start fresh;
+#     `| head` trims the chattier outputs so each step fits on screen.
+#   - mcpc disables color off a TTY, so the setup exports FORCE_COLOR=3 and
+#     COLORTERM=truecolor to keep the real (vivid) palette through the pipes.
 #   - Drop the `-H` line and point at any public MCP server to record anonymously.
 #   - Focused, single-feature demos live alongside this one (quickstart.tape,
 #     tools.tape, scripting.tape, grep.tape, proxy.tape).
@@ -48,8 +49,11 @@ Set Framerate       24
 Hide
 Type "export PS1='$ '"
 Enter
-# Force ANSI color through pipes (| head, | jq) — mcpc disables color when not a TTY
+# Force vivid color through pipes (| head, | jq): mcpc disables color off a TTY,
+# and basic-16 would mute the palette, so COLORTERM keeps the real truecolor hex.
 Type "export FORCE_COLOR=3"
+Enter
+Type "export COLORTERM=truecolor"
 Enter
 Type "mcpc @apify close 2>/dev/null; true"
 Enter
@@ -66,7 +70,11 @@ Sleep 150ms
 Enter
 Sleep 3000ms
 
-# 2. List available tools
+# 2. List available tools (start on a fresh screen)
+Hide
+Type "clear"
+Enter
+Show
 Type "# List the tools it exposes"
 Sleep 200ms
 Enter
@@ -75,7 +83,11 @@ Sleep 150ms
 Enter
 Sleep 1600ms
 
-# 3. Call a tool with typed arguments
+# 3. Call a tool with typed arguments (start on a fresh screen)
+Hide
+Type "clear"
+Enter
+Show
 Type "# Call a tool with key:=value arguments"
 Sleep 200ms
 Enter
@@ -84,7 +96,11 @@ Sleep 150ms
 Enter
 Sleep 2100ms
 
-# 4. JSON mode + jq for scripting (code mode)
+# 4. JSON mode + jq for scripting (code mode) (start on a fresh screen)
+Hide
+Type "clear"
+Enter
+Show
 Type "# --json composes with jq (code mode)"
 Sleep 200ms
 Enter
@@ -93,7 +109,11 @@ Sleep 150ms
 Enter
 Sleep 1600ms
 
-# 5. Close the session
+# 5. Close the session (start on a fresh screen)
+Hide
+Type "clear"
+Enter
+Show
 Type "mcpc @apify close"
 Sleep 150ms
 Enter
