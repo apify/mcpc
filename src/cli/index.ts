@@ -269,8 +269,7 @@ async function main(): Promise<void> {
       if (hasSessions) {
         console.log('To view server capabilities and tools, run: mcpc @session');
       }
-      console.log('For usage overview, run: mcpc help');
-      console.log('For the full agent skill, run: mcpc help --skill');
+      console.log('For usage and the agent guide, run: mcpc help [--skill]');
       console.log('');
     }
     await closeFileLogger();
@@ -463,9 +462,8 @@ ${chalk.bold('MCP session commands (after connecting):')}
 
 Run "mcpc" without arguments to show active sessions and OAuth profiles.
 Run "mcpc --json" to get the same data as \`{ sessions: [...], profiles: [...] }\`.
-Run "mcpc help --skill" to print a full agent usage guide (mental model, workflows, examples).
 
-Full docs: ${docsUrl}`
+Agent guide: mcpc help --skill   ·   Full docs: ${docsUrl}`
   );
 
   // connect command: mcpc connect [<server>] [@session]  (server optional — omit to auto-discover)

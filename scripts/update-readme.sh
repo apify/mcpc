@@ -38,8 +38,8 @@ fi
 TEMP_HELP=$(mktemp)
 TEMP_README=$(mktemp)
 
-# Get help output, remove the "Full docs:" line and trailing empty line
-node "$MCPC_CLI" --help | sed '/^Full docs:/d' | sed '${/^$/d;}' > "$TEMP_HELP"
+# Get help output, strip the self-referential docs URL (keep the agent-guide hint) and trailing empty line
+node "$MCPC_CLI" --help | sed 's/ *· *Full docs:.*//' | sed '${/^$/d;}' > "$TEMP_HELP"
 
 # Guard against capturing empty output, which would silently wipe the README block
 if [ ! -s "$TEMP_HELP" ]; then

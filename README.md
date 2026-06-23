@@ -178,7 +178,8 @@ MCP session commands (after connecting):
 
 Run "mcpc" without arguments to show active sessions and OAuth profiles.
 Run "mcpc --json" to get the same data as `{ sessions: [...], profiles: [...] }`.
-Run "mcpc help --skill" to print a full agent usage guide (mental model, workflows, examples).
+
+Agent guide: mcpc help --skill
 ```
 
 ### General actions
