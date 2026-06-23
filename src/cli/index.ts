@@ -463,7 +463,8 @@ ${chalk.bold('MCP session commands (after connecting):')}
 Run "mcpc" without arguments to show active sessions and OAuth profiles.
 Run "mcpc --json" to get the same data as \`{ sessions: [...], profiles: [...] }\`.
 
-Agent guide: mcpc help --skill   ·   Full docs: ${docsUrl}`
+Agent guide: mcpc help --skill
+Full docs: ${docsUrl}`
   );
 
   // connect command: mcpc connect [<server>] [@session]  (server optional — omit to auto-discover)
