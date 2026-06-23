@@ -444,6 +444,10 @@ ${chalk.bold('MCP session commands (after connecting):')}
   <@session> ${theme.cyan('tools-list')}          List all server tools
   <@session> ${theme.cyan('tools-get')} <name>    Get tool details and schema
   <@session> ${theme.cyan('tools-call')} <name> [arg:=val ... | <json> | <stdin]
+  <@session> ${theme.cyan('tasks-list')}
+  <@session> ${theme.cyan('tasks-get')} <taskId>
+  <@session> ${theme.cyan('tasks-result')} <taskId>
+  <@session> ${theme.cyan('tasks-cancel')} <taskId>
   <@session> ${theme.cyan('prompts-list')}
   <@session> ${theme.cyan('prompts-get')} <name> [arg:=val ... | <json> | <stdin]
   <@session> ${theme.cyan('resources-list')}
@@ -453,10 +457,6 @@ ${chalk.bold('MCP session commands (after connecting):')}
   <@session> ${theme.cyan('resources-templates-list')}
   <@session> ${theme.cyan('skills-list')}
   <@session> ${theme.cyan('skills-get')} <name> [--raw]
-  <@session> ${theme.cyan('tasks-list')}
-  <@session> ${theme.cyan('tasks-get')} <taskId>
-  <@session> ${theme.cyan('tasks-result')} <taskId>
-  <@session> ${theme.cyan('tasks-cancel')} <taskId>
   <@session> ${theme.cyan('logging-set-level')} <level>
   <@session> ${theme.cyan('ping')}
   <@session> ${theme.cyan('logs')} [-n N] [--follow] [--since 1h]

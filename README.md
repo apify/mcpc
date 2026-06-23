@@ -159,6 +159,10 @@ MCP session commands (after connecting):
   <@session> tools-list          List all server tools
   <@session> tools-get <name>    Get tool details and schema
   <@session> tools-call <name> [arg:=val ... | <json> | <stdin]
+  <@session> tasks-list
+  <@session> tasks-get <taskId>
+  <@session> tasks-result <taskId>
+  <@session> tasks-cancel <taskId>
   <@session> prompts-list
   <@session> prompts-get <name> [arg:=val ... | <json> | <stdin]
   <@session> resources-list
@@ -168,10 +172,6 @@ MCP session commands (after connecting):
   <@session> resources-templates-list
   <@session> skills-list
   <@session> skills-get <name> [--raw]
-  <@session> tasks-list
-  <@session> tasks-get <taskId>
-  <@session> tasks-result <taskId>
-  <@session> tasks-cancel <taskId>
   <@session> logging-set-level <level>
   <@session> ping
   <@session> logs [-n N] [--follow] [--since 1h]
