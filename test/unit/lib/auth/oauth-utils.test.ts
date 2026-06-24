@@ -8,6 +8,7 @@ import { resolve } from 'path';
 import {
   DEFAULT_CLIENT_METADATA_URL,
   discoverTokenEndpoint,
+  getOAuthServerUrl,
   MCPC_OAUTH_CALLBACK_PORTS,
 } from '../../../../src/lib/auth/oauth-utils.js';
 import * as proxyModule from '../../../../src/lib/proxy.js';
@@ -19,6 +20,46 @@ function mockResponse(body: object | null, ok = true): Response {
     json: () => Promise.resolve(body),
   } as unknown as Response;
 }
+
+describe('getOAuthServerUrl', () => {
+  it('should strip the query string (tool filter) but keep the rest', () => {
+    // The reported bug: ?tools=... broke OAuth login on mcp.apify.com
+    expect(
+      getOAuthServerUrl('https://mcp.apify.com/?tools=search-actors,fetch-actor-details,docs')
+    ).toBe('https://mcp.apify.com');
+    expect(getOAuthServerUrl('https://example.com/?test=1')).toBe('https://example.com');
+    expect(getOAuthServerUrl('https://example.com/mcp?tools=a,b')).toBe('https://example.com/mcp');
+  });
+
+  it('should produce the same result with or without a query string', () => {
+    expect(getOAuthServerUrl('https://mcp.apify.com/?tools=docs')).toBe(
+      getOAuthServerUrl('https://mcp.apify.com/')
+    );
+    expect(getOAuthServerUrl('https://mcp.apify.com')).toBe('https://mcp.apify.com');
+  });
+
+  it('should preserve the path for path-based discovery', () => {
+    expect(getOAuthServerUrl('https://example.com/mcp')).toBe('https://example.com/mcp');
+    expect(getOAuthServerUrl('https://example.com/mcp/')).toBe('https://example.com/mcp/');
+  });
+
+  it('should strip the fragment as well', () => {
+    expect(getOAuthServerUrl('https://example.com/?test=1#frag')).toBe('https://example.com');
+    expect(getOAuthServerUrl('https://example.com/path#frag')).toBe('https://example.com/path');
+  });
+
+  it('should normalize scheme, host, port and credentials like normalizeServerUrl', () => {
+    expect(getOAuthServerUrl('mcp.apify.com?tools=docs')).toBe('https://mcp.apify.com');
+    expect(getOAuthServerUrl('https://EXAMPLE.COM:443/?a=1')).toBe('https://example.com');
+    expect(getOAuthServerUrl('https://example.com:8443/?a=1')).toBe('https://example.com:8443');
+    expect(getOAuthServerUrl('https://user:pass@example.com/?a=1')).toBe('https://example.com');
+    expect(getOAuthServerUrl('localhost:3000?x=1')).toBe('http://localhost:3000');
+  });
+
+  it('should throw on invalid URLs', () => {
+    expect(() => getOAuthServerUrl('not a url at all')).toThrow('Invalid MCP server URL');
+  });
+});
 
 describe('discoverTokenEndpoint', () => {
   let fetchSpy: MockInstance;
@@ -110,6 +151,26 @@ describe('discoverTokenEndpoint', () => {
       await discoverTokenEndpoint(`https://example.com/mcp${trailingSlashes}`);
       expect(calledUrls).toEqual(expectedUrls);
     }
+  });
+
+  it('strips the query string from serverUrl before building discovery URLs', async () => {
+    // Regression: a `?tools=` filter on the URL must not leak into the
+    // well-known discovery requests, otherwise discovery fails and OAuth
+    // falls back to POST <origin>/register.
+    const calledUrls: string[] = [];
+    fetchSpy.mockImplementation((url: string) => {
+      calledUrls.push(url);
+      return Promise.resolve(mockResponse(null, false));
+    });
+
+    await discoverTokenEndpoint(
+      'https://mcp.apify.com/?tools=search-actors,fetch-actor-details,docs'
+    );
+    expect(calledUrls).toEqual([
+      'https://mcp.apify.com/.well-known/oauth-authorization-server',
+      'https://mcp.apify.com/.well-known/openid-configuration',
+    ]);
+    expect(calledUrls.some((u) => u.includes('tools='))).toBe(false);
   });
 
   it('does not add duplicate root-based URLs when serverUrl is already root', async () => {
