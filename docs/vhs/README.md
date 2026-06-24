@@ -1,86 +1,73 @@
 # mcpc demo recordings (VHS)
 
-This folder contains [VHS](https://github.com/charmbracelet/vhs) tape files
-that record terminal GIFs of mcpc. Each `.tape` is a small script that drives
-a real shell session; VHS replays it, captures the output, and renders a GIF
-(or MP4 / WebM) — no manual screen recording needed.
+This folder contains [VHS](https://github.com/charmbracelet/vhs) tape files that
+record terminal GIFs of mcpc. Each `.tape` drives a **real** shell session; VHS
+replays it, runs the commands against a live MCP server, and renders a GIF.
+
+> **Recording or editing a tape? Read
+> [`skills/record-demo`](../../skills/record-demo/SKILL.md) first.** It documents
+> the full conventions and the VHS + mcpc gotchas learned the hard way — prompt
+> styling, multibyte-glyph breakage, stdio-server quirks, secure token handling,
+> the headless keychain warning, and how to verify frames.
 
 ## Prerequisites
 
-- **VHS** — `brew install vhs` (or see [installation guide](https://github.com/charmbracelet/vhs#installation))
+- **VHS** — `brew install vhs` (needs `ttyd` + `ffmpeg` on PATH)
 - **mcpc** — `npm install -g @apify/mcpc`
-- **jq** — needed by `scripting.tape`
-- **Auth (optional)** — `export APIFY_TOKEN=...` if you want the demos to hit
-  the authenticated Apify MCP server. Use a **short-lived token from a test
-  account, never a production one** (see
-  [`skills/record-demo`](../../skills/record-demo/SKILL.md)). Drop the `-H` /
-  `--header` line from the tape to record an anonymous session against any
-  public MCP server instead.
+- **filesystem MCP server** — `npm install -g @modelcontextprotocol/server-filesystem`
+  (the local stdio server `mcpc-demo.tape` launches via `mcp.json`)
+- **jq** — used by `scripting.tape`
+- **`APIFY_TOKEN`** — a **short-lived, low-permission TEST token** for the hero's
+  authenticated step (see the skill); pass it inline at render time. The focused
+  tapes use the public no-auth `?tools=` URL and need no token.
 
 ## Tapes
 
 | File | Records | Notes |
 | ---- | ------- | ----- |
-| [`mcpc-demo.tape`](./mcpc-demo.tape) | Flagship overview (≤30s): connect → tools → call → JSON → close | Source for `docs/images/mcpc-demo.gif` |
-| [`quickstart.tape`](./quickstart.tape) | Minimal "connect, list, call" flow | Hero-sized GIF for README top |
-| [`tools.tape`](./tools.tape) | `tools-list`, `tools-get`, `tools-call`, inline JSON, stdin | |
-| [`scripting.tape`](./scripting.tape) | `--json` piped through `jq` and `xargs` (code mode) | |
+| [`mcpc-demo.tape`](./mcpc-demo.tape) | Basic-use flow: empty state → connect local stdio (`mcp.json:filesystem`) → `tools-list` / `--json` / `tools-get` → connect `mcp.apify.com` → `tools-call` → close | Source of `docs/images/mcpc-demo.gif` |
+| [`quickstart.tape`](./quickstart.tape) | Minimal connect → list → call | |
+| [`tools.tape`](./tools.tape) | `tools-list` / `tools-get` / `tools-call`, inline JSON, stdin | |
+| [`scripting.tape`](./scripting.tape) | `--json` piped through `jq` (code mode) | |
 | [`grep.tape`](./grep.tape) | Dynamic tool discovery with `mcpc grep` | |
-| [`proxy.tape`](./proxy.tape) | MCP proxy / AI sandboxing | |
+| [`proxy.tape`](./proxy.tape) | MCP proxy / AI sandboxing (keeps a bearer token on purpose) | |
 
 ## Recording
 
-Each tape outputs a GIF in this directory. Run from inside `docs/vhs/`:
+Run from inside `docs/vhs/`:
 
 ```bash
 cd docs/vhs
-vhs mcpc-demo.tape          # → mcpc-demo.gif
-vhs quickstart.tape         # → quickstart.gif
-# ... etc
+APIFY_TOKEN=…  vhs mcpc-demo.tape     # hero (needs the test token)
+vhs quickstart.tape                   # focused tapes (no token)
+
+# verify before committing (Screenshot is unreliable — extract frames instead):
+ffprobe -v error -show_entries format=duration -of csv=p=0 mcpc-demo.gif
+ffmpeg -y -ss 12 -i mcpc-demo.gif -vframes 1 /tmp/frame.png
+
+cp mcpc-demo.gif ../images/mcpc-demo.gif   # refresh the README hero
 ```
 
-To refresh the demo embedded in the main README:
+## Style conventions
 
-```bash
-cd docs/vhs
-vhs mcpc-demo.tape
-cp mcpc-demo.gif ../images/mcpc-demo.gif
-```
+- **No `# comments`** (commands are self-descriptive) and **no `| head` /
+  `2>/dev/null`** on visible commands — show real output, even if it scrolls.
+- **Continuous session — never `clear` between steps;** a single blank-line
+  `Enter` before each command separates it from the previous output.
+- **Bold bright-green `$` prompt + bold-white typed commands**, set via `PS1`
+  plus a `tput sgr0` DEBUG trap in the hidden setup. **ASCII prompt symbols
+  only** — multibyte glyphs (`❯`, `»`) break under VHS.
+- `mcpc-demo.tape` uses `export MCPC_HOME_DIR="$(mktemp -d)"` (hidden) so the
+  first `mcpc` shows a clean empty state.
 
-You can also render `.mp4` or `.webm` by editing the `Output` directive
-inside the tape file (VHS infers the format from the extension).
+The exact `PS1` string, the reasoning, and every other gotcha live in the skill.
 
-## Customising
+## What's committed
 
-`mcpc-demo.tape` is the template — copy it, trim the sections you don't need,
-and adjust:
-
-- `Output <file>` — destination GIF / MP4 / WebM
-- `Set Width / Set Height` — frame size (current default: 1100×650)
-- `Set FontSize` / `Set FontFamily` / `Set Theme` — appearance
-- `Set TypingSpeed` / `Sleep` — pacing
-- Server URL and `--header` — point at your own MCP server
-- Tool / argument names — swap for tools your audience cares about
-
-The other tapes use the same Set block so they look consistent side by side.
-
-## Tips
-
-- Use `Hide` / `Show` around setup commands (clearing the screen, closing
-  stale sessions, exporting `PS1`) so they don't appear in the GIF.
-- Add `Sleep` after each `Enter` so viewers have time to read the output
-  before the next command runs.
-- `Set PlaybackSpeed 1.5` speeds up the final GIF without changing the
-  recording cadence — handy for long demos.
-- Run the tape locally first (`vhs <file>.tape`) and inspect the generated
-  GIF before committing. VHS does not run inside CI by default; the tapes
-  are version-controlled but the GIFs they produce are not (the main
-  `docs/images/mcpc-demo.gif` is checked in separately).
-- Recording headless (a container or CI, especially as root)? VHS drives a
-  Chromium that needs `--no-sandbox`, and mcpc prints a keychain notice without
-  a keyring daemon. Both are handled in
-  [`skills/record-demo`](../../skills/record-demo/SKILL.md).
+- `docs/images/mcpc-demo.gif` — the README hero.
+- `docs/vhs/*.gif` — per-feature recordings are committed too, so they're easy to
+  find and reuse. `.gitignore` ignores only `docs/vhs/mcpc-demo.gif` (the hero's
+  raw output, committed under `docs/images/`). `proxy.gif` needs a token to record.
 
 See the [VHS documentation](https://github.com/charmbracelet/vhs#vhs-command-reference)
-for the full list of directives (`Type`, `Sleep`, `Enter`, `Hide`, `Show`,
-`Wait`, `Screenshot`, all `Set …` options, etc.).
+for the full directive reference.

@@ -1,63 +1,139 @@
 ---
 name: record-demo
-description: Record or regenerate the mcpc demo GIFs (the README hero and the focused tapes in docs/vhs/) using VHS. Use this whenever asked to create, refresh, or shorten a terminal demo/animation/GIF of mcpc. The demos drive real mcpc commands against a live MCP server, so this skill ALWAYS prompts for any API token first and insists on a short-lived token from a throwaway/test account — never a production one.
+description: Record or regenerate the mcpc demo GIFs (the README hero docs/images/mcpc-demo.gif and the focused tapes in docs/vhs/) with VHS. Use whenever asked to create, refresh, restyle, shorten, or fix a terminal demo/animation/GIF of mcpc. The tapes drive real mcpc commands; for the authenticated step this skill ALWAYS prompts for a short-lived, low-permission TEST token first (never production). Captures the VHS + mcpc gotchas learned the hard way — read it fully before editing a tape.
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 ---
 
 # record-demo: VHS demo GIFs for mcpc
 
 The tapes in `docs/vhs/*.tape` are [VHS](https://github.com/charmbracelet/vhs)
-scripts that drive a **real** shell session — VHS types the commands, runs them
+scripts that drive a **real** shell session — VHS types each command, runs it
 against a live MCP server, captures the terminal, and renders a GIF. The README
 hero is `docs/images/mcpc-demo.gif`, built from `docs/vhs/mcpc-demo.tape`.
 
-Because the commands run for real, recording a demo against an authenticated
-server (such as `mcp.apify.com`) needs a real credential. **Step 1 is always to
-prompt for that token — securely.**
+This file is the accumulated know-how. **Read all of it before touching a tape**
+— most rules below were discovered by hitting the wall, and skipping them wastes
+whole render cycles (~1–2 min each).
 
-## 1. Prompt for API tokens FIRST (required)
+## The hero flow (`mcpc-demo.tape`)
 
-Before touching a tape that connects to an authenticated server, use
-`AskUserQuestion` to ask the user to supply the token, and make the safety rules
-explicit. **Do not skip this and do not reuse a token you happen to find in the
-environment without confirming it is safe to use.**
+A basic-use story across both transports:
 
-Tell the user to:
+1. `mcpc` — empty state (no sessions, no profiles)
+2. `mcpc connect mcp.json:filesystem` — local **stdio** server (auto-names `@filesystem`)
+3. `mcpc` — session list (now shows the live session)
+4. `mcpc @filesystem tools-list`
+5. `mcpc @filesystem tools-list --json` — JSON output, syntax-highlighted, no jq
+6. `mcpc connect mcp.apify.com -H "Authorization: Bearer $APIFY_TOKEN"` — remote **HTTP** server (auto-names `@apify`)
+7. `mcpc @apify tools-list`
+8. `mcpc @apify tools-get search-actors` — inspect one tool's input schema
+9. `mcpc @apify tools-call search-actors keywords:="web scraper" limit:=3`
+10. `mcpc @apify close`
 
-- **Create a brand-new token just for this recording** — don't reuse an existing one.
-- **Use a testing / throwaway account, never a production account.** Demos can be
-  re-recorded many times and the token lives in a recorded shell + a background
-  bridge process; a test account keeps the blast radius near zero.
-- **Set the shortest expiration the provider allows** (e.g. an hour or a day).
-- **Revoke the token as soon as the recording is done.**
+Ten commands run ~45s; there is no hard 30s cap for this flow.
 
-For the Apify server, point them at <https://console.apify.com/settings/integrations>
-to mint a scoped, short-lived **test** token.
+## Style conventions (the current standard — match these)
 
-How the token is handed over and kept safe:
+- **No `# comments`** in the visible script. The commands are self-descriptive.
+- **No `| head`, no `2>/dev/null`** on visible commands. Show real output even if
+  long — it scrolls naturally. (`connect` ≈ 86 lines incl. an "Available commands"
+  list, `tools-call search-actors` ≈ 56, filesystem `tools-list --json` ≈ 300.)
+- **Continuous session — never `clear` between steps.** Put a single blank-line
+  `Enter` before each command (after the first) so it's separated from the
+  previous output, like a real terminal session.
+- **Colored prompt + bold-white typed commands.** In the hidden setup block:
+  ```
+  Type 'export PS1="\[\e[1;38;2;25;230;77m\]$\[\e[0m\] \[\e[1;97m\]"'
+  Enter
+  Type "trap 'tput sgr0' DEBUG"
+  Enter
+  ```
+  - `PS1` is a bold bright-green `$`, then ends with `\[\e[1;97m\]` so the typed
+    input renders bold bright-white.
+  - The `DEBUG` trap runs `tput sgr0` before every command so the bold-white
+    input does **not** bleed into command output.
+- **Empty state** needs a clean home — hidden: `Type 'export MCPC_HOME_DIR="$(mktemp -d)"'`
+  so `mcpc` shows "No active MCP sessions / No OAuth profiles".
+- **Color is automatic for non-piped commands** — mcpc detects the TTY and emits
+  color (256-color, plenty vivid). You only need `export FORCE_COLOR=3`
+  (+ `COLORTERM=truecolor` for exact hex) when a command is **piped** (mcpc turns
+  color off when stdout isn't a TTY). The current tapes avoid pipes, so they don't
+  need it. (The CLI palette lives in `src/cli/output.ts`, `RAINBOW_SATURATION`,
+  bumped to 78% for vividness — that's where the demo colors come from.)
 
-- The user provides it as an environment variable that VHS inherits, e.g.
-  `export APIFY_TOKEN=apify_api_...`. Prompt with `AskUserQuestion`; if they
-  paste it, `export` it for the render only.
-- **Tapes reference the variable, never the literal token** — e.g.
-  `-H "Authorization: Bearer $APIFY_TOKEN"`. The shell expands it at run time, so
-  the secret is **never typed on screen, never in the GIF, never committed.**
-- Never `echo`, log, or print the token. Never hard-code it in a tape. Confirm
-  it's a non-production token before recording.
-- To record against a **public** server instead, drop the `-H` line from the tape
-  and skip this step entirely.
+## VHS gotchas (these will bite you)
 
-## 2. Prerequisites
+- **ASCII prompt symbols only.** Multibyte glyphs (`❯`, `»`, `▶`) break bash prompt
+  rendering under VHS and show up as garbage like `92m]`. Use `$` (or `>`), styled
+  with color + bold.
+- **`Type` quoting:** use **single quotes** around any command containing double
+  quotes. A `\"` inside a double-quoted `Type` breaks VHS's parser. e.g.
+  `Type 'mcpc @apify tools-call search-actors keywords:="web scraper" limit:=3'`
+  and `Type 'export PS1="\[\e[…m\]$\[\e[0m\] "'`.
+- **Output/Screenshot paths:** must not start with a digit (`Output 1-foo.gif`
+  fails to parse) and must not be long absolute paths (the parser chokes). Use
+  short, letter-leading, **relative** names and run `vhs` from `docs/vhs/`.
+- **`Screenshot` is unreliable** (frequently exits 2 even though the GIF rendered
+  fine). Don't depend on it — pull frames from the finished GIF instead:
+  `ffmpeg -y -ss <seconds> -i x.gif -vframes 1 frame.png`, then Read the PNG.
+- **Renders are slow** (~1–2 min each: real-time timeline + Chromium + ffmpeg
+  encode). Render tapes **one at a time** — a `for` loop over several blows the
+  5-minute command timeout. Extracted frames often land mid-typing; sample a few
+  timestamps around when output should be on screen.
+
+## Stdio servers in a headless / proxied box
+
+- **`npx`-launched stdio servers are too slow here.** `npx -y <pkg>`'s registry
+  round-trip exceeds mcpc's 60s connect handshake, so `connect` times out
+  (`MCP error -32001`). Fixes: pre-install the server (`npm i -g <pkg>`) and put
+  the **direct binary** in `mcp.json` (e.g. `mcp-server-filesystem`, starts in
+  ~0.3s — also a cleaner session header), or use `npx --prefer-offline -y <pkg>`
+  once the npm cache is warm (~5s; plain `npx -y` still does the slow registry
+  check even when cached).
+- **Puppeteer does NOT work for headless recording.**
+  `@modelcontextprotocol/server-puppeteer` launches Chromium eagerly on startup
+  and hangs/times out as root in the container. Use
+  **`@modelcontextprotocol/server-filesystem`** instead (14 recognizable tools,
+  instant). `docs/vhs/mcp.json` defines the `filesystem` entry via its global
+  binary — install it first: `npm i -g @modelcontextprotocol/server-filesystem`.
+
+## Auth token (the authenticated step)
+
+- **Always prompt for the token first.** Insist on a **short-lived,
+  low-permission token from a TEST / throwaway account — never production.**
+  Apify: <https://console.apify.com/settings/integrations>. Tell the user to
+  **revoke it as soon as the recording is done.**
+- Pass it inline, for the render only: `APIFY_TOKEN=… vhs mcpc-demo.tape`. The
+  tape references `$APIFY_TOKEN` (never the literal), typed inside **single
+  quotes** so bash expands it at run time — the value is **never on screen, never
+  in the GIF, never committed**. Always verify a connect frame shows
+  `$APIFY_TOKEN`, not the value.
+- `connect` **auto-names** the session: `mcp.apify.com → @apify`,
+  `mcp.json:filesystem → @filesystem`. No `@name` needed.
+- No-token alternative (public, anonymous): `mcpc connect "https://mcp.apify.com/?tools=search-actors,fetch-actor-details,docs"`.
+
+## Keychain warning (headless only)
+
+On a box with no keyring, the bearer-token `connect` prints
+`[keychain] OS keychain unavailable, falling back to file-based credential
+storage …`. It is **environment-specific** (won't appear on a normal desktop
+with a keyring) and there is **no env var to suppress it** — it's a `logger.warn`
+in `src/lib/auth/keychain.ts` gated only by keychain availability and JSON mode.
+A `dbus-run-session` + `gnome-keyring-daemon` wrapper does **not** fix it in this
+sandbox (raising the dbus fd limit is blocked). Options: leave it (honest), or add
+a targeted `2>/dev/null` to just that one connect command.
+
+## Prerequisites
 
 ```bash
-mcpc --version        # the CLI being demoed (npm i -g @apify/mcpc, or build + link this repo)
-vhs --version         # brew install vhs  — needs ttyd + ffmpeg on PATH
-jq --version          # used by the code-mode / scripting tapes
+mcpc --version            # the CLI being demoed (npm i -g @apify/mcpc, or build + pnpm link this repo)
+vhs --version             # brew install vhs (needs ttyd + ffmpeg on PATH)
+mcp-server-filesystem     # npm i -g @modelcontextprotocol/server-filesystem (the stdio demo server)
 ```
 
-On a headless Linux box or container, VHS drives a Chromium that go-rod
-auto-downloads to `~/.cache/rod`. Running **as root** it refuses to start without
-`--no-sandbox`. Wrap the downloaded binary once:
+Headless + **root**: VHS drives a Chromium (go-rod auto-downloads it to
+`~/.cache/rod`) that refuses to start without `--no-sandbox`. If renders fail to
+launch Chromium, wrap the binary once:
 
 ```bash
 CHROME=$(find ~/.cache/rod/browser -name chrome -type f | head -1)
@@ -66,52 +142,43 @@ printf '#!/bin/sh\nexec "$(dirname "$0")/chrome-real" --no-sandbox --disable-gpu
 chmod +x "$CHROME"
 ```
 
-(`vhs` first runs without it just to trigger the Chromium download.)
+(Run `vhs` once first to trigger the Chromium download.)
 
-## 3. Keep it under 30 seconds (basic interactions)
-
-The hero demo should show the core loop and nothing more: **connect → list tools
-→ call a tool → `--json` for code mode → close**. Pacing knobs in the `Set` block:
-
-- `Set TypingSpeed 45ms`, short `Sleep` after each command (≈2.5–3.5s to read output).
-- `Set Framerate 24` keeps the GIF small; `Set PlaybackSpeed 1.2` shaves the final
-  duration if you run over budget.
-- `Hide` / `Show` around setup (`export PS1='$ '`, closing stale sessions, `clear`)
-  so it stays off-screen.
-
-VHS records in **real time**: a ~30s tape takes ~30s to record, plus Chromium
-startup and ffmpeg encode — give renders a few minutes, not seconds.
-
-## 4. Record and verify
+## Render and verify
 
 ```bash
 cd docs/vhs
-export APIFY_TOKEN=...                       # the short-lived TEST token from step 1
-vhs mcpc-demo.tape                            # → mcpc-demo.gif (real-time; be patient)
-
-# Confirm the 30-second budget BEFORE committing:
-ffprobe -v error -show_entries format=duration \
-  -of default=noprint_wrappers=1:nokey=1 mcpc-demo.gif
-
-cp mcpc-demo.gif ../images/mcpc-demo.gif      # update the README hero
+APIFY_TOKEN=…   vhs mcpc-demo.tape                                   # real-time; be patient
+ffprobe -v error -show_entries format=duration -of csv=p=0 mcpc-demo.gif   # check length
+ffmpeg -y -ss 12 -i mcpc-demo.gif -vframes 1 /tmp/f.png             # spot-check a frame, then Read it
+cp mcpc-demo.gif ../images/mcpc-demo.gif                            # update the README hero
 ```
 
-Open the GIF and check: the prompt is clean, the token is **not** visible
-anywhere, output is readable, and total length ≤ 30s. Then **revoke the token.**
+Check each frame class: empty state, stdio connect + session list, tools-list,
+JSON, remote connect (**token NOT visible**), tool-call result, close. Then
+**revoke the token.**
 
-Only `docs/images/mcpc-demo.gif` is committed; the other tapes' GIFs are generated
-on demand and stay out of git.
+## What's committed
 
-## 5. The tapes
+- `docs/images/mcpc-demo.gif` — the README hero (canonical copy).
+- `docs/vhs/*.gif` — the per-feature recordings are committed too, so they're easy
+  to find and reuse. `.gitignore` ignores only `docs/vhs/mcpc-demo.gif` (the hero's
+  raw output, since it's committed under `docs/images/`).
+- `proxy.gif` needs a token to record and isn't committed until recorded.
+
+## The tapes
 
 | Tape | Records |
 | ---- | ------- |
-| `mcpc-demo.tape` | Hero ≤30s overview: connect → tools → call → `--json` → close (source of `docs/images/mcpc-demo.gif`) |
+| `mcpc-demo.tape` | Hero basic-use flow (stdio + remote) → `docs/images/mcpc-demo.gif` |
 | `quickstart.tape` | Minimal connect → list → call |
 | `tools.tape` | `tools-list` / `tools-get` / `tools-call`, inline JSON, stdin |
 | `scripting.tape` | `--json` piped through `jq` (code mode) |
 | `grep.tape` | Dynamic tool discovery with `mcpc grep` |
-| `proxy.tape` | MCP proxy / AI sandboxing |
+| `proxy.tape` | MCP proxy / AI sandboxing (keeps a bearer token on purpose) |
 
-Copy the `Set` block between tapes so they look consistent. See
-[`docs/vhs/README.md`](../../docs/vhs/README.md) for the full directive reference.
+The focused tapes (`quickstart`/`tools`/`scripting`/`grep`) connect to the public
+no-auth `?tools=` URL and may still use the older plain-prompt style — bring them
+in line with the hero conventions above when refreshing them. `proxy.tape` keeps
+its token because demonstrating that you can proxy a credentialed session without
+leaking the token is its entire point.

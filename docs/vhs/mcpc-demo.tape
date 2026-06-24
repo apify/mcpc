@@ -88,6 +88,12 @@ Enter
 Sleep 2800ms
 
 Enter
+Type "mcpc @apify tools-get search-actors"
+Sleep 300ms
+Enter
+Sleep 3000ms
+
+Enter
 Type 'mcpc @apify tools-call search-actors keywords:="web scraper" limit:=3'
 Sleep 300ms
 Enter
