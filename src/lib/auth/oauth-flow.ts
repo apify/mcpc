@@ -11,12 +11,16 @@ import { createInterface } from 'readline';
 import { randomBytes } from 'crypto';
 import { auth as sdkAuth } from '@modelcontextprotocol/sdk/client/auth.js';
 import { OAuthProvider, type OAuthProviderOptions } from './oauth-provider.js';
-import { getServerHost, getOAuthServerUrl } from '../utils.js';
+import { getServerHost } from '../utils.js';
 import { ClientError } from '../errors.js';
 import { createLogger } from '../logger.js';
 import { removeKeychainOAuthClientInfo, storeKeychainOAuthClientInfo } from './keychain.js';
 import type { AuthProfile } from '../types.js';
-import { MCPC_OAUTH_CALLBACK_PORTS, validateClientMetadataUrl } from './oauth-utils.js';
+import {
+  MCPC_OAUTH_CALLBACK_PORTS,
+  validateClientMetadataUrl,
+  getOAuthServerUrl,
+} from './oauth-utils.js';
 import { renderAuthPage } from './auth-page.js';
 
 const logger = createLogger('oauth-flow');

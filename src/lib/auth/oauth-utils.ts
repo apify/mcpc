@@ -6,7 +6,7 @@
 import { createLogger } from '../logger.js';
 import { AuthError, ClientError } from '../errors.js';
 import { proxyFetch } from '../proxy.js';
-import { getOAuthServerUrl } from '../utils.js';
+import { normalizeServerUrl } from '../utils.js';
 
 const logger = createLogger('oauth-utils');
 
@@ -50,6 +50,39 @@ export interface AuthServerMetadata {
   token_endpoint?: string;
   token_endpoint_auth_methods_supported?: string[];
   [key: string]: unknown;
+}
+
+/**
+ * Derive the URL used for OAuth operations (metadata discovery, dynamic client
+ * registration, authorization, token refresh) from a server URL.
+ *
+ * A server URL may carry a query string that matters only to the MCP connection
+ * itself — e.g. Apify's `?tools=search-actors,...` tool filter. That query is
+ * NOT part of the server's OAuth identity. The MCP SDK copies the query onto its
+ * well-known discovery requests (`/.well-known/oauth-protected-resource?tools=...`),
+ * which makes discovery fail; the SDK then treats the MCP origin as its own
+ * authorization server and issues `POST <origin>/register`, which the MCP server
+ * has no route for (404). Stripping the query makes OAuth behave identically
+ * whether or not a tool filter is present.
+ *
+ * The path is preserved (path-based discovery is valid); only the query and
+ * fragment are removed. Storage keys are unaffected — profiles and keychain key
+ * on the host via getServerHost() — so this stays consistent with the URLs used
+ * by `login` and `connect`.
+ */
+export function getOAuthServerUrl(urlString: string): string {
+  const url = new URL(normalizeServerUrl(urlString));
+  url.search = '';
+  url.hash = '';
+
+  let result = url.toString();
+
+  // Match normalizeServerUrl: a bare origin carries no trailing slash.
+  if (url.pathname === '/') {
+    result = result.slice(0, -1);
+  }
+
+  return result;
 }
 
 /**
