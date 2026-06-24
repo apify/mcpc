@@ -872,7 +872,7 @@ ${jsonHelp('`[{ sessionName, tools?: Tool[], resources?: Resource[], prompts?: P
   // help command: mcpc help [command] (supports "help x402 sign"); --skill prints the agent guide
   program
     .command('help [command] [subcommand]')
-    .description('Show help for a command, or the agent skill with --skill')
+    .description('Show help for a command')
     .option('--skill', 'Print the agent skill (mental model, workflows, examples)')
     .action(async (cmdName?: string, subcommand?: string, opts?: { skill?: boolean }) => {
       if (opts?.skill) {
