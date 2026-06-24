@@ -11,8 +11,9 @@
 #   - VHS:  brew install vhs   (or see https://github.com/charmbracelet/vhs#installation)
 #   - mcpc: npm install -g @apify/mcpc
 #   - jq:   brew install jq    (for the code-mode section)
-#   - Auth: export APIFY_TOKEN=...   (use a short-lived token from a TEST account,
-#           never a production one — see skills/record-demo/SKILL.md)
+#
+# No auth needed: this demo uses Apify's public MCP endpoint with a pinned set
+# of read-only tools (?tools=...), so anyone — or CI — can regenerate the GIF.
 #
 # Notes:
 #   - `2>/dev/null` on connect just hides a "keychain unavailable" notice shown
@@ -21,7 +22,7 @@
 #     `| head` trims the chattier outputs so each step fits on screen.
 #   - mcpc disables color off a TTY, so the setup exports FORCE_COLOR=3 and
 #     COLORTERM=truecolor to keep the real (vivid) palette through the pipes.
-#   - Drop the `-H` line and point at any public MCP server to record anonymously.
+#   - Swap the server URL for any other MCP server to record a different demo.
 #   - Focused, single-feature demos live alongside this one (quickstart.tape,
 #     tools.tape, scripting.tape, grep.tape, proxy.tape).
 
@@ -65,7 +66,7 @@ Show
 Type "# Connect to any MCP server as a session"
 Sleep 200ms
 Enter
-Type 'mcpc connect mcp.apify.com @apify -H "Authorization: Bearer $APIFY_TOKEN" 2>/dev/null | head -13'
+Type 'mcpc connect "https://mcp.apify.com/?tools=search-actors,fetch-actor-details,docs" @apify 2>/dev/null | head -13'
 Sleep 150ms
 Enter
 Sleep 3000ms
