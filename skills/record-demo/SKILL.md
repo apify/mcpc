@@ -80,6 +80,14 @@ Ten commands run ~45s; there is no hard 30s cap for this flow.
   encode). Render tapes **one at a time** — a `for` loop over several blows the
   5-minute command timeout. Extracted frames often land mid-typing; sample a few
   timestamps around when output should be on screen.
+- **Hidden connects leak into the recording if bash falls behind.** When a tape
+  connects in the hidden setup (so the feature commands run against a ready
+  session, e.g. tools/scripting/grep), a slow connect lets VHS type ahead; bash
+  then echoes the buffered commands and runs the `clear` *after* `Show`, so the
+  setup spills into frame. Pattern that works: type the connect(s), then **one
+  generous `Sleep` (7–8s)** so they finish, then `clear`, then **another `Sleep`
+  (~1.5s) before `Show`**. (Tapes that connect *visibly* as their first command
+  don't need this — their hidden setup is just fast exports + `clear`.)
 
 ## Stdio servers in a headless / proxied box
 
@@ -174,11 +182,13 @@ JSON, remote connect (**token NOT visible**), tool-call result, close. Then
 | `quickstart.tape` | Minimal connect → list → call |
 | `tools.tape` | `tools-list` / `tools-get` / `tools-call`, inline JSON, stdin |
 | `scripting.tape` | `--json` piped through `jq` (code mode) |
-| `grep.tape` | Dynamic tool discovery with `mcpc grep` |
+| `grep.tape` | Dynamic tool discovery with `mcpc grep` across two sessions (Apify + filesystem) |
 | `proxy.tape` | MCP proxy / AI sandboxing (keeps a bearer token on purpose) |
 
-The focused tapes (`quickstart`/`tools`/`scripting`/`grep`) connect to the public
-no-auth `?tools=` URL and may still use the older plain-prompt style — bring them
-in line with the hero conventions above when refreshing them. `proxy.tape` keeps
-its token because demonstrating that you can proxy a credentialed session without
-leaking the token is its entire point.
+All focused tapes follow the same conventions as the hero (bold `$` prompt,
+bold-white commands, no comments, blank-line separation, `mktemp` home).
+`quickstart`/`tools`/`scripting`/`grep` are token-free (public `?tools=` URL);
+`grep` also connects a local filesystem stdio server so it can search across two
+sessions. `proxy.tape` keeps a bearer token because demonstrating that you can
+proxy a credentialed session without leaking the token is its entire point (it's
+the one focused tape that needs a token to record).

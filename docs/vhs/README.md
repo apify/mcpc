@@ -29,7 +29,7 @@ replays it, runs the commands against a live MCP server, and renders a GIF.
 | [`quickstart.tape`](./quickstart.tape) | Minimal connect → list → call | |
 | [`tools.tape`](./tools.tape) | `tools-list` / `tools-get` / `tools-call`, inline JSON, stdin | |
 | [`scripting.tape`](./scripting.tape) | `--json` piped through `jq` (code mode) | |
-| [`grep.tape`](./grep.tape) | Dynamic tool discovery with `mcpc grep` | |
+| [`grep.tape`](./grep.tape) | `mcpc grep` across two sessions (Apify + local filesystem) | |
 | [`proxy.tape`](./proxy.tape) | MCP proxy / AI sandboxing (keeps a bearer token on purpose) | |
 
 ## Recording

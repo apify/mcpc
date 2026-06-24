@@ -2,8 +2,7 @@
 #
 #   cd docs/vhs && vhs quickstart.tape
 #
-# A minimal "connect → list tools → call tool" demo. No auth needed (public
-# ?tools= endpoint); no shell setup — VHS's default prompt and TTY color suffice.
+# No auth needed (Apify public ?tools= endpoint). Connect -> list -> call -> close.
 
 Output quickstart.gif
 
@@ -13,50 +12,47 @@ Set Shell           "bash"
 Set FontFamily      "JetBrains Mono"
 Set FontSize        16
 Set Width           1100
-Set Height          600
+Set Height          640
 Set Padding         20
-Set TypingSpeed     50ms
+Set TypingSpeed     40ms
 Set Theme           "Catppuccin Mocha"
 Set WindowBar       Colorful
 Set WindowBarSize   32
 Set BorderRadius    8
+Set CursorBlink     true
+Set Framerate       24
 
-# Start from a clean screen with no stale session (hidden)
+# Hidden setup: fresh home, bright-green $ prompt + bold-white input.
 Hide
-Type "mcpc @apify close 2>/dev/null; true"
+Type 'export MCPC_HOME_DIR="$(mktemp -d)"'
+Enter
+Type 'export PS1="\[\e[1;38;2;25;230;77m\]$\[\e[0m\] \[\e[1;97m\]"'
+Enter
+Type "trap 'tput sgr0' DEBUG"
 Enter
 Type "clear"
 Enter
 Show
 
-Type "# Connect to any MCP server, get a stateful session"
-Sleep 600ms
-Enter
 Type 'mcpc connect "https://mcp.apify.com/?tools=search-actors,fetch-actor-details,docs" @apify'
-Sleep 400ms
+Sleep 300ms
 Enter
-Sleep 3s
+Sleep 3000ms
 
-Enter
-Type "# List the tools the server exposes"
-Sleep 500ms
 Enter
 Type "mcpc @apify tools-list"
-Sleep 400ms
+Sleep 300ms
 Enter
-Sleep 4s
+Sleep 2800ms
 
 Enter
-Type "# Call one of them with typed key:=value arguments"
-Sleep 500ms
-Enter
 Type 'mcpc @apify tools-call search-actors keywords:="web scraper" limit:=3'
-Sleep 400ms
+Sleep 300ms
 Enter
-Sleep 5s
+Sleep 3200ms
 
 Enter
 Type "mcpc @apify close"
-Sleep 400ms
+Sleep 300ms
 Enter
-Sleep 2s
+Sleep 1800ms
