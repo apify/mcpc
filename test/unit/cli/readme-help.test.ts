@@ -20,7 +20,7 @@ function getHelpOutput(): string {
     encoding: 'utf-8',
     env: { ...process.env, NO_COLOR: '1' },
   });
-  // Same filtering as update-readme.sh: remove "Full docs:" line and trailing empty lines
+  // Same filtering as update-readme.sh: remove the self-referential "Full docs:" line (keep the agent-guide hint above it) and trailing empty lines
   return stripAnsi(output)
     .replace(/^Full docs:.*\n?/m, '')
     .trimEnd();
