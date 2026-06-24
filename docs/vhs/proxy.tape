@@ -1,6 +1,9 @@
 # mcpc proxy — AI sandbox: expose a credentialed session without leaking tokens
 #
 #   cd docs/vhs && vhs proxy.tape
+#
+# This tape keeps auth on purpose — it demos proxying a token-backed session.
+# Set APIFY_TOKEN (a test-account token) before recording. No shell setup otherwise.
 
 Output proxy.gif
 
@@ -18,15 +21,8 @@ Set WindowBar       Colorful
 Set WindowBarSize   32
 Set BorderRadius    8
 
+# Hidden: tear down any prior sessions, start from a clean screen
 Hide
-Type "export PS1='$ '"
-Enter
-# Force vivid color through pipes (| head): mcpc disables color off a TTY,
-# and basic-16 would mute the palette, so COLORTERM keeps the real truecolor hex.
-Type "export FORCE_COLOR=3"
-Enter
-Type "export COLORTERM=truecolor"
-Enter
 Type "mcpc @relay close 2>/dev/null; mcpc @sandbox close 2>/dev/null; true"
 Enter
 Type "clear"
@@ -41,6 +37,7 @@ Sleep 400ms
 Enter
 Sleep 4s
 
+Enter
 Type "# The proxy forwards MCP traffic but hides the upstream token"
 Sleep 600ms
 Enter
@@ -49,7 +46,6 @@ Sleep 400ms
 Enter
 Sleep 4s
 
-Type "clear"
 Enter
 Type "# An AI agent (or another tool) connects to the proxy as a normal MCP server"
 Sleep 600ms
@@ -59,12 +55,12 @@ Sleep 400ms
 Enter
 Sleep 3s
 
-Type "mcpc @sandbox tools-list | head -8"
+Enter
+Type "mcpc @sandbox tools-list"
 Sleep 400ms
 Enter
 Sleep 5s
 
-Type "clear"
 Enter
 Type "# Tear down both sides"
 Sleep 500ms

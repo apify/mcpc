@@ -1,9 +1,9 @@
 # mcpc quickstart — first-time user flow
 #
-# A minimal demo of "install → connect → list tools → call tool".
-# Best for the README hero / landing-page GIF.
-#
 #   cd docs/vhs && vhs quickstart.tape
+#
+# A minimal "connect → list tools → call tool" demo. No auth needed (public
+# ?tools= endpoint); no shell setup — VHS's default prompt and TTY color suffice.
 
 Output quickstart.gif
 
@@ -21,15 +21,8 @@ Set WindowBar       Colorful
 Set WindowBarSize   32
 Set BorderRadius    8
 
+# Start from a clean screen with no stale session (hidden)
 Hide
-Type "export PS1='$ '"
-Enter
-# Force vivid color through pipes (| head): mcpc disables color off a TTY,
-# and basic-16 would mute the palette, so COLORTERM keeps the real truecolor hex.
-Type "export FORCE_COLOR=3"
-Enter
-Type "export COLORTERM=truecolor"
-Enter
 Type "mcpc @apify close 2>/dev/null; true"
 Enter
 Type "clear"
@@ -39,27 +32,21 @@ Show
 Type "# Connect to any MCP server, get a stateful session"
 Sleep 600ms
 Enter
-Type 'mcpc connect mcp.apify.com @apify --header "Authorization: Bearer ${APIFY_TOKEN}"'
+Type 'mcpc connect "https://mcp.apify.com/?tools=search-actors,fetch-actor-details,docs" @apify'
 Sleep 400ms
 Enter
 Sleep 3s
 
-Hide
-Type "clear"
 Enter
-Show
 Type "# List the tools the server exposes"
 Sleep 500ms
 Enter
-Type "mcpc @apify tools-list | head -10"
+Type "mcpc @apify tools-list"
 Sleep 400ms
 Enter
 Sleep 4s
 
-Hide
-Type "clear"
 Enter
-Show
 Type "# Call one of them with typed key:=value arguments"
 Sleep 500ms
 Enter
@@ -68,10 +55,8 @@ Sleep 400ms
 Enter
 Sleep 5s
 
-Hide
-Type "clear"
 Enter
-Show
 Type "mcpc @apify close"
+Sleep 400ms
 Enter
 Sleep 2s

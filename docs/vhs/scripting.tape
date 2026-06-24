@@ -1,6 +1,8 @@
 # mcpc scripting — JSON mode + jq + pipelines (code mode)
 #
 #   cd docs/vhs && vhs scripting.tape
+#
+# No auth needed (public ?tools= endpoint); no shell setup.
 
 Output scripting.gif
 
@@ -19,16 +21,9 @@ Set WindowBar       Colorful
 Set WindowBarSize   32
 Set BorderRadius    8
 
+# Hidden: connect a session, start from a clean screen
 Hide
-Type "export PS1='$ '"
-Enter
-# Force vivid color through pipes (| jq, | head): mcpc disables color off a TTY,
-# and basic-16 would mute the palette, so COLORTERM keeps the real truecolor hex.
-Type "export FORCE_COLOR=3"
-Enter
-Type "export COLORTERM=truecolor"
-Enter
-Type "mcpc connect mcp.apify.com @apify --header \"Authorization: Bearer ${APIFY_TOKEN}\" >/dev/null 2>&1 || true"
+Type 'mcpc connect "https://mcp.apify.com/?tools=search-actors,fetch-actor-details,docs" @apify >/dev/null 2>&1 || true'
 Enter
 Type "clear"
 Enter
@@ -37,36 +32,31 @@ Show
 Type "# --json emits MCP-spec JSON to stdout, errors to stderr"
 Sleep 600ms
 Enter
-Type "mcpc --json @apify tools-list | jq -r '.[].name' | head -5"
+Type "mcpc --json @apify tools-list | jq -r '.[].name'"
 Sleep 400ms
 Enter
 Sleep 4s
 
-Type "clear"
 Enter
-Type "# Chain tools across calls with jq + xargs"
+Type "# Chain tools across calls with jq"
 Sleep 500ms
 Enter
-Type "mcpc --json @apify tools-call search-actors keywords:=\"scraper\" limit:=1 \\"
-Sleep 200ms
-Enter
-Type '  | jq -r ".content[0].text | fromjson | .[0].name"'
+Type 'mcpc --json @apify tools-call search-actors keywords:="scraper" limit:=1 | jq -r ".content[0].text | fromjson | .[0].name"'
 Sleep 400ms
 Enter
 Sleep 5s
 
-Type "clear"
 Enter
 Type "# Snapshot every tool's schema for CI / contract tests"
 Sleep 500ms
 Enter
-Type "for tool in $(mcpc --json @apify tools-list | jq -r '.[].name' | head -3); do"
+Type "for tool in $(mcpc --json @apify tools-list | jq -r '.[].name'); do"
 Sleep 200ms
 Enter
 Type '  mcpc --json @apify tools-get "$tool" > "/tmp/$tool.json"'
 Sleep 200ms
 Enter
-Type "  echo \"saved /tmp/$tool.json\""
+Type '  echo "saved /tmp/$tool.json"'
 Sleep 200ms
 Enter
 Type "done"

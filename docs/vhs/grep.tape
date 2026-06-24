@@ -1,6 +1,8 @@
 # mcpc grep — dynamic tool discovery across sessions
 #
 #   cd docs/vhs && vhs grep.tape
+#
+# No auth needed (public ?tools= endpoint); no shell setup.
 
 Output grep.gif
 
@@ -18,16 +20,9 @@ Set WindowBar       Colorful
 Set WindowBarSize   32
 Set BorderRadius    8
 
+# Hidden: connect a session, start from a clean screen
 Hide
-Type "export PS1='$ '"
-Enter
-# Force vivid color for consistency with the other tapes: mcpc disables color off a
-# TTY, and basic-16 would mute the palette, so COLORTERM keeps the real truecolor hex.
-Type "export FORCE_COLOR=3"
-Enter
-Type "export COLORTERM=truecolor"
-Enter
-Type "mcpc connect mcp.apify.com @apify --header \"Authorization: Bearer ${APIFY_TOKEN}\" >/dev/null 2>&1 || true"
+Type 'mcpc connect "https://mcp.apify.com/?tools=search-actors,fetch-actor-details,docs" @apify >/dev/null 2>&1 || true'
 Enter
 Type "clear"
 Enter
@@ -41,7 +36,6 @@ Sleep 400ms
 Enter
 Sleep 4s
 
-Type "clear"
 Enter
 Type "# Regex + case-sensitive, limited results"
 Sleep 500ms
@@ -51,7 +45,6 @@ Sleep 400ms
 Enter
 Sleep 4s
 
-Type "clear"
 Enter
 Type "# Search resources and prompts too"
 Sleep 500ms

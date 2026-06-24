@@ -1,6 +1,8 @@
 # mcpc tools — list / get / call
 #
 #   cd docs/vhs && vhs tools.tape
+#
+# No auth needed (public ?tools= endpoint); no shell setup.
 
 Output tools.gif
 
@@ -18,16 +20,9 @@ Set WindowBar       Colorful
 Set WindowBarSize   32
 Set BorderRadius    8
 
+# Hidden: connect a session, start from a clean screen
 Hide
-Type "export PS1='$ '"
-Enter
-# Force vivid color through pipes (| head): mcpc disables color off a TTY,
-# and basic-16 would mute the palette, so COLORTERM keeps the real truecolor hex.
-Type "export FORCE_COLOR=3"
-Enter
-Type "export COLORTERM=truecolor"
-Enter
-Type "mcpc connect mcp.apify.com @apify --header \"Authorization: Bearer ${APIFY_TOKEN}\" >/dev/null 2>&1 || true"
+Type 'mcpc connect "https://mcp.apify.com/?tools=search-actors,fetch-actor-details,docs" @apify >/dev/null 2>&1 || true'
 Enter
 Type "clear"
 Enter
@@ -36,12 +31,11 @@ Show
 Type "# Browse the tools exposed by the server"
 Sleep 600ms
 Enter
-Type "mcpc @apify tools-list | head -15"
+Type "mcpc @apify tools-list"
 Sleep 400ms
 Enter
 Sleep 4s
 
-Type "clear"
 Enter
 Type "# Inspect a single tool's input schema and description"
 Sleep 500ms
@@ -51,7 +45,6 @@ Sleep 400ms
 Enter
 Sleep 5s
 
-Type "clear"
 Enter
 Type "# Call with auto-parsed key:=value arguments"
 Sleep 500ms
@@ -61,7 +54,6 @@ Sleep 400ms
 Enter
 Sleep 5s
 
-Type "clear"
 Enter
 Type "# Pass complex JSON inline or from stdin"
 Sleep 500ms
