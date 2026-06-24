@@ -269,8 +269,7 @@ async function main(): Promise<void> {
       if (hasSessions) {
         console.log('To view server capabilities and tools, run: mcpc @session');
       }
-      console.log('For usage overview, run: mcpc help');
-      console.log('For the full agent skill, run: mcpc help --skill');
+      console.log('For usage and the agent guide, run: mcpc help [--skill]');
       console.log('');
     }
     await closeFileLogger();
@@ -463,8 +462,8 @@ ${chalk.bold('MCP session commands (after connecting):')}
 
 Run "mcpc" without arguments to show active sessions and OAuth profiles.
 Run "mcpc --json" to get the same data as \`{ sessions: [...], profiles: [...] }\`.
-Run "mcpc help --skill" to print a full agent usage guide (mental model, workflows, examples).
 
+Agent guide: mcpc help --skill
 Full docs: ${docsUrl}`
   );
 
@@ -873,7 +872,7 @@ ${jsonHelp('`[{ sessionName, tools?: Tool[], resources?: Resource[], prompts?: P
   // help command: mcpc help [command] (supports "help x402 sign"); --skill prints the agent guide
   program
     .command('help [command] [subcommand]')
-    .description('Show help for a command, or the agent skill with --skill')
+    .description('Show help for a command')
     .option('--skill', 'Print the agent skill (mental model, workflows, examples)')
     .action(async (cmdName?: string, subcommand?: string, opts?: { skill?: boolean }) => {
       if (opts?.skill) {

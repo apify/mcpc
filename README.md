@@ -141,7 +141,7 @@ Commands:
   clean [resources...]           Clean up mcpc data (sessions, profiles, logs, all)
   grep <pattern>                 Search tools and instructions across all active sessions
   x402 [subcommand] [args...]    Configure an x402 payment wallet (EXPERIMENTAL)
-  help [command] [subcommand]    Show help for a command, or the agent skill with --skill
+  help [command] [subcommand]    Show help for a command
 
 Options:
   --json                         Output in JSON format for scripting
@@ -178,7 +178,8 @@ MCP session commands (after connecting):
 
 Run "mcpc" without arguments to show active sessions and OAuth profiles.
 Run "mcpc --json" to get the same data as `{ sessions: [...], profiles: [...] }`.
-Run "mcpc help --skill" to print a full agent usage guide (mental model, workflows, examples).
+
+Agent guide: mcpc help --skill
 ```
 
 ### General actions
