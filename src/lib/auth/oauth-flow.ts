@@ -11,7 +11,7 @@ import { createInterface } from 'readline';
 import { randomBytes } from 'crypto';
 import { auth as sdkAuth } from '@modelcontextprotocol/sdk/client/auth.js';
 import { OAuthProvider, type OAuthProviderOptions } from './oauth-provider.js';
-import { getServerHost, normalizeServerUrl } from '../utils.js';
+import { getServerHost, getOAuthServerUrl } from '../utils.js';
 import { ClientError } from '../errors.js';
 import { createLogger } from '../logger.js';
 import { removeKeychainOAuthClientInfo, storeKeychainOAuthClientInfo } from './keychain.js';
@@ -411,8 +411,12 @@ export async function performOAuthFlow(
 ): Promise<OAuthFlowResult> {
   logger.debug(`Starting OAuth flow for ${serverUrl} (profile: ${profileName})`);
 
-  // Normalize server URL
-  const normalizedServerUrl = normalizeServerUrl(serverUrl);
+  // Normalize the server URL for OAuth. Any query string (e.g. Apify's
+  // `?tools=` tool filter) is a connection-level concern, not part of the
+  // server's OAuth identity; leaving it in corrupts SDK discovery and makes
+  // registration fall back to `POST <origin>/register` (a 404 on the MCP
+  // server). Strip it so `login <url>?tools=...` behaves like `login <url>`.
+  const normalizedServerUrl = getOAuthServerUrl(serverUrl);
 
   // Warn about OAuth over plain HTTP (except localhost)
   const parsedUrl = new URL(normalizedServerUrl);

@@ -112,6 +112,26 @@ describe('discoverTokenEndpoint', () => {
     }
   });
 
+  it('strips the query string from serverUrl before building discovery URLs', async () => {
+    // Regression: a `?tools=` filter on the URL must not leak into the
+    // well-known discovery requests, otherwise discovery fails and OAuth
+    // falls back to POST <origin>/register.
+    const calledUrls: string[] = [];
+    fetchSpy.mockImplementation((url: string) => {
+      calledUrls.push(url);
+      return Promise.resolve(mockResponse(null, false));
+    });
+
+    await discoverTokenEndpoint(
+      'https://mcp.apify.com/?tools=search-actors,fetch-actor-details,docs'
+    );
+    expect(calledUrls).toEqual([
+      'https://mcp.apify.com/.well-known/oauth-authorization-server',
+      'https://mcp.apify.com/.well-known/openid-configuration',
+    ]);
+    expect(calledUrls.some((u) => u.includes('tools='))).toBe(false);
+  });
+
   it('does not add duplicate root-based URLs when serverUrl is already root', async () => {
     const calledUrls: string[] = [];
     fetchSpy.mockImplementation((url: string) => {

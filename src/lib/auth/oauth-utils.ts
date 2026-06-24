@@ -6,6 +6,7 @@
 import { createLogger } from '../logger.js';
 import { AuthError, ClientError } from '../errors.js';
 import { proxyFetch } from '../proxy.js';
+import { getOAuthServerUrl } from '../utils.js';
 
 const logger = createLogger('oauth-utils');
 
@@ -60,7 +61,10 @@ export interface AuthServerMetadata {
 export async function discoverAuthServerMetadata(
   serverUrl: string
 ): Promise<AuthServerMetadata | undefined> {
-  serverUrl = serverUrl.replace(/\/+$/, '');
+  // Strip any query string / fragment first: OAuth metadata lives at the
+  // server's origin+path, and a query (e.g. Apify's `?tools=` filter) would
+  // otherwise be concatenated into the well-known discovery URLs below.
+  serverUrl = getOAuthServerUrl(serverUrl).replace(/\/+$/, '');
 
   // Try path-based discovery first (e.g., https://example.com/mcp/.well-known/...)
   const discoveryUrls = [

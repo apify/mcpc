@@ -15,6 +15,7 @@ import {
   getLogsDir,
   isValidHttpUrl,
   normalizeServerUrl,
+  getOAuthServerUrl,
   getServerHost,
   isValidSessionName,
   generateSessionName,
@@ -335,6 +336,46 @@ describe('getServerHost', () => {
     expect(getServerHost('https://example.com:8443/path')).toBe('example.com:8443');
     expect(getServerHost('https://example.com#hash')).toBe('example.com');
     expect(getServerHost('https://user:pass@example.com/path')).toBe('example.com');
+  });
+});
+
+describe('getOAuthServerUrl', () => {
+  it('should strip the query string (tool filter) but keep the rest', () => {
+    // The reported bug: ?tools=... broke OAuth login on mcp.apify.com
+    expect(
+      getOAuthServerUrl('https://mcp.apify.com/?tools=search-actors,fetch-actor-details,docs')
+    ).toBe('https://mcp.apify.com');
+    expect(getOAuthServerUrl('https://example.com/?test=1')).toBe('https://example.com');
+    expect(getOAuthServerUrl('https://example.com/mcp?tools=a,b')).toBe('https://example.com/mcp');
+  });
+
+  it('should produce the same result with or without a query string', () => {
+    expect(getOAuthServerUrl('https://mcp.apify.com/?tools=docs')).toBe(
+      getOAuthServerUrl('https://mcp.apify.com/')
+    );
+    expect(getOAuthServerUrl('https://mcp.apify.com')).toBe('https://mcp.apify.com');
+  });
+
+  it('should preserve the path for path-based discovery', () => {
+    expect(getOAuthServerUrl('https://example.com/mcp')).toBe('https://example.com/mcp');
+    expect(getOAuthServerUrl('https://example.com/mcp/')).toBe('https://example.com/mcp/');
+  });
+
+  it('should strip the fragment as well', () => {
+    expect(getOAuthServerUrl('https://example.com/?test=1#frag')).toBe('https://example.com');
+    expect(getOAuthServerUrl('https://example.com/path#frag')).toBe('https://example.com/path');
+  });
+
+  it('should normalize scheme, host, port and credentials like normalizeServerUrl', () => {
+    expect(getOAuthServerUrl('mcp.apify.com?tools=docs')).toBe('https://mcp.apify.com');
+    expect(getOAuthServerUrl('https://EXAMPLE.COM:443/?a=1')).toBe('https://example.com');
+    expect(getOAuthServerUrl('https://example.com:8443/?a=1')).toBe('https://example.com:8443');
+    expect(getOAuthServerUrl('https://user:pass@example.com/?a=1')).toBe('https://example.com');
+    expect(getOAuthServerUrl('localhost:3000?x=1')).toBe('http://localhost:3000');
+  });
+
+  it('should throw on invalid URLs', () => {
+    expect(() => getOAuthServerUrl('not a url at all')).toThrow('Invalid MCP server URL');
   });
 });
 
