@@ -1,12 +1,17 @@
-# mcpc demo — flagship overview (basic interactions)
+# mcpc demo — basic use (local stdio server + remote HTTP server)
 #
 #   cd docs/vhs && vhs mcpc-demo.tape
 #
 # Produces mcpc-demo.gif; copy to docs/images/mcpc-demo.gif for the README.
 #
-# Prerequisites: VHS, mcpc, jq. No auth needed — connects to Apify's public
-# MCP endpoint (?tools=...), so anyone or CI can regenerate it. No shell setup:
-# VHS's default prompt and TTY color detection keep it clean on their own.
+# Prerequisites:
+#   - VHS:        brew install vhs
+#   - mcpc:       npm install -g @apify/mcpc
+#   - filesystem: npm install -g @modelcontextprotocol/server-filesystem
+#                 (the stdio server launched via mcp.json)
+#   - APIFY_TOKEN: a short-lived, low-permission test token, exported before
+#                  recording, for the remote connect step. Only the variable
+#                  name is shown on screen, never the value.
 
 Output mcpc-demo.gif
 
@@ -16,9 +21,9 @@ Set Shell           "bash"
 Set FontFamily      "JetBrains Mono"
 Set FontSize        16
 Set Width           1100
-Set Height          680
+Set Height          700
 Set Padding         20
-Set TypingSpeed     36ms
+Set TypingSpeed     40ms
 Set PlaybackSpeed   1.0
 Set Theme           "Catppuccin Mocha"
 Set WindowBar       Colorful
@@ -27,51 +32,69 @@ Set BorderRadius    8
 Set CursorBlink     true
 Set Framerate       24
 
-# Start from a clean screen with no stale session (hidden)
+# Hidden setup: fresh empty home, bright-green $ prompt, bold-white typed input.
+# The DEBUG trap resets attributes before each command so the bold-white input
+# never bleeds into command output.
 Hide
-Type "mcpc @apify close 2>/dev/null; true"
+Type 'export MCPC_HOME_DIR="$(mktemp -d)"'
+Enter
+Type 'export PS1="\[\e[1;38;2;25;230;77m\]$\[\e[0m\] \[\e[1;97m\]"'
+Enter
+Type "trap 'tput sgr0' DEBUG"
 Enter
 Type "clear"
 Enter
 Show
 
-Type "# Connect to any MCP server as a session"
-Sleep 250ms
+Type "mcpc"
+Sleep 300ms
 Enter
-Type 'mcpc connect "https://mcp.apify.com/?tools=search-actors,fetch-actor-details,docs" @apify'
-Sleep 200ms
-Enter
-Sleep 3500ms
+Sleep 2200ms
 
 Enter
-Type "# List the tools it exposes"
-Sleep 250ms
+Type "mcpc connect mcp.json:filesystem"
+Sleep 300ms
 Enter
-Type "mcpc @apify tools-list"
-Sleep 200ms
+Sleep 3000ms
+
+Enter
+Type "mcpc"
+Sleep 300ms
+Enter
+Sleep 2200ms
+
+Enter
+Type "mcpc @filesystem tools-list"
+Sleep 300ms
 Enter
 Sleep 2800ms
 
 Enter
-Type "# Call a tool with key:=value arguments"
-Sleep 250ms
+Type "mcpc @filesystem tools-list --json"
+Sleep 300ms
 Enter
-Type 'mcpc @apify tools-call search-actors keywords:="web scraper" limit:=3'
-Sleep 200ms
-Enter
-Sleep 3500ms
+Sleep 2800ms
 
 Enter
-Type "# --json composes with jq (code mode)"
-Sleep 250ms
+Type 'mcpc connect mcp.apify.com -H "Authorization: Bearer $APIFY_TOKEN"'
+Sleep 300ms
 Enter
-Type "mcpc --json @apify tools-list | jq -r '.[].name'"
-Sleep 200ms
+Sleep 3200ms
+
 Enter
-Sleep 2500ms
+Type "mcpc @apify tools-list"
+Sleep 300ms
+Enter
+Sleep 2800ms
+
+Enter
+Type 'mcpc @apify tools-call search-actors keywords:="web scraper" limit:=3'
+Sleep 300ms
+Enter
+Sleep 3200ms
 
 Enter
 Type "mcpc @apify close"
-Sleep 200ms
+Sleep 300ms
 Enter
-Sleep 1600ms
+Sleep 1800ms
