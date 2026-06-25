@@ -470,7 +470,7 @@ Full docs: ${docsUrl}`
   // connect command: mcpc connect [<server>] [@session]  (server optional — omit to auto-discover)
   program
     .command('connect [server] [@session]')
-    .usage('[<server>] [@session]')
+    .usage('[<server>] [@session] [options]')
     .description('Connect to an MCP server and start a new named @session') // keep this short
     .option('-H, --header <header>', 'HTTP header (can be repeated)')
     .option('--profile <name>', 'OAuth profile to use ("default" if skipped)')
@@ -608,7 +608,7 @@ ${jsonHelp(
   // close command: mcpc close @<session>
   program
     .command('close [@session]')
-    .usage('<@session>')
+    .usage('<@session> [options]')
     .description('Close a session')
     .addHelpText('after', jsonHelp('`{ sessionName, closed: true }`'))
     .action(async (sessionName, _opts, command) => {
@@ -621,7 +621,7 @@ ${jsonHelp(
   // restart command: mcpc restart @<session>
   program
     .command('restart [@session]')
-    .usage('<@session>')
+    .usage('<@session> [options]')
     .description('Restart a session (losing all state)')
     .action(async (sessionName, _opts, command) => {
       if (!sessionName) {
@@ -635,8 +635,8 @@ ${jsonHelp(
   // login command: mcpc login <server>
   program
     .command('login [server]')
-    .usage('<server>')
-    .description('Log in to a server using OAuth and save a profile')
+    .usage('<server> [options]')
+    .description('Log in to a server and save an OAuth profile')
     .option('--profile <name>', 'Profile name (default: "default")')
     .option('--scope <scopes>', 'OAuth scopes to request (e.g. --scope "read write")')
     .option(
@@ -670,43 +670,41 @@ ${jsonHelp(
     .addHelpText(
       'after',
       `
-${chalk.bold('OAuth client registration approaches:')}
+${chalk.bold('Interactive login:')}
+  By default, the command opens your browser to authorize the server,
+  then saves the credentials as a reusable profile any session can use:
 
-  1. Pre-registration: --client-id (and optionally --client-secret).
-     If the client's registered redirect URI uses localhost instead of
-     127.0.0.1 (e.g. http://localhost:3118/callback), add
-     --callback-host localhost --callback-port 3118 to match it.
-  2. Client ID Metadata Documents (CIMD): used by default. mcpc ships with a
-     hosted CIMD at https://apify.github.io/mcpc/client-metadata.json
-     which identifies all mcpc installs as the same client. Override with
-     --client-metadata-url <url> or disable with --no-client-metadata-url.
-     Active only when the authorization server advertises
-     "client_id_metadata_document_supported: true".
-  3. Dynamic Client Registration (DCR): fallback when the server exposes a
-     "registration_endpoint" and CIMD is not supported or disabled.
+  default profile: mcpc login mcp.apify.com
+  named profile:   mcpc login mcp.apify.com --profile work
+  then connect:    mcpc connect mcp.apify.com @app --profile work
+
+${chalk.bold('Client registration (how mcpc identifies itself to the server):')}
+  1. Client ID Metadata Documents (CIMD): the default. mcpc's hosted CIMD at
+     https://apify.github.io/mcpc/client-metadata.json identifies all mcpc
+     installs as one client. Override with --client-metadata-url <url>, or
+     disable with --no-client-metadata-url.
+  2. Pre-registration: pass --client-id (and --client-secret if issued). If the
+     client's redirect URI uses localhost (e.g. localhost:3118), match it with
+     --callback-host localhost --callback-port 3118.
+  3. Dynamic Client Registration (DCR): fallback when CIMD is unsupported or
+     disabled and the server exposes a registration_endpoint.
 
   See https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization
 
-${chalk.bold('Machine-to-machine (client-credentials grant):')}
-  For headless use (CI/CD, daemons) with no browser or user. Requires
-  --grant client-credentials, --client-id, and one credential format:
+${chalk.bold('Machine-to-machine authentication (for CI/CD and daemons):')}
+  Pass --grant client-credentials, --client-id, and one credential:
 
-    mcpc login mcp.example.com --grant client-credentials \\
-      --client-id my-svc --client-secret s3cr3t --scope "read write"
+  mcpc login mcp.example.com --grant client-credentials \\
+    --client-id my-svc --client-secret s3cr3t --scope "read write"
+  mcpc login mcp.example.com --grant client-credentials \\
+    --client-id my-svc --client-key ./key.pem
 
-    mcpc login mcp.example.com --grant client-credentials \\
-      --client-id my-svc --client-key ./key.pem --client-key-alg RS256
-
-  --client-secret uses client_secret_basic; --client-key signs a JWT assertion
-  (private_key_jwt, RFC 7523). The token endpoint is auto-discovered; pin it with
-  --token-endpoint <url> for servers without discoverable metadata. The profile is
-  then used like any other:
-  mcpc connect mcp.example.com @svc --profile default
+  --client-secret uses client_secret_basic; --client-key signs a private_key_jwt
+  assertion (RFC 7523). The token endpoint is auto-discovered; pin it with
+  --token-endpoint <url> for servers without discoverable metadata.
 
   See https://modelcontextprotocol.io/extensions/auth/oauth-client-credentials
-
-${jsonHelp('Interactive prompts are written to stderr, stdout contains a clean JSON object', '`{ profile, serverUrl, scopes }`')}
-`
+${jsonHelp('Interactive prompts go to stderr; stdout is a clean JSON object', '`{ profile, serverUrl, scopes }`')}`
     )
     .action(async (server, opts, command) => {
       if (!server) {
@@ -757,7 +755,7 @@ ${jsonHelp('Interactive prompts are written to stderr, stdout contains a clean J
   // logout command: mcpc logout <server>
   program
     .command('logout [server]')
-    .usage('<server>')
+    .usage('<server> [options]')
     .description('Delete an OAuth profile for a server')
     .option('--profile <name>', 'Profile name (default: "default")')
     .addHelpText('after', jsonHelp('`{ profile, serverUrl, deleted: true, affectedSessions }`'))
@@ -786,7 +784,7 @@ ${chalk.bold('Resources:')}
   logs        Remove bridge log files
   all         Remove all of the above
 
-Without arguments, performs safe cleanup of stale data only.
+  Without arguments, performs safe cleanup of stale data only.
 ${jsonHelp('`{ crashedBridges, expiredSessions, orphanedBridgeLogs, sessions, profiles, logs }`')}`
     )
     .action(async (resources: string[], _opts, command) => {
