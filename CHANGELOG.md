@@ -9,14 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `mcpc login --grant client-credentials` adds machine-to-machine OAuth (no browser) for headless use such as CI/CD and daemons, implementing the [`io.modelcontextprotocol/oauth-client-credentials` extension](https://modelcontextprotocol.io/extensions/auth/oauth-client-credentials). Authenticate with a client secret (`--client-id`/`--client-secret`) or a signed JWT assertion (`--client-key`/`--client-key-alg`, RFC 7523); the saved profile then works with `connect` like any other. The token endpoint is auto-discovered, or pin it with `--token-endpoint <url>`.
+- `mcpc login --grant client-credentials` adds machine-to-machine OAuth (no browser) for headless use such as CI/CD and daemons, implementing the [`io.modelcontextprotocol/oauth-client-credentials` extension](https://modelcontextprotocol.io/extensions/auth/oauth-client-credentials). Authenticate with a client secret (`--client-id`/`--client-secret`) or a signed JWT assertion (`--client-key`/`--client-key-alg`); the saved profile then works with `connect` like any other.
 - `mcpc login --callback-host <host>` to set the host used in the OAuth callback redirect URI: `127.0.0.1` (default) or `localhost`, for servers whose pre-registered OAuth client only accepts the `localhost` form. The callback server itself still binds only to the loopback IP (#269).
 - `resources-read` can now save resources to a local file with `-o <file>` (binary-safe, decodes base64 `blob` content) and print bare content for piping with `--raw`. The default human view shows text content in a fenced block and summarizes binary content instead of dumping it to the terminal.
 - `mcpc help --skill` prints a built-in agent skill guide (mental model, workflows, and examples) that ships with the package and always matches the installed version, so agents can learn mcpc without a separate skill file.
 
 ### Changed
 
-- `resources-subscribe <uri> <file>` now keeps a local file in sync with the resource: it downloads the resource to `<file>` and the session bridge rewrites the file whenever the server announces a change (`notifications/resources/updated`). Subscriptions survive session restarts and are shown in `mcpc @<session>` output. `resources-unsubscribe` stops the syncing and keeps the file. Previously these commands only sent the subscribe/unsubscribe requests without acting on the notifications.
+- `resources-subscribe <uri> <file>` now keeps a local file in sync with the resource: it downloads the resource to `<file>` and rewrites it whenever the server announces a change. Subscriptions survive session restarts; `resources-unsubscribe` stops the sync and keeps the file. Previously these commands sent the subscribe/unsubscribe requests without acting on the notifications.
 - `resources-read --max-size <bytes>` was removed; the option was accepted but never enforced. Use `--max-chars` to limit human-readable output.
 
 ### Removed
@@ -27,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `mcpc login` now works when the server URL includes a query string (e.g. `https://mcp.apify.com/?tools=search-actors,docs`). The query is a connection-level filter, not part of the server's OAuth identity, so it is no longer sent during OAuth discovery — previously it broke discovery and made login fail with a `404 ... POST /register` error.
 - The hosted OAuth Client ID Metadata Document now includes the required `client_id` property, so authorization servers that validate CIMD documents per spec no longer reject `mcpc login` with the default client identity (#271).
-- Sessions no longer hang on macOS under the Bun runtime (e.g. when connecting with `--proxy-bearer-token`, or auto-reconnecting a crashed session). The bridge now runs under the same runtime as the CLI, so OS-keychain items the CLI stored are read back under the same application identity; previously a Bun CLI paired with a Node bridge produced a cross-binary keychain read, which macOS gates with an access prompt that blocks in non-interactive contexts. A Bun user also no longer needs Node installed for the bridge to start.
+- Sessions no longer hang on macOS under the Bun runtime (e.g. when connecting with `--proxy-bearer-token`, or auto-reconnecting a crashed session). The bridge now runs under the same runtime as the CLI, avoiding a cross-binary OS-keychain read that macOS blocks with a password prompt in non-interactive contexts. A Bun user also no longer needs Node installed for the bridge to start.
 - OAuth login failures now report the authorization server's actual error (e.g. `invalid_client`) instead of an opaque `[object Response]` message, and no longer crash the process on Windows when a token request is rejected.
 - `mcpc <session> restart` now terminates the previous MCP session on the server before reconnecting, so the old session and its resource subscriptions are no longer left orphaned (previously leaked on Windows).
 
