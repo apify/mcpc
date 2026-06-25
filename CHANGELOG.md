@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- mcpc now requires **Node.js 22.12.0 or later**. Support for Node.js 20, which reached end-of-life in April 2026, has been dropped.
 - `resources-subscribe <uri> <file>` now keeps a local file in sync with the resource: it downloads the resource to `<file>` and rewrites it whenever the server announces a change. Subscriptions survive session restarts; `resources-unsubscribe` stops the sync and keeps the file. Previously these commands sent the subscribe/unsubscribe requests without acting on the notifications.
 - `resources-read --max-size <bytes>` was removed; the option was accepted but never enforced. Use `--max-chars` to limit human-readable output.
 
