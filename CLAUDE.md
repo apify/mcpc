@@ -562,9 +562,7 @@ All state files are stored in `~/.mcpc/` directory (unless overridden by `MCPC_H
 - `chalk` - Terminal string styling and colors
 - `@napi-rs/keyring` - OS keychain integration for secure credential storage
 - `proper-lockfile` - File locking for concurrent session access
-- `@inquirer/input`, `@inquirer/select` - Interactive prompts for login flows
 - `ora` - Spinner animations for progress indication
-- `uuid` - Session ID generation
 
 **Minimal dependencies approach:** Core module uses native APIs (`fetch`, process APIs) to support both Node.js and Bun.
 
