@@ -179,7 +179,7 @@ async function walletInfo(options: { outputMode: OutputMode }): Promise<void> {
 
     ethBalance = formatEther(eth);
     usdcBalance = formatUnits(usdc, USDC_DECIMALS);
-  } catch (err) {
+  } catch {
     balanceError = true;
   }
 

@@ -203,7 +203,7 @@ export function skillsFromResources(resources: Resource[]): Skill[] {
  * Strategy:
  * 1. Try to read `skill://index.json` and parse its `skills` array.
  * 2. If the index is missing (404-style errors), fall back to listing
- *    resources and matching `skill://*​/SKILL.md` URIs.
+ *    resources and matching `skill://<id>/SKILL.md` URIs.
  *
  * The spec requires that hosts MUST NOT treat an absent index as proof a
  * server has no skills, hence the fallback.
@@ -221,7 +221,7 @@ export async function discoverSkills(client: IMcpClient): Promise<Skill[]> {
     // Index not present — fall through to resource scan.
   }
 
-  // Fallback: scan all resources, matching `skill://*​/SKILL.md`.
+  // Fallback: scan all resources, matching `skill://<id>/SKILL.md`.
   const all: Resource[] = [];
   let cursor: string | undefined;
   do {
@@ -270,7 +270,7 @@ export function resolveSkillUri(input: string): string {
  * `skills-list` — discover and list skills exposed by the server.
  *
  * Tries the well-known `skill://index.json` index first; falls back to
- * scanning resources for `skill://*​/SKILL.md` URIs.
+ * scanning resources for `skill://<id>/SKILL.md` URIs.
  */
 export async function listSkills(target: string, options: CommandOptions): Promise<void> {
   await withMcpClient(target, options, async (client) => {

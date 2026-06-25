@@ -602,7 +602,6 @@ export async function performOAuthFlow(
     }
 
     // Get the saved profile
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     const profile = (provider as any)._authProfile as AuthProfile;
     if (!profile) {
       throw new ClientError('Failed to save authentication profile');

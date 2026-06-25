@@ -741,7 +741,6 @@ export class McpClient implements IMcpClient {
     try {
       this.logger.debug(`Polling task: ${taskId}`);
 
-      // eslint-disable-next-line no-constant-condition
       while (true) {
         const task = await this.getTask(taskId);
         const update: TaskUpdate = {
