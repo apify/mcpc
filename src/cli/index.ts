@@ -636,7 +636,7 @@ ${jsonHelp(
   program
     .command('login [server]')
     .usage('<server> [options]')
-    .description('Log in to a server using OAuth and save a profile')
+    .description('Log in to a server and save an OAuth profile')
     .option('--profile <name>', 'Profile name (default: "default")')
     .option('--scope <scopes>', 'OAuth scopes to request (e.g. --scope "read write")')
     .option(
@@ -670,28 +670,29 @@ ${jsonHelp(
     .addHelpText(
       'after',
       `
-${chalk.bold('By default, login is interactive:')} it opens your browser to authorize the
-server, then saves the credentials as a reusable profile any session can use:
+${chalk.bold('Interactive login:')}
+  By default, the command opens your browser to authorize the server,
+  then saves the credentials as a reusable profile any session can use:
 
-  default profile  mcpc login mcp.apify.com
-  named profile    mcpc login mcp.apify.com --profile work
-  then connect     mcpc connect mcp.apify.com @app --profile work
+  default profile: mcpc login mcp.apify.com
+  named profile:   mcpc login mcp.apify.com --profile work
+  then connect:    mcpc connect mcp.apify.com @app --profile work
 
 ${chalk.bold('Client registration (how mcpc identifies itself to the server):')}
-  1. Client ID Metadata Documents (CIMD) — the default. mcpc's hosted CIMD at
+  1. Client ID Metadata Documents (CIMD): the default. mcpc's hosted CIMD at
      https://apify.github.io/mcpc/client-metadata.json identifies all mcpc
      installs as one client. Override with --client-metadata-url <url>, or
      disable with --no-client-metadata-url.
-  2. Pre-registration — pass --client-id (and --client-secret if issued). If the
+  2. Pre-registration: pass --client-id (and --client-secret if issued). If the
      client's redirect URI uses localhost (e.g. localhost:3118), match it with
      --callback-host localhost --callback-port 3118.
-  3. Dynamic Client Registration (DCR) — fallback when CIMD is unsupported or
+  3. Dynamic Client Registration (DCR): fallback when CIMD is unsupported or
      disabled and the server exposes a registration_endpoint.
 
   See https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization
 
-${chalk.bold('Machine-to-machine (no browser):')} for CI/CD and daemons. Pass
---grant client-credentials, --client-id, and one credential:
+${chalk.bold('Machine-to-machine authentication (for CI/CD and daemons):')}
+  Pass --grant client-credentials, --client-id, and one credential:
 
   mcpc login mcp.example.com --grant client-credentials \\
     --client-id my-svc --client-secret s3cr3t --scope "read write"
@@ -703,9 +704,7 @@ ${chalk.bold('Machine-to-machine (no browser):')} for CI/CD and daemons. Pass
   --token-endpoint <url> for servers without discoverable metadata.
 
   See https://modelcontextprotocol.io/extensions/auth/oauth-client-credentials
-
-${jsonHelp('Interactive prompts go to stderr; stdout is a clean JSON object', '`{ profile, serverUrl, scopes }`')}
-`
+${jsonHelp('Interactive prompts go to stderr; stdout is a clean JSON object', '`{ profile, serverUrl, scopes }`')}`
     )
     .action(async (server, opts, command) => {
       if (!server) {
