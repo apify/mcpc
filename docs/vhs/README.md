@@ -46,6 +46,9 @@ ffprobe -v error -show_entries format=duration -of csv=p=0 mcpc-demo.gif
 ffmpeg -y -ss 12 -i mcpc-demo.gif -vframes 1 /tmp/frame.png
 
 cp mcpc-demo.gif ../images/mcpc-demo.gif   # refresh the README hero
+
+# shrink ~60% with no visible quality loss before committing:
+gifsicle -O3 --lossy=200 -b ../images/mcpc-demo.gif *.gif
 ```
 
 ## Style conventions

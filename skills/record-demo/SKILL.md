@@ -166,6 +166,28 @@ Check each frame class: empty state, stdio connect + session list, tools-list,
 JSON, remote connect (**token NOT visible**), tool-call result, close. Then
 **revoke the token.**
 
+## Optimize the GIF size (do this before committing)
+
+VHS GIFs are large (the hero is ~5 MB raw). Shrink them losslessly-ish with
+`gifsicle` ([kornel.ski/lossygif](https://kornel.ski/lossygif)) — `--lossy`
+drops imperceptible inter-frame detail and **cuts ~60%** off a text-terminal GIF
+with no visible quality loss:
+
+```bash
+# in place; lossy=200 ≈ 60% smaller, text stays crisp (verified by frame diff)
+for f in docs/images/mcpc-demo.gif docs/vhs/*.gif; do
+  [ "$f" = docs/vhs/mcpc-demo.gif ] && continue   # ignored raw hero
+  gifsicle -O3 --lossy=200 -b "$f"
+done
+```
+
+After optimizing, re-extract a colored frame (`ffmpeg -ss 12 …`) and eyeball it —
+lossy=200 is the sweet spot; going much higher smears the antialiased text.
+When the optimized hero lands on `main`, **bump the README cache-buster**
+(`mcpc-demo.gif?v=N` → `?v=N+1`): GitHub's camo image proxy caches by full URL,
+so a new `?v=` is what makes it re-fetch the smaller file instead of serving the
+old cached copy.
+
 ## What's committed
 
 - `docs/images/mcpc-demo.gif` — the README hero (canonical copy).
