@@ -784,7 +784,7 @@ ${chalk.bold('Resources:')}
   logs        Remove bridge log files
   all         Remove all of the above
 
-Without arguments, performs safe cleanup of stale data only.
+  Without arguments, performs safe cleanup of stale data only.
 ${jsonHelp('`{ crashedBridges, expiredSessions, orphanedBridgeLogs, sessions, profiles, logs }`')}`
     )
     .action(async (resources: string[], _opts, command) => {
