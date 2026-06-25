@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-25
+
 ### Added
 
 - `mcpc login --grant client-credentials` adds machine-to-machine OAuth (no browser) for headless use such as CI/CD and daemons, implementing the [`io.modelcontextprotocol/oauth-client-credentials` extension](https://modelcontextprotocol.io/extensions/auth/oauth-client-credentials). Authenticate with a client secret (`--client-id`/`--client-secret`) or a signed JWT assertion (`--client-key`/`--client-key-alg`); the saved profile then works with `connect` like any other.
@@ -329,7 +331,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Interactive shell mode
 - JSON output mode for scripting
 
-[Unreleased]: https://github.com/apify/mcpc/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/apify/mcpc/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/apify/mcpc/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/apify/mcpc/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/apify/mcpc/compare/v0.2.6...v0.3.0
 [0.2.6]: https://github.com/apify/mcpc/compare/v0.2.5...v0.2.6
