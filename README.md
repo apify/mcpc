@@ -25,7 +25,7 @@ MCP through the most universal interface there is: the UNIX shell.
 - 🪶 **Lightweight** - Minimal dependencies, works on Mac/Win/Linux, doesn't use LLMs on its own.
 - 💸 **Agentic payments** - Experimental support for the [x402](https://www.x402.org/) protocol on [Base](https://www.base.org/).
 
-![mcpc screenshot](https://raw.githubusercontent.com/apify/mcpc/main/docs/images/mcpc-demo.gif?v=2)
+![mcpc screenshot](https://raw.githubusercontent.com/apify/mcpc/main/docs/images/mcpc-demo.gif?v=3)
 
 ## Table of contents
 
