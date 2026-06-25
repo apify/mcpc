@@ -470,7 +470,7 @@ Full docs: ${docsUrl}`
   // connect command: mcpc connect [<server>] [@session]  (server optional — omit to auto-discover)
   program
     .command('connect [server] [@session]')
-    .usage('[<server>] [@session]')
+    .usage('[<server>] [@session] [options]')
     .description('Connect to an MCP server and start a new named @session') // keep this short
     .option('-H, --header <header>', 'HTTP header (can be repeated)')
     .option('--profile <name>', 'OAuth profile to use ("default" if skipped)')
@@ -608,7 +608,7 @@ ${jsonHelp(
   // close command: mcpc close @<session>
   program
     .command('close [@session]')
-    .usage('<@session>')
+    .usage('<@session> [options]')
     .description('Close a session')
     .addHelpText('after', jsonHelp('`{ sessionName, closed: true }`'))
     .action(async (sessionName, _opts, command) => {
@@ -621,7 +621,7 @@ ${jsonHelp(
   // restart command: mcpc restart @<session>
   program
     .command('restart [@session]')
-    .usage('<@session>')
+    .usage('<@session> [options]')
     .description('Restart a session (losing all state)')
     .action(async (sessionName, _opts, command) => {
       if (!sessionName) {
@@ -755,7 +755,7 @@ ${jsonHelp('Interactive prompts go to stderr; stdout is a clean JSON object', '`
   // logout command: mcpc logout <server>
   program
     .command('logout [server]')
-    .usage('<server>')
+    .usage('<server> [options]')
     .description('Delete an OAuth profile for a server')
     .option('--profile <name>', 'Profile name (default: "default")')
     .addHelpText('after', jsonHelp('`{ profile, serverUrl, deleted: true, affectedSessions }`'))
