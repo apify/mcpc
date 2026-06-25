@@ -48,12 +48,13 @@ function hslToHex(h: number, s: number, l: number): string {
   return `#${f(0)}${f(8)}${f(4)}`;
 }
 
-// SF rainbow palette: softened like a prism seen through coastal haze.
+// SF rainbow palette: a prism caught in clear coastal light.
 // Hues run from Golden Gate Bridge vermillion (12°) to soft violet (282°),
-// with lower saturation (45%) and higher lightness (62%) for a pastel feel.
+// at a vivid saturation (78%) kept at high lightness (62%) so the colors stay
+// rich and punchy without getting harsh against a dark terminal.
 const RAINBOW_HUE_START = 12;
 const RAINBOW_HUE_SPAN = 270;
-const RAINBOW_SATURATION = 45;
+const RAINBOW_SATURATION = 78;
 const RAINBOW_LIGHTNESS = 62;
 
 const themeHex = (hue: number): string => hslToHex(hue, RAINBOW_SATURATION, RAINBOW_LIGHTNESS);
@@ -65,8 +66,8 @@ const themeHex = (hue: number): string => hslToHex(hue, RAINBOW_SATURATION, RAIN
 export const theme = {
   red: chalk.hex(themeHex(12)), // vermillion (rainbow start)
   yellow: chalk.hex(themeHex(60)),
-  // Green is bumped past the rainbow's pastel S/L so "● live" actually feels alive.
-  green: chalk.hex(hslToHex(135, 65, 52)),
+  // Green is kept a touch deeper than the rainbow so "● live" reads as vivid.
+  green: chalk.hex(hslToHex(135, 80, 50)),
   cyan: chalk.hex(themeHex(190)),
   blue: chalk.hex(themeHex(230)),
   magenta: chalk.hex(themeHex(282)), // violet (rainbow end)

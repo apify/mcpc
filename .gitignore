@@ -37,3 +37,8 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+
+# Per-feature VHS recordings (docs/vhs/*.gif) are committed so they're easy to
+# find and reuse. Only the hero's raw output is ignored — it's committed at
+# docs/images/mcpc-demo.gif (the copy embedded in the README).
+docs/vhs/mcpc-demo.gif
