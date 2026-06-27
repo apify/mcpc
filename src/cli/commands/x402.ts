@@ -223,7 +223,7 @@ async function walletInfo(options: {
     console.log(`  ${chalk.bold('ETH balance')}    ${padDecimals(ethBalance, 6)}`);
     console.log(`  ${chalk.bold('USDC balance')}   ${padDecimals(usdcBalance, 6)}`);
   } else {
-    console.log(`  ${chalk.bold('balances')}       ${theme.red('Failed to fetch')}`);
+    console.log(`  ${theme.red('Failed to fetch balances')}`);
   }
   await printAddressQrCode(wallet.address);
   if (options.showUsageHint) {
