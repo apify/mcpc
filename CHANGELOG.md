@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `mcpc x402` (with no subcommand) now shows your wallet info and funding QR code instead of the command help. Run `mcpc help x402` for the full command reference. The `mcpc x402 info` subcommand is deprecated in favor of bare `mcpc x402` and will be removed in a future release.
+
 ## [0.4.0] - 2026-06-25
 
 ### Added

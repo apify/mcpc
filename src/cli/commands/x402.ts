@@ -145,7 +145,10 @@ async function importWallet(options: {
 
 const USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 
-async function walletInfo(options: { outputMode: OutputMode }): Promise<void> {
+async function walletInfo(options: {
+  outputMode: OutputMode;
+  showUsageHint?: boolean;
+}): Promise<void> {
   const wallet = await getWallet();
 
   if (!wallet) {
@@ -153,6 +156,9 @@ async function walletInfo(options: { outputMode: OutputMode }): Promise<void> {
       console.log(formatJson(null));
     } else {
       console.log(formatInfo('No wallet configured. Create one with: mcpc x402 init'));
+      if (options.showUsageHint) {
+        console.log(chalk.dim('  ↳ for usage information, run: mcpc help x402'));
+      }
     }
     return;
   }
@@ -208,6 +214,10 @@ async function walletInfo(options: { outputMode: OutputMode }): Promise<void> {
     console.log(`  ${chalk.bold('Balances')}       ${theme.red('Failed to fetch')}`);
   }
   await printAddressQrCode(wallet.address);
+  if (options.showUsageHint) {
+    console.log('');
+    console.log(chalk.dim('  ↳ for usage information, run: mcpc help x402'));
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -366,6 +376,12 @@ ${chalk.bold('sign options:')}
     return opts.json ? 'json' : 'human';
   };
 
+  // Bare "mcpc x402" (no subcommand): show wallet info (or how to create one) plus a
+  // usage hint. Use "mcpc help x402" / "mcpc x402 --help" for the full command reference.
+  program.action(async (_opts, cmd: Command) => {
+    await walletInfo({ outputMode: resolveOutputMode(cmd), showUsageHint: true });
+  });
+
   program
     .command('init')
     .description('Create a new x402 wallet')
@@ -380,11 +396,21 @@ ${chalk.bold('sign options:')}
       await importWallet({ privateKey, outputMode: resolveOutputMode(cmd) });
     });
 
+  // Deprecated: "mcpc x402 info" is superseded by bare "mcpc x402".
+  // Hidden from help; emits a warning and will be removed in a future release.
   program
-    .command('info')
-    .description('Show wallet info')
+    .command('info', { hidden: true })
+    .description('Show wallet info (deprecated: use "mcpc x402")')
     .action(async (_opts, cmd) => {
-      await walletInfo({ outputMode: resolveOutputMode(cmd) });
+      const outputMode = resolveOutputMode(cmd);
+      if (outputMode !== 'json') {
+        console.error(
+          formatWarning(
+            '"mcpc x402 info" is deprecated and will be removed in a future release. Run "mcpc x402" instead.'
+          )
+        );
+      }
+      await walletInfo({ outputMode });
     });
 
   program
@@ -425,12 +451,6 @@ ${chalk.bold('sign options:')}
         });
       }
     );
-
-  // Show help if no subcommand
-  if (args.length === 0) {
-    program.outputHelp();
-    return;
-  }
 
   try {
     await program.parseAsync(['node', 'mcpc-x402', ...args]);
