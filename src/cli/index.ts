@@ -5,11 +5,6 @@
  * Handles command parsing, routing, and output formatting
  */
 
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-call */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
-
 import { initProxy } from '../lib/proxy.js';
 import { Command, CommanderError, Help } from 'commander';
 import { setVerbose, setJsonMode, closeFileLogger } from '../lib/index.js';
@@ -864,7 +859,6 @@ ${jsonHelp('`[{ sessionName, tools?: Tool[], resources?: Resource[], prompts?: P
   program
     .command('x402 [subcommand] [args...]')
     .description('Configure an x402 payment wallet (EXPERIMENTAL)')
-    // eslint-disable-next-line @typescript-eslint/no-empty-function
     .action(() => {});
 
   // help command: mcpc help [command] (supports "help x402 sign"); --skill prints the agent guide

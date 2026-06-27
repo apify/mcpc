@@ -405,7 +405,6 @@ export async function waitForFile(
   const { timeoutMs = 10000, interval = 100 } = options;
   const startTime = Date.now();
 
-  // eslint-disable-next-line no-constant-condition
   while (true) {
     if (await fileExists(filepath)) {
       return;
@@ -426,7 +425,7 @@ export function parseJson<T = unknown>(json: string): T {
   try {
     return JSON.parse(json) as T;
   } catch (error) {
-    throw new Error(`Invalid JSON: ${(error as Error).message}`);
+    throw new Error(`Invalid JSON: ${(error as Error).message}`, { cause: error });
   }
 }
 

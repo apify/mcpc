@@ -3,8 +3,6 @@
  * Supports both human-readable and JSON output modes
  */
 
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-
 import chalk from 'chalk';
 import type {
   GetPromptResult,

@@ -110,7 +110,7 @@ mcpc/
 
 **1. Core Module (`src/core/`)**
 
-- Runtime-agnostic MCP protocol implementation (works with Node.js ≥18 and Bun ≥1)
+- Runtime-agnostic MCP protocol implementation (works with Node.js ≥22.12 and Bun ≥1)
 - Transport abstraction: Streamable HTTP and stdio
 - Protocol state machine: initialization handshake, version negotiation, session management
 - Request/response correlation using JSON-RPC style with request IDs
@@ -420,7 +420,7 @@ Environment variable substitution supported: `${VAR_NAME}`
 
 ## Runtime Requirements
 
-- **Node.js:** ≥18.0.0 (for native `fetch` API)
+- **Node.js:** ≥22.12.0
 - **Bun:** ≥1.0.0 (alternative runtime)
 - **OS support:** macOS, Linux, Windows
 - **Linux dependency:** `libsecret` (for OS keychain access via `@napi-rs/keyring`)
@@ -562,9 +562,7 @@ All state files are stored in `~/.mcpc/` directory (unless overridden by `MCPC_H
 - `chalk` - Terminal string styling and colors
 - `@napi-rs/keyring` - OS keychain integration for secure credential storage
 - `proper-lockfile` - File locking for concurrent session access
-- `@inquirer/input`, `@inquirer/select` - Interactive prompts for login flows
 - `ora` - Spinner animations for progress indication
-- `uuid` - Session ID generation
 
 **Minimal dependencies approach:** Core module uses native APIs (`fetch`, process APIs) to support both Node.js and Bun.
 

@@ -47,7 +47,7 @@ function setupKeyListener<T>(onKey: (char: string) => KeyHandlerResult<T>): {
   promise: Promise<T>;
   cleanup: () => void;
 } {
-  let cleanup = () => {};
+  let cleanup = (): void => {};
   let cleaned = false;
 
   const promise = new Promise<T>((resolve, reject) => {
@@ -56,7 +56,7 @@ function setupKeyListener<T>(onKey: (char: string) => KeyHandlerResult<T>): {
       return; // Promise will never resolve, which is fine for non-TTY
     }
 
-    const onData = (key: Buffer) => {
+    const onData = (key: Buffer): void => {
       const result = onKey(key.toString());
       if (result.done) {
         cleanup();
@@ -239,7 +239,7 @@ function startCallbackServer(
   });
 
   // Function to forcibly close all connections
-  const destroyConnections = () => {
+  const destroyConnections = (): void => {
     for (const socket of sockets) {
       socket.destroy();
     }
@@ -367,7 +367,7 @@ function promptForCallbackUrl(): {
   });
 
   let cleaned = false;
-  const cleanup = () => {
+  const cleanup = (): void => {
     if (cleaned) return;
     cleaned = true;
     rl.close();
@@ -602,8 +602,7 @@ export async function performOAuthFlow(
     }
 
     // Get the saved profile
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-    const profile = (provider as any)._authProfile as AuthProfile;
+    const profile = (provider as unknown as { _authProfile?: AuthProfile })._authProfile;
     if (!profile) {
       throw new ClientError('Failed to save authentication profile');
     }
