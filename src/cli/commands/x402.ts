@@ -14,6 +14,7 @@ import {
   formatInfo,
   formatWarning,
   formatJson,
+  jsonHelp,
   theme,
 } from '../output.js';
 import { getWallet, saveWallet, removeWallet } from '../../lib/wallets.js';
@@ -377,7 +378,8 @@ ${chalk.bold('sign options:')}
   --amount <usd>         Override amount in USD (for upto: max authorization cap)
   --expiry <seconds>     Override expiry in seconds
   --scheme <preference>  Payment scheme: auto (default), upto, or exact
-  --no-approve           Skip the upto Permit2 allowance check & auto-approval`
+  --no-approve           Skip the upto Permit2 allowance check & auto-approval
+${jsonHelp('`{ address, createdAt, balances: { eth, usdc } | null }` (null if no wallet)')}`
     );
 
   const resolveOutputMode = (cmd: Command): OutputMode => {
@@ -393,7 +395,8 @@ ${chalk.bold('sign options:')}
 
   program
     .command('init')
-    .description('Create a new x402 wallet')
+    .description('Create a new x402 wallet (generates a random private key)')
+    .addHelpText('after', jsonHelp('`{ address }`'))
     .action(async (_opts, cmd) => {
       await initWallet({ outputMode: resolveOutputMode(cmd) });
     });
@@ -401,6 +404,7 @@ ${chalk.bold('sign options:')}
   program
     .command('import <private-key>')
     .description('Import an existing wallet from a private key')
+    .addHelpText('after', jsonHelp('`{ address }`'))
     .action(async (privateKey, _opts, cmd) => {
       await importWallet({ privateKey, outputMode: resolveOutputMode(cmd) });
     });
@@ -410,6 +414,10 @@ ${chalk.bold('sign options:')}
   program
     .command('info', { hidden: true })
     .description('Show wallet info (deprecated: use "mcpc x402")')
+    .addHelpText(
+      'after',
+      jsonHelp('`{ address, createdAt, balances: { eth, usdc } | null }` (null if no wallet)')
+    )
     .action(async (_opts, cmd) => {
       const outputMode = resolveOutputMode(cmd);
       if (outputMode !== 'json') {
@@ -425,13 +433,16 @@ ${chalk.bold('sign options:')}
   program
     .command('remove')
     .description('Remove the wallet')
+    .addHelpText('after', jsonHelp('`{ removed: true }`'))
     .action(async (_opts, cmd) => {
       await removeWalletCmd({ outputMode: resolveOutputMode(cmd) });
     });
 
   program
     .command('sign <payment-required>')
-    .description('Sign a payment using the wallet')
+    .description(
+      'Sign a payment from a base64 PAYMENT-REQUIRED header and print the PAYMENT-SIGNATURE header to stdout'
+    )
     .helpOption('-h, --help', 'Display help')
     .option(
       '--amount <usd>',
@@ -442,6 +453,14 @@ ${chalk.bold('sign options:')}
     .option(
       '--no-approve',
       'For the upto scheme: skip the on-chain Permit2 allowance check & auto-approval'
+    )
+    .addHelpText(
+      'after',
+      `
+Signs the given base64-encoded PAYMENT-REQUIRED header offline using the configured
+wallet and prints the resulting PAYMENT-SIGNATURE header (plus an MCP config snippet)
+to stdout. Useful for pre-signing payments or integrating with other MCP clients.
+${jsonHelp('`{ paymentSignature, from, to, amount, amountAtomicUnits, network, expiresAt }`')}`
     )
     .action(
       async (

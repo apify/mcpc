@@ -10,7 +10,7 @@ import { Command, CommanderError, Help } from 'commander';
 import { setVerbose, setJsonMode, closeFileLogger } from '../lib/index.js';
 import { isMcpError, formatHumanError, ClientError } from '../lib/index.js';
 import chalk from 'chalk';
-import { formatJson, formatJsonError, rainbow, theme } from './output.js';
+import { formatJson, formatJsonError, jsonHelp, rainbow, theme } from './output.js';
 import * as tools from './commands/tools.js';
 import * as resources from './commands/resources.js';
 import * as skills from './commands/skills.js';
@@ -150,16 +150,6 @@ function getOptionsFromCommand(command: Command): HandlerOptions {
   }
 
   return options;
-}
-
-/**
- * Format a JSON output help line with backtick-style Markdown formatting.
- * Optional schemaUrl adds a "Schema:" link for AI agents.
- */
-function jsonHelp(description: string, shape?: string, schemaUrl?: string): string {
-  const line = shape ? `  ${description}:\n  ${shape}` : `  ${description}`;
-  const link = schemaUrl ? `\n  Schema: ${schemaUrl}` : '';
-  return `\n${chalk.bold('JSON output (--json):')}\n${line}${link}\n`;
 }
 
 const SCHEMA_BASE = 'https://modelcontextprotocol.io/specification/2025-11-25/schema';
