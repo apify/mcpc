@@ -28,6 +28,15 @@ import { signPayment, parsePaymentRequired } from '../../lib/x402/signer.js';
 const USDC_DECIMALS = 6;
 
 /**
+ * Pad the fractional part of a decimal string so it always shows at least
+ * `minDecimals` places (e.g. "1" → "1.000000"), keeping any extra precision.
+ */
+function padDecimals(value: string, minDecimals: number): string {
+  const [intPart, fracPart = ''] = value.split('.');
+  return `${intPart}.${fracPart.padEnd(minDecimals, '0')}`;
+}
+
+/**
  * Generate a QR code string for the given text using small (half-block) mode.
  */
 function generateQrCode(text: string): Promise<string> {
@@ -208,10 +217,10 @@ async function walletInfo(options: {
   console.log(`  ${chalk.bold('Address')}        ${theme.cyan(wallet.address)}`);
   console.log(`  ${chalk.bold('Created')}        ${wallet.createdAt}`);
   if (!balanceError) {
-    console.log(`  ${chalk.bold('ETH Balance')}    ${ethBalance}`);
-    console.log(`  ${chalk.bold('USDC Balance')}   ${usdcBalance}`);
+    console.log(`  ${chalk.bold('ETH balance')}    ${padDecimals(ethBalance, 6)}`);
+    console.log(`  ${chalk.bold('USDC balance')}   ${padDecimals(usdcBalance, 6)}`);
   } else {
-    console.log(`  ${chalk.bold('Balances')}       ${theme.red('Failed to fetch')}`);
+    console.log(`  ${chalk.bold('balances')}       ${theme.red('Failed to fetch')}`);
   }
   await printAddressQrCode(wallet.address);
   if (options.showUsageHint) {
