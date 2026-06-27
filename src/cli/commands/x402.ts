@@ -56,10 +56,12 @@ async function printAddressQrCode(address: string): Promise<void> {
   console.log('');
   console.log(chalk.bold('  Scan to fund this wallet:'));
   console.log(
-    qr
-      .split('\n')
-      .map((line) => `  ${line}`)
-      .join('\n')
+    chalk.whiteBright(
+      qr
+        .split('\n')
+        .map((line) => `  ${line}`)
+        .join('\n')
+    )
   );
 }
 
