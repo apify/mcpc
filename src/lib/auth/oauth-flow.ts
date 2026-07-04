@@ -10,10 +10,12 @@ import { URL } from 'url';
 import { createInterface } from 'readline';
 import { randomBytes } from 'crypto';
 import { auth as sdkAuth } from '@modelcontextprotocol/sdk/client/auth.js';
+import { OAuthError as SdkOAuthError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
 import { OAuthProvider, type OAuthProviderOptions } from './oauth-provider.js';
 import { getServerHost } from '../utils.js';
-import { ClientError } from '../errors.js';
+import { AuthError, ClientError } from '../errors.js';
 import { createLogger } from '../logger.js';
+import { describeAuthError } from './client-credentials.js';
 import { removeKeychainOAuthClientInfo, storeKeychainOAuthClientInfo } from './keychain.js';
 import type { AuthProfile } from '../types.js';
 import {
@@ -24,6 +26,118 @@ import {
 import { renderAuthPage } from './auth-page.js';
 
 const logger = createLogger('oauth-flow');
+
+/** Matches the MCP SDK error thrown when a server exposes no `registration_endpoint`. */
+const DCR_UNSUPPORTED_PATTERN = /does not support dynamic client registration/i;
+
+/**
+ * OAuth `error` codes that mean the authorization server rejected mcpc as a
+ * client, as opposed to a malformed request or a server-side fault.
+ */
+const CLIENT_REJECTED_CODES = new Set(['invalid_client', 'unauthorized_client', 'access_denied']);
+
+/**
+ * Cap on how much of the server's error response is echoed back to the user.
+ * The SDK embeds the full raw response body in its message, which can be an
+ * entire HTML error page.
+ */
+const MAX_DETAIL_LENGTH = 400;
+
+/**
+ * Rewrite a raw MCP SDK OAuth error into an actionable one when the failure
+ * happened during dynamic client registration (DCR) — that is, before the user
+ * was ever redirected to the authorization endpoint.
+ *
+ * Many hosted MCP servers do not allow open DCR: they either expose no
+ * `registration_endpoint`, or the endpoint rejects unknown clients. Figma's
+ * remote MCP server is a concrete example — its registration endpoint returns
+ * a bare `403 Forbidden` for any client not on its approved allow-list.
+ * Because that body is not valid OAuth-error JSON, the SDK surfaces it as the
+ * opaque `HTTP 403: Invalid OAuth error response: ... Raw body: Forbidden`,
+ * which gives the user no idea what to do next. Retrying cannot help; the user
+ * must supply pre-registered client credentials (or a custom CIMD document).
+ *
+ * Phase detection: before the authorization redirect the only SDK request that
+ * surfaces {@link SdkOAuthError} is client registration — discovery failures
+ * are swallowed by the SDK, and the token exchange (plus its refresh variant,
+ * disabled here by `forceReauth`) only runs after the redirect. Errors thrown
+ * after the redirect, and pre-redirect errors unrelated to registration
+ * (network faults, user cancellation), are returned unchanged so their own
+ * messaging is preserved.
+ *
+ * @param error - The error thrown by the SDK auth flow.
+ * @param context - The normalized server URL and whether the flow reached the
+ *   authorization redirect.
+ * @returns An {@link AuthError} with remediation guidance when the failure is
+ *   registration-related, otherwise the original error unchanged.
+ */
+export function explainOAuthRegistrationFailure(
+  error: unknown,
+  context: { serverUrl: string; reachedAuthorization: boolean }
+): unknown {
+  // A failure after the authorization redirect (token exchange, user
+  // cancellation, callback problems) is not a registration problem.
+  if (context.reachedAuthorization) {
+    return error;
+  }
+
+  const detail = describeAuthError(error);
+  const dcrUnsupported = DCR_UNSUPPORTED_PATTERN.test(detail);
+  const isRegistrationError = error instanceof SdkOAuthError;
+  // The HTTP status only appears in the message for non-JSON error bodies
+  // (the SDK's `Invalid OAuth error response` case); OAuth-coded rejections
+  // carry a machine-readable errorCode instead. Keeping the status fallback
+  // independent of the instanceof check also preserves the rewrite if the SDK
+  // ever stops throwing typed errors from the registration path.
+  const status = /\bHTTP (\d{3})\b/.exec(detail)?.[1];
+  const rejectedByServer =
+    status === '401' ||
+    status === '403' ||
+    (error instanceof SdkOAuthError && CLIENT_REJECTED_CODES.has(error.errorCode));
+
+  if (!dcrUnsupported && !isRegistrationError && !rejectedByServer) {
+    return error;
+  }
+
+  const host = getServerHost(context.serverUrl);
+  const truncatedDetail =
+    detail.length > MAX_DETAIL_LENGTH ? `${detail.slice(0, MAX_DETAIL_LENGTH)}…` : detail;
+
+  const lines: string[] = [];
+  if (dcrUnsupported) {
+    lines.push(
+      `${host} does not support Dynamic Client Registration, and no pre-registered ` +
+        `client credentials were provided.`
+    );
+  } else if (rejectedByServer) {
+    lines.push(
+      `${host} refused to register mcpc as an OAuth client${status ? ` (HTTP ${status})` : ''}.`,
+      `Some MCP servers only accept a fixed allow-list of approved clients and reject ` +
+        `Dynamic Client Registration from everyone else (Figma's remote MCP server behaves ` +
+        `this way). When that happens there is no self-service client for mcpc to register.`
+    );
+  } else {
+    // Any other registration failure (e.g. a 5xx outage or a rejected client
+    // metadata field): report it honestly without claiming an allow-list.
+    lines.push(`Client registration with ${host} failed: ${truncatedDetail}`);
+  }
+
+  lines.push(
+    '',
+    'To authenticate, supply a client the server already recognizes:',
+    `  • pre-registered client:  mcpc login ${host} --client-id <id> [--client-secret <secret>]`,
+    `  • custom CIMD document:   mcpc login ${host} --client-metadata-url <https-url>`,
+    '',
+    `If the server restricts MCP access to specific approved clients, check with the ` +
+      `provider whether third-party clients such as mcpc are supported.`
+  );
+
+  if (rejectedByServer && !dcrUnsupported) {
+    lines.push('', `Server response: ${truncatedDetail}`);
+  }
+
+  return new AuthError(lines.join('\n'), { originalError: detail });
+}
 
 // Special key codes
 const ESCAPE_KEY = '\x1b';
@@ -498,6 +612,11 @@ export async function performOAuthFlow(
   // Track whether browser failed so we can fall back to URL paste
   let browserFailed = false;
 
+  // Track whether the flow reached the authorization redirect. Used to
+  // distinguish discovery/registration failures (before this point) from
+  // failures during user interaction or code exchange (after this point).
+  let reachedAuthorization = false;
+
   // Handler refs for cleanup
   const pasteHandlerRef: { current: { cleanup: () => void } | null } = { current: null };
 
@@ -518,6 +637,10 @@ export async function performOAuthFlow(
 
     // Override redirectToAuthorization to open browser
     provider.redirectToAuthorization = async (authorizationUrl: URL) => {
+      // Reaching this point means discovery and client registration both
+      // succeeded — any later failure is not a registration problem.
+      reachedAuthorization = true;
+
       // Inject a random `state` parameter if the SDK didn't add one. OAuth 2.1 treats
       // `state` as RECOMMENDED rather than REQUIRED, but RFC 6749 §4.1.1 allows servers
       // to require it, and some production MCP servers do (e.g. Ubersuggest). PKCE
@@ -614,7 +737,10 @@ export async function performOAuthFlow(
     };
   } catch (error) {
     logger.debug(`OAuth flow failed: ${(error as Error).message}`);
-    throw error;
+    throw explainOAuthRegistrationFailure(error, {
+      serverUrl: normalizedServerUrl,
+      reachedAuthorization,
+    });
   } finally {
     // Clean up paste handler in case of error
     pasteHandlerRef.current?.cleanup();
