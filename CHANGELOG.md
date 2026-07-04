@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `mcpc login` now explains OAuth client-registration failures with actionable guidance (use `--client-id` or `--client-metadata-url`) instead of surfacing a raw SDK JSON parse error. This affects servers that reject Dynamic Client Registration, such as Figma's remote MCP server, which only accepts an allow-list of approved clients.
+
 ## [0.4.0] - 2026-06-25
 
 ### Added
