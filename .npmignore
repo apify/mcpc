@@ -8,9 +8,22 @@ examples/
 .vscode/
 .github/
 tsconfig.json
+tsconfig.test.json
 jest.config.js
+vitest.config.ts
+eslint.config.js
 .eslintrc.js
 .prettierrc
+pnpm-workspace.yaml
+renovate.json
+
+# GitHub Pages assets (served from apify.github.io/mcpc, not read from the installed package)
+_config.yml
+client-metadata.json
+client-logo.svg
+
+# Repo documentation assets (README images/GIFs — several MB, never read at runtime)
+docs/
 
 # Build artifacts
 *.log

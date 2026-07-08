@@ -29,6 +29,23 @@ export default tseslint.config(
       '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/no-non-null-assertion': 'warn',
       'no-console': 'off',
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['viem', 'viem/*'],
+              message:
+                'Import viem only via src/lib/x402/viem.ts — it is bundled at build time so viem stays a devDependency.',
+            },
+          ],
+        },
+      ],
     },
+  },
+  {
+    // The boundary module is the single place allowed to import viem.
+    files: ['src/lib/x402/viem.ts'],
+    rules: { 'no-restricted-imports': 'off' },
   }
 );

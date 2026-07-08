@@ -30,25 +30,29 @@ const { mockReadContract, mockSendTransaction, mockWaitForTransactionReceipt, mo
     mockSignTypedData: vi.fn(),
   }));
 
-vi.mock('viem', () => ({
-  createPublicClient: vi.fn().mockReturnValue({
-    readContract: (...args: unknown[]) => mockReadContract(...args),
-    waitForTransactionReceipt: (...args: unknown[]) => mockWaitForTransactionReceipt(...args),
-  }),
-  createWalletClient: vi.fn().mockReturnValue({
-    signTypedData: (...args: unknown[]) => mockSignTypedData(...args),
-    sendTransaction: (...args: unknown[]) => mockSendTransaction(...args),
-  }),
-  encodeFunctionData: vi.fn().mockReturnValue('0xencodedapprovedata'),
-  getAddress: vi.fn((addr: string) => addr.toLowerCase()),
-  http: vi.fn().mockReturnValue('http-transport'),
-}));
-
-vi.mock('viem/accounts', () => ({
-  privateKeyToAccount: vi.fn().mockReturnValue({
-    address: '0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B',
-  }),
-}));
+// Mock the viem boundary module (the only file importing viem). The spread of
+// the original keeps real values for everything not stubbed — notably the
+// `base`/`baseSepolia` chain objects, of which only `.id` is used.
+vi.mock('../../../../src/lib/x402/viem.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../../../src/lib/x402/viem.js')>();
+  return {
+    ...original,
+    createPublicClient: vi.fn().mockReturnValue({
+      readContract: (...args: unknown[]) => mockReadContract(...args),
+      waitForTransactionReceipt: (...args: unknown[]) => mockWaitForTransactionReceipt(...args),
+    }),
+    createWalletClient: vi.fn().mockReturnValue({
+      signTypedData: (...args: unknown[]) => mockSignTypedData(...args),
+      sendTransaction: (...args: unknown[]) => mockSendTransaction(...args),
+    }),
+    encodeFunctionData: vi.fn().mockReturnValue('0xencodedapprovedata'),
+    getAddress: vi.fn((addr: string) => addr.toLowerCase()),
+    http: vi.fn().mockReturnValue('http-transport'),
+    privateKeyToAccount: vi.fn().mockReturnValue({
+      address: '0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B',
+    }),
+  };
+});
 
 // Default mock behaviour — allowance is sufficient, no approve needed, signing succeeds.
 beforeEach(() => {

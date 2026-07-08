@@ -29,7 +29,7 @@
     "node": ">=22.12.0"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node scripts/bundle-viem.mjs",
     "build:watch": "tsc --watch",
     "build:readme": "./scripts/update-readme.sh",
     "test": "pnpm run build && pnpm run test:unit && ./test/e2e/run.sh --no-build --parallel 8 && ./test/e2e/run.sh --no-build --parallel 8 --runtime bun",
@@ -62,11 +62,11 @@
     "ora": "^9.4.0",
     "proper-lockfile": "^4.1.2",
     "qrcode-terminal": "^0.12.0",
-    "undici": "^7.28.0",
-    "viem": "^2.52.2"
+    "undici": "^7.28.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "esbuild": "^0.28.1",
     "@types/node": "^25.9.3",
     "@types/proper-lockfile": "^4.1.4",
     "@types/qrcode-terminal": "^0.12.2",
@@ -82,6 +82,7 @@
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.61.1",
+    "viem": "^2.52.2",
     "vitest": "4.1.9"
   },
   "packageManager": "pnpm@10.33.4",

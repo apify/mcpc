@@ -5,9 +5,17 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import qrcode from 'qrcode-terminal';
-import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
-import { createPublicClient, http, formatEther, formatUnits, erc20Abi, type Hex } from 'viem';
-import { base } from 'viem/chains';
+import {
+  base,
+  createPublicClient,
+  erc20Abi,
+  formatEther,
+  formatUnits,
+  generatePrivateKey,
+  http,
+  privateKeyToAccount,
+  type Hex,
+} from '../../lib/x402/viem.js';
 import {
   formatSuccess,
   formatError,

@@ -24,7 +24,6 @@ import * as logs from './commands/logs.js';
 import * as auth from './commands/auth.js';
 import * as tasks from './commands/tasks.js';
 import * as grepCmd from './commands/grep.js';
-import { handleX402Command } from './commands/x402.js';
 import { clean } from './commands/clean.js';
 import { MCPC_OAUTH_CALLBACK_HOSTS, MCPC_OAUTH_CALLBACK_PORTS } from '../lib/auth/oauth-utils.js';
 import type { OutputMode, X402SchemePreference } from '../lib/index.js';
@@ -53,6 +52,16 @@ const { version: mcpcVersion } = createRequire(import.meta.url)('../../package.j
 {
   const insecure = process.argv.includes('--insecure');
   initProxy({ insecure });
+}
+
+/**
+ * The x402 command module pulls in the bundled viem (~1 MB of crypto code),
+ * so load it only when an x402 command actually runs — every other command
+ * would otherwise pay the import cost at startup.
+ */
+async function handleX402Command(args: string[]): Promise<void> {
+  const { handleX402Command: run } = await import('./commands/x402.js');
+  await run(args);
 }
 
 /**

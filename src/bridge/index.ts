@@ -53,13 +53,10 @@ const { version: mcpcVersion } = createRequire(import.meta.url)('../../package.j
 };
 import { ProxyServer } from './proxy-server.js';
 import type { ProxyConfig } from '../lib/types.js';
-import {
-  createX402FetchMiddleware,
-  extractPaymentRequiredFromResult,
-  extractAcceptFromPaymentRequired,
-  type X402PaymentCache,
-} from '../lib/x402/fetch-middleware.js';
-import { signPayment, type SignerWallet } from '../lib/x402/signer.js';
+// x402 modules pull in the bundled viem (~1 MB of crypto code) — import types
+// only here and load the implementations lazily at the x402-gated call sites.
+import type { X402PaymentCache } from '../lib/x402/fetch-middleware.js';
+import type { SignerWallet } from '../lib/x402/signer.js';
 import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js';
 
 // HTTP proxy and TLS settings are configured in main() after parsing --insecure flag
@@ -614,6 +611,7 @@ class BridgeProcess {
         // McpClient caches tools in-memory after the first listAllTools call
         return this.client?.getCachedTools()?.find((t: Tool) => t.name === name);
       };
+      const { createX402FetchMiddleware } = await import('../lib/x402/fetch-middleware.js');
       customFetch = createX402FetchMiddleware(proxyFetch, {
         wallet,
         getToolByName,
@@ -1161,6 +1159,8 @@ class BridgeProcess {
   ): Promise<{ handled: true; result: unknown } | { handled: false }> {
     if (!this.x402Wallet) return { handled: false };
 
+    const { extractPaymentRequiredFromResult, extractAcceptFromPaymentRequired } =
+      await import('../lib/x402/fetch-middleware.js');
     const paymentRequired = extractPaymentRequiredFromResult(toolResult);
     if (!paymentRequired) return { handled: false };
 
@@ -1175,6 +1175,7 @@ class BridgeProcess {
     // Invalidate cache and sign fresh
     this.x402PaymentCache.signature = null;
     try {
+      const { signPayment } = await import('../lib/x402/signer.js');
       const signed = await signPayment({
         wallet: this.x402Wallet,
         accept: parsed.accept,

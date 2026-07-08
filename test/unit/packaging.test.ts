@@ -13,6 +13,7 @@
  */
 
 import { execSync } from 'child_process';
+import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -39,5 +40,15 @@ describe('published package contents', () => {
     expect(paths).toContain('skills/mcpc/SKILL.md');
     expect(paths).toContain('bin/mcpc');
     expect(paths).toContain('dist/cli/commands/help.js');
+    // The bundled viem boundary must ship — x402 resolves viem from it at runtime.
+    expect(paths).toContain('dist/lib/x402/viem.js');
   }, 60_000);
+
+  it('does not ship viem as a runtime dependency (it is bundled at build time)', () => {
+    const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+    const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as {
+      dependencies: Record<string, string>;
+    };
+    expect(pkg.dependencies['viem']).toBeUndefined();
+  });
 });
