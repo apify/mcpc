@@ -14,6 +14,7 @@ import {
   formatInfo,
   formatWarning,
   formatJson,
+  jsonHelp,
   theme,
 } from '../output.js';
 import { getWallet, saveWallet, removeWallet } from '../../lib/wallets.js';
@@ -26,6 +27,15 @@ import { signPayment, parsePaymentRequired } from '../../lib/x402/signer.js';
 // ---------------------------------------------------------------------------
 
 const USDC_DECIMALS = 6;
+
+/**
+ * Pad the fractional part of a decimal string so it always shows at least
+ * `minDecimals` places (e.g. "1" → "1.000000"), keeping any extra precision.
+ */
+function padDecimals(value: string, minDecimals: number): string {
+  const [intPart, fracPart = ''] = value.split('.');
+  return `${intPart}.${fracPart.padEnd(minDecimals, '0')}`;
+}
 
 /**
  * Generate a QR code string for the given text using small (half-block) mode.
@@ -46,10 +56,12 @@ async function printAddressQrCode(address: string): Promise<void> {
   console.log('');
   console.log(chalk.bold('  Scan to fund this wallet:'));
   console.log(
-    qr
-      .split('\n')
-      .map((line) => `  ${line}`)
-      .join('\n')
+    chalk.whiteBright(
+      qr
+        .split('\n')
+        .map((line) => `  ${line}`)
+        .join('\n')
+    )
   );
 }
 
@@ -145,7 +157,10 @@ async function importWallet(options: {
 
 const USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 
-async function walletInfo(options: { outputMode: OutputMode }): Promise<void> {
+async function walletInfo(options: {
+  outputMode: OutputMode;
+  showUsageHint?: boolean;
+}): Promise<void> {
   const wallet = await getWallet();
 
   if (!wallet) {
@@ -153,6 +168,9 @@ async function walletInfo(options: { outputMode: OutputMode }): Promise<void> {
       console.log(formatJson(null));
     } else {
       console.log(formatInfo('No wallet configured. Create one with: mcpc x402 init'));
+      if (options.showUsageHint) {
+        console.log(chalk.dim('  ↳ for usage information, run: mcpc help x402'));
+      }
     }
     return;
   }
@@ -202,12 +220,16 @@ async function walletInfo(options: { outputMode: OutputMode }): Promise<void> {
   console.log(`  ${chalk.bold('Address')}        ${theme.cyan(wallet.address)}`);
   console.log(`  ${chalk.bold('Created')}        ${wallet.createdAt}`);
   if (!balanceError) {
-    console.log(`  ${chalk.bold('ETH Balance')}    ${ethBalance}`);
-    console.log(`  ${chalk.bold('USDC Balance')}   ${usdcBalance}`);
+    console.log(`  ${chalk.bold('ETH balance')}    ${padDecimals(ethBalance, 6)}`);
+    console.log(`  ${chalk.bold('USDC balance')}   ${padDecimals(usdcBalance, 6)}`);
   } else {
-    console.log(`  ${chalk.bold('Balances')}       ${theme.red('Failed to fetch')}`);
+    console.log(`  ${theme.red('Failed to fetch balances')}`);
   }
   await printAddressQrCode(wallet.address);
+  if (options.showUsageHint) {
+    console.log('');
+    console.log(chalk.dim('  ↳ for usage information, run: mcpc help x402'));
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -358,7 +380,8 @@ ${chalk.bold('sign options:')}
   --amount <usd>         Override amount in USD (for upto: max authorization cap)
   --expiry <seconds>     Override expiry in seconds
   --scheme <preference>  Payment scheme: auto (default), upto, or exact
-  --no-approve           Skip the upto Permit2 allowance check & auto-approval`
+  --no-approve           Skip the upto Permit2 allowance check & auto-approval
+${jsonHelp('`{ address, createdAt, balances: { eth, usdc } | null }` (null if no wallet)')}`
     );
 
   const resolveOutputMode = (cmd: Command): OutputMode => {
@@ -366,9 +389,16 @@ ${chalk.bold('sign options:')}
     return opts.json ? 'json' : 'human';
   };
 
+  // Bare "mcpc x402" (no subcommand): show wallet info (or how to create one) plus a
+  // usage hint. Use "mcpc help x402" / "mcpc x402 --help" for the full command reference.
+  program.action(async (_opts, cmd: Command) => {
+    await walletInfo({ outputMode: resolveOutputMode(cmd), showUsageHint: true });
+  });
+
   program
     .command('init')
-    .description('Create a new x402 wallet')
+    .description('Create a new x402 wallet (generates a random private key)')
+    .addHelpText('after', jsonHelp('`{ address }`'))
     .action(async (_opts, cmd) => {
       await initWallet({ outputMode: resolveOutputMode(cmd) });
     });
@@ -376,27 +406,45 @@ ${chalk.bold('sign options:')}
   program
     .command('import <private-key>')
     .description('Import an existing wallet from a private key')
+    .addHelpText('after', jsonHelp('`{ address }`'))
     .action(async (privateKey, _opts, cmd) => {
       await importWallet({ privateKey, outputMode: resolveOutputMode(cmd) });
     });
 
+  // Deprecated: "mcpc x402 info" is superseded by bare "mcpc x402".
+  // Hidden from help; emits a warning and will be removed in a future release.
   program
-    .command('info')
-    .description('Show wallet info')
+    .command('info', { hidden: true })
+    .description('Show wallet info (deprecated: use "mcpc x402")')
+    .addHelpText(
+      'after',
+      jsonHelp('`{ address, createdAt, balances: { eth, usdc } | null }` (null if no wallet)')
+    )
     .action(async (_opts, cmd) => {
-      await walletInfo({ outputMode: resolveOutputMode(cmd) });
+      const outputMode = resolveOutputMode(cmd);
+      if (outputMode !== 'json') {
+        console.error(
+          formatWarning(
+            '"mcpc x402 info" is deprecated and will be removed in a future release. Run "mcpc x402" instead.'
+          )
+        );
+      }
+      await walletInfo({ outputMode });
     });
 
   program
     .command('remove')
     .description('Remove the wallet')
+    .addHelpText('after', jsonHelp('`{ removed: true }`'))
     .action(async (_opts, cmd) => {
       await removeWalletCmd({ outputMode: resolveOutputMode(cmd) });
     });
 
   program
     .command('sign <payment-required>')
-    .description('Sign a payment using the wallet')
+    .description(
+      'Sign a payment from a base64 PAYMENT-REQUIRED header and print the PAYMENT-SIGNATURE header to stdout'
+    )
     .helpOption('-h, --help', 'Display help')
     .option(
       '--amount <usd>',
@@ -407,6 +455,14 @@ ${chalk.bold('sign options:')}
     .option(
       '--no-approve',
       'For the upto scheme: skip the on-chain Permit2 allowance check & auto-approval'
+    )
+    .addHelpText(
+      'after',
+      `
+Signs the given base64-encoded PAYMENT-REQUIRED header offline using the configured
+wallet and prints the resulting PAYMENT-SIGNATURE header (plus an MCP config snippet)
+to stdout. Useful for pre-signing payments or integrating with other MCP clients.
+${jsonHelp('`{ paymentSignature, from, to, amount, amountAtomicUnits, network, expiresAt }`')}`
     )
     .action(
       async (
@@ -425,12 +481,6 @@ ${chalk.bold('sign options:')}
         });
       }
     );
-
-  // Show help if no subcommand
-  if (args.length === 0) {
-    program.outputHelp();
-    return;
-  }
 
   try {
     await program.parseAsync(['node', 'mcpc-x402', ...args]);

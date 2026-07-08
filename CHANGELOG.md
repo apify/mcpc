@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `mcpc x402` (with no subcommand) now shows your wallet info and funding QR code instead of the command help. Run `mcpc help x402` for the full command reference. The `mcpc x402 info` subcommand is deprecated in favor of bare `mcpc x402` and will be removed in a future release.
+
 ### Fixed
 
 - `mcpc login` now explains OAuth client-registration failures with actionable guidance (use `--client-id` or `--client-metadata-url`) instead of surfacing a raw SDK JSON parse error. This affects servers that reject Dynamic Client Registration, such as Figma's remote MCP server, which only accepts an allow-list of approved clients.

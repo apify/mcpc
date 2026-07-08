@@ -1776,3 +1776,13 @@ export function formatServerDetails(
 
   return lines.join('\n');
 }
+
+/**
+ * Format a JSON output help line with backtick-style Markdown formatting.
+ * Optional schemaUrl adds a "Schema:" link for AI agents.
+ */
+export function jsonHelp(description: string, shape?: string, schemaUrl?: string): string {
+  const line = shape ? `  ${description}:\n  ${shape}` : `  ${description}`;
+  const link = schemaUrl ? `\n  Schema: ${schemaUrl}` : '';
+  return `\n${chalk.bold('JSON output (--json):')}\n${line}${link}\n`;
+}

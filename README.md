@@ -736,8 +736,8 @@ mcpc x402 init
 # Or import an existing wallet from a private key
 mcpc x402 import <private-key>
 
-# Show wallet address and creation date
-mcpc x402 info
+# Show wallet address, balances, and a funding QR code
+mcpc x402
 
 # Remove the wallet
 mcpc x402 remove
