@@ -70,9 +70,6 @@ export type {
   CancelTaskResult,
 };
 
-// Re-export protocol version constants
-export { LATEST_PROTOCOL_VERSION } from '@modelcontextprotocol/sdk/types.js';
-
 /** Keepalive ping interval in milliseconds (30 seconds) */
 export const KEEPALIVE_INTERVAL_MS = 30_000;
 

@@ -10,4 +10,5 @@ export * from './sessions.js';
 export * from './logging.js';
 export * from './utilities.js';
 export * from './auth.js';
-export * from './x402.js';
+// x402 is deliberately NOT re-exported here: it pulls in the bundled viem
+// crypto code and must only ever be loaded lazily via dynamic import.

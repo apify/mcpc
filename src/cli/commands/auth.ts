@@ -12,17 +12,13 @@ import {
 } from '../output.js';
 import type { CommandOptions, OutputMode } from '../../lib/types.js';
 import { deleteAuthProfiles } from '../../lib/auth/profiles.js';
-import { performOAuthFlow } from '../../lib/auth/oauth-flow.js';
 import { getServerHost, normalizeServerUrl, validateProfileName } from '../../lib/utils.js';
 import { closeProxy } from '../../lib/proxy.js';
 import { DEFAULT_AUTH_PROFILE, DEFAULT_CLIENT_METADATA_URL } from '../../lib/auth/oauth-utils.js';
 import type { OAuthClientCredentialsInfo } from '../../lib/auth/keychain.js';
-import {
-  loginClientCredentials,
-  validateKeyAlgorithm,
-  resolvePrivateKeyPem,
-  DEFAULT_KEY_ALGORITHM,
-} from '../../lib/auth/client-credentials.js';
+// The OAuth flow modules (oauth-flow.js, client-credentials.js) statically pull
+// in the MCP SDK's auth stack, which is expensive to import — they are loaded
+// lazily inside the login paths so other commands don't pay the cost at startup.
 
 /**
  * Authenticate with a server and create/update auth profile
@@ -134,6 +130,7 @@ export async function login(
     if (resolvedClientMetadataUrl) {
       clientCredentials.clientMetadataUrl = resolvedClientMetadataUrl;
     }
+    const { performOAuthFlow } = await import('../../lib/auth/oauth-flow.js');
     const result = await performOAuthFlow(
       normalizedUrl,
       profileName,
@@ -224,6 +221,13 @@ async function loginWithClientCredentials(
       '--callback-port/--callback-host cannot be used with --grant client-credentials'
     );
   }
+
+  const {
+    loginClientCredentials,
+    validateKeyAlgorithm,
+    resolvePrivateKeyPem,
+    DEFAULT_KEY_ALGORITHM,
+  } = await import('../../lib/auth/client-credentials.js');
 
   const info: OAuthClientCredentialsInfo = { clientId: options.clientId };
   if (options.scope) {

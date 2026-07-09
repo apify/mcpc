@@ -5,16 +5,17 @@
  * Used by both the CLI `x402 sign` command and the fetch middleware.
  */
 
-import { privateKeyToAccount } from 'viem/accounts';
 import {
+  base,
+  baseSepolia,
   createPublicClient,
   createWalletClient,
   encodeFunctionData,
   getAddress,
   http,
+  privateKeyToAccount,
   type Hex,
-} from 'viem';
-import { base, baseSepolia } from 'viem/chains';
+} from './viem.js';
 import { ClientError } from '../errors.js';
 import { createLogger } from '../logger.js';
 import type { X402SchemePreference } from '../types.js';

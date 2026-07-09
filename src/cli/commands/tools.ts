@@ -2,7 +2,9 @@
  * Tools command handlers
  */
 
-import ora from 'ora';
+// ora is loaded lazily at the spinner call site — it is only needed for
+// long-running human-mode calls and costs ~50 ms at import.
+import type { Ora } from 'ora';
 import chalk from 'chalk';
 import {
   formatOutput,
@@ -324,7 +326,7 @@ export async function callTool(
     } else if (useTask) {
       // Task-augmented execution with progress display
       const startTime = Date.now();
-      let spinner: ReturnType<typeof ora> | null = null;
+      let spinner: Ora | null = null;
       let timerInterval: ReturnType<typeof setInterval> | null = null;
       let lastStatusMessage: string | undefined;
       let lastProgressMessage: string | undefined;
@@ -364,6 +366,7 @@ export async function callTool(
       };
 
       if (options.outputMode === 'human') {
+        const { default: ora } = await import('ora');
         spinner = ora({
           text: `Running tool ${chalk.bold(name)}... (0:00)${escHintText}`,
           color: 'cyan',

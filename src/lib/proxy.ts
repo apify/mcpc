@@ -13,23 +13,53 @@
  *    EnvHttpProxyAgent dispatcher, for use in code that bypasses the global dispatcher.
  */
 
-import { EnvHttpProxyAgent, setGlobalDispatcher, type Dispatcher } from 'undici';
+import type { Dispatcher } from 'undici';
 
 let proxyAgent: Dispatcher | undefined;
+let insecureRequested = false;
+
+/**
+ * Whether any proxy environment variable that EnvHttpProxyAgent acts on is set.
+ * NO_PROXY alone does nothing without a proxy URL, so it is not checked.
+ */
+function proxyEnvConfigured(): boolean {
+  return Boolean(
+    process.env.HTTPS_PROXY ??
+    process.env.https_proxy ??
+    process.env.HTTP_PROXY ??
+    process.env.http_proxy
+  );
+}
+
+/**
+ * Create the EnvHttpProxyAgent dispatcher, loading undici on demand.
+ * undici costs ~100 ms to import, so it is only loaded when a proxy is
+ * actually configured (or TLS verification is disabled) — with neither,
+ * the native global fetch behaves identically without it.
+ */
+async function createProxyAgent(): Promise<Dispatcher> {
+  const { EnvHttpProxyAgent } = await import('undici');
+  return new EnvHttpProxyAgent(insecureRequested ? { connect: { rejectUnauthorized: false } } : {});
+}
 
 /**
  * Initialize HTTP proxy support from environment variables
  * (HTTPS_PROXY, HTTP_PROXY, NO_PROXY, and lowercase variants).
  *
  * Sets the global undici dispatcher AND initializes the proxy-aware fetch agent.
- * Must be called once at process startup (in CLI and bridge entry points).
+ * Must be called (and awaited) once at process startup, in the CLI and bridge
+ * entry points. When no proxy is configured and TLS verification is not
+ * disabled, this is a no-op and undici is never loaded.
  *
  * @param options.insecure - Disable TLS certificate verification (for self-signed certs)
  */
-export function initProxy(options?: { insecure?: boolean }): void {
-  proxyAgent = new EnvHttpProxyAgent(
-    options?.insecure ? { connect: { rejectUnauthorized: false } } : {}
-  );
+export async function initProxy(options?: { insecure?: boolean }): Promise<void> {
+  insecureRequested = Boolean(options?.insecure);
+  if (!insecureRequested && !proxyEnvConfigured()) {
+    return;
+  }
+  const { setGlobalDispatcher } = await import('undici');
+  proxyAgent = await createProxyAgent();
   setGlobalDispatcher(proxyAgent);
 }
 
@@ -49,9 +79,17 @@ export function initProxy(options?: { insecure?: boolean }): void {
  * stream unconsumed (which crashes the process on exit on Windows). Returning a global
  * `Response` keeps those checks working and the body properly drained.
  */
-export function proxyFetch(input: string | URL | Request, init?: RequestInit): Promise<Response> {
+export async function proxyFetch(
+  input: string | URL | Request,
+  init?: RequestInit
+): Promise<Response> {
   if (!proxyAgent) {
-    proxyAgent = new EnvHttpProxyAgent();
+    if (!insecureRequested && !proxyEnvConfigured()) {
+      // No proxy configured — the native global fetch behaves identically,
+      // and undici stays unloaded.
+      return fetch(input, init);
+    }
+    proxyAgent = await createProxyAgent();
   }
   // The cast bridges the type-only version skew between the runtime `undici` package's
   // Dispatcher and the `undici-types` Dispatcher baked into @types/node's global fetch;

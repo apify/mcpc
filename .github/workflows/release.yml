@@ -190,6 +190,10 @@ jobs:
             echo "bun install -g ${PKG_NAME}@${NEW_VERSION}"
             echo "\`\`\`"
           } | tee -a "$GITHUB_STEP_SUMMARY"
+          # Report the production install size (tarball, unpacked, full install)
+          # and compare with the latest published version, warning if this
+          # release is much bigger. Appends to the run summary by itself.
+          node scripts/report-install-size.mjs
 
       - name: Publish pre-release to npm
         if: inputs.type == 'pre-release'
@@ -247,6 +251,10 @@ jobs:
             echo "bun install -g ${PKG_NAME}@${NEW_VERSION}"
             echo "\`\`\`"
           } | tee -a "$GITHUB_STEP_SUMMARY"
+          # Report the production install size (tarball, unpacked, full install)
+          # and compare with the latest published version, warning if this
+          # release is much bigger. Appends to the run summary by itself.
+          node scripts/report-install-size.mjs
 
       - name: Update CHANGELOG.md
         if: inputs.type == 'release'

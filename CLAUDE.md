@@ -628,6 +628,7 @@ When implementing features:
     - `server` (not `target`) for server URLs/addresses
     - No `success` wrapper - indicate errors via exit codes
     - No debug prefixes like `[Using target: ...]` in JSON mode
+14. **Lazy-load large or special-purpose dependencies** - Command startup time matters: `mcpc` is invoked once per shell command, so everything statically imported by `src/cli/index.ts` or `src/bridge/index.ts` is paid on _every_ invocation. Any dependency that is large, or only needed by a specific command or feature, must be loaded lazily with a dynamic `await import(...)` at the point of use (type-only imports are free and stay static). Never re-export such a module from a barrel file (`index.ts`) — that silently makes it eager again. Example: the x402 feature's viem crypto code is loaded only when x402 is actually used, and viem itself is tree-shaken into a self-contained bundle at build time (`scripts/bundle-viem.mjs`, boundary module `src/lib/x402/viem.ts`) so it stays a devDependency instead of adding ~35 MB to every user's install. Before adding a heavy dependency, prefer this bundle-behind-a-boundary pattern over adding it to `dependencies`.
 
 ## Debugging
 
