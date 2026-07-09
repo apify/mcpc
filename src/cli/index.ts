@@ -51,7 +51,7 @@ const { version: mcpcVersion } = createRequire(import.meta.url)('../../package.j
 // Also handle --insecure flag to disable TLS certificate verification (for self-signed certs)
 {
   const insecure = process.argv.includes('--insecure');
-  initProxy({ insecure });
+  await initProxy({ insecure });
 }
 
 /**

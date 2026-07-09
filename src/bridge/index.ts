@@ -1760,7 +1760,7 @@ async function main(): Promise<void> {
 
   // Set up HTTP proxy from environment variables (HTTPS_PROXY, HTTP_PROXY, NO_PROXY, and lowercase variants)
   // Also handle --insecure flag to disable TLS certificate verification
-  initProxy({ insecure });
+  await initProxy({ insecure });
 
   try {
     const bridgeOptions: BridgeOptions = {
