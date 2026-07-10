@@ -1157,7 +1157,7 @@ ${toolsCallCombinedJsonHelp}`
 
   program
     .command('tasks-result <taskId>')
-    .description('Get MCP task final result (blocks until task reaches a terminal state).')
+    .description('Get MCP task final result (blocks until the task finishes).')
     .addHelpText('after', toolsCallJsonHelp)
     .action(async (taskId, _options, command) => {
       await tasks.getTaskResult(session, taskId, getOptionsFromCommand(command));
@@ -1226,7 +1226,7 @@ ${jsonHelp(
 
   program
     .command('resources-subscribe <uri> <file>')
-    .description('Subscribe to an MCP resource and keep a local file in sync with it.')
+    .description('Subscribe to an MCP resource and sync it to a local file.')
     .addHelpText(
       'after',
       `
