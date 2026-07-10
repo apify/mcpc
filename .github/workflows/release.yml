@@ -113,6 +113,15 @@ jobs:
         if: inputs.type == 'release'
         run: pnpm run build:readme
 
+      - name: Report install size
+        id: install-size
+        # Measures the tarball/unpacked/full-install size of what will be
+        # published and compares it with the latest version on npm: prints a
+        # table to the logs and run summary, warns if this release is much
+        # bigger, and exposes the report as an output that the GitHub release
+        # steps embed in the release body.
+        run: node scripts/report-install-size.mjs
+
       # ── Pre-release ────────────────────────────────────────────────
       - name: Bump pre-release version
         if: inputs.type == 'pre-release'
@@ -190,10 +199,6 @@ jobs:
             echo "bun install -g ${PKG_NAME}@${NEW_VERSION}"
             echo "\`\`\`"
           } | tee -a "$GITHUB_STEP_SUMMARY"
-          # Report the production install size (tarball, unpacked, full install)
-          # and compare with the latest published version, warning if this
-          # release is much bigger. Appends to the run summary by itself.
-          node scripts/report-install-size.mjs
 
       - name: Publish pre-release to npm
         if: inputs.type == 'pre-release'
@@ -220,6 +225,8 @@ jobs:
             # or
             bun install -g ${{ steps.prerelease.outputs.package-name }}@${{ steps.prerelease.outputs.version }}
             ```
+
+            ${{ steps.install-size.outputs.report }}
           target_commitish: ${{ github.sha }}
         env:
           GITHUB_TOKEN: ${{ secrets.APIFY_SERVICE_ACCOUNT_GITHUB_TOKEN }}
@@ -251,10 +258,6 @@ jobs:
             echo "bun install -g ${PKG_NAME}@${NEW_VERSION}"
             echo "\`\`\`"
           } | tee -a "$GITHUB_STEP_SUMMARY"
-          # Report the production install size (tarball, unpacked, full install)
-          # and compare with the latest published version, warning if this
-          # release is much bigger. Appends to the run summary by itself.
-          node scripts/report-install-size.mjs
 
       - name: Update CHANGELOG.md
         if: inputs.type == 'release'
@@ -307,5 +310,7 @@ jobs:
             # or
             bun install -g ${{ steps.release.outputs.package-name }}@${{ steps.release.outputs.version }}
             ```
+
+            ${{ steps.install-size.outputs.report }}
         env:
           GITHUB_TOKEN: ${{ secrets.APIFY_SERVICE_ACCOUNT_GITHUB_TOKEN }}
