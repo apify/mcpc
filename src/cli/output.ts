@@ -1663,8 +1663,7 @@ export function formatServerDetails(
   // non-standard capabilities — so we check both locations to support
   // today's servers and forward-compatible SDKs.
   const capsAny = capabilities as
-    | { extensions?: Record<string, unknown>; experimental?: Record<string, unknown> }
-    | undefined;
+    { extensions?: Record<string, unknown>; experimental?: Record<string, unknown> } | undefined;
   const SKILLS_KEY = 'io.modelcontextprotocol/skills';
   const hasSkillsExtension =
     (!!capsAny?.extensions &&

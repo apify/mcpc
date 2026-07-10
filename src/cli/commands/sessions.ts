@@ -63,13 +63,7 @@ export function statelessField(connectionMode: ConnectionMode | undefined): {
 }
 
 export type DisplayStatus =
-  | 'live'
-  | 'connecting'
-  | 'reconnecting'
-  | 'disconnected'
-  | 'crashed'
-  | 'unauthorized'
-  | 'expired';
+  'live' | 'connecting' | 'reconnecting' | 'disconnected' | 'crashed' | 'unauthorized' | 'expired';
 
 /**
  * Determine bridge status for a session

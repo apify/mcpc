@@ -149,9 +149,7 @@ const ENTER_LF = '\n';
  * Result from key handler callback
  */
 type KeyHandlerResult<T> =
-  | { done: true; value: T }
-  | { done: true; error: Error }
-  | { done: false };
+  { done: true; value: T } | { done: true; error: Error } | { done: false };
 
 /**
  * Set up raw mode keypress listener

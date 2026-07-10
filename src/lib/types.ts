@@ -113,12 +113,7 @@ export interface ProxyConfig {
  * - crashed: Bridge process crashed, session might or might not be usable. Bridge will be restarted on next command.
  */
 export type SessionStatus =
-  | 'active'
-  | 'connecting'
-  | 'reconnecting'
-  | 'unauthorized'
-  | 'expired'
-  | 'crashed';
+  'active' | 'connecting' | 'reconnecting' | 'unauthorized' | 'expired' | 'crashed';
 
 /**
  * The connection's session model — whether the MCP connection carries server-side session state.
@@ -276,12 +271,7 @@ export interface AuthProfilesStorage {
  * IPC message types for CLI-bridge communication
  */
 export type IpcMessageType =
-  | 'request'
-  | 'response'
-  | 'shutdown'
-  | 'task-update'
-  | 'set-auth-credentials'
-  | 'set-x402-wallet';
+  'request' | 'response' | 'shutdown' | 'task-update' | 'set-auth-credentials' | 'set-x402-wallet';
 
 /**
  * Auth credentials sent from CLI to bridge via IPC
