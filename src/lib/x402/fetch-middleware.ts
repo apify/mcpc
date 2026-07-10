@@ -387,8 +387,7 @@ export function extractAcceptFromPaymentRequired(
   }
 
   const resource = obj.resource as
-    | { url?: string; description?: string; mimeType?: string }
-    | undefined;
+    { url?: string; description?: string; mimeType?: string } | undefined;
   if (resource) {
     return { accept, resource };
   }
