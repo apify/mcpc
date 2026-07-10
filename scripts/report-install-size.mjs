@@ -9,8 +9,9 @@
  *   - unpacked package size (the package itself inside node_modules)
  *   - full install size (node_modules including all transitive dependencies)
  *
- * Prints a markdown report to stdout and appends it to $GITHUB_STEP_SUMMARY
- * when running in GitHub Actions. Emits a ::warning:: annotation if the full
+ * Prints a markdown report to stdout, appends it to $GITHUB_STEP_SUMMARY, and
+ * writes it as a `report` step output to $GITHUB_OUTPUT when running in GitHub
+ * Actions (used to embed it in the release body). Emits a ::warning:: annotation if the full
  * install grew by more than GROWTH_WARN_PCT% (and at least 1 MB) — it does not
  * fail the release; the person releasing decides whether the growth is expected.
  *
@@ -117,6 +118,11 @@ try {
   console.log(report);
   if (process.env.GITHUB_STEP_SUMMARY) {
     appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${report}\n`);
+  }
+  // Expose the report as a step output so the workflow can embed it in the
+  // GitHub release body (the run summary is not part of the release page).
+  if (process.env.GITHUB_OUTPUT) {
+    appendFileSync(process.env.GITHUB_OUTPUT, `report<<MCPC_REPORT_EOF\n${report}\nMCPC_REPORT_EOF\n`);
   }
 
   if (previous) {
