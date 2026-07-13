@@ -89,6 +89,23 @@ describe('parseCommandArgs', () => {
       expect(result).toEqual({ limit: 10 });
     });
 
+    it('should keep integers beyond MAX_SAFE_INTEGER as strings (no precision loss)', () => {
+      // e.g. snowflake IDs — JSON.parse would silently round these
+      const result = parseCommandArgs(['id:=12345678901234567890']);
+      expect(result).toEqual({ id: '12345678901234567890' });
+    });
+
+    it('should keep large negative integers as strings', () => {
+      const result = parseCommandArgs(['id:=-12345678901234567890']);
+      expect(result).toEqual({ id: '-12345678901234567890' });
+    });
+
+    it('should still parse safe 16+ digit-looking numbers within range', () => {
+      // 16 digits but within MAX_SAFE_INTEGER (9007199254740991)
+      const result = parseCommandArgs(['n:=9007199254740991']);
+      expect(result).toEqual({ n: 9007199254740991 });
+    });
+
     it('should parse boolean true', () => {
       const result = parseCommandArgs(['enabled:=true']);
       expect(result).toEqual({ enabled: true });

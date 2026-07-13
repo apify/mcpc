@@ -466,6 +466,15 @@ export function parseServerArg(
  * This allows natural CLI usage like: count:=10, enabled:=true, name:=hello
  */
 function autoParseValue(value: string): unknown {
+  // Integers beyond Number.MAX_SAFE_INTEGER (e.g. snowflake IDs) would silently
+  // lose precision as JS numbers — pass them through as strings instead.
+  if (/^-?\d+$/.test(value)) {
+    const abs = value.startsWith('-') ? value.slice(1) : value;
+    if (abs.length >= 16 && !Number.isSafeInteger(Number(value))) {
+      return value;
+    }
+  }
+
   // Try to parse as JSON (handles numbers, booleans, null, arrays, objects)
   try {
     return JSON.parse(value);

@@ -297,9 +297,10 @@ async function main(): Promise<void> {
       await closeFileLogger();
     }
 
-    // Flush stdout before exiting
+    // Flush stdout before exiting. Honor any exit code set by the command
+    // handler (e.g. tools-call sets 2 when the tool result has isError).
     await flushStdout();
-    process.exit(0);
+    process.exit(process.exitCode ?? 0);
   }
 
   // Top-level commands: login, logout, connect, clean, help, x402
@@ -830,6 +831,9 @@ ${chalk.bold('Examples:')}
   mcpc @apify grep "actor"                  Search within a single session
   mcpc grep "file" --json                   JSON output for scripting
   mcpc grep "actor" -m 5                    Show at most 5 results
+
+${chalk.bold('Exit codes:')}
+  0 = matches found, 1 = no matches (grep convention)
 ${jsonHelp('`[{ sessionName, tools?: Tool[], resources?: Resource[], prompts?: Prompt[], instructions?: string[] }]`')}`
     )
     .action(async (pattern, opts, command) => {
@@ -919,6 +923,14 @@ function tuneCommandHelp(cmd: Command): void {
   if (!cmd.options.some((o) => o.long === '--json')) {
     cmd.option('--json', 'Output in JSON format');
   }
+  // A command that disabled its help option did so deliberately (e.g. tools-call
+  // intercepts --help in its action to show the tool's schema) — re-registering
+  // it here would make Commander swallow --help before the action ever runs.
+  // Commander marks a disabled help option with `_helpOption === null`.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if ((cmd as any)._helpOption === null) {
+    return;
+  }
   cmd.helpOption('-h, --help', 'Display help');
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const helpOpt = (cmd as any)._getHelpOption?.();
@@ -997,6 +1009,9 @@ ${chalk.bold('Examples:')}
   mcpc ${session} grep "search"                  Search tools and instructions
   mcpc ${session} grep "search" --resources      Search resources only
   mcpc ${session} grep "search|find" -E          Regex search
+
+${chalk.bold('Exit codes:')}
+  0 = matches found, 1 = no matches (grep convention)
 ${jsonHelp('`{ tools?: Tool[], resources?: Resource[], prompts?: Prompt[], instructions?: string[] }`')}`
     )
     .action(async (pattern, opts, command) => {
@@ -1074,7 +1089,6 @@ ${chalk.bold('JSON output (--json):')}
   program
     .command('tools-call <name> [args...]')
     .description('Call an MCP tool with arguments.')
-    .helpOption(false) // Disable built-in --help so we can intercept it for tool schema
     .option(
       '--task',
       'Use async task execution; Ctrl+C prints the task ID and exits (experimental)'
@@ -1092,6 +1106,7 @@ ${chalk.bold('Arguments:')}
 
   Values are auto-parsed: strings, numbers, booleans, JSON objects/arrays.
   To force a string, wrap in quotes: id:='"123"'
+  Tip: mcpc ${session} tools-call <tool> --help prints the tool's parameter schema.
 
 ${chalk.bold('Async tasks (--task, --detach):')}
   --task shows a progress spinner while the task runs on the server.
@@ -1105,17 +1120,8 @@ ${chalk.bold('Schema validation:')}
 ${toolsCallCombinedJsonHelp}`
     )
     .action(async (name, args, options, command) => {
-      // Intercept --help: with helpOption(false) Commander won't catch it.
-      // "tools-call --help" (no tool name) → name is '--help', show command help.
-      // "tools-call search --help" → show tool parameter schema (shortcut for tools-get).
-      if (name === '--help' || name === '-h') {
-        command.help();
-        return;
-      }
-      if (args.includes('--help') || args.includes('-h')) {
-        await tools.getTool(session, name, getOptionsFromCommand(command));
-        return;
-      }
+      // Note: "tools-call <tool> --help" (tool schema shortcut) is intercepted
+      // before Commander parses — see extractToolsCallHelpTarget().
       await tools.callTool(session, name, {
         args,
         task: options.task,
@@ -1458,6 +1464,26 @@ function createSessionProgram(): Command {
 }
 
 /**
+ * Detect the "tools-call <tool> --help" shortcut. Returns the tool name when the
+ * invocation is a tools-call carrying both a tool name and a help flag; undefined
+ * otherwise (a plain "tools-call --help" falls through to Commander's command help).
+ */
+function extractToolsCallHelpTarget(args: string[]): string | undefined {
+  if (!args.includes('--help') && !args.includes('-h')) return undefined;
+  const positionals: string[] = [];
+  for (let i = 2; i < args.length && positionals.length < 2; i++) {
+    const arg = args[i];
+    if (!arg || arg === '--help' || arg === '-h') continue;
+    if (arg.startsWith('-')) {
+      if (optionTakesValue(arg) && !arg.includes('=')) i++; // skip option value
+      continue;
+    }
+    positionals.push(arg);
+  }
+  return positionals[0] === 'tools-call' ? positionals[1] : undefined;
+}
+
+/**
  * Handle commands for a session target (@name)
  */
 async function handleSessionCommands(session: string, args: string[]): Promise<void> {
@@ -1469,6 +1495,22 @@ async function handleSessionCommands(session: string, args: string[]): Promise<v
     if (options.json) setJsonMode(true);
 
     await sessions.showServerDetails(session, {
+      outputMode: options.json ? 'json' : 'human',
+      ...(options.verbose && { verbose: true }),
+      ...(options.timeout !== undefined && { timeout: options.timeout }),
+    });
+    return;
+  }
+
+  // "tools-call <tool> --help" shortcut: print the tool's parameter schema
+  // (same as tools-get <tool>). Must be intercepted before Commander parses —
+  // Commander consumes --help itself and would show the generic command help.
+  const toolHelpName = extractToolsCallHelpTarget(args);
+  if (toolHelpName) {
+    const options = extractOptions(args);
+    if (options.verbose) setVerbose(true);
+    if (options.json) setJsonMode(true);
+    await tools.getTool(session, toolHelpName, {
       outputMode: options.json ? 'json' : 'human',
       ...(options.verbose && { verbose: true }),
       ...(options.timeout !== undefined && { timeout: options.timeout }),
