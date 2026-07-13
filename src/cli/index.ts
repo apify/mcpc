@@ -70,7 +70,7 @@ async function handleX402Command(args: string[]): Promise<void> {
 interface HandlerOptions {
   outputMode: OutputMode;
   headers?: string[];
-  timeout?: number;
+  timeoutSecs?: number; // Per-request timeout in seconds (from --timeout)
   verbose?: boolean;
   profile?: string;
   noProfile?: boolean;
@@ -108,13 +108,13 @@ function getOptionsFromCommand(command: Command): HandlerOptions {
 
   // Only include optional properties if they're present
   if (opts.timeout) {
-    const timeout = parseInt(opts.timeout as string, 10);
-    if (isNaN(timeout) || timeout <= 0) {
+    const timeoutSecs = parseInt(opts.timeout as string, 10);
+    if (isNaN(timeoutSecs) || timeoutSecs <= 0) {
       throw new ClientError(
         `Invalid --timeout value: "${opts.timeout as string}". Must be a positive number (seconds).`
       );
     }
-    options.timeout = timeout;
+    options.timeoutSecs = timeoutSecs;
   }
   if (opts.profile === false) {
     options.noProfile = true;
@@ -1497,7 +1497,7 @@ async function handleSessionCommands(session: string, args: string[]): Promise<v
     await sessions.showServerDetails(session, {
       outputMode: options.json ? 'json' : 'human',
       ...(options.verbose && { verbose: true }),
-      ...(options.timeout !== undefined && { timeout: options.timeout }),
+      ...(options.timeoutSecs !== undefined && { timeoutSecs: options.timeoutSecs }),
     });
     return;
   }
@@ -1513,7 +1513,7 @@ async function handleSessionCommands(session: string, args: string[]): Promise<v
     await tools.getTool(session, toolHelpName, {
       outputMode: options.json ? 'json' : 'human',
       ...(options.verbose && { verbose: true }),
-      ...(options.timeout !== undefined && { timeout: options.timeout }),
+      ...(options.timeoutSecs !== undefined && { timeoutSecs: options.timeoutSecs }),
     });
     return;
   }

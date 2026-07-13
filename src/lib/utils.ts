@@ -439,8 +439,8 @@ export function isValidResourceUri(uri: string): boolean {
 /**
  * Sleep for a specified number of milliseconds
  */
-export function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+export function sleep(millis: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, millis));
 }
 
 /**
@@ -478,9 +478,9 @@ export async function atomicRename(src: string, dest: string): Promise<void> {
  */
 export async function waitForFile(
   filepath: string,
-  options: { timeoutMs?: number; interval?: number } = {}
+  options: { timeoutMillis?: number; intervalMillis?: number } = {}
 ): Promise<void> {
-  const { timeoutMs = 10000, interval = 100 } = options;
+  const { timeoutMillis = 10000, intervalMillis = 100 } = options;
   const startTime = Date.now();
 
   while (true) {
@@ -488,11 +488,11 @@ export async function waitForFile(
       return;
     }
 
-    if (Date.now() - startTime >= timeoutMs) {
+    if (Date.now() - startTime >= timeoutMillis) {
       throw new Error(`Timeout waiting for file: ${filepath}`);
     }
 
-    await sleep(interval);
+    await sleep(intervalMillis);
   }
 }
 
@@ -554,7 +554,7 @@ export function isProcessAlive(pid: number): boolean {
  */
 let _tasklistCache: Set<number> | null = null;
 let _tasklistCacheTime = 0;
-const TASKLIST_CACHE_TTL = 2000; // 2 seconds
+const TASKLIST_CACHE_TTL_MILLIS = 2000; // 2 seconds
 
 /**
  * Invalidate the Windows tasklist cache used by isProcessAlive().
@@ -569,7 +569,7 @@ export function invalidateProcessAliveCache(): void {
 
 function isProcessAliveTasklist(pid: number): boolean {
   const now = Date.now();
-  if (_tasklistCache && now - _tasklistCacheTime < TASKLIST_CACHE_TTL) {
+  if (_tasklistCache && now - _tasklistCacheTime < TASKLIST_CACHE_TTL_MILLIS) {
     return _tasklistCache.has(pid);
   }
   try {

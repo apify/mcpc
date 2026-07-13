@@ -77,7 +77,7 @@ export async function resolveTarget(
   options: {
     config?: string;
     headers?: string[];
-    timeout?: number;
+    timeoutSecs?: number;
     verbose?: boolean;
     profile?: string;
   } = {}
@@ -105,7 +105,7 @@ export async function resolveTarget(
     return {
       ...serverConfig,
       ...(Object.keys(mergedHeaders).length > 0 && { headers: mergedHeaders }),
-      ...(options.timeout && { timeout: options.timeout }),
+      ...(options.timeoutSecs && { timeout: options.timeoutSecs }),
     };
   }
 
@@ -128,7 +128,7 @@ export async function resolveTarget(
   return {
     url,
     ...(Object.keys(headers).length > 0 && { headers }),
-    ...(options.timeout && { timeout: options.timeout }),
+    ...(options.timeoutSecs && { timeout: options.timeoutSecs }),
   };
 }
 
@@ -158,7 +158,7 @@ export async function withMcpClient<T>(
     outputMode?: OutputMode;
     verbose?: boolean;
     hideTarget?: boolean;
-    timeout?: number;
+    timeoutSecs?: number;
   },
   callback: (client: SessionClient, context: McpClientContext) => Promise<T>
 ): Promise<T> {
@@ -190,6 +190,7 @@ export async function withMcpClient<T>(
   }
 
   // Use session client (SessionClient implements IMcpClient interface)
-  const sessionOpts = options.timeout !== undefined ? { timeout: options.timeout } : undefined;
+  const sessionOpts =
+    options.timeoutSecs !== undefined ? { timeoutSecs: options.timeoutSecs } : undefined;
   return await withSessionClient(target, (client) => callback(client, context), sessionOpts);
 }

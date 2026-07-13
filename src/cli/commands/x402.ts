@@ -295,10 +295,10 @@ async function signPaymentCommand(options: SignOptions): Promise<void> {
     amountOverride = BigInt(Math.round(amountUsd * 10 ** USDC_DECIMALS));
   }
 
-  let expiryOverride: number | undefined;
+  let expiryOverrideSecs: number | undefined;
   if (options.expiry) {
-    expiryOverride = parseInt(options.expiry, 10);
-    if (isNaN(expiryOverride) || expiryOverride <= 0) {
+    expiryOverrideSecs = parseInt(options.expiry, 10);
+    if (isNaN(expiryOverrideSecs) || expiryOverrideSecs <= 0) {
       throw new ClientError('--expiry must be a positive number of seconds.');
     }
   }
@@ -309,7 +309,7 @@ async function signPaymentCommand(options: SignOptions): Promise<void> {
     accept,
     resource: header.resource,
     ...(amountOverride !== undefined && { amountOverride }),
-    ...(expiryOverride !== undefined && { expiryOverride }),
+    ...(expiryOverrideSecs !== undefined && { expiryOverrideSecs }),
     ...(options.noApprove === true && { skipPermit2Approval: true }),
   });
 

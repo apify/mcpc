@@ -162,7 +162,7 @@ export interface SignPaymentInput {
   /** Override amount in atomic units (default: from accept.amount) */
   amountOverride?: bigint;
   /** Override expiry in seconds (default: `accept.maxTimeoutSeconds` or `DEFAULT_PAYMENT_EXPIRY_SECONDS`) */
-  expiryOverride?: number;
+  expiryOverrideSecs?: number;
   /**
    * For the upto scheme: skip the on-chain Permit2 allowance check & auto-approval.
    * Default false — the signer will check `USDC.allowance(wallet, PERMIT2)` and submit a
@@ -348,7 +348,7 @@ async function signExactPayment(input: SignPaymentInput): Promise<SignPaymentRes
 
   // Resolve expiry
   const expirySeconds =
-    (input.expiryOverride ?? accept.maxTimeoutSeconds) || DEFAULT_PAYMENT_EXPIRY_SECONDS;
+    (input.expiryOverrideSecs ?? accept.maxTimeoutSeconds) || DEFAULT_PAYMENT_EXPIRY_SECONDS;
 
   // EIP-3009 domain
   const eip3009Name = accept.extra?.name ?? 'USDC';
@@ -537,7 +537,7 @@ async function signUptoPayment(input: SignPaymentInput): Promise<SignPaymentResu
 
   // Resolve expiry
   const expirySeconds =
-    (input.expiryOverride ?? accept.maxTimeoutSeconds) || DEFAULT_PAYMENT_EXPIRY_SECONDS;
+    (input.expiryOverrideSecs ?? accept.maxTimeoutSeconds) || DEFAULT_PAYMENT_EXPIRY_SECONDS;
 
   // Validate facilitator address (required by upto scheme for witness binding)
   const facilitatorAddress = accept.extra?.facilitatorAddress;

@@ -169,8 +169,8 @@ export async function getTool(
 /**
  * Format elapsed time as M:SS or H:MM:SS
  */
-function formatElapsed(ms: number): string {
-  const totalSeconds = Math.floor(ms / 1000);
+function formatElapsed(millis: number): string {
+  const totalSeconds = Math.floor(millis / 1000);
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;

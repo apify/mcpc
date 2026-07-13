@@ -386,7 +386,7 @@ export async function consolidateSessions(
       }
 
       // Cooldown: socket connect timeout (5s) + 5s buffer = 10s
-      const AUTO_RESTART_COOLDOWN_MS = 10_000;
+      const AUTO_RESTART_COOLDOWN_MILLIS = 10_000;
       const now = Date.now();
 
       // Expire stale 'connecting'/'reconnecting' states — if the connection attempt
@@ -399,7 +399,7 @@ export async function consolidateSessions(
           const attemptAt = session.lastConnectionAttemptAt
             ? new Date(session.lastConnectionAttemptAt).getTime()
             : 0;
-          if (attemptAt > 0 && now - attemptAt > AUTO_RESTART_COOLDOWN_MS) {
+          if (attemptAt > 0 && now - attemptAt > AUTO_RESTART_COOLDOWN_MILLIS) {
             logger.debug(`Stale ${session.status} state for ${name}, marking as crashed`);
             session.status = 'crashed';
             result.crashedBridges++;
@@ -422,14 +422,14 @@ export async function consolidateSessions(
           const lastAttempt = session.lastConnectionAttemptAt
             ? new Date(session.lastConnectionAttemptAt).getTime()
             : 0;
-          if (now - lastAttempt <= AUTO_RESTART_COOLDOWN_MS) {
+          if (now - lastAttempt <= AUTO_RESTART_COOLDOWN_MILLIS) {
             continue;
           }
           // Skip if bridge was recently alive — it may have just crashed and needs
           // time for cleanup before we restart (also avoids conflicts with parallel
           // sessions sharing the same home directory)
           const lastSeen = session.lastSeenAt ? new Date(session.lastSeenAt).getTime() : 0;
-          if (lastSeen > 0 && now - lastSeen <= AUTO_RESTART_COOLDOWN_MS) {
+          if (lastSeen > 0 && now - lastSeen <= AUTO_RESTART_COOLDOWN_MILLIS) {
             logger.debug(`Skipping auto-restart for ${name}: bridge was recently alive`);
             continue;
           }

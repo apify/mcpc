@@ -159,8 +159,8 @@ export class OAuthTokenManager {
       this.accessToken = tokenResponse.access_token;
 
       // Calculate expiry time
-      const expiresIn = tokenResponse.expires_in ?? DEFAULT_TOKEN_EXPIRY_SECONDS;
-      this.accessTokenExpiresAt = Math.floor(Date.now() / 1000) + expiresIn;
+      const expiresInSecs = tokenResponse.expires_in ?? DEFAULT_TOKEN_EXPIRY_SECONDS;
+      this.accessTokenExpiresAt = Math.floor(Date.now() / 1000) + expiresInSecs;
 
       // Update refresh token if a new one was provided (token rotation)
       if (tokenResponse.refresh_token) {

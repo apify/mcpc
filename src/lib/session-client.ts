@@ -46,7 +46,7 @@ const logger = createLogger('session-client');
 export class SessionClient implements IMcpClient {
   private bridgeClient: BridgeClient;
   private sessionName: string;
-  private requestTimeout?: number; // Per-request timeout in seconds
+  private requestTimeoutSecs?: number; // Per-request timeout in seconds
 
   constructor(sessionName: string, bridgeClient: BridgeClient) {
     this.sessionName = sessionName;
@@ -56,8 +56,8 @@ export class SessionClient implements IMcpClient {
   /**
    * Set request timeout for all subsequent requests (in seconds)
    */
-  setRequestTimeout(timeout: number): void {
-    this.requestTimeout = timeout;
+  setRequestTimeout(timeoutSecs: number): void {
+    this.requestTimeoutSecs = timeoutSecs;
   }
 
   /**
@@ -147,7 +147,7 @@ export class SessionClient implements IMcpClient {
         this.bridgeClient.request(
           'getServerDetails',
           undefined,
-          this.requestTimeout
+          this.requestTimeoutSecs
         ) as Promise<ServerDetails>,
       'getServerDetails'
     );
@@ -156,7 +156,8 @@ export class SessionClient implements IMcpClient {
   // MCP operations
   async ping(): Promise<void> {
     return this.withRetry(
-      () => this.bridgeClient.request('ping', undefined, this.requestTimeout).then(() => undefined),
+      () =>
+        this.bridgeClient.request('ping', undefined, this.requestTimeoutSecs).then(() => undefined),
       'ping'
     );
   }
@@ -167,7 +168,7 @@ export class SessionClient implements IMcpClient {
         this.bridgeClient.request(
           'listTools',
           cursor,
-          this.requestTimeout
+          this.requestTimeoutSecs
         ) as Promise<ListToolsResult>,
       'listTools'
     );
@@ -179,7 +180,7 @@ export class SessionClient implements IMcpClient {
         this.bridgeClient.request(
           'listAllTools',
           options?.refreshCache ? { refreshCache: true } : undefined,
-          this.requestTimeout
+          this.requestTimeoutSecs
         ) as Promise<ListToolsResult>,
       'listAllTools'
     );
@@ -199,7 +200,7 @@ export class SessionClient implements IMcpClient {
         this.bridgeClient.request(
           'callTool',
           params,
-          this.requestTimeout
+          this.requestTimeoutSecs
         ) as Promise<CallToolResult>,
       'callTool',
       { idempotent: false }
@@ -212,7 +213,7 @@ export class SessionClient implements IMcpClient {
         this.bridgeClient.request(
           'listResources',
           cursor,
-          this.requestTimeout
+          this.requestTimeoutSecs
         ) as Promise<ListResourcesResult>,
       'listResources'
     );
@@ -224,7 +225,7 @@ export class SessionClient implements IMcpClient {
         this.bridgeClient.request(
           'listResourceTemplates',
           cursor,
-          this.requestTimeout
+          this.requestTimeoutSecs
         ) as Promise<ListResourceTemplatesResult>,
       'listResourceTemplates'
     );
@@ -236,7 +237,7 @@ export class SessionClient implements IMcpClient {
         this.bridgeClient.request(
           'readResource',
           { uri },
-          this.requestTimeout
+          this.requestTimeoutSecs
         ) as Promise<ReadResourceResult>,
       'readResource'
     );
@@ -256,7 +257,7 @@ export class SessionClient implements IMcpClient {
         this.bridgeClient.request(
           'subscribeResource',
           { uri, filePath },
-          this.requestTimeout
+          this.requestTimeoutSecs
         ) as Promise<ResourceSyncResult>,
       'subscribeResource'
     );
@@ -271,7 +272,7 @@ export class SessionClient implements IMcpClient {
         this.bridgeClient.request(
           'unsubscribeResource',
           { uri },
-          this.requestTimeout
+          this.requestTimeoutSecs
         ) as Promise<ResourceUnsubscribeResult>,
       'unsubscribeResource'
     );
@@ -283,7 +284,7 @@ export class SessionClient implements IMcpClient {
         this.bridgeClient.request(
           'listPrompts',
           cursor,
-          this.requestTimeout
+          this.requestTimeoutSecs
         ) as Promise<ListPromptsResult>,
       'listPrompts'
     );
@@ -298,7 +299,7 @@ export class SessionClient implements IMcpClient {
             name,
             arguments: args,
           },
-          this.requestTimeout
+          this.requestTimeoutSecs
         ) as Promise<GetPromptResult>,
       'getPrompt'
     );
@@ -308,7 +309,7 @@ export class SessionClient implements IMcpClient {
     return this.withRetry(
       () =>
         this.bridgeClient
-          .request('setLoggingLevel', level, this.requestTimeout)
+          .request('setLoggingLevel', level, this.requestTimeoutSecs)
           .then(() => undefined),
       'setLoggingLevel'
     );
@@ -346,7 +347,7 @@ export class SessionClient implements IMcpClient {
           .request(
             'callTool',
             { name, arguments: args, useTask: true, ...(meta && { _meta: meta }) },
-            this.requestTimeout,
+            this.requestTimeoutSecs,
             id
           )
           .then((result) => {
@@ -421,7 +422,7 @@ export class SessionClient implements IMcpClient {
         this.bridgeClient.request(
           'callTool',
           { name, arguments: args, useTask: true, detach: true, ...(meta && { _meta: meta }) },
-          this.requestTimeout
+          this.requestTimeoutSecs
         ) as Promise<TaskUpdate>,
       'callToolDetached',
       { idempotent: false }
@@ -446,7 +447,7 @@ export class SessionClient implements IMcpClient {
         };
 
         this.bridgeClient
-          .request('pollTask', { taskId }, this.requestTimeout, id)
+          .request('pollTask', { taskId }, this.requestTimeoutSecs, id)
           .then((result) => {
             cleanup();
             resolve(result as CallToolResult);
@@ -465,7 +466,7 @@ export class SessionClient implements IMcpClient {
         this.bridgeClient.request(
           'listTasks',
           cursor,
-          this.requestTimeout
+          this.requestTimeoutSecs
         ) as Promise<ListTasksResult>,
       'listTasks'
     );
@@ -477,7 +478,7 @@ export class SessionClient implements IMcpClient {
         this.bridgeClient.request(
           'getTask',
           { taskId },
-          this.requestTimeout
+          this.requestTimeoutSecs
         ) as Promise<GetTaskResult>,
       'getTask'
     );
@@ -489,7 +490,7 @@ export class SessionClient implements IMcpClient {
         this.bridgeClient.request(
           'getTaskResult',
           { taskId },
-          this.requestTimeout
+          this.requestTimeoutSecs
         ) as Promise<CallToolResult>,
       'getTaskResult'
     );
@@ -501,7 +502,7 @@ export class SessionClient implements IMcpClient {
         this.bridgeClient.request(
           'cancelTask',
           { taskId },
-          this.requestTimeout
+          this.requestTimeoutSecs
         ) as Promise<CancelTaskResult>,
       'cancelTask'
     );
@@ -519,16 +520,16 @@ export class SessionClient implements IMcpClient {
  * Uses ensureBridgeReady() to guarantee the bridge is healthy before connecting.
  * This handles all the restart logic in one place (bridge-manager).
  *
- * @param timeout - Optional request timeout in seconds (the `--timeout` value). It bounds the
+ * @param timeoutSecs - Optional request timeout in seconds (the `--timeout` value). It bounds the
  *   health check inside ensureBridgeReady(), which is what blocks while the server completes its
  *   handshake — so `--timeout` must reach it here, before setRequestTimeout() is applied below.
  */
 export async function createSessionClient(
   sessionName: string,
-  timeout?: number
+  timeoutSecs?: number
 ): Promise<SessionClient> {
   // Ensure bridge is healthy (may restart it)
-  const socketPath = await ensureBridgeReady(sessionName, timeout);
+  const socketPath = await ensureBridgeReady(sessionName, timeoutSecs);
 
   // Connect to the healthy bridge
   const bridgeClient = new BridgeClient(socketPath);
@@ -545,12 +546,12 @@ export async function createSessionClient(
 export async function withSessionClient<T>(
   sessionName: string,
   callback: (client: SessionClient) => Promise<T>,
-  options?: { timeout?: number }
+  options?: { timeoutSecs?: number }
 ): Promise<T> {
-  const client = await createSessionClient(sessionName, options?.timeout);
+  const client = await createSessionClient(sessionName, options?.timeoutSecs);
 
-  if (options?.timeout !== undefined) {
-    client.setRequestTimeout(options.timeout);
+  if (options?.timeoutSecs !== undefined) {
+    client.setRequestTimeout(options.timeoutSecs);
   }
 
   try {

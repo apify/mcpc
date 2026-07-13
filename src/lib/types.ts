@@ -71,10 +71,10 @@ export type {
 };
 
 /** Keepalive ping interval in milliseconds (30 seconds) */
-export const KEEPALIVE_INTERVAL_MS = 30_000;
+export const KEEPALIVE_INTERVAL_MILLIS = 30_000;
 
 /** Threshold for considering a session disconnected (bridge alive but server unreachable) */
-export const DISCONNECTED_THRESHOLD_MS = 2 * KEEPALIVE_INTERVAL_MS + 5000; // ~2 missed pings + 5s buffer
+export const DISCONNECTED_THRESHOLD_MILLIS = 2 * KEEPALIVE_INTERVAL_MILLIS + 5000; // ~2 missed pings + 5s buffer
 
 /** Valid x402 scheme preferences. Canonical source for CLI validation and type-narrowing. */
 export const X402_SCHEME_PREFERENCES = ['auto', 'upto', 'exact'] as const;
@@ -90,7 +90,7 @@ export interface ServerConfig {
   command?: string; // Mandatory for stdio transport
   args?: string[]; // For stdio transport
   env?: Record<string, string>; // Environment variables for stdio transport
-  timeout?: number; // Connection timeout in seconds
+  timeout?: number; // Request timeout in SECONDS (field name kept as `timeout` for mcp.json / sessions.json compatibility)
 }
 
 /**
@@ -336,7 +336,7 @@ export interface IpcMessage {
   id?: string; // Request ID for correlation
   method?: string; // MCP method name
   params?: unknown; // Method parameters
-  timeout?: number; // Per-request timeout in seconds (overrides default)
+  timeoutSecs?: number; // Per-request timeout in seconds (overrides default)
   result?: unknown; // Response result
   taskUpdate?: TaskUpdate; // Task progress update (for type='task-update')
   authCredentials?: AuthCredentials; // Auth credentials (for type='set-auth-credentials')
@@ -360,7 +360,7 @@ export interface CommandOptions {
   outputMode: OutputMode;
   config?: string;
   headers?: string[];
-  timeout?: number;
+  timeoutSecs?: number; // Per-request timeout in seconds (from --timeout)
   verbose?: boolean;
   insecure?: boolean; // Skip TLS certificate verification (for self-signed certs)
   hideTarget?: boolean; // Suppress session info prefix

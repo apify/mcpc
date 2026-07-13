@@ -302,8 +302,8 @@ export function validateArgValues(args: string[]): void {
 
     // Validate --timeout is a number
     if (arg === '--timeout' && nextArg) {
-      const timeout = parseInt(nextArg, 10);
-      if (isNaN(timeout) || timeout <= 0) {
+      const timeoutSecs = parseInt(nextArg, 10);
+      if (isNaN(timeoutSecs) || timeoutSecs <= 0) {
         throw new ClientError(
           `Invalid --timeout value: "${nextArg}". Must be a positive number (seconds).`
         );
@@ -326,7 +326,7 @@ export function validateArgValues(args: string[]): void {
  * Environment variables MCPC_VERBOSE and MCPC_JSON are used as defaults
  */
 export function extractOptions(args: string[]): {
-  timeout?: number;
+  timeoutSecs?: number;
   profile?: string;
   insecure?: boolean;
   verbose: boolean;
@@ -337,11 +337,11 @@ export function extractOptions(args: string[]): {
     json: args.includes('--json') || args.includes('-j') || getJsonFromEnv(),
   };
 
-  // Extract --timeout
+  // Extract --timeout (value is in seconds)
   const timeoutIndex = args.findIndex((arg) => arg === '--timeout');
   const timeoutValue =
     timeoutIndex >= 0 && timeoutIndex + 1 < args.length ? args[timeoutIndex + 1] : undefined;
-  const timeout = timeoutValue ? parseInt(timeoutValue, 10) : undefined;
+  const timeoutSecs = timeoutValue ? parseInt(timeoutValue, 10) : undefined;
 
   // Extract --profile
   const profileIndex = args.findIndex((arg) => arg === '--profile');
@@ -353,7 +353,7 @@ export function extractOptions(args: string[]): {
 
   return {
     ...options,
-    ...(timeout !== undefined && { timeout }),
+    ...(timeoutSecs !== undefined && { timeoutSecs }),
     ...(profile && { profile }),
     ...(insecure && { insecure }),
   };

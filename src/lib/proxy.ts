@@ -120,7 +120,7 @@ export async function proxyFetch(
  * dispatcher; this no-ops where it's unavailable (those runtimes drain promptly
  * on their own anyway).
  */
-const CLOSE_TIMEOUT_MS = 100;
+const CLOSE_TIMEOUT_MILLIS = 100;
 
 export async function closeProxy(): Promise<void> {
   const agent = proxyAgent;
@@ -132,12 +132,12 @@ export async function closeProxy(): Promise<void> {
   // unhandled rejection when the timeout below wins the race.
   const destroyed = agent.destroy().catch(() => {});
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<void>((resolve) => {
-    timer = setTimeout(resolve, CLOSE_TIMEOUT_MS);
+  const timeoutPromise = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, CLOSE_TIMEOUT_MILLIS);
     timer.unref?.();
   });
   try {
-    await Promise.race([destroyed, timeout]);
+    await Promise.race([destroyed, timeoutPromise]);
   } finally {
     if (timer) {
       clearTimeout(timer);

@@ -9,7 +9,7 @@ import {
   followLog,
   getBridgeLogPath,
   listLogFiles,
-  parseDuration,
+  parseDurationMillis,
   parseLogLine,
   parseLogLines,
   readRecentLogLines,
@@ -117,35 +117,35 @@ describe('parseLogLines (folding)', () => {
   });
 });
 
-describe('parseDuration', () => {
+describe('parseDurationMillis', () => {
   it('parses common shortforms', () => {
-    expect(parseDuration('30s')).toBe(30 * 1000);
-    expect(parseDuration('5m')).toBe(5 * 60 * 1000);
-    expect(parseDuration('2h')).toBe(2 * 60 * 60 * 1000);
-    expect(parseDuration('1d')).toBe(24 * 60 * 60 * 1000);
-    expect(parseDuration('1w')).toBe(7 * 24 * 60 * 60 * 1000);
+    expect(parseDurationMillis('30s')).toBe(30 * 1000);
+    expect(parseDurationMillis('5m')).toBe(5 * 60 * 1000);
+    expect(parseDurationMillis('2h')).toBe(2 * 60 * 60 * 1000);
+    expect(parseDurationMillis('1d')).toBe(24 * 60 * 60 * 1000);
+    expect(parseDurationMillis('1w')).toBe(7 * 24 * 60 * 60 * 1000);
   });
 
   it('parses long unit names', () => {
-    expect(parseDuration('30sec')).toBe(30 * 1000);
-    expect(parseDuration('5mins')).toBe(5 * 60 * 1000);
-    expect(parseDuration('2hrs')).toBe(2 * 60 * 60 * 1000);
-    expect(parseDuration('3days')).toBe(3 * 24 * 60 * 60 * 1000);
-    expect(parseDuration('2wks')).toBe(2 * 7 * 24 * 60 * 60 * 1000);
+    expect(parseDurationMillis('30sec')).toBe(30 * 1000);
+    expect(parseDurationMillis('5mins')).toBe(5 * 60 * 1000);
+    expect(parseDurationMillis('2hrs')).toBe(2 * 60 * 60 * 1000);
+    expect(parseDurationMillis('3days')).toBe(3 * 24 * 60 * 60 * 1000);
+    expect(parseDurationMillis('2wks')).toBe(2 * 7 * 24 * 60 * 60 * 1000);
   });
 
   it('is case-insensitive and tolerant of whitespace', () => {
-    expect(parseDuration('30S')).toBe(30 * 1000);
-    expect(parseDuration('  5m  ')).toBe(5 * 60 * 1000);
+    expect(parseDurationMillis('30S')).toBe(30 * 1000);
+    expect(parseDurationMillis('  5m  ')).toBe(5 * 60 * 1000);
   });
 
   it('returns null for garbage', () => {
-    expect(parseDuration('1y')).toBeNull(); // years not supported
-    expect(parseDuration('abc')).toBeNull();
-    expect(parseDuration('')).toBeNull();
-    expect(parseDuration('m5')).toBeNull(); // wrong order
-    expect(parseDuration('5')).toBeNull(); // missing unit
-    expect(parseDuration('-5m')).toBeNull(); // negative not supported
+    expect(parseDurationMillis('1y')).toBeNull(); // years not supported
+    expect(parseDurationMillis('abc')).toBeNull();
+    expect(parseDurationMillis('')).toBeNull();
+    expect(parseDurationMillis('m5')).toBeNull(); // wrong order
+    expect(parseDurationMillis('5')).toBeNull(); // missing unit
+    expect(parseDurationMillis('-5m')).toBeNull(); // negative not supported
   });
 });
 
@@ -393,13 +393,17 @@ describe('followLog', () => {
 
   const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-  async function waitFor(predicate: () => boolean, timeoutMs = 2000, stepMs = 25): Promise<void> {
+  async function waitFor(
+    predicate: () => boolean,
+    timeoutMillis = 2000,
+    stepMillis = 25
+  ): Promise<void> {
     const start = Date.now();
     while (!predicate()) {
-      if (Date.now() - start > timeoutMs) {
-        throw new Error(`waitFor timed out after ${timeoutMs}ms`);
+      if (Date.now() - start > timeoutMillis) {
+        throw new Error(`waitFor timed out after ${timeoutMillis}ms`);
       }
-      await sleep(stepMs);
+      await sleep(stepMillis);
     }
   }
 
@@ -407,7 +411,7 @@ describe('followLog', () => {
     const path = join(homeDir, 'logs', 'bridge-@x.log');
     await writeFile(path, 'pre-existing\n');
     const seen: string[] = [];
-    const sub = followLog('@x', (l) => seen.push(l), { pollIntervalMs: 50 });
+    const sub = followLog('@x', (l) => seen.push(l), { pollIntervalMillis: 50 });
     try {
       // Give the watcher a tick to start at end-of-file.
       await sleep(100);
@@ -424,7 +428,7 @@ describe('followLog', () => {
     const path = join(homeDir, 'logs', 'bridge-@x.log');
     await writeFile(path, 'old1\nold2\nold3\n');
     const seen: string[] = [];
-    const sub = followLog('@x', (l) => seen.push(l), { pollIntervalMs: 50 });
+    const sub = followLog('@x', (l) => seen.push(l), { pollIntervalMillis: 50 });
     try {
       await sleep(150);
       expect(seen).toEqual([]);
@@ -437,7 +441,7 @@ describe('followLog', () => {
     const path = join(homeDir, 'logs', 'bridge-@x.log');
     await writeFile(path, '');
     const seen: string[] = [];
-    const sub = followLog('@x', (l) => seen.push(l), { pollIntervalMs: 50 });
+    const sub = followLog('@x', (l) => seen.push(l), { pollIntervalMillis: 50 });
     try {
       await sleep(100);
       await appendFile(path, 'hello ');
@@ -456,7 +460,7 @@ describe('followLog', () => {
     const path = join(homeDir, 'logs', 'bridge-@x.log');
     await writeFile(path, 'pre\n');
     const seen: string[] = [];
-    const sub = followLog('@x', (l) => seen.push(l), { pollIntervalMs: 50 });
+    const sub = followLog('@x', (l) => seen.push(l), { pollIntervalMillis: 50 });
     try {
       await sleep(100);
       // Append, then "rotate" by renaming current to .1 and writing a fresh,
@@ -478,7 +482,7 @@ describe('followLog', () => {
     await writeFile(path, 'a\nb\nc\n');
     const seen: string[] = [];
     const sub = followLog('@x', (l) => seen.push(l), {
-      pollIntervalMs: 50,
+      pollIntervalMillis: 50,
       startAtBeginning: true,
     });
     try {
@@ -492,7 +496,7 @@ describe('followLog', () => {
   it('survives following a file that does not exist yet', async () => {
     const path = join(homeDir, 'logs', 'bridge-@x.log');
     const seen: string[] = [];
-    const sub = followLog('@x', (l) => seen.push(l), { pollIntervalMs: 50 });
+    const sub = followLog('@x', (l) => seen.push(l), { pollIntervalMillis: 50 });
     try {
       await sleep(100);
       // Now the file appears
@@ -508,7 +512,7 @@ describe('followLog', () => {
     const path = join(homeDir, 'logs', 'bridge-@x.log');
     await writeFile(path, '');
     const seen: string[] = [];
-    const sub = followLog('@x', (l) => seen.push(l), { pollIntervalMs: 50 });
+    const sub = followLog('@x', (l) => seen.push(l), { pollIntervalMillis: 50 });
     await sleep(100);
     await appendFile(path, 'no-trailing-newline');
     // Wait for the read to drain the bytes into the internal buffer.
@@ -520,7 +524,7 @@ describe('followLog', () => {
   it('stop() is idempotent', async () => {
     const path = join(homeDir, 'logs', 'bridge-@x.log');
     await writeFile(path, '');
-    const sub = followLog('@x', () => {}, { pollIntervalMs: 50 });
+    const sub = followLog('@x', () => {}, { pollIntervalMillis: 50 });
     await sub.stop();
     await expect(sub.stop()).resolves.toBeUndefined();
   });

@@ -14,16 +14,16 @@ export async function ping(target: string, options: CommandOptions): Promise<voi
     const startTime = performance.now();
     await client.ping();
     const endTime = performance.now();
-    const durationMs = Math.round(endTime - startTime);
+    const durationMillis = Math.round(endTime - startTime);
 
     if (options.outputMode === 'human') {
-      console.log(formatSuccess(`Ping successful (${durationMs}ms)`));
+      console.log(formatSuccess(`Ping successful (${durationMillis}ms)`));
     } else {
       console.log(
         formatOutput(
           {
             success: true,
-            durationMs,
+            durationMs: durationMillis, // field name is part of the --json output API
           },
           'json'
         )

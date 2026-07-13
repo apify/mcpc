@@ -218,21 +218,21 @@ export async function readRecentLogLines(
  * Parse a duration shorthand like "30s", "5m", "2h", "1d", "1w" into milliseconds.
  * Returns null for unparseable input.
  */
-export function parseDuration(input: string): number | null {
+export function parseDurationMillis(input: string): number | null {
   const m = /^(\d+)\s*(s|sec|secs|m|min|mins|h|hr|hrs|d|day|days|w|wk|wks)$/i.exec(input.trim());
   if (!m || !m[1] || !m[2]) return null;
   const n = parseInt(m[1], 10);
   const unit = m[2].toLowerCase();
-  const SEC = 1000;
-  const MIN = 60 * SEC;
-  const HOUR = 60 * MIN;
-  const DAY = 24 * HOUR;
-  const WEEK = 7 * DAY;
-  if (unit.startsWith('s')) return n * SEC;
-  if (unit.startsWith('mi') || unit === 'm') return n * MIN;
-  if (unit.startsWith('h')) return n * HOUR;
-  if (unit.startsWith('d')) return n * DAY;
-  if (unit.startsWith('w')) return n * WEEK;
+  const SEC_MILLIS = 1000;
+  const MIN_MILLIS = 60 * SEC_MILLIS;
+  const HOUR_MILLIS = 60 * MIN_MILLIS;
+  const DAY_MILLIS = 24 * HOUR_MILLIS;
+  const WEEK_MILLIS = 7 * DAY_MILLIS;
+  if (unit.startsWith('s')) return n * SEC_MILLIS;
+  if (unit.startsWith('mi') || unit === 'm') return n * MIN_MILLIS;
+  if (unit.startsWith('h')) return n * HOUR_MILLIS;
+  if (unit.startsWith('d')) return n * DAY_MILLIS;
+  if (unit.startsWith('w')) return n * WEEK_MILLIS;
   return null;
 }
 
@@ -242,9 +242,9 @@ export function parseDuration(input: string): number | null {
  * Returns null if the input cannot be parsed.
  */
 export function resolveSince(input: string): Date | null {
-  const ms = parseDuration(input);
-  if (ms !== null) {
-    return new Date(Date.now() - ms);
+  const millis = parseDurationMillis(input);
+  if (millis !== null) {
+    return new Date(Date.now() - millis);
   }
   const t = Date.parse(input);
   if (!isNaN(t)) {
@@ -258,7 +258,7 @@ export interface FollowOptions {
    * Poll interval in ms. Backstop for filesystems where fs.watch is unreliable
    * (NFS, some network mounts). Defaults to 1000ms; tests can lower it.
    */
-  pollIntervalMs?: number;
+  pollIntervalMillis?: number;
   /**
    * Start streaming from the beginning of the file instead of the end.
    * Default false — backlog is normally the caller's responsibility.
@@ -279,7 +279,7 @@ export function followLog(
   options: FollowOptions = {}
 ): { stop: () => Promise<void> } {
   const path = getBridgeLogPath(sessionName);
-  const pollIntervalMs = options.pollIntervalMs ?? 1000;
+  const pollIntervalMillis = options.pollIntervalMillis ?? 1000;
   let position = 0;
   let inode: number | null = null;
   let watcher: FSWatcher | null = null;
@@ -377,7 +377,7 @@ export function followLog(
   // (NFS, network mounts) still get picked up.
   const poll = setInterval(() => {
     void drainPending();
-  }, pollIntervalMs);
+  }, pollIntervalMillis);
 
   return {
     stop: async (): Promise<void> => {

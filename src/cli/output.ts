@@ -719,8 +719,8 @@ export function formatTimeAgo(isoDate: string | undefined): string {
 
   const date = new Date(isoDate);
   const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffSecs = Math.floor(diffMs / 1000);
+  const diffMillis = now.getTime() - date.getTime();
+  const diffSecs = Math.floor(diffMillis / 1000);
   const diffMins = Math.floor(diffSecs / 60);
   const diffHours = Math.floor(diffMins / 60);
   const diffDays = Math.floor(diffHours / 24);

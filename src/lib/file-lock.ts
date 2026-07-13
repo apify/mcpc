@@ -13,7 +13,7 @@ import { ClientError } from './errors.js';
 const logger = createLogger('file-lock');
 
 // Lock timeout in milliseconds (5 seconds as per CLAUDE.md)
-const LOCK_TIMEOUT = 5000;
+const LOCK_TIMEOUT_MILLIS = 5000;
 
 /**
  * Execute an operation with file locking
@@ -45,7 +45,7 @@ export async function withFileLock<T>(
       retries: {
         retries: 10,
         minTimeout: 200,
-        maxTimeout: LOCK_TIMEOUT,
+        maxTimeout: LOCK_TIMEOUT_MILLIS,
         randomize: true,
       },
     });

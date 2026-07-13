@@ -68,7 +68,7 @@ interface TransportWithProtocolVersion extends Transport {
  * invalidation and use no expiry. Phase 1 will replace this fixed value with the server's
  * ttlMs/cacheScope hint.
  */
-const STATELESS_TOOLS_CACHE_TTL_MS = 60_000;
+const STATELESS_TOOLS_CACHE_TTL_MILLIS = 60_000;
 
 /**
  * Options for creating an MCP client
@@ -81,9 +81,9 @@ export interface McpClientOptions extends ClientOptions {
 
   /**
    * Request timeout in milliseconds for MCP operations.
-   * Defaults to DEFAULT_REQUEST_TIMEOUT_MS (60 seconds) when not specified.
+   * Defaults to DEFAULT_REQUEST_TIMEOUT_MILLIS (60 seconds) when not specified.
    */
-  requestTimeout?: number;
+  requestTimeoutMillis?: number;
 }
 
 /**
@@ -101,7 +101,7 @@ interface TransportWithTermination extends Transport {
  * accurate even if the SDK changes its own default. A config-file `timeout` or
  * the `--timeout` flag overrides it (via the constructor / setRequestTimeout()).
  */
-const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
+const DEFAULT_REQUEST_TIMEOUT_MILLIS = 60_000;
 
 /**
  * MCP Client wrapper class
@@ -115,18 +115,18 @@ export class McpClient implements IMcpClient {
   private mcpSessionId?: string;
   private transport?: TransportWithTermination;
   private hasConnected = false;
-  private requestTimeout: number = DEFAULT_REQUEST_TIMEOUT_MS;
+  private requestTimeoutMillis: number = DEFAULT_REQUEST_TIMEOUT_MILLIS;
   /** Baseline timeout from the constructor — what resetRequestTimeout() restores. */
-  private readonly configuredRequestTimeout: number;
+  private readonly configuredRequestTimeoutMillis: number;
   private cachedTools: Tool[] | null = null;
   private cachedToolsExpiresAt: number | null = null;
 
   constructor(clientInfo: Implementation, options: McpClientOptions = {}) {
     this.logger = options.logger || createNoOpLogger();
-    if (options.requestTimeout !== undefined) {
-      this.requestTimeout = options.requestTimeout;
+    if (options.requestTimeoutMillis !== undefined) {
+      this.requestTimeoutMillis = options.requestTimeoutMillis;
     }
-    this.configuredRequestTimeout = this.requestTimeout;
+    this.configuredRequestTimeoutMillis = this.requestTimeoutMillis;
 
     this.client = new SDKClient(clientInfo, {
       capabilities: options.capabilities || {},
@@ -149,8 +149,8 @@ export class McpClient implements IMcpClient {
    * Override request timeout for subsequent requests (in milliseconds)
    * Used by bridge to apply per-request timeout from CLI --timeout flag
    */
-  setRequestTimeout(timeoutMs: number): void {
-    this.requestTimeout = timeoutMs;
+  setRequestTimeout(timeoutMillis: number): void {
+    this.requestTimeoutMillis = timeoutMillis;
   }
 
   /**
@@ -159,16 +159,16 @@ export class McpClient implements IMcpClient {
    * `--timeout`, so a one-off override never leaks into later requests.
    */
   resetRequestTimeout(): void {
-    this.requestTimeout = this.configuredRequestTimeout;
+    this.requestTimeoutMillis = this.configuredRequestTimeoutMillis;
   }
 
   /**
    * Request options applied to every SDK call. Always carries an explicit
-   * timeout (DEFAULT_REQUEST_TIMEOUT_MS unless overridden) so requests never
+   * timeout (DEFAULT_REQUEST_TIMEOUT_MILLIS unless overridden) so requests never
    * fall back to the SDK's own default.
    */
   private getRequestOptions(): { timeout: number } {
-    return { timeout: this.requestTimeout };
+    return { timeout: this.requestTimeoutMillis };
   }
 
   /**
@@ -262,10 +262,10 @@ export class McpClient implements IMcpClient {
       // worst case), and abandoning it early would orphan the child server
       // process. HTTP transports have nothing to kill, so they get a short one.
       const isHttp = typeof this.transport?.terminateSession === 'function';
-      const closeBudgetMs = isHttp ? 1000 : 6000;
+      const closeBudgetMillis = isHttp ? 1000 : 6000;
       await Promise.race([
         this.client.close(),
-        new Promise<void>((resolve) => setTimeout(resolve, closeBudgetMs)),
+        new Promise<void>((resolve) => setTimeout(resolve, closeBudgetMillis)),
       ]);
       this.logger.debug('Connection closed');
     } catch (error) {
@@ -367,7 +367,7 @@ export class McpClient implements IMcpClient {
     // pushes; stateful connections keep no expiry (notifications/explicit invalidation drive it).
     this.cachedToolsExpiresAt =
       this.deriveConnectionMode() === 'stateless'
-        ? Date.now() + STATELESS_TOOLS_CACHE_TTL_MS
+        ? Date.now() + STATELESS_TOOLS_CACHE_TTL_MILLIS
         : null;
     return { tools: allTools };
   }
@@ -750,7 +750,7 @@ export class McpClient implements IMcpClient {
    * Used for crash recovery — reconnect to an existing task.
    */
   async pollTask(taskId: string, onUpdate?: (update: TaskUpdate) => void): Promise<CallToolResult> {
-    const POLL_INTERVAL_MS = 2000;
+    const POLL_INTERVAL_MILLIS = 2000;
 
     try {
       this.logger.debug(`Polling task: ${taskId}`);
@@ -781,7 +781,7 @@ export class McpClient implements IMcpClient {
           );
         }
 
-        await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+        await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MILLIS));
       }
     } catch (error) {
       if (error instanceof ServerError) throw error;

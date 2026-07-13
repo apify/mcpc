@@ -106,7 +106,7 @@ function getBridgeExecutable(): string {
  * error pointing at logs that were never written. 15s is generous enough that
  * any failure to hit it is pathological.
  */
-const BRIDGE_STARTUP_TIMEOUT_MS = 15_000;
+const BRIDGE_STARTUP_TIMEOUT_MILLIS = 15_000;
 
 export interface StartBridgeOptions {
   sessionName: string;
@@ -296,7 +296,9 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
   let outcome: string | symbol;
   try {
     outcome = await Promise.race([
-      waitForFile(socketPath, { timeoutMs: BRIDGE_STARTUP_TIMEOUT_MS }).then(() => socketReady),
+      waitForFile(socketPath, { timeoutMillis: BRIDGE_STARTUP_TIMEOUT_MILLIS }).then(
+        () => socketReady
+      ),
       exitInfo,
     ]);
   } catch {
@@ -307,7 +309,7 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
       // Ignore errors killing process
     }
     throw new ClientError(
-      `Bridge failed to start: socket not created within ${BRIDGE_STARTUP_TIMEOUT_MS} ms. ` +
+      `Bridge failed to start: socket not created within ${BRIDGE_STARTUP_TIMEOUT_MILLIS} ms. ` +
         `For details, run: mcpc ${sessionName} logs`
     );
   } finally {
@@ -411,12 +413,12 @@ async function sendBridgeShutdown(socketPath: string): Promise<boolean> {
     const client = new BridgeClient(socketPath);
     // Use a short timeout — if the bridge doesn't respond quickly,
     // we'll fall back to force kill anyway.
-    const timeout = new Promise<never>((_, reject) =>
+    const timeoutPromise = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error('shutdown timeout')), 2000)
     );
     // Fail fast: this targets an already-running bridge, and we force-kill if it's
     // unreachable — no point retrying a not-yet-listening socket here.
-    await Promise.race([client.connect({ retryTimeoutMs: 0 }), timeout]);
+    await Promise.race([client.connect({ retryTimeoutMillis: 0 }), timeoutPromise]);
     client.send({ type: 'shutdown' });
     await client.close();
     logger.debug('Sent shutdown IPC message to bridge');
@@ -430,10 +432,10 @@ async function sendBridgeShutdown(socketPath: string): Promise<boolean> {
 /**
  * Wait for a process to exit, with a timeout.
  */
-async function waitForProcessExit(pid: number, timeoutMs: number): Promise<void> {
+async function waitForProcessExit(pid: number, timeoutMillis: number): Promise<void> {
   const start = Date.now();
   const interval = 500;
-  while (Date.now() - start < timeoutMs) {
+  while (Date.now() - start < timeoutMillis) {
     if (!isProcessAlive(pid)) {
       return;
     }
@@ -684,21 +686,21 @@ interface BridgeHealthResult {
  * This blocks until MCP client is connected, then returns server info
  *
  * @param socketPath - Path to bridge's Unix socket
- * @param timeout - Optional request timeout in seconds (the `--timeout` value). Without it the
+ * @param timeoutSecs - Optional request timeout in seconds (the `--timeout` value). Without it the
  *   bridge client's default request timeout applies. The health check is what blocks while a
  *   server completes (or fails) its handshake, so this is where `--timeout` must take effect.
  * @returns Health check result with error details if unhealthy
  */
 async function checkBridgeHealth(
   socketPath: string,
-  timeout?: number
+  timeoutSecs?: number
 ): Promise<BridgeHealthResult> {
   const client = new BridgeClient(socketPath);
   try {
     await client.connect();
     // getServerDetails blocks until MCP client is connected, then returns info
     // If MCP connection fails, the bridge will return an error via IPC
-    await client.request('getServerDetails', undefined, timeout);
+    await client.request('getServerDetails', undefined, timeoutSecs);
     return { healthy: true };
   } catch (error) {
     // Return error details so caller can provide informative message
@@ -721,12 +723,15 @@ async function checkBridgeHealth(
  * - If bridge process dies, socket connection fails and we restart
  *
  * @param sessionName - Name of the session
- * @param timeout - Optional request timeout in seconds (the `--timeout` value), used to bound the
+ * @param timeoutSecs - Optional request timeout in seconds (the `--timeout` value), used to bound the
  *   health-check `getServerDetails` call so a slow/unreachable server doesn't block past it.
  * @returns The socket path of the healthy bridge
  * @throws ClientError if bridge cannot be made healthy
  */
-export async function ensureBridgeReady(sessionName: string, timeout?: number): Promise<string> {
+export async function ensureBridgeReady(
+  sessionName: string,
+  timeoutSecs?: number
+): Promise<string> {
   const session = await getSession(sessionName);
 
   if (!session) {
@@ -755,7 +760,7 @@ export async function ensureBridgeReady(sessionName: string, timeout?: number): 
 
   if (processAlive && socketPath) {
     // Process alive, try getServerDetails (blocks until MCP connected)
-    const result = await checkBridgeHealth(socketPath, timeout);
+    const result = await checkBridgeHealth(socketPath, timeoutSecs);
     if (result.healthy) {
       logger.debug(`Bridge for ${sessionName} is healthy`);
       return socketPath;
@@ -791,7 +796,7 @@ export async function ensureBridgeReady(sessionName: string, timeout?: number): 
   const newSocketPath = getSocketPath(sessionName, newPid);
 
   // Try getServerDetails on restarted bridge (blocks until MCP connected)
-  const result = await checkBridgeHealth(newSocketPath, timeout);
+  const result = await checkBridgeHealth(newSocketPath, timeoutSecs);
   if (result.healthy) {
     await updateSession(sessionName, { status: 'active' });
     logger.debug(`Bridge for ${sessionName} passed health check`);
