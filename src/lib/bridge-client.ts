@@ -19,13 +19,22 @@ import { connect, type Socket } from 'net';
 import { EventEmitter } from 'events';
 import type { IpcMessage, TaskUpdate, X402WalletCredentials } from './types.js';
 import { createLogger } from './logger.js';
-import { NetworkError, ClientError, ServerError, AuthError } from './errors.js';
+import { NetworkError, ClientError, ServerError, AuthError, IpcTimeoutError } from './errors.js';
 import { generateRequestId, sleep } from './utils.js';
 
 const logger = createLogger('bridge-client');
 
-// Timeout for MCP requests (3 minutes as per CLAUDE.md)
+// Default timeout for IPC requests to the bridge (3 minutes)
 const REQUEST_TIMEOUT = 3 * 60 * 1000;
+
+/**
+ * Extra margin added to the CLI-side IPC timer on top of an explicit `--timeout`.
+ * The bridge arms its own MCP request timer with the same `--timeout` value; the
+ * margin guarantees the bridge's typed timeout error (a ServerError with context)
+ * always wins the race against the CLI's blunt IPC timeout, instead of the CLI
+ * misdiagnosing a healthy bridge as unresponsive.
+ */
+const IPC_TIMEOUT_MARGIN_MS = 10_000;
 
 // Timeout for initial socket connection (5 seconds)
 const CONNECT_TIMEOUT = 5 * 1000;
@@ -276,14 +285,17 @@ export class BridgeClient extends EventEmitter {
 
     logger.debug('Sending request:', { id, method });
 
-    // Use custom timeout (in seconds, convert to ms) or default
-    const timeoutMs = timeout !== undefined ? timeout * 1000 : REQUEST_TIMEOUT;
+    // Use custom timeout (in seconds, convert to ms) or default. An explicit
+    // timeout gets a margin on top so the bridge's own MCP timer (armed with the
+    // same value) always fires first — see IPC_TIMEOUT_MARGIN_MS.
+    const timeoutMs =
+      timeout !== undefined ? timeout * 1000 + IPC_TIMEOUT_MARGIN_MS : REQUEST_TIMEOUT;
 
     // Create promise for response
     const promise = new Promise<unknown>((resolve, reject) => {
       const timeoutId = setTimeout(() => {
         this.pendingRequests.delete(id);
-        reject(new NetworkError(`Request timeout: ${method}`));
+        reject(new IpcTimeoutError(`Request timeout: ${method}`));
       }, timeoutMs);
 
       this.pendingRequests.set(id, { resolve, reject, timeoutId });

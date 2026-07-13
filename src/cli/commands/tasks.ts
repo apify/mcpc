@@ -9,6 +9,7 @@ import type { CommandOptions } from '../../lib/types.js';
 import { withMcpClient } from '../helpers.js';
 import { formatTask, formatTasks } from '../output.js';
 import { renderCallToolResult } from './tools.js';
+import { fetchAllPages } from '../../lib/utils.js';
 
 /**
  * Get the final result of a task (wraps MCP `tasks/result`).
@@ -35,14 +36,10 @@ export async function getTaskResult(
 export async function listTasks(target: string, options: CommandOptions): Promise<void> {
   await withMcpClient(target, options, async (client, _context) => {
     // Fetch all tasks across all pages
-    const allTasks = [];
-    let cursor: string | undefined = undefined;
-
-    do {
-      const result = await client.listTasks(cursor);
-      allTasks.push(...result.tasks);
-      cursor = result.nextCursor;
-    } while (cursor);
+    const allTasks = await fetchAllPages(
+      (cursor) => client.listTasks(cursor),
+      (page) => page.tasks
+    );
 
     if (options.outputMode === 'human') {
       if (allTasks.length === 0) {
@@ -90,6 +87,12 @@ export async function cancelTask(
 ): Promise<void> {
   await withMcpClient(target, options, async (client, _context) => {
     const result = await client.cancelTask(taskId);
+
+    // Exit-code contract: a cancel that did not result in cancellation is a
+    // server-side failure (exit 2), in both output modes.
+    if (result.status !== 'cancelled') {
+      process.exitCode = 2;
+    }
 
     if (options.outputMode === 'human') {
       if (result.status === 'cancelled') {

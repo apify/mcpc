@@ -40,14 +40,41 @@ async function loadSessionsInternal(): Promise<SessionsStorage> {
     const storage = JSON.parse(content) as SessionsStorage;
 
     if (!storage.sessions || typeof storage.sessions !== 'object') {
-      logger.warn('Invalid sessions file format, returning empty sessions');
+      await quarantineCorruptSessionsFile(filePath, 'invalid format (missing "sessions" object)');
       return { sessions: {} };
     }
 
     return storage;
   } catch (error) {
-    logger.warn(`Failed to load sessions: ${(error as Error).message}`);
+    await quarantineCorruptSessionsFile(filePath, (error as Error).message);
     return { sessions: {} };
+  }
+}
+
+/**
+ * Move an unreadable sessions.json aside instead of silently discarding it.
+ *
+ * Without this, a corrupted file would be treated as "no sessions" and the very
+ * next save would overwrite it with an empty map — permanently losing every
+ * session record while their bridges keep running as orphans. The backup keeps
+ * the data recoverable and the stderr warning makes the corruption visible.
+ */
+async function quarantineCorruptSessionsFile(filePath: string, reason: string): Promise<void> {
+  const backupPath = `${filePath}.corrupt-${Date.now()}`;
+  try {
+    await atomicRename(filePath, backupPath);
+    logger.warn(`Sessions file is corrupted (${reason}); backed up to ${backupPath}`);
+    console.error(
+      `Warning: ~/.mcpc sessions file was corrupted (${reason}). ` +
+        `It has been backed up to ${backupPath} and reset. ` +
+        `Run 'mcpc' to see current sessions and 'mcpc clean sessions' to clean up stale bridges.`
+    );
+  } catch (renameError) {
+    // Rename failed (e.g. permissions) — warn, but do not throw: commands like
+    // `mcpc connect` must still be usable.
+    logger.warn(
+      `Sessions file is corrupted (${reason}) and could not be backed up: ${(renameError as Error).message}`
+    );
   }
 }
 

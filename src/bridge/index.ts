@@ -17,7 +17,9 @@ import { createLogger, setVerbose, initFileLogger, closeFileLogger } from '../li
 import {
   fileExists,
   getSocketPath,
+  getShortSocketDir,
   ensureDir,
+  ensureSecureTempDir,
   cleanupOrphanedLogFiles,
   isSessionExpiredError,
   StderrTail,
@@ -842,6 +844,7 @@ class BridgeProcess {
       port,
       client: this.client,
       sessionName: this.options.sessionName,
+      version: mcpcVersion,
     };
     if (bearerToken) {
       proxyOptions.bearerToken = bearerToken;
@@ -1009,7 +1012,14 @@ class BridgeProcess {
     // relocate over-long paths to a short dir under the temp dir — create whichever
     // one applies.
     if (process.platform !== 'win32') {
-      await ensureDir(dirname(this.socketPath));
+      const socketDir = dirname(this.socketPath);
+      if (socketDir === getShortSocketDir()) {
+        // The temp-dir fallback lives in a world-writable location with a
+        // predictable name — verify ownership/permissions before trusting it.
+        await ensureSecureTempDir(socketDir);
+      } else {
+        await ensureDir(socketDir);
+      }
 
       // Remove existing socket file if it exists (Unix only).
       // Fail on error
@@ -1222,7 +1232,10 @@ class BridgeProcess {
     }
 
     try {
-      // Apply per-request timeout if provided (from CLI --timeout flag, in seconds → milliseconds)
+      // Apply per-request timeout if provided (from CLI --timeout flag, in seconds →
+      // milliseconds). The client reads the value synchronously when the routed method
+      // is entered, and the finally below restores the baseline, so a one-off --timeout
+      // never leaks into concurrent or later requests.
       if (message.timeout !== undefined) {
         this.client.setRequestTimeout(message.timeout * 1000);
       }
@@ -1500,6 +1513,10 @@ class BridgeProcess {
       await this.handlePossibleExpiration(error as Error);
 
       this.sendError(socket, error as Error, message.id);
+    } finally {
+      if (message.timeout !== undefined) {
+        this.client?.resetRequestTimeout();
+      }
     }
   }
 

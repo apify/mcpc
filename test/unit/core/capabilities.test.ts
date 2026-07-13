@@ -8,11 +8,13 @@ import {
 } from '../../../src/core/capabilities.js';
 
 describe('buildClientCapabilities', () => {
-  it('always declares roots, sampling, and tasks', () => {
+  it('declares tasks but not unimplemented capabilities (sampling, roots)', () => {
     const caps = buildClientCapabilities();
-    expect(caps.roots).toEqual({ listChanged: true });
-    expect(caps.sampling).toEqual({});
     expect(caps.tasks).toBeDefined();
+    // mcpc has no LLM and registers no roots handler — declaring these would
+    // invite server requests that can only fail with "Method not found".
+    expect(caps.sampling).toBeUndefined();
+    expect(caps.roots).toBeUndefined();
   });
 
   it('omits the client-credentials extension by default', () => {

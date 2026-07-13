@@ -27,7 +27,9 @@ import {
   truncate,
   isProcessAlive,
   generateRequestId,
+  fetchAllPages,
 } from '../../../src/lib/utils.js';
+import { ServerError } from '../../../src/lib/errors.js';
 import { DEFAULT_AUTH_PROFILE } from '../../../src/lib/auth/oauth-utils.js';
 
 describe('expandHome', () => {
@@ -592,5 +594,53 @@ describe('generateRequestId', () => {
     expect(id1).not.toBe(id2);
     expect(id1).toMatch(/^req_\d+_\d+$/);
     expect(id2).toMatch(/^req_\d+_\d+$/);
+  });
+});
+
+describe('fetchAllPages', () => {
+  it('collects items across all pages', async () => {
+    const pages: Record<string, { items: number[]; nextCursor?: string }> = {
+      start: { items: [1, 2], nextCursor: 'p2' },
+      p2: { items: [3], nextCursor: 'p3' },
+      p3: { items: [4, 5] },
+    };
+    const result = await fetchAllPages(
+      async (cursor) => pages[cursor ?? 'start'],
+      (page) => page.items
+    );
+    expect(result).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it('returns a single page when there is no nextCursor', async () => {
+    const result = await fetchAllPages(
+      async () => ({ items: ['only'] }),
+      (page) => page.items
+    );
+    expect(result).toEqual(['only']);
+  });
+
+  it('aborts with ServerError when the server repeats a cursor', async () => {
+    // A misbehaving server that always hands back the same cursor would
+    // otherwise loop forever with unbounded memory growth.
+    await expect(
+      fetchAllPages(
+        async () => ({ items: [1], nextCursor: 'same' }),
+        (page) => page.items
+      )
+    ).rejects.toThrow(ServerError);
+  });
+
+  it('aborts with ServerError on a cursor cycle', async () => {
+    const pages: Record<string, { items: number[]; nextCursor?: string }> = {
+      start: { items: [1], nextCursor: 'a' },
+      a: { items: [2], nextCursor: 'b' },
+      b: { items: [3], nextCursor: 'a' }, // cycle back to a
+    };
+    await expect(
+      fetchAllPages(
+        async (cursor) => pages[cursor ?? 'start'],
+        (page) => page.items
+      )
+    ).rejects.toThrow(/pagination cursor/);
   });
 });

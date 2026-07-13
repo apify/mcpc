@@ -33,7 +33,7 @@ import type { ListResourceTemplatesResult } from '@modelcontextprotocol/sdk/type
 import { BridgeClient } from './bridge-client.js';
 import { ensureBridgeReady, restartBridge } from './bridge-manager.js';
 import { updateSession } from './sessions.js';
-import { NetworkError } from './errors.js';
+import { NetworkError, IpcTimeoutError } from './errors.js';
 import { getSocketPath, generateRequestId } from './utils.js';
 import { createLogger } from './logger.js';
 
@@ -66,12 +66,24 @@ export class SessionClient implements IMcpClient {
    * If the bridge socket connection fails (bridge crashed/killed), we:
    * 1. Restart the bridge once
    * 2. Reconnect
-   * 3. Retry the operation once
+   * 3. Retry the operation once — but only for idempotent operations
    *
-   * This handles the common case of a crashed bridge without complex retry logic.
+   * Two cases are deliberately NOT retried:
+   * - IPC timeouts: the bridge is likely healthy and still processing the request;
+   *   restarting would kill the in-flight request and retrying could execute it twice.
+   * - Non-idempotent operations (tool calls) after a socket failure: the bridge died
+   *   with the request in flight, so the server may already have executed it. We
+   *   restart the bridge to recover the session, but surface the uncertainty to the
+   *   caller instead of silently re-executing.
+   *
    * MCP-level errors (server errors, auth errors) are NOT retried - they're returned to caller.
    */
-  private async withRetry<T>(operation: () => Promise<T>, operationName: string): Promise<T> {
+  private async withRetry<T>(
+    operation: () => Promise<T>,
+    operationName: string,
+    options?: { idempotent?: boolean }
+  ): Promise<T> {
+    const idempotent = options?.idempotent ?? true;
     try {
       return await operation();
     } catch (error) {
@@ -80,6 +92,15 @@ export class SessionClient implements IMcpClient {
         // Add log hint for MCP/server errors
         const err = error as Error;
         err.message = `${err.message}. For details, run: mcpc ${this.sessionName} logs`;
+        throw error;
+      }
+
+      // IPC timeout: the bridge did not answer in time, but it did not crash —
+      // the request may still be running. Never restart or retry here.
+      if (error instanceof IpcTimeoutError) {
+        error.message =
+          `${error.message}. The bridge did not respond in time; the request may still be ` +
+          `running on the server. For details, run: mcpc ${this.sessionName} logs`;
         throw error;
       }
 
@@ -97,6 +118,16 @@ export class SessionClient implements IMcpClient {
       this.bridgeClient = new BridgeClient(socketPath);
       await this.bridgeClient.connect();
       await updateSession(this.sessionName, { status: 'active' });
+
+      if (!idempotent) {
+        // The request was in flight when the bridge died — the server may or may
+        // not have executed it. The session is reconnected; let the user decide.
+        error.message =
+          `${error.message}. The bridge connection was lost while the request was in flight — ` +
+          `it may or may not have executed on the server. The session has been reconnected; ` +
+          `verify the outcome before retrying. For details, run: mcpc ${this.sessionName} logs`;
+        throw error;
+      }
 
       logger.debug(`Reconnected to bridge for ${this.sessionName}, retrying ${operationName}`);
 
@@ -170,7 +201,8 @@ export class SessionClient implements IMcpClient {
           params,
           this.requestTimeout
         ) as Promise<CallToolResult>,
-      'callTool'
+      'callTool',
+      { idempotent: false }
     );
   }
 
@@ -337,6 +369,20 @@ export class SessionClient implements IMcpClient {
         throw error;
       }
 
+      // IPC timeout: the bridge is likely still processing the call — never
+      // restart or re-invoke (the tool could execute twice). If we know the task
+      // ID, keep following it; otherwise surface the timeout.
+      if (error instanceof IpcTimeoutError) {
+        if (capturedTaskId) {
+          logger.debug(`IPC timeout, polling existing task ${capturedTaskId} instead`);
+          return await this.pollTask(capturedTaskId, onUpdate);
+        }
+        error.message =
+          `${error.message}. The bridge did not respond in time; the tool call may still be ` +
+          `running on the server. For details, run: mcpc ${this.sessionName} logs`;
+        throw error;
+      }
+
       logger.debug(`Socket error during callToolWithTask, will restart bridge...`);
       await this.bridgeClient.close();
       const { pid: newPid } = await restartBridge(this.sessionName);
@@ -351,9 +397,14 @@ export class SessionClient implements IMcpClient {
         return await this.pollTask(capturedTaskId, onUpdate);
       }
 
-      // Task wasn't created yet — retry the full tool call
-      logger.debug(`Reconnected, retrying callToolWithTask`);
-      return await executeToolCall();
+      // No task was observed, but the tools/call request was already in flight
+      // when the bridge died — the server may have received it. Re-invoking could
+      // execute the tool twice, so surface the uncertainty instead.
+      error.message =
+        `${error.message}. The bridge connection was lost while the tool call was in flight — ` +
+        `it may or may not have executed on the server. The session has been reconnected; ` +
+        `check mcpc ${this.sessionName} tasks-list and verify the outcome before retrying.`;
+      throw error;
     }
   }
 
@@ -372,7 +423,8 @@ export class SessionClient implements IMcpClient {
           { name, arguments: args, useTask: true, detach: true, ...(meta && { _meta: meta }) },
           this.requestTimeout
         ) as Promise<TaskUpdate>,
-      'callToolDetached'
+      'callToolDetached',
+      { idempotent: false }
     );
   }
 
