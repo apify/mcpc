@@ -5,7 +5,7 @@
 import chalk from 'chalk';
 import type { Tool, Resource, Prompt, CommandOptions, SessionData } from '../../lib/types.js';
 import { ClientError } from '../../lib/errors.js';
-import { isProcessAlive } from '../../lib/utils.js';
+import { isProcessAlive, fetchAllPages } from '../../lib/utils.js';
 import { consolidateSessions } from '../../lib/sessions.js';
 import { reconnectCrashedSessions } from '../../lib/bridge-manager.js';
 import { withSessionClient } from '../../lib/session-client.js';
@@ -324,28 +324,20 @@ async function searchClient(
  * Fetch all resources with pagination
  */
 async function fetchAllResources(client: IMcpClient): Promise<Resource[]> {
-  const all: Resource[] = [];
-  let cursor: string | undefined;
-  do {
-    const result = await client.listResources(cursor);
-    all.push(...result.resources);
-    cursor = result.nextCursor;
-  } while (cursor);
-  return all;
+  return fetchAllPages(
+    (cursor) => client.listResources(cursor),
+    (page) => page.resources
+  );
 }
 
 /**
  * Fetch all prompts with pagination
  */
 async function fetchAllPrompts(client: IMcpClient): Promise<Prompt[]> {
-  const all: Prompt[] = [];
-  let cursor: string | undefined;
-  do {
-    const result = await client.listPrompts(cursor);
-    all.push(...result.prompts);
-    cursor = result.nextCursor;
-  } while (cursor);
-  return all;
+  return fetchAllPages(
+    (cursor) => client.listPrompts(cursor),
+    (page) => page.prompts
+  );
 }
 
 // ─── Output formatting ──────────────────────────────────────────────

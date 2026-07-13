@@ -110,12 +110,10 @@ mcpc/
 
 **1. Core Module (`src/core/`)**
 
-- Runtime-agnostic MCP protocol implementation (works with Node.js ≥22.12 and Bun ≥1)
-- Transport abstraction: Streamable HTTP and stdio
-- Protocol state machine: initialization handshake, version negotiation, session management
-- Request/response correlation using JSON-RPC style with request IDs
-- Multiplexing: supports up to 10 concurrent requests, queues up to 100
-- Streamable HTTP connection management with reconnection (exponential backoff: 1s → 30s max)
+- Thin, runtime-agnostic wrapper around the official `@modelcontextprotocol/sdk` client (works with Node.js ≥22.12 and Bun ≥1)
+- Transport abstraction: Streamable HTTP and stdio (both created via the SDK's transports)
+- Captures negotiated protocol version and MCP session ID after connect
+- Streamable HTTP connection management with reconnection delegated to the SDK (exponential backoff: 1s → 30s max, up to 10 retries)
 - Event emitter for async notifications (tools/resources/prompts list changes, progress, logging)
 - Uses native `fetch` API (no external HTTP libraries needed)
 - **Note**: Only supports Streamable HTTP transport (current standard). The deprecated HTTP with SSE transport is not supported.
@@ -126,11 +124,11 @@ mcpc/
 - Session persistence via `~/.mcpc/sessions.json` with file locking (`proper-lockfile` package)
 - Process lifecycle management for local package servers (stdio transport)
 - Unix domain socket server for CLI-to-bridge IPC (named pipes on Windows)
-- Socket location: `~/.mcpc/bridges/<session-name>.sock`
-- Heartbeat mechanism for health monitoring
-- Orphaned process cleanup on startup
+- Socket location: `~/.mcpc/bridges/<session-name>.<pid>.sock` (falls back to a short hashed path under the system temp dir when the path would exceed the OS socket limit)
+- Keepalive ping every 30 seconds, `lastSeenAt` recorded in `sessions.json`
+- Orphaned log and socket file cleanup (note: orphaned *processes* are not reaped automatically)
 - Atomic writes for session file (write to temp, then rename)
-- Lock timeout: 5 seconds
+- File lock acquisition: up to 10 retries with randomized backoff (5s max per retry)
 
 **3. CLI Executable (`src/cli/`)**
 
@@ -147,11 +145,21 @@ mcpc/
 - `mcpc` - List all sessions and authentication profiles
 - `mcpc @<session>` - Show session info, server capabilities, and authentication details
 - `mcpc @<session> <command>` - Execute MCP command (e.g., `mcpc @apify tools-list`)
-- `mcpc connect <server> @<name>` - Create a named persistent session
-- `mcpc login <server> [--profile <name>]` - Login via OAuth and save auth profile
+  - Tools: `tools-list`, `tools-get`, `tools-call` (with `--task`/`--detach` for async tasks, `--schema`/`--schema-mode` for schema validation)
+  - Resources: `resources-list`, `resources-read`, `resources-subscribe`, `resources-unsubscribe`, `resources-templates-list`
+  - Prompts: `prompts-list`, `prompts-get`
+  - Tasks: `tasks-list`, `tasks-get`, `tasks-result`, `tasks-cancel`
+  - Skills: `skills-list`, `skills-get`
+  - Other: `grep`, `logs`, `ping`, `logging-set-level`, `restart`, `close`, `help`
+- `mcpc connect <server> @<name>` - Create a named persistent session (also bulk: `mcpc connect <file>` for all config entries, `mcpc connect` for auto-discovered configs; `--proxy` exposes the session as a local MCP HTTP server)
+- `mcpc login <server> [--profile <name>]` - Login via OAuth and save auth profile (`--grant client-credentials` for non-interactive M2M auth)
 - `mcpc logout <server> [--profile <name>]` - Delete an authentication profile
+- `mcpc grep <pattern>` - Search tools/instructions (and optionally resources/prompts) across all sessions
+- `mcpc x402 <subcommand>` - Configure an x402 payment wallet (experimental)
 - `mcpc clean [sessions|profiles|logs|all ...]` - Clean up mcpc data
-- `mcpc help [command]` - Show help for a specific command
+- `mcpc help [command]` - Show help for a specific command (`--skill` prints the agent guide)
+
+Run `mcpc --help` and `mcpc help <command>` for the authoritative, always-current inventory — the usage block in README.md is generated from it.
 
 **Server formats for `connect`, `login`, `logout`:**
 
@@ -170,7 +178,7 @@ mcpc/
 
 1. User creates session: `mcpc connect mcp.apify.com @apify`
 2. CLI creates entry in `sessions.json`, spawns bridge process
-3. Bridge creates Unix socket at `~/.mcpc/bridges/apify.sock`
+3. Bridge creates Unix socket at `~/.mcpc/bridges/@apify.<pid>.sock`
 4. Bridge performs MCP initialization:
    - Sends `initialize` request with protocol version and capabilities
    - Receives server info, version, and capabilities
@@ -184,10 +192,10 @@ mcpc/
 
 **Session States:**
 
-- 🟢 **live** - Bridge process running and server responding (lastSeenAt within 2 minutes)
+- 🟢 **live** - Bridge process running and server responding (lastSeenAt within ~65 seconds — two missed 30s keepalive pings plus a 5s buffer)
 - 🟡 **connecting** - Initial bridge connection in progress (first `connect`)
 - 🟡 **reconnecting** - Bridge crashed and is being automatically reconnected
-- 🟡 **disconnected** - Bridge process running but server unreachable (lastSeenAt stale >2min); auto-recovers when server responds
+- 🟡 **disconnected** - Bridge process running but server unreachable (lastSeenAt stale >~65s); auto-recovers when server responds
 - 🟡 **crashed** - Bridge process crashed or killed; auto-reconnects in the background
 - 🔴 **unauthorized** - Server rejected authentication (401/403) or token refresh failed; requires `login` then `restart`
 - 🔴 **expired** - Server rejected session ID (404); requires `restart`
@@ -198,8 +206,8 @@ mcpc/
 
 - Persistent HTTP connection with bidirectional streaming (protocol version 2025-11-25)
 - Server and client can send messages in both directions over the same connection
-- Automatic reconnection with exponential backoff (1s → 30s max)
-- Queues requests during disconnection (fails after 3 minutes)
+- Automatic reconnection with exponential backoff (1s → 30s max, up to 10 retries, handled by the SDK)
+- CLI-to-bridge IPC requests time out after 3 minutes (or `--timeout` + a 10s margin); an IPC timeout is never retried, since the request may still be executing on the server
 - **Important**: Only the Streamable HTTP transport is supported (current MCP standard). The deprecated HTTP with SSE transport (2024-11-05) is not implemented.
 
 **Required HTTP Headers:**
@@ -248,14 +256,15 @@ mcpc/
 - CLI detects socket connection failure
 - Reads `sessions.json` for last known config
 - Spawns new bridge, re-initializes MCP connection
-- Continues request
+- Retries the request once — but only for idempotent operations. Tool calls are
+  NOT re-executed (the server may already have run them); the session is
+  reconnected and the error tells the user to verify the outcome.
 
 **Network failures:**
 
-- Bridge detects connection error, begins exponential backoff
-- Queues incoming requests (max 100, timeout 3 minutes)
-- On reconnect: drains queue
-- On timeout: fails with network error
+- The SDK's Streamable HTTP transport reconnects with exponential backoff (1s → 30s max)
+- CLI-to-bridge IPC requests fail with a network error after the IPC timeout
+  (3 minutes by default); IPC timeouts are never retried
 
 ### Security Considerations
 
@@ -416,7 +425,7 @@ Environment variable substitution supported: `${VAR_NAME}`
 **Test utilities:**
 
 - `test/e2e/server/` - Test MCP server
-- `test/mock-keychain.ts` - Mock OS keychain
+- `test/e2e/lib/framework.sh` - Shell test framework for E2E suites
 
 ## Runtime Requirements
 
@@ -444,8 +453,8 @@ Environment variable substitution supported: `${VAR_NAME}`
 **Bearer Token Handling:**
 
 - Bearer tokens passed via `--header "Authorization: Bearer ${TOKEN}"` are NOT stored as profiles
-- They are stored in OS keychain per-session (key: `mcpc:session:<name>:bearer-token`)
-- Bridge loads them automatically when making requests
+- All session headers are stored in the OS keychain as one JSON blob per session (keychain account: `session:<name>:headers`)
+- Bridge loads them automatically when making requests (delivered over IPC after spawn, never via argv)
 
 **CLI Commands:**
 
@@ -492,7 +501,7 @@ On failure, the error message includes instructions on how to login. This ensure
 
 1. User runs `mcpc login <server> --profile personal`
 2. CLI discovers OAuth metadata via `WWW-Authenticate` header or well-known URIs
-3. CLI creates local HTTP callback server on `http://localhost:<random-port>/callback`
+3. CLI creates local HTTP callback server on `http://127.0.0.1:<port>/callback` (ports tried in order: 13316, 31613, 16133; host configurable via `--callback-host`)
 4. CLI opens browser to authorization URL with PKCE challenge
 5. User authenticates, browser redirects to callback with authorization code
 6. CLI exchanges code for tokens using PKCE verifier
@@ -501,32 +510,39 @@ On failure, the error message includes instructions on how to login. This ensure
 
 **Implementation Modules:**
 
-- `src/lib/auth/auth-profiles.ts` - Manage profiles.json (CRUD operations)
+- `src/lib/auth/profiles.ts` - Manage profiles.json (CRUD operations)
 - `src/lib/auth/keychain.ts` - OS keychain wrapper (save/load/delete tokens)
 - `src/lib/auth/oauth-provider.ts` - Implements `OAuthClientProvider` from MCP SDK
 - `src/lib/auth/oauth-flow.ts` - Orchestrates interactive OAuth flow
+- `src/lib/auth/oauth-utils.ts` - OAuth metadata discovery, callback ports, CIMD URL validation
 - `src/lib/auth/oauth-token-manager.ts` - Token validation and refresh
 - `src/lib/auth/token-refresh.ts` - Token refresh logic with keychain persistence
+- `src/lib/auth/client-credentials.ts` - Non-interactive client-credentials grant (`login --grant client-credentials`)
+- `src/lib/auth/auth-page.ts` - HTML for the OAuth callback result page (escaped)
 
 **Session-to-Profile Relationship:**
 
 ```jsonc
 // sessions.json
 {
-  "apify-personal": {
-    "name": "apify-personal",
-    "target": "https://mcp.apify.com",
-    "transport": "http",
-    "profileName": "personal",  // References profile
-    "pid": 12345,
-    "socketPath": "~/.mcpc/bridges/apify-personal.sock"
+  "sessions": {
+    "@apify-personal": {
+      "name": "@apify-personal",
+      "server": { "url": "https://mcp.apify.com" },
+      "profileName": "personal", // References profile
+      "pid": 12345,
+      "protocolVersion": "2025-11-25",
+      "status": "active",
+      "createdAt": "2025-12-14T10:00:00Z",
+      "lastSeenAt": "2025-12-14T10:05:00Z"
+    }
   }
 }
 
-// profiles.json
+// profiles.json (profiles are keyed by normalized server HOST, not full URL)
 {
   "profiles": {
-    "https://mcp.apify.com": {
+    "mcp.apify.com": {
       "personal": {
         "name": "personal",
         "serverUrl": "https://mcp.apify.com",
@@ -540,9 +556,11 @@ On failure, the error message includes instructions on how to login. This ensure
   }
 }
 
-// OS Keychain
-// Key: mcpc:auth:https://mcp.apify.com:personal:tokens
+// OS Keychain (service "mcpc")
+// Account: auth-profile:mcp.apify.com:personal:tokens
 // Value: {"access_token": "...", "refresh_token": "...", "expires_at": ...}
+// Other accounts: auth-profile:<host>:<profile>:client (registered OAuth client),
+// session:<name>:headers (per-session headers), session:<name>:proxy-bearer-token
 ```
 
 ## State and Data Storage
@@ -552,7 +570,7 @@ All state files are stored in `~/.mcpc/` directory (unless overridden by `MCPC_H
 - `~/.mcpc/sessions.json` - Active sessions with references to auth profiles, active async tasks, and resource subscriptions (file-locked for concurrent access)
 - `~/.mcpc/profiles.json` - Authentication profiles (OAuth metadata, scopes, expiry)
 - `~/.mcpc/bridges/` - Unix domain socket files for bridge processes
-- `~/.mcpc/logs/bridge-<session>.log` - Bridge process logs (max 10MB, 5 files)
+- `~/.mcpc/logs/bridge-<session>.log` - Bridge process logs (rotated at 10MB, up to 5 rotated files kept)
 - OS keychain - Sensitive credentials (OAuth tokens, bearer tokens, client secrets)
 
 ## Key Dependencies
@@ -624,9 +642,10 @@ When implementing features:
 11. **Hyphenated commands** - All MCP commands use hyphens: `tools-list`, `resources-read`, `prompts-list`
 12. **Command-first syntax** - Top-level commands come first (`connect`, `login`, `clean`); MCP operations always go through a named session (`mcpc @session <command>`)
 13. **JSON field naming** - Use consistent field names in JSON output:
-    - `sessionName` (not `name`) for session identifiers
+    - `sessionName` for session identifiers in command results (e.g. `connect`, `close`); the `mcpc --json` session list spreads the stored `SessionData`, whose field is `name`
     - `server` (not `target`) for server URLs/addresses
     - No `success` wrapper - indicate errors via exit codes
+    - Errors printed in JSON mode use the shape `{ error: <message>, code: <exit code> }` on stderr
     - No debug prefixes like `[Using target: ...]` in JSON mode
 14. **Lazy-load large or special-purpose dependencies** - Command startup time matters: `mcpc` is invoked once per shell command, so everything statically imported by `src/cli/index.ts` or `src/bridge/index.ts` is paid on _every_ invocation. Any dependency that is large, or only needed by a specific command or feature, must be loaded lazily with a dynamic `await import(...)` at the point of use (type-only imports are free and stay static). Never re-export such a module from a barrel file (`index.ts`) — that silently makes it eager again. Example: the x402 feature's viem crypto code is loaded only when x402 is actually used, and viem itself is tree-shaken into a self-contained bundle at build time (`scripts/bundle-viem.mjs`, boundary module `src/lib/x402/viem.ts`) so it stays a devDependency instead of adding ~35 MB to every user's install. Before adding a heavy dependency, prefer this bundle-behind-a-boundary pattern over adding it to `dependencies`.
 
@@ -647,6 +666,7 @@ Bridge logs location: `~/.mcpc/logs/bridge-<session>.log`
 - `MCPC_HOME_DIR` - Directory for session and auth profiles data (default: `~/.mcpc`)
 - `MCPC_VERBOSE` - Enable verbose logging (set to `1`, `true`, or `yes`, case-insensitive)
 - `MCPC_JSON` - Enable JSON output (set to `1`, `true`, or `yes`, case-insensitive)
+- `HTTPS_PROXY` / `HTTP_PROXY` / `NO_PROXY` (and lowercase variants) - Route outbound HTTP(S) requests through a proxy
 
 ## Current Implementation Status
 
@@ -661,19 +681,24 @@ Bridge logs location: `~/.mcpc/logs/bridge-<session>.log`
 - **Logging**: Structured logging with verbose mode support, per-session bridge logs with rotation
 - **Environment Variables**: MCPC_HOME_DIR, MCPC_VERBOSE, MCPC_JSON support
 - **Command Handlers**: All MCP commands fully functional
-  - `tools-list`, `tools-get`, `tools-call`
+  - `tools-list`, `tools-get`, `tools-call` (incl. `--task`/`--detach` async execution and `--schema` validation)
   - `resources-list`, `resources-read`, `resources-subscribe`, `resources-unsubscribe`, `resources-templates-list`
   - `prompts-list`, `prompts-get`
+  - `tasks-list`, `tasks-get`, `tasks-result`, `tasks-cancel`
+  - `skills-list`, `skills-get`
+  - `grep` (per-session and global), `logs` (with `--follow`)
   - `logging-set-level`
   - `ping` (with roundtrip timing)
-  - `connect`, `close`, `help` (session management)
-  - `login`, `logout` (authentication management)
+  - `connect` (single, config-file bulk, auto-discovery), `restart`, `close`, `help` (session management)
+  - `login` (authorization-code and client-credentials grants), `logout` (authentication management)
+  - `x402` wallet management and automatic x402 payments on tool calls (experimental)
+- **MCP proxy**: `connect --proxy [host:]port` exposes a session as a local Streamable HTTP MCP server (Host/Origin-validated, optional `--proxy-bearer-token`)
 - **Bridge Process**: Persistent MCP connections with Unix domain socket IPC
 - **Session Management**: Complete `sessions.json` persistence with file locking
 - **IPC Layer**: Unix socket communication between CLI and bridge (BridgeClient, SessionClient)
 - **Target Resolution**: URL/session/config resolution logic (sessions and HTTP servers working)
 - **CLI-to-MCP Integration**: Full integration via direct connection and session bridge
-- **Caching**: In-memory cache with TTL (5min default), automatic invalidation via server notifications
+- **Caching**: In-memory tools cache in the bridge, invalidated by `tools/list_changed` notifications (no TTL on stateful connections; 60s TTL fallback for stateless connections that can't push notifications)
 - **Notification Handling**: Full notification support in the bridge process
   - `tools/list_changed`, `resources/list_changed`, `prompts/list_changed` notifications
   - Automatic cache invalidation on list changes, timestamps tracked in `sessions.json`
@@ -685,8 +710,8 @@ Bridge logs location: `~/.mcpc/logs/bridge-<session>.log`
 - **Error Recovery**: Automatic recovery from failures
   - Bridge crash detection and automatic restart
   - Socket reconnection with preserved session state
-  - Automatic retry on network errors (with bridge restart)
-  - Clean handling of orphaned processes
+  - Automatic retry of idempotent operations on socket failures (with bridge restart); tool calls are never silently re-executed
+  - Orphaned socket and log file cleanup
 - **Config File Loading**: Complete stdio transport support for local packages
 - **OAuth Implementation**: Full OAuth 2.1 flow with PKCE
   - Interactive OAuth flow (browser-based)

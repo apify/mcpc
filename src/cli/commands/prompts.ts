@@ -6,6 +6,7 @@ import type { CommandOptions } from '../../lib/types.js';
 import { formatOutput } from '../output.js';
 import { withMcpClient } from '../helpers.js';
 import { parseCommandArgs, hasStdinData, readStdinArgs } from '../parser.js';
+import { fetchAllPages } from '../../lib/utils.js';
 
 /**
  * List available prompts
@@ -14,14 +15,10 @@ import { parseCommandArgs, hasStdinData, readStdinArgs } from '../parser.js';
 export async function listPrompts(target: string, options: CommandOptions): Promise<void> {
   await withMcpClient(target, options, async (client, _context) => {
     // Fetch all prompts across all pages
-    const allPrompts = [];
-    let cursor: string | undefined = undefined;
-
-    do {
-      const result = await client.listPrompts(cursor);
-      allPrompts.push(...result.prompts);
-      cursor = result.nextCursor;
-    } while (cursor);
+    const allPrompts = await fetchAllPages(
+      (cursor) => client.listPrompts(cursor),
+      (page) => page.prompts
+    );
 
     console.log(
       formatOutput(allPrompts, options.outputMode, {

@@ -83,6 +83,18 @@ export class AuthError extends McpError {
 }
 
 /**
+ * IPC request timeout (exit code 3)
+ *
+ * Raised when the CLI gives up waiting for the bridge to answer over the IPC
+ * socket. Unlike a socket failure, a timeout does NOT mean the bridge crashed —
+ * the bridge (and the MCP server behind it) may still be processing the request.
+ * Callers must therefore never treat this as "safe to restart and retry":
+ * restarting the bridge would tear down an in-flight request, and re-sending it
+ * could execute a non-idempotent tool call twice.
+ */
+export class IpcTimeoutError extends NetworkError {}
+
+/**
  * Check if an error message indicates an authentication error from the server.
  * Uses word boundaries for numeric codes (401, 403) to avoid false positives
  * from error codes or other numbers that happen to contain these digits.

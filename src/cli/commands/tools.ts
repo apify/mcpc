@@ -51,6 +51,13 @@ export function renderCallToolResult(
     errorHint?: string;
   }
 ): void {
+  // Honor the documented exit-code contract: a tool that reports failure via
+  // isError exits with code 2 (server error), so scripts chaining on `&&` stop.
+  // The result is still rendered normally in both output modes.
+  if (result.isError) {
+    process.exitCode = 2;
+  }
+
   if (options.outputMode === 'human') {
     if (banners) {
       if (result.isError && banners.error) {

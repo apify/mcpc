@@ -23,13 +23,14 @@ export interface BuildClientCapabilitiesOptions {
 /**
  * Build the MCP client capabilities mcpc advertises to servers.
  *
+ * Only capabilities mcpc actually implements are declared. In particular,
+ * `sampling` and `roots` are NOT declared: mcpc has no LLM to answer
+ * `sampling/createMessage` and registers no `roots/list` handler, so declaring
+ * them would invite server requests that can only fail with "Method not found".
+ *
  * Kept as a single source of truth so it can evolve per protocol generation:
- * - `roots` and `sampling` (and server-side `logging`) are deprecated as of `2026-07-28`
- *   (SEP-2577) but remain functional through at least 2027-07-28 and are still required by
- *   legacy servers, so we keep declaring them. Servers ignore capabilities they don't
- *   understand, so over-declaring against a newer server is harmless.
- * - `tasks` will move into the negotiated `extensions` map (a reverse-DNS id) once the SDK
- *   exposes the `2026-07-28` Tasks extension — this is the single place to make that switch.
+ * `tasks` will move into the negotiated `extensions` map (a reverse-DNS id) once the SDK
+ * exposes the `2026-07-28` Tasks extension — this is the single place to make that switch.
  *
  * Capabilities are declared before the protocol version is negotiated, so this cannot
  * branch on the server's version.
@@ -38,14 +39,9 @@ export function buildClientCapabilities(
   options: BuildClientCapabilitiesOptions = {}
 ): ClientCapabilities {
   return {
-    roots: { listChanged: true },
-    sampling: {},
     tasks: {
       list: {},
       cancel: {},
-      requests: {
-        sampling: { createMessage: {} },
-      },
     },
     ...(options.clientCredentials
       ? { extensions: { [CLIENT_CREDENTIALS_EXTENSION_KEY]: {} } }

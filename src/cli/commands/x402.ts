@@ -26,7 +26,8 @@ import {
   theme,
 } from '../output.js';
 import { getWallet, saveWallet, removeWallet } from '../../lib/wallets.js';
-import { ClientError } from '../../lib/errors.js';
+import { ClientError, isMcpError } from '../../lib/errors.js';
+import { getJsonFromEnv } from '../parser.js';
 import type { OutputMode } from '../../lib/types.js';
 import { signPayment, parsePaymentRequired } from '../../lib/x402/signer.js';
 
@@ -294,7 +295,13 @@ async function signPaymentCommand(options: SignOptions): Promise<void> {
     amountOverride = BigInt(Math.round(amountUsd * 10 ** USDC_DECIMALS));
   }
 
-  const expiryOverride = options.expiry ? parseInt(options.expiry, 10) : undefined;
+  let expiryOverride: number | undefined;
+  if (options.expiry) {
+    expiryOverride = parseInt(options.expiry, 10);
+    if (isNaN(expiryOverride) || expiryOverride <= 0) {
+      throw new ClientError('--expiry must be a positive number of seconds.');
+    }
+  }
 
   // Sign using shared signer
   const result = await signPayment({
@@ -493,9 +500,16 @@ ${jsonHelp('`{ paymentSignature, from, to, amount, amountAtomicUnits, network, e
   try {
     await program.parseAsync(['node', 'mcpc-x402', ...args]);
   } catch (error) {
-    if (error instanceof ClientError) {
-      console.error(formatError(error.message));
-      process.exit(1);
+    if (isMcpError(error)) {
+      // Respect --json/MCPC_JSON for machine-readable errors, and preserve the
+      // error's own exit code instead of flattening everything to 1.
+      const jsonMode = args.includes('--json') || getJsonFromEnv();
+      if (jsonMode) {
+        console.error(formatJson({ error: error.message, code: error.code }));
+      } else {
+        console.error(formatError(error.message));
+      }
+      process.exit(error.code);
     }
     throw error;
   }

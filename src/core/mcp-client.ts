@@ -23,6 +23,7 @@ import type {
 import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
 import { createNoOpLogger, type Logger } from '../lib/logger.js';
 import { ServerError, NetworkError, isShutdownError } from '../lib/errors.js';
+import { fetchAllPages } from '../lib/utils.js';
 
 /**
  * Traverse the .cause chain to find the deepest (most specific) error message
@@ -115,6 +116,8 @@ export class McpClient implements IMcpClient {
   private transport?: TransportWithTermination;
   private hasConnected = false;
   private requestTimeout: number = DEFAULT_REQUEST_TIMEOUT_MS;
+  /** Baseline timeout from the constructor — what resetRequestTimeout() restores. */
+  private readonly configuredRequestTimeout: number;
   private cachedTools: Tool[] | null = null;
   private cachedToolsExpiresAt: number | null = null;
 
@@ -123,6 +126,7 @@ export class McpClient implements IMcpClient {
     if (options.requestTimeout !== undefined) {
       this.requestTimeout = options.requestTimeout;
     }
+    this.configuredRequestTimeout = this.requestTimeout;
 
     this.client = new SDKClient(clientInfo, {
       capabilities: options.capabilities || {},
@@ -147,6 +151,15 @@ export class McpClient implements IMcpClient {
    */
   setRequestTimeout(timeoutMs: number): void {
     this.requestTimeout = timeoutMs;
+  }
+
+  /**
+   * Restore the request timeout to the constructor-configured baseline.
+   * The bridge calls this after each request that carried an explicit
+   * `--timeout`, so a one-off override never leaks into later requests.
+   */
+  resetRequestTimeout(): void {
+    this.requestTimeout = this.configuredRequestTimeout;
   }
 
   /**
@@ -244,10 +257,15 @@ export class McpClient implements IMcpClient {
         }
       }
 
-      // Now close the client
+      // Now close the client. Stdio transports need a longer budget: the SDK's
+      // close() escalates close-stdin → wait → SIGTERM → wait → SIGKILL (~4.5s
+      // worst case), and abandoning it early would orphan the child server
+      // process. HTTP transports have nothing to kill, so they get a short one.
+      const isHttp = typeof this.transport?.terminateSession === 'function';
+      const closeBudgetMs = isHttp ? 1000 : 6000;
       await Promise.race([
         this.client.close(),
-        new Promise<void>((resolve) => setTimeout(resolve, 1000)),
+        new Promise<void>((resolve) => setTimeout(resolve, closeBudgetMs)),
       ]);
       this.logger.debug('Connection closed');
     } catch (error) {
@@ -339,14 +357,10 @@ export class McpClient implements IMcpClient {
       return { tools: this.cachedTools };
     }
 
-    const allTools: Tool[] = [];
-    let cursor: string | undefined = undefined;
-
-    do {
-      const result = await this.listTools(cursor);
-      allTools.push(...result.tools);
-      cursor = result.nextCursor;
-    } while (cursor);
+    const allTools: Tool[] = await fetchAllPages(
+      (cursor) => this.listTools(cursor),
+      (page) => page.tools
+    );
 
     this.cachedTools = allTools;
     // Stateless connections get a time-based expiry as a fallback for absent list_changed
@@ -757,13 +771,10 @@ export class McpClient implements IMcpClient {
           task.status === 'failed' ||
           task.status === 'cancelled'
         ) {
-          // For completed tasks, the result is in the task itself
           if (task.status === 'completed') {
-            // Re-fetch task to get final result if needed
-            // The GetTaskResult includes the task with its artifacts
-            return {
-              content: [{ type: 'text', text: task.statusMessage || 'Task completed' }],
-            };
+            // Fetch the actual tool result — the task status only carries a
+            // human-readable message, not the tool output.
+            return await this.getTaskResult(taskId);
           }
           throw new ServerError(
             `Task ${taskId} ${task.status}: ${task.statusMessage || 'no details'}`

@@ -7,8 +7,56 @@ import { createHash } from 'crypto';
 import { execFileSync } from 'child_process';
 import { homedir, tmpdir } from 'os';
 import { join, resolve, isAbsolute } from 'path';
-import { mkdir, access, constants, rename } from 'fs/promises';
-import { ClientError } from './errors.js';
+import { mkdir, access, constants, rename, lstat, chmod } from 'fs/promises';
+import { ClientError, ServerError } from './errors.js';
+
+/**
+ * Safety cap on pages fetched by fetchAllPages(). Generous — real servers
+ * paginate in the tens of pages; the cap only exists to bound a misbehaving
+ * server that keeps handing out fresh cursors forever.
+ */
+const MAX_PAGINATION_PAGES = 1000;
+
+/**
+ * Fetch every page of a paginated MCP list operation and collect the items.
+ *
+ * Guards against misbehaving servers: a cursor that repeats (a pagination
+ * cycle) or an excessive page count aborts with a ServerError instead of
+ * looping forever with unbounded memory growth. This matters especially in
+ * the bridge, where list refreshes run unattended on server notifications.
+ */
+export async function fetchAllPages<TPage extends { nextCursor?: string | undefined }, TItem>(
+  fetchPage: (cursor?: string) => Promise<TPage>,
+  getItems: (page: TPage) => TItem[]
+): Promise<TItem[]> {
+  const items: TItem[] = [];
+  const seenCursors = new Set<string>();
+  let cursor: string | undefined;
+  let pages = 0;
+
+  do {
+    const page = await fetchPage(cursor);
+    items.push(...getItems(page));
+    pages++;
+
+    cursor = page.nextCursor;
+    if (cursor !== undefined) {
+      if (seenCursors.has(cursor)) {
+        throw new ServerError(
+          'Server returned a pagination cursor it already used — aborting to avoid an infinite loop'
+        );
+      }
+      seenCursors.add(cursor);
+      if (pages >= MAX_PAGINATION_PAGES) {
+        throw new ServerError(
+          `Server pagination exceeded ${MAX_PAGINATION_PAGES} pages — aborting`
+        );
+      }
+    }
+  } while (cursor);
+
+  return items;
+}
 
 /**
  * Expand tilde (~) to home directory in paths
@@ -148,6 +196,36 @@ export async function ensureDir(dirPath: string, mode: number = 0o700): Promise<
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
       throw error;
     }
+  }
+}
+
+/**
+ * Create (or validate) a private directory in a world-writable location such as
+ * the system temp dir.
+ *
+ * `mkdir` does not fix the ownership or permissions of a pre-existing directory,
+ * and the short socket dir name is predictable (derived from the mcpc home path) —
+ * on a shared machine another local user could pre-create it, or plant a symlink,
+ * to reach the bridge IPC socket and drive the authenticated session. So verify
+ * the path is a real directory owned by the current user, and tighten its
+ * permissions to 0700 if needed.
+ */
+export async function ensureSecureTempDir(dirPath: string): Promise<void> {
+  await ensureDir(dirPath, 0o700);
+
+  const stats = await lstat(dirPath);
+  if (stats.isSymbolicLink() || !stats.isDirectory()) {
+    throw new ClientError(
+      `Refusing to use socket directory ${dirPath}: not a real directory (possible tampering)`
+    );
+  }
+  if (typeof process.getuid === 'function' && stats.uid !== process.getuid()) {
+    throw new ClientError(
+      `Refusing to use socket directory ${dirPath}: owned by another user (uid ${stats.uid})`
+    );
+  }
+  if ((stats.mode & 0o077) !== 0) {
+    await chmod(dirPath, 0o700);
   }
 }
 

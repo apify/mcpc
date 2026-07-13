@@ -928,6 +928,11 @@ export async function connectAllFromConfig(
   if (options.outputMode === 'json') {
     const resultEntries = await buildBulkConnectEntries(results, options);
     console.log(formatOutput([...resultEntries, ...stdioSkipped.map(toSkippedStdioEntry)], 'json'));
+    // Same all-failed rule as human mode, signaled via exit code (rule: JSON
+    // output stays clean; errors are indicated via exit codes)
+    if (results.length > 0 && results.every((r) => r.status === 'failed')) {
+      process.exitCode = 1;
+    }
     return;
   }
 
@@ -1074,6 +1079,10 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
     }
     const resultEntries = await buildBulkConnectEntries(results, options);
     console.log(formatOutput([...resultEntries, ...skippedJsonEntries], 'json'));
+    // Same all-failed rule as human mode, signaled via exit code
+    if (results.length > 0 && results.every((r) => r.status === 'failed')) {
+      process.exitCode = 1;
+    }
     return;
   }
 

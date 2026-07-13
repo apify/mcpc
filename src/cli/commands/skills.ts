@@ -21,6 +21,7 @@
 import type { CommandOptions, IMcpClient } from '../../lib/types.js';
 import type { ReadResourceResult, Resource } from '@modelcontextprotocol/sdk/types.js';
 import { ServerError, ClientError } from '../../lib/errors.js';
+import { fetchAllPages } from '../../lib/utils.js';
 import { withMcpClient } from '../helpers.js';
 import { formatOutput, formatSkills, formatSkillDetail } from '../output.js';
 
@@ -222,13 +223,10 @@ export async function discoverSkills(client: IMcpClient): Promise<Skill[]> {
   }
 
   // Fallback: scan all resources, matching `skill://<id>/SKILL.md`.
-  const all: Resource[] = [];
-  let cursor: string | undefined;
-  do {
-    const page = await client.listResources(cursor);
-    all.push(...page.resources);
-    cursor = page.nextCursor;
-  } while (cursor);
+  const all: Resource[] = await fetchAllPages(
+    (cursor) => client.listResources(cursor),
+    (page) => page.resources
+  );
 
   return skillsFromResources(all);
 }

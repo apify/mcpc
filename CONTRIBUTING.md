@@ -8,7 +8,7 @@ Contributions are welcome!
 - Delightful for humans and AI agents alike (interactive + scripting)
 - Avoid unnecessary interaction loops, provide sufficient context, yet be concise (save tokens)
 - One clear way to do things (orthogonal commands, no surprises)
-- Do not ask for user input (except `shell` and `login`, no unexpected OAuth flows)
+- Do not ask for user input (except `login`, no unexpected OAuth flows)
 - Be forgiving, always help users make progress (great errors + guidance)
 - Be consistent with the [MCP specification](https://modelcontextprotocol.io/specification/latest), with `--json` strictly
 - Minimal and portable (few deps, cross-platform)
@@ -108,7 +108,7 @@ The codebase is a single TypeScript package with three internal modules:
 
 ```
 src/
-├── core/       # Runtime-agnostic MCP protocol implementation (Node ≥18, Bun ≥1)
+├── core/       # Runtime-agnostic MCP protocol implementation (Node ≥22.12, Bun ≥1)
 ├── bridge/     # Persistent bridge process — one per session, owns the MCP connection
 ├── cli/        # `mcpc` command — argument parsing, output formatting, IPC to the bridge
 └── lib/        # Shared utilities (auth, keychain, file locking, …)

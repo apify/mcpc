@@ -5,7 +5,7 @@
 import chalk from 'chalk';
 import { formatOutput, formatSuccess, formatWarning, formatResourceContents } from '../output.js';
 import { withMcpClient } from '../helpers.js';
-import { resolvePath } from '../../lib/utils.js';
+import { resolvePath, fetchAllPages } from '../../lib/utils.js';
 import { selectResourceContent, writeResourceFile } from '../../lib/resource-content.js';
 import { ClientError } from '../../lib/errors.js';
 import type { CommandOptions } from '../../lib/types.js';
@@ -17,14 +17,10 @@ import type { CommandOptions } from '../../lib/types.js';
 export async function listResources(target: string, options: CommandOptions): Promise<void> {
   await withMcpClient(target, options, async (client, _context) => {
     // Fetch all resources across all pages
-    const allResources = [];
-    let cursor: string | undefined = undefined;
-
-    do {
-      const result = await client.listResources(cursor);
-      allResources.push(...result.resources);
-      cursor = result.nextCursor;
-    } while (cursor);
+    const allResources = await fetchAllPages(
+      (cursor) => client.listResources(cursor),
+      (page) => page.resources
+    );
 
     console.log(
       formatOutput(allResources, options.outputMode, {
@@ -44,14 +40,10 @@ export async function listResourceTemplates(
 ): Promise<void> {
   await withMcpClient(target, options, async (client, _context) => {
     // Fetch all resource templates across all pages
-    const allTemplates = [];
-    let cursor: string | undefined = undefined;
-
-    do {
-      const result = await client.listResourceTemplates(cursor);
-      allTemplates.push(...result.resourceTemplates);
-      cursor = result.nextCursor;
-    } while (cursor);
+    const allTemplates = await fetchAllPages(
+      (cursor) => client.listResourceTemplates(cursor),
+      (page) => page.resourceTemplates
+    );
 
     console.log(
       formatOutput(allTemplates, options.outputMode, {

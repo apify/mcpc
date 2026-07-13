@@ -18,7 +18,6 @@ import type { ServerConfig, ConnectionMode } from '../../lib/types.js';
 import {
   formatOutput,
   formatSuccess,
-  formatError,
   formatSessionLine,
   formatServerDetails,
   formatTimeAgo,
@@ -235,49 +234,34 @@ export async function closeSession(
   name: string,
   options: { outputMode: OutputMode }
 ): Promise<void> {
-  try {
-    // Check if session exists
-    if (!(await sessionExists(name))) {
-      throw new ClientError(`Session not found: ${name}`);
-    }
+  // Errors propagate to the central handler in cli/index.ts, which owns error
+  // rendering — printing here too would show every failure twice.
 
-    // Stop the bridge process (graceful: send IPC shutdown on Windows so
-    // the bridge can send HTTP DELETE to the server before exiting)
-    await stopBridge(name, { graceful: true });
+  // Check if session exists
+  if (!(await sessionExists(name))) {
+    throw new ClientError(`Session not found: ${name}`);
+  }
 
-    // Delete session record from storage
-    await deleteSession(name);
+  // Stop the bridge process (graceful: send IPC shutdown on Windows so
+  // the bridge can send HTTP DELETE to the server before exiting)
+  await stopBridge(name, { graceful: true });
 
-    // Success!
-    if (options.outputMode === 'human') {
-      console.log(formatSuccess(`Session ${name} closed successfully\n`));
-    } else {
-      console.log(
-        formatOutput(
-          {
-            sessionName: name,
-            closed: true,
-          },
-          'json'
-        )
-      );
-    }
-  } catch (error) {
-    if (options.outputMode === 'human') {
-      console.error(formatError((error as Error).message));
-    } else {
-      console.error(
-        formatOutput(
-          {
-            sessionName: name,
-            closed: false,
-            error: (error as Error).message,
-          },
-          'json'
-        )
-      );
-    }
-    throw error;
+  // Delete session record from storage
+  await deleteSession(name);
+
+  // Success!
+  if (options.outputMode === 'human') {
+    console.log(formatSuccess(`Session ${name} closed successfully\n`));
+  } else {
+    console.log(
+      formatOutput(
+        {
+          sessionName: name,
+          closed: true,
+        },
+        'json'
+      )
+    );
   }
 }
 
@@ -363,106 +347,88 @@ export async function restartSession(
   name: string,
   options: { outputMode: OutputMode; verbose?: boolean }
 ): Promise<void> {
-  try {
-    // Get existing session
-    const session = await getSession(name);
+  // Get existing session
+  const session = await getSession(name);
 
-    if (!session) {
-      throw new ClientError(`Session not found: ${name}`);
-    }
-
-    if (options.outputMode === 'human') {
-      console.log(theme.yellow(`Restarting session ${name}...`));
-    }
-
-    // Stop the bridge (even if it's alive). Graceful so the old bridge sends an HTTP DELETE
-    // to terminate its MCP session before exiting: an explicit restart starts a *fresh*
-    // session (see the note below), so the previous server-side session must be released
-    // rather than orphaned. On Windows SIGTERM is an immediate kill, so graceful mode sends
-    // an IPC shutdown first; on Unix SIGTERM already triggers graceful shutdown.
-    try {
-      await stopBridge(name, { graceful: true });
-    } catch {
-      // Bridge may already be stopped
-    }
-
-    // Get server config from session
-    const serverConfig = session.server;
-    if (!serverConfig) {
-      throw new ClientError(`Session ${name} has no server configuration`);
-    }
-
-    // Load headers from keychain if present
-    const { readKeychainSessionHeaders } = await import('../../lib/auth/keychain.js');
-    const headers = await readKeychainSessionHeaders(name);
-
-    // Resolve auth profile: use stored profile, or auto-detect a "default" profile.
-    // This handles the case where user creates a session without auth, then later runs
-    // `mcpc login <server>` to create a default profile, and restarts the session.
-    const hasExplicitAuthHeader = headers?.Authorization !== undefined;
-    let profileName = session.profileName;
-    if (!profileName && serverConfig.url && !hasExplicitAuthHeader && !session.x402) {
-      profileName = await resolveAuthProfile(serverConfig.url, serverConfig.url, undefined, {
-        sessionName: name,
-      });
-      if (profileName) {
-        logger.debug(`Discovered auth profile "${profileName}" for session ${name}`);
-        await updateSession(name, { profileName });
-      }
-    }
-
-    // Start bridge process.
-    // NOTE: Do NOT pass mcpSessionId on explicit restart — a restart starts a fresh session
-    // rather than resuming the old one. Session resumption is only attempted on automatic
-    // bridge restart (when the bridge crashes and the CLI detects it); if the server rejects
-    // the session ID, the session is marked as expired.
-    const bridgeOptions: StartBridgeOptions = {
-      sessionName: name,
-      serverConfig: { ...serverConfig, ...(headers && { headers }) },
-      verbose: options.verbose || false,
-      ...(headers && { headers }),
-      ...(profileName && { profileName }),
-      ...(session.proxy && { proxyConfig: session.proxy }),
-      ...(session.x402 && { x402: session.x402 }),
-      ...(session.insecure && { insecure: session.insecure }),
-    };
-
-    const { pid } = await startBridge(bridgeOptions);
-
-    // Update session with new bridge PID and clear any expired/crashed status
-    await updateSession(name, { pid, status: 'active' });
-    logger.debug(`Session ${name} restarted with bridge PID: ${pid}`);
-
-    // Success message
-    if (options.outputMode === 'human') {
-      console.log(formatSuccess(`Session ${name} restarted`));
-      console.log(
-        chalk.dim(
-          'Note: previous session state was lost (e.g. added tools, async tasks); resource subscriptions are re-established automatically'
-        )
-      );
-    }
-
-    // Show server details (like when creating a session)
-    await showServerDetails(name, {
-      ...options,
-      hideTarget: false,
-    });
-  } catch (error) {
-    if (options.outputMode === 'human') {
-      console.error(formatError((error as Error).message));
-    } else {
-      console.error(
-        formatOutput(
-          {
-            sessionName: name,
-            restarted: false,
-            error: (error as Error).message,
-          },
-          'json'
-        )
-      );
-    }
-    throw error;
+  if (!session) {
+    throw new ClientError(`Session not found: ${name}`);
   }
+
+  if (options.outputMode === 'human') {
+    console.log(theme.yellow(`Restarting session ${name}...`));
+  }
+
+  // Stop the bridge (even if it's alive). Graceful so the old bridge sends an HTTP DELETE
+  // to terminate its MCP session before exiting: an explicit restart starts a *fresh*
+  // session (see the note below), so the previous server-side session must be released
+  // rather than orphaned. On Windows SIGTERM is an immediate kill, so graceful mode sends
+  // an IPC shutdown first; on Unix SIGTERM already triggers graceful shutdown.
+  try {
+    await stopBridge(name, { graceful: true });
+  } catch {
+    // Bridge may already be stopped
+  }
+
+  // Get server config from session
+  const serverConfig = session.server;
+  if (!serverConfig) {
+    throw new ClientError(`Session ${name} has no server configuration`);
+  }
+
+  // Load headers from keychain if present
+  const { readKeychainSessionHeaders } = await import('../../lib/auth/keychain.js');
+  const headers = await readKeychainSessionHeaders(name);
+
+  // Resolve auth profile: use stored profile, or auto-detect a "default" profile.
+  // This handles the case where user creates a session without auth, then later runs
+  // `mcpc login <server>` to create a default profile, and restarts the session.
+  const hasExplicitAuthHeader = headers?.Authorization !== undefined;
+  let profileName = session.profileName;
+  if (!profileName && serverConfig.url && !hasExplicitAuthHeader && !session.x402) {
+    profileName = await resolveAuthProfile(serverConfig.url, serverConfig.url, undefined, {
+      sessionName: name,
+    });
+    if (profileName) {
+      logger.debug(`Discovered auth profile "${profileName}" for session ${name}`);
+      await updateSession(name, { profileName });
+    }
+  }
+
+  // Start bridge process.
+  // NOTE: Do NOT pass mcpSessionId on explicit restart — a restart starts a fresh session
+  // rather than resuming the old one. Session resumption is only attempted on automatic
+  // bridge restart (when the bridge crashes and the CLI detects it); if the server rejects
+  // the session ID, the session is marked as expired.
+  const bridgeOptions: StartBridgeOptions = {
+    sessionName: name,
+    serverConfig: { ...serverConfig, ...(headers && { headers }) },
+    verbose: options.verbose || false,
+    ...(headers && { headers }),
+    ...(profileName && { profileName }),
+    ...(session.proxy && { proxyConfig: session.proxy }),
+    ...(session.x402 && { x402: session.x402 }),
+    ...(session.insecure && { insecure: session.insecure }),
+  };
+
+  const { pid } = await startBridge(bridgeOptions);
+
+  // Update session with new bridge PID and clear any expired/crashed status
+  await updateSession(name, { pid, status: 'active' });
+  logger.debug(`Session ${name} restarted with bridge PID: ${pid}`);
+
+  // Success message
+  if (options.outputMode === 'human') {
+    console.log(formatSuccess(`Session ${name} restarted`));
+    console.log(
+      chalk.dim(
+        'Note: previous session state was lost (e.g. added tools, async tasks); resource subscriptions are re-established automatically'
+      )
+    );
+  }
+
+  // Show server details (like when creating a session)
+  await showServerDetails(name, {
+    ...options,
+    hideTarget: false,
+  });
 }
