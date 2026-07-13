@@ -9,7 +9,7 @@ import {
   followLog,
   getBridgeLogPath,
   listLogFiles,
-  parseDuration,
+  parseDurationMillis,
   parseLogLine,
   parseLogLines,
   readRecentLogLines,
@@ -117,35 +117,35 @@ describe('parseLogLines (folding)', () => {
   });
 });
 
-describe('parseDuration', () => {
+describe('parseDurationMillis', () => {
   it('parses common shortforms', () => {
-    expect(parseDuration('30s')).toBe(30 * 1000);
-    expect(parseDuration('5m')).toBe(5 * 60 * 1000);
-    expect(parseDuration('2h')).toBe(2 * 60 * 60 * 1000);
-    expect(parseDuration('1d')).toBe(24 * 60 * 60 * 1000);
-    expect(parseDuration('1w')).toBe(7 * 24 * 60 * 60 * 1000);
+    expect(parseDurationMillis('30s')).toBe(30 * 1000);
+    expect(parseDurationMillis('5m')).toBe(5 * 60 * 1000);
+    expect(parseDurationMillis('2h')).toBe(2 * 60 * 60 * 1000);
+    expect(parseDurationMillis('1d')).toBe(24 * 60 * 60 * 1000);
+    expect(parseDurationMillis('1w')).toBe(7 * 24 * 60 * 60 * 1000);
   });
 
   it('parses long unit names', () => {
-    expect(parseDuration('30sec')).toBe(30 * 1000);
-    expect(parseDuration('5mins')).toBe(5 * 60 * 1000);
-    expect(parseDuration('2hrs')).toBe(2 * 60 * 60 * 1000);
-    expect(parseDuration('3days')).toBe(3 * 24 * 60 * 60 * 1000);
-    expect(parseDuration('2wks')).toBe(2 * 7 * 24 * 60 * 60 * 1000);
+    expect(parseDurationMillis('30sec')).toBe(30 * 1000);
+    expect(parseDurationMillis('5mins')).toBe(5 * 60 * 1000);
+    expect(parseDurationMillis('2hrs')).toBe(2 * 60 * 60 * 1000);
+    expect(parseDurationMillis('3days')).toBe(3 * 24 * 60 * 60 * 1000);
+    expect(parseDurationMillis('2wks')).toBe(2 * 7 * 24 * 60 * 60 * 1000);
   });
 
   it('is case-insensitive and tolerant of whitespace', () => {
-    expect(parseDuration('30S')).toBe(30 * 1000);
-    expect(parseDuration('  5m  ')).toBe(5 * 60 * 1000);
+    expect(parseDurationMillis('30S')).toBe(30 * 1000);
+    expect(parseDurationMillis('  5m  ')).toBe(5 * 60 * 1000);
   });
 
   it('returns null for garbage', () => {
-    expect(parseDuration('1y')).toBeNull(); // years not supported
-    expect(parseDuration('abc')).toBeNull();
-    expect(parseDuration('')).toBeNull();
-    expect(parseDuration('m5')).toBeNull(); // wrong order
-    expect(parseDuration('5')).toBeNull(); // missing unit
-    expect(parseDuration('-5m')).toBeNull(); // negative not supported
+    expect(parseDurationMillis('1y')).toBeNull(); // years not supported
+    expect(parseDurationMillis('abc')).toBeNull();
+    expect(parseDurationMillis('')).toBeNull();
+    expect(parseDurationMillis('m5')).toBeNull(); // wrong order
+    expect(parseDurationMillis('5')).toBeNull(); // missing unit
+    expect(parseDurationMillis('-5m')).toBeNull(); // negative not supported
   });
 });
 

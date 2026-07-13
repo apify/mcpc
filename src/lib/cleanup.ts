@@ -66,11 +66,11 @@ export async function cleanupOrphanedLogFiles(
 
       try {
         const fileStats = await stat(filePath);
-        const fileAge = fileStats.mtime.getTime();
-        const ageInDays = Math.floor((Date.now() - fileAge) / (24 * 60 * 60 * 1000));
+        const fileMtimeMillis = fileStats.mtime.getTime();
+        const ageInDays = Math.floor((Date.now() - fileMtimeMillis) / (24 * 60 * 60 * 1000));
 
         // Only delete if older than cutoff
-        if (fileAge < cutoffTime) {
+        if (fileMtimeMillis < cutoffTime) {
           await unlink(filePath);
           deletedCount++;
           logger.debug(`Removed orphaned log file: ${file} (age: ${ageInDays} days)`);

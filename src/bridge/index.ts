@@ -1227,8 +1227,8 @@ class BridgeProcess {
     // Log auth state before making request
     logger.debug(`  authProvider is set: ${!!this.authProvider}`);
     if (this.tokenManager) {
-      const expiresIn = this.tokenManager.getSecondsUntilExpiry();
-      logger.debug(`  token expires in: ${expiresIn} seconds`);
+      const expiresInSecs = this.tokenManager.getSecondsUntilExpiry();
+      logger.debug(`  token expires in: ${expiresInSecs} seconds`);
     }
 
     try {
