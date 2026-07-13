@@ -181,7 +181,9 @@ export async function refreshAccessToken(
   });
 
   if (!response.ok) {
-    const errorText = await response.text();
+    // Log only a bounded snippet — a non-conforming auth server could echo
+    // sensitive or attacker-influenced content into the persisted bridge log.
+    const errorText = (await response.text()).slice(0, 400);
     logger.error(`Token refresh failed: ${response.status} ${errorText}`);
 
     if (response.status === 400 || response.status === 401) {
