@@ -55,7 +55,7 @@ MCP through the most universal interface there is: the UNIX shell.
 
 Many AI agents misuse MCP. They treat tools as prompt-time function calls, repeatedly injecting
 tool definitions and results into the context. Tokens get wasted, context rots, the
-agent gets slower and less reliable, and popular conclusion that: _"MCP sucks, CLIs are better"_.
+agent gets slower and less reliable — hence the popular conclusion: _"MCP sucks, CLIs are better"_.
 
 `mcpc` challenges that narrative. It maps every MCP operation to an intuitive CLI command that
 agents pick up from `--help` alone. Any agent with shell access gets full MCP support without
@@ -106,19 +106,19 @@ dbus-run-session -- bash -c "echo -n 'password' | gnome-keyring-daemon --unlock 
 # List all active sessions and saved authentication profiles
 mcpc
 
-# Login to remote MCP server and save OAuth credentials for future use
+# Log in to a remote MCP server and save OAuth credentials for future use
 mcpc login mcp.apify.com
 
 # Create a persistent session and interact with it
 mcpc connect mcp.apify.com @test
-mcpc @test                                            # show server info
-mcpc @test tools-list
+mcpc @test              # show server info and capabilities
+mcpc @test tools-list   # list available tools
 mcpc @test tools-call search-actors keywords:="website crawler"
 
 # Use JSON mode for scripting
 mcpc --json @test tools-list
 
-# Use a local MCP server package (stdio) referenced from config file
+# Use a local MCP server package (stdio) referenced from a config file
 mcpc connect ./.vscode/mcp.json:filesystem @fs
 mcpc @fs tools-list
 ```
@@ -309,14 +309,14 @@ that are crashed or unavailable are shown with their status rather than silently
 The `grep` command is useful for **dynamic tool discovery**,
 also called [Tool search tool](https://www.anthropic.com/engineering/advanced-tool-use) by Anthropic
 or [Dynamic context discovery](https://cursor.com/blog/dynamic-context-discovery) by Cursor.
-Rather than loading all tools into AI agent's context, the agent can use `grep` to discover the right tool
+Rather than loading all tools into the AI agent's context, the agent can use `grep` to discover the right tool
 for the job, and only load the relevant tools into the context when needed to reduce token usage and improve accuracy.
 
 <!-- TODO: explain this more, show diagram -->
 
 ### JSON mode
 
-By default, `mcpc` prints output in Markdown-ish text format with colors, making it easy to read by both humans and AIs.
+By default, `mcpc` prints output in Markdown-ish text format with colors, making it easy for both humans and AIs to read.
 
 With `--json` option, `mcpc` always emits only a single JSON object (or array), to enable [scripting](#scripting).
 **For all MCP commands, the returned objects are always consistent with the
@@ -334,8 +334,8 @@ To support these sessions, `mcpc` can start a lightweight **bridge process** tha
 This is more efficient than forcing every MCP command to reconnect and reinitialize,
 and enables long-term stateful sessions.
 
-The sessions are given names prefixed with `@` (e.g. `@apify`),
-which then serve as unique reference in commands.
+Sessions are given names prefixed with `@` (e.g. `@apify`),
+which then serve as unique references in commands.
 
 ```bash
 # Create a persistent session
@@ -350,10 +350,10 @@ mcpc @apify tools-list
 # Restart the session (kills and restarts the bridge process)
 mcpc @apify restart    # or: mcpc restart @apify
 
-# Close the session, terminates bridge process
+# Close the session (terminates the bridge process)
 mcpc @apify close      # or: mcpc close @apify
 
-# ...now session name "@apify" is forgotten and available for future use
+# ...now the session name "@apify" is forgotten and available for future use
 ```
 
 ### Session lifecycle
@@ -398,11 +398,11 @@ mcpc @test tools-list
 
 For remote servers that require a Bearer token (but not OAuth), use the `--header` flag to pass the token.
 All headers are stored securely in the OS keychain for the session, but they are **not** saved as reusable
-[OAuth profiles](#oauth-profiles). This means `--header` needs to be provided whenever
-running a one-shot command or connecting new session.
+[OAuth profiles](#oauth-profiles). This means `--header` must be provided again
+whenever you connect a new session.
 
 ```bash
-# Create session with Bearer token (token saved to keychain for this session only)
+# Create a session with a Bearer token (token saved to keychain for this session only)
 mcpc connect https://mcp.apify.com @apify --header "Authorization: Bearer ${APIFY_TOKEN}"
 
 # Use the session (Bearer token is loaded from keychain automatically)
@@ -419,9 +419,9 @@ discovery, all three [client registration approaches](#client-registration-appro
 refresh-token rotation.
 
 The OAuth authentication **always** needs to be initiated by the user calling the `login` command,
-which opens a web browser with login screen. `mcpc` never opens the web browser on its own.
+which opens a web browser with a login screen. `mcpc` never opens the web browser on its own.
 
-The OAuth credentials to specific servers are securely stored as **authentication profiles** - reusable
+The OAuth credentials for specific servers are securely stored as **authentication profiles** - reusable
 credentials that allow you to:
 
 - Authenticate once, use credentials across multiple commands or sessions
@@ -533,7 +533,7 @@ mcpc connect mcp.apify.com @apify --x402
 
 ## MCP proxy
 
-For stronger isolation, `mcpc` can expose an MCP session under a new local proxy MCP server using the `--proxy` option.
+For stronger isolation, `mcpc` can expose an MCP session as a new local proxy MCP server using the `--proxy` option.
 The proxy forwards all MCP requests to the upstream server but **never exposes the original authentication tokens** to the client.
 This is useful when you want to give someone or something MCP access without revealing your credentials.
 See also [AI sandboxes](#ai-sandboxes).
@@ -551,9 +551,9 @@ mcpc connect mcp.apify.com @open-relay --proxy 8080
 mcpc connect localhost:8080 @sandboxed
 mcpc @sandboxed tools-call search-actors keywords:="web scraper"
 
-# Optionally protect proxy with bearer token for better security (stored in OS keychain)
+# Optionally protect the proxy with a bearer token (stored in the OS keychain)
 mcpc connect mcp.apify.com @secure-relay --proxy 8081 --proxy-bearer-token secret123
-# To use the proxy, caller needs to pass the bearer token in HTTP header
+# To use the proxy, the caller needs to pass the bearer token in the Authorization header
 mcpc connect localhost:8081 @sandboxed2 --header "Authorization: Bearer secret123"
 ```
 
@@ -598,7 +598,7 @@ interactive **tool calling** and **[code mode](https://www.anthropic.com/enginee
 
 **Tool calling mode** - Agents call `mcpc` commands to dynamically explore and interact with MCP servers,
 using the default text output. This is similar to how MCP connectors in ChatGPT or Claude work,
-but CLI gives you more flexibility and longer operation timeouts.
+but the CLI gives you more flexibility and longer operation timeouts.
 
 ```bash
 # Discover available tools
@@ -669,7 +669,7 @@ The [proxy MCP server](#mcp-proxy) feature provides a security boundary for AI a
 
 1. **Human creates authentication profile**: `mcpc login mcp.apify.com --profile ai-access`
 2. **Human creates session**: `mcpc connect mcp.apify.com @ai-sandbox --profile ai-access --proxy 8080`
-3. **AI runs inside a sandbox**: If sandbox has access limited to `localhost:8080`,
+3. **AI runs inside a sandbox**: If the sandbox's access is limited to `localhost:8080`,
    it can only interact with the MCP server through the `@ai-sandbox` session,
    without access to the original OAuth credentials, HTTP headers, or `mcpc` configuration.
 
@@ -1026,7 +1026,7 @@ never executes hooks, scripts, or other frontmatter-declared behavior.
 When connected via a [session](#sessions), `mcpc` automatically handles `list_changed`
 notifications for tools, resources, and prompts.
 The bridge process tracks when each notification type was last received.
-The timestamps are available in JSON output of `mcpc @session --json` under the `_mcpc.notifications`
+The timestamps are available in the JSON output of `mcpc @session --json` under the `_mcpc.notifications`
 field - see [Server instructions](#server-instructions).
 
 #### Server logs
