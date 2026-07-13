@@ -74,20 +74,20 @@ describe.skipIf(onWindows)('BridgeClient.connect retry', () => {
     clients.push(client);
 
     const start = Date.now();
-    await expect(client.connect({ retryTimeoutMs: 400 })).rejects.toThrow(
+    await expect(client.connect({ retryTimeoutMillis: 400 })).rejects.toThrow(
       /Failed to connect to bridge/
     );
     // It should have spent roughly the budget retrying, not failed immediately.
     expect(Date.now() - start).toBeGreaterThanOrEqual(300);
   });
 
-  it('fails fast when retryTimeoutMs is 0', async () => {
+  it('fails fast when retryTimeoutMillis is 0', async () => {
     const p = sockPath(); // nothing listens here
     const client = new BridgeClient(p);
     clients.push(client);
 
     const start = Date.now();
-    await expect(client.connect({ retryTimeoutMs: 0 })).rejects.toThrow(
+    await expect(client.connect({ retryTimeoutMillis: 0 })).rejects.toThrow(
       /Failed to connect to bridge/
     );
     // Well under the 5s default retry budget — proves it did not retry. The wide

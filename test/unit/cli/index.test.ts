@@ -509,7 +509,7 @@ describe('extractOptions', () => {
 
   it('should extract --timeout', () => {
     const result = extractOptions(['--timeout', '120']);
-    expect(result).toEqual({ json: false, verbose: false, timeout: 120 });
+    expect(result).toEqual({ json: false, verbose: false, timeoutSecs: 120 });
   });
 
   it('should extract all global options together', () => {
@@ -517,7 +517,7 @@ describe('extractOptions', () => {
     expect(result).toEqual({
       json: true,
       verbose: true,
-      timeout: 60,
+      timeoutSecs: 60,
     });
   });
 
@@ -533,11 +533,11 @@ describe('extractOptions', () => {
 
   it('should parse timeout as integer', () => {
     const result = extractOptions(['--timeout', '300']);
-    expect(result).toEqual({ json: false, verbose: false, timeout: 300 });
+    expect(result).toEqual({ json: false, verbose: false, timeoutSecs: 300 });
   });
 
   it('should handle NaN timeout gracefully', () => {
     const result = extractOptions(['--timeout', 'invalid']);
-    expect(result.timeout).toBeNaN();
+    expect(result.timeoutSecs).toBeNaN();
   });
 });

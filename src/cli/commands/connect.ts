@@ -127,7 +127,7 @@ type ConnectSessionOptions = {
   verbose?: boolean;
   config?: string;
   headers?: string[];
-  timeout?: number;
+  timeoutSecs?: number;
   profile?: string;
   noProfile?: boolean;
   proxy?: string;
@@ -147,7 +147,7 @@ async function buildConnectResultEntry(
   status: 'created' | 'active',
   options: {
     verbose?: boolean;
-    timeout?: number;
+    timeoutSecs?: number;
     configFile?: string;
     entry?: string;
   }
@@ -158,7 +158,7 @@ async function buildConnectResultEntry(
       outputMode: 'json',
       hideTarget: true,
       ...(options.verbose && { verbose: options.verbose }),
-      ...(options.timeout !== undefined && { timeout: options.timeout }),
+      ...(options.timeoutSecs !== undefined && { timeoutSecs: options.timeoutSecs }),
     },
     async (client, context) => {
       const serverDetails = await client.getServerDetails();
@@ -207,7 +207,7 @@ async function renderConnectedSession(
   if (options.outputMode === 'json') {
     const entry = await buildConnectResultEntry(name, status, {
       ...(options.verbose && { verbose: options.verbose }),
-      ...(options.timeout !== undefined && { timeout: options.timeout }),
+      ...(options.timeoutSecs !== undefined && { timeoutSecs: options.timeoutSecs }),
     });
     console.log(formatOutput([entry], 'json'));
   } else {
@@ -596,7 +596,7 @@ type BulkConnectOptions = {
   outputMode: OutputMode;
   verbose?: boolean;
   headers?: string[];
-  timeout?: number;
+  timeoutSecs?: number;
   profile?: string;
   noProfile?: boolean;
   proxy?: string;
@@ -647,12 +647,13 @@ function skippedConnectEntry(
  *
  * `getServerDetails` blocks until the bridge's MCP client connects, so this resolves once the
  * server has responded (or rejects on handshake failure / timeout). The wait is bounded by
- * `options.timeout` (the `--timeout` value, in seconds); without it the bridge's default request
- * timeout applies. Output is suppressed (json + hideTarget) so callers control all rendering.
+ * `options.timeoutSecs` (the `--timeout` value, in seconds); without it the bridge's default
+ * request timeout applies. Output is suppressed (json + hideTarget) so callers control all
+ * rendering.
  */
 async function waitForSessionReady(
   sessionName: string,
-  options: { verbose?: boolean; timeout?: number }
+  options: { verbose?: boolean; timeoutSecs?: number }
 ): Promise<{ ready: true } | { ready: false; error: string }> {
   try {
     await withMcpClient(
@@ -661,7 +662,7 @@ async function waitForSessionReady(
         outputMode: 'json',
         hideTarget: true,
         ...(options.verbose && { verbose: options.verbose }),
-        ...(options.timeout !== undefined && { timeout: options.timeout }),
+        ...(options.timeoutSecs !== undefined && { timeoutSecs: options.timeoutSecs }),
       },
       async (client) => {
         await client.getServerDetails();
@@ -681,7 +682,7 @@ async function waitForSessionReady(
  */
 async function waitForBulkConnectReady(
   results: BulkConnectResult[],
-  options: { verbose?: boolean; timeout?: number },
+  options: { verbose?: boolean; timeoutSecs?: number },
   onSettled?: () => void
 ): Promise<BulkConnectResult[]> {
   return Promise.all(
@@ -812,7 +813,7 @@ function printBulkConnectSummary(
  */
 async function buildBulkConnectEntries(
   results: BulkConnectResult[],
-  options: { verbose?: boolean; timeout?: number }
+  options: { verbose?: boolean; timeoutSecs?: number }
 ): Promise<ConnectResultEntry[]> {
   return await Promise.all(
     results.map(async (r): Promise<ConnectResultEntry> => {
@@ -830,7 +831,7 @@ async function buildBulkConnectEntries(
       try {
         return await buildConnectResultEntry(r.sessionName, r.status, {
           ...(options.verbose && { verbose: options.verbose }),
-          ...(options.timeout !== undefined && { timeout: options.timeout }),
+          ...(options.timeoutSecs !== undefined && { timeoutSecs: options.timeoutSecs }),
           configFile: r.configFile,
           entry: r.entry,
         });

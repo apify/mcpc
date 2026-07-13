@@ -25,7 +25,7 @@ import { generateRequestId, sleep } from './utils.js';
 const logger = createLogger('bridge-client');
 
 // Default timeout for IPC requests to the bridge (3 minutes)
-const REQUEST_TIMEOUT = 3 * 60 * 1000;
+const REQUEST_TIMEOUT_MILLIS = 3 * 60 * 1000;
 
 /**
  * Extra margin added to the CLI-side IPC timer on top of an explicit `--timeout`.
@@ -34,10 +34,10 @@ const REQUEST_TIMEOUT = 3 * 60 * 1000;
  * always wins the race against the CLI's blunt IPC timeout, instead of the CLI
  * misdiagnosing a healthy bridge as unresponsive.
  */
-const IPC_TIMEOUT_MARGIN_MS = 10_000;
+const IPC_TIMEOUT_MARGIN_MILLIS = 10_000;
 
 // Timeout for initial socket connection (5 seconds)
-const CONNECT_TIMEOUT = 5 * 1000;
+const CONNECT_TIMEOUT_MILLIS = 5 * 1000;
 
 /**
  * Default budget for retrying transient connect failures (ECONNREFUSED/ENOENT).
@@ -46,17 +46,17 @@ const CONNECT_TIMEOUT = 5 * 1000;
  * reused the same PID, which the new bridge removes and recreates as it starts up.
  * Retrying briefly rides that out instead of failing the command (e.g. on a rapid
  * `restart`). Callers connecting to an established bridge that should fail fast pass
- * `retryTimeoutMs: 0`.
+ * `retryTimeoutMillis: 0`.
  */
-const DEFAULT_CONNECT_RETRY_MS = 5_000;
+const DEFAULT_CONNECT_RETRY_MILLIS = 5_000;
 
 /**
  * Delay between connect retries: a base plus random jitter, so that many clients
  * retrying at once (e.g. parallel bridges in tests) don't wake in lockstep and
  * hammer their sockets on the same cadence. Averages ~75ms.
  */
-const CONNECT_RETRY_BASE_MS = 50;
-const CONNECT_RETRY_JITTER_MS = 50;
+const CONNECT_RETRY_BASE_MILLIS = 50;
+const CONNECT_RETRY_JITTER_MILLIS = 50;
 
 // Maximum IPC buffer size (10 MB) — destroy socket if exceeded
 const MAX_BUFFER_SIZE = 10 * 1024 * 1024;
@@ -82,21 +82,21 @@ export class BridgeClient extends EventEmitter {
   /**
    * Connect to the bridge socket.
    *
-   * Transient failures (ECONNREFUSED/ENOENT) are retried for up to `retryTimeoutMs`
-   * (default {@link DEFAULT_CONNECT_RETRY_MS}) to ride out the brief window where a
+   * Transient failures (ECONNREFUSED/ENOENT) are retried for up to `retryTimeoutMillis`
+   * (default {@link DEFAULT_CONNECT_RETRY_MILLIS}) to ride out the brief window where a
    * just-spawned bridge has created its socket file but is not yet accepting
-   * connections. Pass `retryTimeoutMs: 0` to fail fast (e.g. when connecting to an
+   * connections. Pass `retryTimeoutMillis: 0` to fail fast (e.g. when connecting to an
    * already-established bridge).
    *
    * Throws NetworkError if connection fails or times out.
    */
-  async connect(options?: { retryTimeoutMs?: number }): Promise<void> {
+  async connect(options?: { retryTimeoutMillis?: number }): Promise<void> {
     if (this.socket) {
       return; // Already connected
     }
 
-    const retryTimeoutMs = options?.retryTimeoutMs ?? DEFAULT_CONNECT_RETRY_MS;
-    const deadline = retryTimeoutMs > 0 ? Date.now() + retryTimeoutMs : 0;
+    const retryTimeoutMillis = options?.retryTimeoutMillis ?? DEFAULT_CONNECT_RETRY_MILLIS;
+    const deadline = retryTimeoutMillis > 0 ? Date.now() + retryTimeoutMillis : 0;
 
     for (;;) {
       try {
@@ -107,7 +107,7 @@ export class BridgeClient extends EventEmitter {
         const transient = code === 'ECONNREFUSED' || code === 'ENOENT';
         if (deadline > 0 && transient && Date.now() < deadline) {
           logger.debug(`Bridge socket not ready yet (${code}), retrying...`);
-          await sleep(CONNECT_RETRY_BASE_MS + Math.random() * CONNECT_RETRY_JITTER_MS);
+          await sleep(CONNECT_RETRY_BASE_MILLIS + Math.random() * CONNECT_RETRY_JITTER_MILLIS);
           continue;
         }
         // Preserve an already-typed NetworkError (e.g. timeout); wrap raw socket errors.
@@ -139,14 +139,14 @@ export class BridgeClient extends EventEmitter {
       // Connection timeout
       const timeoutId = setTimeout(() => {
         settle(() => {
-          logger.debug(`Socket connection timeout after ${CONNECT_TIMEOUT}ms`);
+          logger.debug(`Socket connection timeout after ${CONNECT_TIMEOUT_MILLIS}ms`);
           if (this.socket) {
             this.socket.destroy();
             this.socket = null;
           }
           reject(new NetworkError(`Connection to bridge timed out`));
         });
-      }, CONNECT_TIMEOUT);
+      }, CONNECT_TIMEOUT_MILLIS);
 
       this.socket = connect(this.socketPath);
 
@@ -266,7 +266,7 @@ export class BridgeClient extends EventEmitter {
   async request(
     method: string,
     params?: unknown,
-    timeout?: number,
+    timeoutSecs?: number,
     requestId?: string
   ): Promise<unknown> {
     if (!this.socket) {
@@ -280,23 +280,25 @@ export class BridgeClient extends EventEmitter {
       id,
       method,
       params,
-      ...(timeout !== undefined && { timeout }),
+      ...(timeoutSecs !== undefined && { timeoutSecs }),
     };
 
     logger.debug('Sending request:', { id, method });
 
     // Use custom timeout (in seconds, convert to ms) or default. An explicit
     // timeout gets a margin on top so the bridge's own MCP timer (armed with the
-    // same value) always fires first — see IPC_TIMEOUT_MARGIN_MS.
-    const timeoutMs =
-      timeout !== undefined ? timeout * 1000 + IPC_TIMEOUT_MARGIN_MS : REQUEST_TIMEOUT;
+    // same value) always fires first — see IPC_TIMEOUT_MARGIN_MILLIS.
+    const timeoutMillis =
+      timeoutSecs !== undefined
+        ? timeoutSecs * 1000 + IPC_TIMEOUT_MARGIN_MILLIS
+        : REQUEST_TIMEOUT_MILLIS;
 
     // Create promise for response
     const promise = new Promise<unknown>((resolve, reject) => {
       const timeoutId = setTimeout(() => {
         this.pendingRequests.delete(id);
         reject(new IpcTimeoutError(`Request timeout: ${method}`));
-      }, timeoutMs);
+      }, timeoutMillis);
 
       this.pendingRequests.set(id, { resolve, reject, timeoutId });
     });

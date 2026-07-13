@@ -258,7 +258,7 @@ export interface FollowOptions {
    * Poll interval in ms. Backstop for filesystems where fs.watch is unreliable
    * (NFS, some network mounts). Defaults to 1000ms; tests can lower it.
    */
-  pollIntervalMs?: number;
+  pollIntervalMillis?: number;
   /**
    * Start streaming from the beginning of the file instead of the end.
    * Default false — backlog is normally the caller's responsibility.
@@ -279,7 +279,7 @@ export function followLog(
   options: FollowOptions = {}
 ): { stop: () => Promise<void> } {
   const path = getBridgeLogPath(sessionName);
-  const pollIntervalMs = options.pollIntervalMs ?? 1000;
+  const pollIntervalMillis = options.pollIntervalMillis ?? 1000;
   let position = 0;
   let inode: number | null = null;
   let watcher: FSWatcher | null = null;
@@ -377,7 +377,7 @@ export function followLog(
   // (NFS, network mounts) still get picked up.
   const poll = setInterval(() => {
     void drainPending();
-  }, pollIntervalMs);
+  }, pollIntervalMillis);
 
   return {
     stop: async (): Promise<void> => {

@@ -12,7 +12,7 @@ import { dirname } from 'path';
 import { createMcpClient, CreateMcpClientOptions, buildClientCapabilities } from '../core/index.js';
 import type { McpClient } from '../core/index.js';
 import type { ServerConfig, IpcMessage, LoggingLevel, X402SchemePreference } from '../lib/index.js';
-import { KEEPALIVE_INTERVAL_MS, X402_SCHEME_PREFERENCES } from '../lib/types.js';
+import { KEEPALIVE_INTERVAL_MILLIS, X402_SCHEME_PREFERENCES } from '../lib/types.js';
 import { createLogger, setVerbose, initFileLogger, closeFileLogger } from '../lib/index.js';
 import {
   fileExists,
@@ -63,7 +63,7 @@ import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js';
 
 // HTTP proxy and TLS settings are configured in main() after parsing --insecure flag
 
-// KEEPALIVE_INTERVAL_MS imported from ../lib/types.js
+// KEEPALIVE_INTERVAL_MILLIS imported from ../lib/types.js
 
 // Maximum IPC buffer size (10 MB) — destroy socket if exceeded
 const MAX_BUFFER_SIZE = 10 * 1024 * 1024;
@@ -444,10 +444,10 @@ class BridgeProcess {
 
       if (ipcWaiters.length > 0) {
         // Wait with timeout (5 seconds should be plenty for local IPC)
-        const timeout = new Promise<void>((_, reject) => {
+        const timeoutPromise = new Promise<void>((_, reject) => {
           setTimeout(() => reject(new Error('Timeout waiting for IPC credentials')), 5000);
         });
-        await Promise.race([Promise.all(ipcWaiters), timeout]);
+        await Promise.race([Promise.all(ipcWaiters), timeoutPromise]);
         logger.debug('IPC credentials received, proceeding with MCP connection');
       }
 
@@ -863,7 +863,7 @@ class BridgeProcess {
    * Start periodic keepalive ping to maintain connection
    */
   private startKeepalive(): void {
-    logger.debug(`Starting keepalive ping every ${KEEPALIVE_INTERVAL_MS / 1000}s`);
+    logger.debug(`Starting keepalive ping every ${KEEPALIVE_INTERVAL_MILLIS / 1000}s`);
 
     // Send first ping soon after startup to detect stale sessions early
     // (e.g. session expired on server between auto-reconnect and first interval tick)
@@ -881,7 +881,7 @@ class BridgeProcess {
         // If ping fails, the session might be expired - check and handle
         await this.handlePossibleExpiration(error as Error);
       });
-    }, KEEPALIVE_INTERVAL_MS);
+    }, KEEPALIVE_INTERVAL_MILLIS);
 
     // Don't block process exit waiting for this interval
     this.keepaliveInterval.unref();
@@ -1236,8 +1236,8 @@ class BridgeProcess {
       // milliseconds). The client reads the value synchronously when the routed method
       // is entered, and the finally below restores the baseline, so a one-off --timeout
       // never leaks into concurrent or later requests.
-      if (message.timeout !== undefined) {
-        this.client.setRequestTimeout(message.timeout * 1000);
+      if (message.timeoutSecs !== undefined) {
+        this.client.setRequestTimeout(message.timeoutSecs * 1000);
       }
 
       let result: unknown;
@@ -1514,7 +1514,7 @@ class BridgeProcess {
 
       this.sendError(socket, error as Error, message.id);
     } finally {
-      if (message.timeout !== undefined) {
+      if (message.timeoutSecs !== undefined) {
         this.client?.resetRequestTimeout();
       }
     }

@@ -13,7 +13,7 @@ import {
   redactHeaders,
   ClientError,
 } from '../../lib/index.js';
-import { DISCONNECTED_THRESHOLD_MS } from '../../lib/types.js';
+import { DISCONNECTED_THRESHOLD_MILLIS } from '../../lib/types.js';
 import type { ServerConfig, ConnectionMode } from '../../lib/types.js';
 import {
   formatOutput,
@@ -87,8 +87,8 @@ export function getBridgeStatus(session: {
   }
   // Bridge is alive — check if server is actually responding
   if (session.lastSeenAt) {
-    const lastSeenMs = Date.now() - new Date(session.lastSeenAt).getTime();
-    if (lastSeenMs > DISCONNECTED_THRESHOLD_MS) {
+    const lastSeenMillis = Date.now() - new Date(session.lastSeenAt).getTime();
+    if (lastSeenMillis > DISCONNECTED_THRESHOLD_MILLIS) {
       return 'disconnected';
     }
   }
@@ -166,8 +166,8 @@ export async function listSessionsAndAuthProfiles(options: {
         // Format status with time ago info (show for non-live states and stale live sessions)
         let statusStr = `${dot} ${text}`;
         if (session.lastSeenAt) {
-          const lastSeenMs = Date.now() - new Date(session.lastSeenAt).getTime();
-          const isStale = lastSeenMs > 5 * 60 * 1000; // 5 minutes
+          const lastSeenMillis = Date.now() - new Date(session.lastSeenAt).getTime();
+          const isStale = lastSeenMillis > 5 * 60 * 1000; // 5 minutes
           if (status !== 'live' || isStale) {
             const timeAgo = formatTimeAgo(session.lastSeenAt);
             if (timeAgo) {
@@ -274,7 +274,7 @@ export async function showServerDetails(
     outputMode: OutputMode;
     config?: string;
     headers?: string[];
-    timeout?: number;
+    timeoutSecs?: number;
     verbose?: boolean;
     hideTarget?: boolean;
   }
