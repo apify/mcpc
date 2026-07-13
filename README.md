@@ -91,7 +91,7 @@ bun install -g @apify/mcpc
 
 **Linux:** credentials use the OS keychain via the [Secret Service API](https://specifications.freedesktop.org/secret-service/).
 GNOME/KDE desktops work out of the box. On headless/CI systems, `mcpc` falls back to a
-file-based store (`~/.mcpc/credentials`, mode `0600`).
+file-based store (`~/.mcpc/credentials.json`, mode `0600`).
 
 To force the keychain on headless systems, install `libsecret` + `gnome-keyring`
 (via `apt-get`, `dnf`, or `pacman`) and run:
@@ -221,10 +221,10 @@ mcpc connect ~/.vscode/mcp.json   # connect every server in one file
 
 Bulk connects auto-generate session names (so they don't take an `@session`) and **skip local
 stdio servers by default** — pass `--stdio` to include them. Each discovered config file is listed
-with its servers and their status (`● live`, `● connecting`); files that can't be used are shown as
-`(0 servers)` or `(invalid)` with the reason, rather than silently ignored. Without `--json` the
-command returns right away without waiting for every connection to finish (still-connecting sessions
-show `● connecting`); `--json` waits and reports each server's details.
+with its servers and their status (`● live`, `✗ failed`); files that can't be used are shown as
+`(0 servers)` or `(invalid)` with the reason, rather than silently ignored. The command waits for
+every handshake to finish (with a progress spinner in human mode); `--json` reports each server's
+details. If every server fails to connect, the command exits with a non-zero code.
 
 ### MCP commands
 
@@ -301,9 +301,10 @@ mcpc grep "e" -m 5
 mcpc grep "actor" --json
 ```
 
-By default, `grep` searches only tools. Use `--resources` or `--prompts` to search those types
-(combine with `--tools` to include tools too). Sessions that are crashed or unavailable are shown
-with their status rather than silently skipped.
+By default, `grep` searches tools and server instructions. Use `--resources` or `--prompts` to
+search those types instead (combine with `--tools` or `--instructions` to mix and match). Sessions
+that are crashed or unavailable are shown with their status rather than silently skipped. Like
+`grep(1)`, the command exits with code 0 when there are matches and 1 when there are none.
 
 The `grep` command is useful for **dynamic tool discovery**,
 also called [Tool search tool](https://www.anthropic.com/engineering/advanced-tool-use) by Anthropic
@@ -322,7 +323,8 @@ With `--json` option, `mcpc` always emits only a single JSON object (or array), 
 [MCP specification](https://modelcontextprotocol.io/specification/latest).**
 On success, the JSON object is printed to stdout, on error to stderr.
 
-Note that `--json` is not available for `login` and `mcpc --help` commands.
+Note that `--json` is not available for `mcpc --help`. For `login`, `--json` prints a single
+`{ profile, serverUrl, scopes }` object on stdout (interactive prompts go to stderr).
 
 ## Sessions
 
@@ -847,12 +849,11 @@ refreshed automatically; pin a non-discoverable token endpoint with `--token-end
 
 #### Server instructions
 
-MCP servers can provide instructions describing their capabilities and usage. These are displayed when you connect to a server or run the `help` command:
+MCP servers can provide instructions describing their capabilities and usage. These are displayed when you connect to a server or show its session overview:
 
 ```bash
-# Show server info, capabilities, and instructions (both commands behave the same)
+# Show server info, capabilities, and instructions
 mcpc @apify
-mcpc @apify help
 
 # JSON mode
 mcpc @apify --json
@@ -1240,11 +1241,11 @@ MCP enables arbitrary tool execution and data access - treat servers like you tr
 
 | What                   | How                                             |
 | ---------------------- | ----------------------------------------------- |
-| **OAuth tokens**       | Stored in OS keychain, never on disk            |
+| **OAuth tokens**       | Stored in OS keychain (headless fallback: `credentials.json`, `0600`) |
 | **HTTP headers**       | Stored in OS keychain per-session               |
 | **Bridge credentials** | Passed via Unix socket IPC, kept in memory only |
 | **Process arguments**  | No secrets visible in `ps aux`                  |
-| **x402 private key**   | Stored in `wallets.json` (`0600` permissions)   |
+| **x402 private key**   | Stored in OS keychain (fallback: `wallets.json`, `0600`) |
 | **Config files**       | Contain only metadata, never tokens             |
 | **File permissions**   | `0600` (user-only) for all config files         |
 

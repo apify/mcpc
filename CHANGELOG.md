@@ -16,6 +16,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - `mcpc login` now explains OAuth client-registration failures with actionable guidance (use `--client-id` or `--client-metadata-url`) instead of surfacing a raw SDK JSON parse error. This affects servers that reject Dynamic Client Registration, such as Figma's remote MCP server, which only accepts an allow-list of approved clients.
+- Tool calls are no longer silently re-executed after a bridge crash or IPC timeout — a slow non-idempotent tool (payment, deploy) could previously run twice. The session is still reconnected automatically, and the error now says whether the call may have executed.
+- `tools-call` and `tasks-result` now exit with code 2 when the tool result reports an error (`isError`), matching the documented exit codes so shell scripts chaining on `&&` stop on failure.
+- `mcpc <@session> tools-call <tool> --help` now prints the tool's parameter schema as intended, instead of the generic command help.
+- Fixed the `--proxy` MCP server: it now validates `Host`/`Origin` headers to block DNS-rebinding attacks from web pages, supports multiple client sessions, and actually terminates sessions on HTTP DELETE (previously the second client to connect was locked out until restart).
+- Recovering the result of an async task after a bridge crash now returns the tool's real output instead of a placeholder status message.
+- A corrupted `sessions.json` is now backed up and reported instead of being silently reset, which permanently deleted all session records on the next save.
+- Very large integer arguments (e.g. snowflake IDs like `id:=12345678901234567890`) are now passed as strings instead of silently losing precision.
+- Closing a session with a local stdio server now waits for the full shutdown sequence (close stdin → SIGTERM → SIGKILL) instead of abandoning it after 1 second, which could leave orphaned server processes.
+- `mcpc login` flag-validation mistakes now exit with code 1 (client error) instead of 4, and JSON-mode errors consistently include the exit `code` field.
+- Fixed list pagination to detect repeated cursors from misbehaving servers instead of looping forever.
+- A one-off `--timeout` no longer leaks into subsequent requests on the same session.
+- Errors from `close` and `restart` are no longer printed twice.
+
+### Security
+
+- mcpc no longer advertises the `sampling` and `roots` MCP capabilities it does not implement, so servers won't send requests that can only fail.
+- The fallback bridge socket directory under the system temp dir is now verified to be a real directory owned by the current user before use.
 
 ## [0.4.0] - 2026-06-25
 
