@@ -1327,28 +1327,30 @@ See [CONTRIBUTING](./CONTRIBUTING.md) for development setup, architecture overvi
 
 <!-- Stars, contributors, commits, and activity as of July 2026. -->
 
-| Tool                                                                    | Lang   | Stars | Contrib / Commits | Active | Tools | Resources | Prompts | Tasks | Code mode | Sessions | OAuth | Stdio | HTTP | Tool search | x402 | LLM |
-| ----------------------------------------------------------------------- | ------ | ----: | ----------------: | ------ | ----- | --------- | ------- | ----- | --------- | -------- | ----- | ----- | ---- | ----------- | ---- | --- |
-| **[apify/mcpc](https://github.com/apify/mcpc)**                         | TS     |  ~720 |         10 / ~719 | ✅     | ✅    | ✅        | ✅      | ✅    | ✅        | ✅       | ✅    | ✅    | ✅   | ✅          | ✅   | —   |
-| [steipete/mcporter](https://github.com/steipete/mcporter)               | TS     | ~4.8k |         29 / ~743 | ✅     | ✅    | —         | —       | —     | ✅        | ✅       | ✅    | ✅    | ✅   | —           | —    | —   |
-| [knowsuchagency/mcp2cli](https://github.com/knowsuchagency/mcp2cli)     | Python | ~2.3k |         11 / ~105 | ✅     | ✅    | ✅        | ✅      | —     | ✅        | ✅       | ✅    | ✅    | ✅   | ✅          | —    | —   |
-| [IBM/mcp-cli](https://github.com/IBM/mcp-cli)                           | Python | ~2.0k |         24 / ~788 | ⚠️     | ✅    | ✅        | ✅      | —     | ✅        | ✅       | ✅    | ✅    | ✅   | —           | —    | ✅  |
-| [f/mcptools](https://github.com/f/mcptools)                             | Go     | ~1.6k |         15 / ~174 | ⚠️     | ✅    | ✅        | ✅      | —     | ✅        | —        | —     | ✅    | ✅   | —           | —    | —   |
-| [philschmid/mcp-cli](https://github.com/philschmid/mcp-cli)             | TS     | ~1.2k |           3 / ~30 | ⚠️     | ✅    | —         | —       | —     | ✅        | ✅       | —     | ✅    | ✅   | ✅          | —    | —   |
-| [adhikasp/mcp-client-cli](https://github.com/adhikasp/mcp-client-cli)   | Python |  ~680 |          6 / ~113 | ⚠️     | ✅    | ✅        | ✅      | —     | —         | —        | —     | ✅    | —    | —           | —    | ✅  |
-| [thellimist/clihub](https://github.com/thellimist/clihub)               | Go     |  ~670 |           1 / ~60 | ⚠️     | ✅    | —         | —       | —     | —         | —        | ✅    | ✅    | ✅   | ✅          | —    | —   |
-| [wong2/mcp-cli](https://github.com/wong2/mcp-cli)                       | JS     |  ~440 |           4 / ~67 | ✅     | ✅    | ✅        | ✅      | —     | —         | —        | ✅    | —     | ✅   | —           | —    | —   |
-| [mcpshim/mcpshim](https://github.com/mcpshim/mcpshim)                   | Go     |   ~61 |           1 / ~13 | ⚠️     | ✅    | —         | —       | —     | ✅        | ✅       | ✅    | —     | ✅   | ✅          | —    | —   |
-| [evantahler/mcpx](https://github.com/evantahler/mcpx)                   | TS     |   ~32 |          2 / ~109 | ✅     | ✅    | ✅        | ✅      | ✅    | ✅        | —        | ✅    | ✅    | ✅   | ✅          | —    | —   |
-| [EstebanForge/mcp-cli-ent](https://github.com/EstebanForge/mcp-cli-ent) | Go     |   ~15 |           3 / ~56 | ✅     | ✅    | —         | —       | —     | ✅        | ✅       | —     | ✅    | ✅   | ✅          | —    | —   |
+| Tool                                                                    | Lang   | Stars | Commits | Contrib | Active | Tools | Resources | Prompts | Tasks | Code mode | Sessions | OAuth | Stdio | HTTP | Tool search | x402 | LLM |
+| ----------------------------------------------------------------------- | ------ | ----: | ------: | ------: | ------ | ----- | --------- | ------- | ----- | --------- | -------- | ----- | ----- | ---- | ----------- | ---- | --- |
+| **[apify/mcpc](https://github.com/apify/mcpc)**                         | TS     |   720 |     719 |      10 | ✅     | ✅    | ✅        | ✅      | ✅    | ✅        | ✅       | ✅    | ✅    | ✅   | ✅          | ✅   | —   |
+| [steipete/mcporter](https://github.com/steipete/mcporter)               | TS     |  4.8k |     743 |      29 | ✅     | ✅    | —         | —       | —     | ✅        | ✅       | ✅    | ✅    | ✅   | —           | —    | —   |
+| [knowsuchagency/mcp2cli](https://github.com/knowsuchagency/mcp2cli)     | Python |  2.3k |     105 |      11 | ✅     | ✅    | ✅        | ✅      | —     | ✅        | ✅       | ✅    | ✅    | ✅   | ✅          | —    | —   |
+| [IBM/mcp-cli](https://github.com/IBM/mcp-cli)                           | Python |  2.0k |     788 |      24 | ⚠️     | ✅    | ✅        | ✅      | —     | ✅        | ✅       | ✅    | ✅    | ✅   | —           | —    | ✅  |
+| [f/mcptools](https://github.com/f/mcptools)                             | Go     |  1.6k |     174 |      15 | ⚠️     | ✅    | ✅        | ✅      | —     | ✅        | —        | —     | ✅    | ✅   | —           | —    | —   |
+| [philschmid/mcp-cli](https://github.com/philschmid/mcp-cli)             | TS     |  1.2k |      30 |       3 | ⚠️     | ✅    | —         | —       | —     | ✅        | ✅       | —     | ✅    | ✅   | ✅          | —    | —   |
+| [adhikasp/mcp-client-cli](https://github.com/adhikasp/mcp-client-cli)   | Python |   680 |     113 |       6 | ⚠️     | ✅    | ✅        | ✅      | —     | —         | —        | —     | ✅    | —    | —           | —    | ✅  |
+| [thellimist/clihub](https://github.com/thellimist/clihub)               | Go     |   670 |      60 |       1 | ⚠️     | ✅    | —         | —       | —     | —         | —        | ✅    | ✅    | ✅   | ✅          | —    | —   |
+| [wong2/mcp-cli](https://github.com/wong2/mcp-cli)                       | JS     |   440 |      67 |       4 | ✅     | ✅    | ✅        | ✅      | —     | —         | —        | ✅    | —     | ✅   | —           | —    | —   |
+| [mcpshim/mcpshim](https://github.com/mcpshim/mcpshim)                   | Go     |    61 |      13 |       1 | ⚠️     | ✅    | —         | —       | —     | ✅        | ✅       | ✅    | —     | ✅   | ✅          | —    | —   |
+| [evantahler/mcpx](https://github.com/evantahler/mcpx)                   | TS     |    32 |     109 |       2 | ✅     | ✅    | ✅        | ✅      | ✅    | ✅        | —        | ✅    | ✅    | ✅   | ✅          | —    | —   |
+| [EstebanForge/mcp-cli-ent](https://github.com/EstebanForge/mcp-cli-ent) | Go     |    15 |      56 |       3 | ✅     | ✅    | —         | —       | —     | ✅        | ✅       | —     | ✅    | ✅   | ✅          | —    | —   |
+| [domdomegg/call-mcp](https://github.com/domdomegg/call-mcp)             | TS     |     1 |      20 |       2 | ✅     | ✅    | —         | —       | —     | ✅        | —        | ✅    | ✅    | ✅   | —           | —    | —   |
 
-**Legend:** ✅ = supported, ⚠️ = stale (no commits in 3+ months), **Contrib / Commits** = contributors / total commits, **Tasks** = [async tasks](https://modelcontextprotocol.io/specification/latest/server/utilities/tasks), **x402** = [x402 payment protocol](https://www.x402.org/) support, **LLM** = requires/uses an LLM.
+**Legend:** ✅ = supported, ⚠️ = stale (no commits in 3+ months), **Commits** = total commits, **Contrib** = contributors, **Tasks** = [async tasks](https://modelcontextprotocol.io/specification/latest/server/utilities/tasks), **x402** = [x402 payment protocol](https://www.x402.org/) support, **LLM** = requires/uses an LLM.
 
 **Notes:**
 
 - [thellimist/clihub](https://github.com/thellimist/clihub) is a code generator that compiles MCP tools into standalone CLI binaries, rather than a runtime client ([HN discussion](https://news.ycombinator.com/item?id=47157398)).
 - [knowsuchagency/mcp2cli](https://github.com/knowsuchagency/mcp2cli) also supports OpenAPI specs directly and uses a custom TOON encoding for token-efficient tool schemas.
 - [IBM/mcp-cli](https://github.com/IBM/mcp-cli) and [mcp-client-cli](https://github.com/adhikasp/mcp-client-cli) integrate an LLM (Ollama, OpenAI, etc.) for chat-style interaction, while the other tools are pure CLI clients.
+- [domdomegg/call-mcp](https://github.com/domdomegg/call-mcp) can also call connectors configured in claude.ai by reusing the Claude Code OAuth token, with no separate login.
 
 ### Code mode and dynamic tool discovery
 
