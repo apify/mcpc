@@ -20,7 +20,6 @@ import { loadSessions, deleteSession, consolidateSessions } from '../../lib/sess
 import { stopBridge } from '../../lib/bridge-manager.js';
 import { createLogger } from '../../lib/logger.js';
 import { deleteAuthProfiles } from '../../lib/auth/profiles.js';
-import { clearKeychainWarningMarker } from '../../lib/auth/keychain.js';
 
 const logger = createLogger('clean');
 
@@ -152,9 +151,6 @@ async function cleanAll(): Promise<CleanResult> {
 
   // Clean logs
   result.logs = await cleanLogs();
-
-  // Reset the one-time "OS keychain unavailable" warning marker
-  await clearKeychainWarningMarker();
 
   // Clean any remaining stale sockets and orphaned logs
   const staleResult = await cleanStale();

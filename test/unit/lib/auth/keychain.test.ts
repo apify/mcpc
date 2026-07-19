@@ -288,6 +288,31 @@ describe('file fallback when OS keychain unavailable', () => {
     }
   });
 
+  it('still logs the fallback at debug level after the first warning', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const countWarnings = () =>
+      errorSpy.mock.calls.filter((call) => String(call[0]).includes('OS keychain unavailable'))
+        .length;
+
+    try {
+      // First "process": full warning
+      const first = await loadKeychain();
+      await first.storeKeychainSessionHeaders('sess', { token: 'a' });
+      expect(countWarnings()).toBe(1);
+
+      // Second "process" with --verbose: the warning is suppressed by the
+      // marker, but a debug-level trace is still emitted on every occurrence.
+      const second = await loadKeychain();
+      const { setVerbose } = await import('../../../../src/lib/logger.js');
+      setVerbose(true);
+      await second.readKeychainSessionHeaders('sess');
+      expect(countWarnings()).toBe(2);
+      expect(String(errorSpy.mock.calls.at(-1)?.[0])).toContain('[DEBUG]');
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it('warns again after the keychain recovers and then breaks again', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const countWarnings = () =>

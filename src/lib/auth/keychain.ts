@@ -10,11 +10,11 @@
  * file-based fallback is used for the entire session.
  */
 
-import { readFile, writeFile, unlink, access } from 'fs/promises';
+import { readFile, writeFile, unlink } from 'fs/promises';
 import { join } from 'path';
 import chalk from 'chalk';
 import { createLogger, getJsonMode } from '../logger.js';
-import { getServerHost, getMcpcHome, ensureDir } from '../utils.js';
+import { getServerHost, getMcpcHome, ensureDir, fileExists } from '../utils.js';
 import { withFileLock } from '../file-lock.js';
 
 const logger = createLogger('keychain');
@@ -96,50 +96,10 @@ async function probeKeychain(EntryClass: EntryConstructor): Promise<boolean> {
   }
 }
 
-// Marker file recording that the "OS keychain unavailable" warning was already
-// shown to the user. The in-process dedup (_probePromise) is not enough because
-// every mcpc invocation is a fresh process — without persistent state the
-// warning would repeat on every command.
+// Marker file recording that the "OS keychain unavailable" warning was shown.
+// The in-process dedup (_probePromise) is not enough: every mcpc invocation is
+// a fresh process, so without it the warning would repeat on every command.
 const warningMarkerPath = (): string => join(getMcpcHome(), '.keychain-warning-shown');
-
-async function warningAlreadyShown(): Promise<boolean> {
-  try {
-    await access(warningMarkerPath());
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Remove the marker so the warning shows once again on the next occurrence
- * (used when the keychain is found working, and by `mcpc clean all`).
- * Best-effort: never throws.
- */
-export async function clearKeychainWarningMarker(): Promise<void> {
-  await unlink(warningMarkerPath()).catch(() => {});
-}
-
-async function warnKeychainUnavailable(): Promise<void> {
-  const message =
-    `OS keychain unavailable, ` +
-    `falling back to file-based credential storage (${credentialsPath()}). ` +
-    `Install a keyring daemon (e.g. gnome-keyring or kwallet) for better security.`;
-
-  // Only warn once across invocations; keep a debug-level trace afterwards so
-  // --verbose and log files still record the fallback.
-  if (getJsonMode() || (await warningAlreadyShown())) {
-    logger.debug(message);
-    return;
-  }
-  logger.warn(chalk.red(message));
-  try {
-    await ensureDir(getMcpcHome());
-    await writeFile(warningMarkerPath(), `${new Date().toISOString()}\n`, { mode: 0o600 });
-  } catch {
-    // Best-effort: failing to persist the marker only means the warning may repeat.
-  }
-}
 
 // Serialise the one-time probe so concurrent callers don't race.
 let _probePromise: Promise<void> | null = null;
@@ -157,9 +117,24 @@ async function ensureProbed(): Promise<void> {
       }
       if (keychainAvailable) {
         // Keychain works — clear the marker so a future regression warns again.
-        await clearKeychainWarningMarker();
-      } else {
-        await warnKeychainUnavailable();
+        await unlink(warningMarkerPath()).catch(() => {});
+        return;
+      }
+      const message =
+        `OS keychain unavailable, ` +
+        `falling back to file-based credential storage (${credentialsPath()}). ` +
+        `Install a keyring daemon (e.g. gnome-keyring or kwallet) for better security.`;
+      if (getJsonMode() || (await fileExists(warningMarkerPath()))) {
+        // Warned before (or JSON mode) — keep a trace in verbose/log-file output only.
+        logger.debug(message);
+        return;
+      }
+      logger.warn(chalk.red(message));
+      try {
+        await ensureDir(getMcpcHome());
+        await writeFile(warningMarkerPath(), '', { mode: 0o600 });
+      } catch {
+        // Best-effort — a failed marker write only means the warning may repeat.
       }
     })();
   }
