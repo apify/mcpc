@@ -25,6 +25,10 @@ server that works out of the box, so readers can copy-paste examples and run the
 This is a soft convention for documentation consistency, not a license condition — mcpc is
 distributed under Apache 2.0 and you are free to use it with any MCP server.
 
+If your change touches the user-facing CLI surface (commands, flags, argument syntax, defaults,
+or workflows), also update the built-in agent skill at [`skills/mcpc/SKILL.md`](./skills/mcpc/SKILL.md)
+(printed by `mcpc help --skill`) so it keeps matching the CLI and README.
+
 ## Development setup
 
 This repo uses [pnpm](https://pnpm.io/) 10 (pinned via `packageManager` in `package.json`). If you
