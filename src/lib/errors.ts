@@ -95,6 +95,38 @@ export class AuthError extends McpError {
 export class IpcTimeoutError extends NetworkError {}
 
 /**
+ * Marker for errors that the bridge reported over IPC, as opposed to errors
+ * produced locally in the CLI (e.g. a failed bridge socket).
+ *
+ * The distinction matters for NetworkError: a bridge-reported one means the MCP
+ * *server* was unreachable or rejected the request while the bridge process is
+ * alive and maintains its own session status (e.g. marking the session expired
+ * before shutting down). A local one means the bridge itself is gone. Only the
+ * latter warrants a bridge restart — restarting on the former is pointless and
+ * races the bridge's own status bookkeeping in sessions.json.
+ */
+const BRIDGE_REPORTED = Symbol('mcpc.bridgeReported');
+
+/**
+ * Mark an error as reported by the bridge over IPC. Returns the same error.
+ */
+export function markBridgeReported<T extends Error>(error: T): T {
+  (error as unknown as Record<symbol, unknown>)[BRIDGE_REPORTED] = true;
+  return error;
+}
+
+/**
+ * Check whether an error was reported by the bridge over IPC (see markBridgeReported).
+ */
+export function isBridgeReported(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as Record<symbol, unknown>)[BRIDGE_REPORTED] === true
+  );
+}
+
+/**
  * Check if an error message indicates an authentication error from the server.
  * Uses word boundaries for numeric codes (401, 403) to avoid false positives
  * from error codes or other numbers that happen to contain these digits.

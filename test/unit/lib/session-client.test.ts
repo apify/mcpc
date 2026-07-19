@@ -8,10 +8,18 @@
  * - A socket failure restarts the bridge, but non-idempotent operations
  *   (tool calls) are NOT re-executed — the server may already have run them.
  * - Idempotent operations (listTools etc.) are retried once after restart.
+ * - A NetworkError REPORTED BY the bridge (server unreachable/rejected) never
+ *   restarts the bridge — the bridge is alive and manages its own session
+ *   status (e.g. marking it expired); a restart would race that bookkeeping.
  */
 
 import { vi } from 'vitest';
-import { NetworkError, IpcTimeoutError, ServerError } from '../../../src/lib/errors.js';
+import {
+  NetworkError,
+  IpcTimeoutError,
+  ServerError,
+  markBridgeReported,
+} from '../../../src/lib/errors.js';
 
 const restartBridge = vi.fn(async () => ({ pid: 4242 }));
 const updateSession = vi.fn(async () => {});
@@ -104,6 +112,30 @@ describe('SessionClient.withRetry', () => {
     expect(result).toEqual({ tools: [] });
     expect(restartBridge).toHaveBeenCalledTimes(1);
     expect(replacementRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not restart or retry on a bridge-reported network error (idempotent op)', async () => {
+    // e.g. the server returned 404 for an expired session: the bridge is alive,
+    // has already marked the session expired, and is shutting down on its own
+    const bridge = fakeBridgeClient(async () => {
+      throw markBridgeReported(new NetworkError('Ping failed: 404 Session expired'));
+    });
+    const client = new SessionClient('@test', bridge);
+
+    await expect(client.listTools()).rejects.toThrow(/Session expired/);
+    expect(restartBridge).not.toHaveBeenCalled();
+    expect(replacementRequest).not.toHaveBeenCalled();
+  });
+
+  it('does not restart or retry on a bridge-reported network error (tool call)', async () => {
+    const bridge = fakeBridgeClient(async () => {
+      throw markBridgeReported(new NetworkError('fetch failed: server unreachable'));
+    });
+    const client = new SessionClient('@test', bridge);
+
+    await expect(client.callTool('deploy', {})).rejects.toThrow(/server unreachable/);
+    expect(bridge.request).toHaveBeenCalledTimes(1);
+    expect(restartBridge).not.toHaveBeenCalled();
   });
 
   it('does not retry MCP-level errors', async () => {

@@ -30,7 +30,7 @@ import {
   isSessionExpiredError,
   enrichErrorMessage,
 } from './utils.js';
-import { updateSession, getSession } from './sessions.js';
+import { updateSession, getSession, clearSessionMcpSessionId } from './sessions.js';
 import { createLogger } from './logger.js';
 import {
   ClientError,
@@ -743,13 +743,24 @@ export async function ensureBridgeReady(
     throw createServerAuthError(target, { sessionName });
   }
 
+  // Auto-restart recovery: recover an expired session by starting a fresh MCP
+  // session — drop the rejected session id so the restart below does not attempt
+  // resumption. There is no bridge worth probing: a session is only marked
+  // expired right before its bridge shuts down. Previous session state is lost.
+  let startFresh = false;
   if (session.status === 'expired') {
-    throw new ClientError(
-      `Session ${sessionName} has expired. ` +
-        `The MCP server indicated the session is no longer valid.\n` +
-        `To restart the session, run: mcpc ${sessionName} restart\n` +
-        `To remove the expired session, run: mcpc ${sessionName} close`
-    );
+    if (!session.autoRestart) {
+      throw new ClientError(
+        `Session ${sessionName} has expired. ` +
+          `The MCP server indicated the session is no longer valid.\n` +
+          `To restart the session, run: mcpc ${sessionName} restart\n` +
+          `To remove the expired session, run: mcpc ${sessionName} close\n` +
+          `Tip: sessions created with "mcpc connect --auto-restart" recover from this automatically.`
+      );
+    }
+    logger.debug(`Session ${sessionName} expired; auto-restart enabled, starting a fresh session`);
+    await clearSessionMcpSessionId(sessionName);
+    startFresh = true;
   }
 
   // Socket path is PID-based: each bridge instance gets its own unique path
@@ -758,7 +769,7 @@ export async function ensureBridgeReady(
   // Quick check: is the process alive?
   const processAlive = session.pid ? isProcessAlive(session.pid) : false;
 
-  if (processAlive && socketPath) {
+  if (!startFresh && processAlive && socketPath) {
     // Process alive, try getServerDetails (blocks until MCP connected)
     const result = await checkBridgeHealth(socketPath, timeoutSecs);
     if (result.healthy) {
@@ -777,41 +788,61 @@ export async function ensureBridgeReady(
         throw new ClientError(enrichErrorMessage(result.error.message, serverUrl));
       }
     }
-  } else {
+  } else if (!startFresh) {
     logger.debug(`Bridge process not alive for ${sessionName}, will try to restart it`);
   }
 
-  // Bridge not healthy - restart it
+  // Bridge not healthy - restart it (the loop runs at most twice: with
+  // auto-restart, a restart whose session resumption is rejected by the server
+  // is retried once with a fresh session).
   // Use 'connecting' if the session has never successfully connected (no lastSeenAt),
   // 'reconnecting' if it was previously active.
   // Set lastConnectionAttemptAt to prevent parallel CLI processes from
   // also triggering a restart via consolidateSessions/reconnectCrashedSessions.
   const restartStatus = session.lastSeenAt ? 'reconnecting' : 'connecting';
-  await updateSession(sessionName, {
-    status: restartStatus,
-    lastConnectionAttemptAt: new Date().toISOString(),
-  });
-  const { pid: newPid } = await restartBridge(sessionName);
+  for (;;) {
+    await updateSession(sessionName, {
+      status: restartStatus,
+      lastConnectionAttemptAt: new Date().toISOString(),
+    });
+    const { pid: newPid } = await restartBridge(sessionName);
 
-  const newSocketPath = getSocketPath(sessionName, newPid);
+    const newSocketPath = getSocketPath(sessionName, newPid);
 
-  // Try getServerDetails on restarted bridge (blocks until MCP connected)
-  const result = await checkBridgeHealth(newSocketPath, timeoutSecs);
-  if (result.healthy) {
-    await updateSession(sessionName, { status: 'active' });
-    logger.debug(`Bridge for ${sessionName} passed health check`);
-    return newSocketPath;
+    // Try getServerDetails on restarted bridge (blocks until MCP connected)
+    const result = await checkBridgeHealth(newSocketPath, timeoutSecs);
+    if (result.healthy) {
+      await updateSession(sessionName, { status: 'active' });
+      logger.debug(`Bridge for ${sessionName} passed health check`);
+      return newSocketPath;
+    }
+
+    const errorMsg = result.error?.message || 'unknown error';
+
+    // Auto-restart: if resuming the old MCP session failed because the server
+    // rejected the session id, retry once with a fresh session (no resumption)
+    if (
+      !startFresh &&
+      session.autoRestart &&
+      isSessionExpiredError(errorMsg, { hadActiveSession: !!session.mcpSessionId })
+    ) {
+      logger.debug(
+        `Session ${sessionName} expired during restart; auto-restart enabled, retrying with a fresh session`
+      );
+      await clearSessionMcpSessionId(sessionName);
+      startFresh = true;
+      continue;
+    }
+
+    // Not healthy after restart - classify the error
+    await classifyAndThrowSessionError(sessionName, session, errorMsg, result.error);
+
+    // Other errors - provide enriched error with hint to view logs
+    const serverUrl = session.server.url;
+    throw new ClientError(
+      `${enrichErrorMessage(errorMsg, serverUrl)}\n` + `For details, run: mcpc ${sessionName} logs`
+    );
   }
-
-  // Not healthy after restart - classify the error
-  const errorMsg = result.error?.message || 'unknown error';
-  await classifyAndThrowSessionError(sessionName, session, errorMsg, result.error);
-
-  // Other errors - provide enriched error with hint to view logs
-  const serverUrl = session.server.url;
-  throw new ClientError(
-    `${enrichErrorMessage(errorMsg, serverUrl)}\n` + `For details, run: mcpc ${sessionName} logs`
-  );
 }
 
 /**
@@ -820,7 +851,9 @@ export async function ensureBridgeReady(
  * Called after consolidateSessions() identifies crashed sessions eligible for reconnection.
  *
  * Unlike explicit "restart" (which creates a fresh MCP session), this preserves
- * the existing MCP session ID for resumption when possible.
+ * the existing MCP session ID for resumption when possible. Expired sessions with
+ * auto-restart enabled are also included — consolidateSessions() has already
+ * dropped their rejected session id, so they reconnect with a fresh session.
  *
  * @param sessionNames - Names of sessions to reconnect (from consolidateSessions result)
  */

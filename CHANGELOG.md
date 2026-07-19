@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- New `--auto-restart` option for the `connect` command: sessions expired by the server are restarted automatically with a fresh MCP session (previous session state is lost), instead of failing until an explicit `restart`. Recovery happens on next use, or in the background whenever sessions are probed (e.g. `mcpc` or `mcpc grep`), same as crashed-session reconnection.
+
+### Fixed
+
+- A server-side network failure (e.g. an expired session or unreachable server) no longer makes the CLI needlessly restart a healthy bridge, which could overwrite the session's `expired`/`unauthorized` status with `active` and hide the real state.
+
 ## [0.5.0] - 2026-07-21
 
 ### Changed

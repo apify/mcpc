@@ -19,7 +19,14 @@ import { connect, type Socket } from 'net';
 import { EventEmitter } from 'events';
 import type { IpcMessage, TaskUpdate, X402WalletCredentials } from './types.js';
 import { createLogger } from './logger.js';
-import { NetworkError, ClientError, ServerError, AuthError, IpcTimeoutError } from './errors.js';
+import {
+  NetworkError,
+  ClientError,
+  ServerError,
+  AuthError,
+  IpcTimeoutError,
+  markBridgeReported,
+} from './errors.js';
 import { generateRequestId, sleep } from './utils.js';
 
 const logger = createLogger('bridge-client');
@@ -244,7 +251,9 @@ export class BridgeClient extends EventEmitter {
             default:
               error = new Error(message.error.message);
           }
-          pending.reject(error);
+          // Mark as bridge-reported so callers can tell a server-side failure
+          // (bridge alive) apart from a local socket failure (bridge gone)
+          pending.reject(markBridgeReported(error));
         } else {
           pending.resolve(message.result);
         }

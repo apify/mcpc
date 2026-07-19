@@ -474,6 +474,10 @@ Full docs: ${docsUrl}`
     .option('--proxy-bearer-token <token>', 'Require authentication for access to proxy server')
     .option('--stdio', 'Launch all local stdio servers from selected config files')
     .option(
+      '--auto-restart',
+      'Restart expired sessions automatically with a fresh session (previous session state is lost)'
+    )
+    .option(
       '--x402 [scheme]',
       'Enable x402 auto-payment using the configured wallet; optional scheme: auto (default, prefer upto), upto, or exact.'
     )
@@ -500,6 +504,12 @@ ${chalk.bold('Stdio servers (command-based, run locally):')}
   Config entries spawn the command on connect, even if the handshake
   later fails — only connect to configs you trust. Bulk connects skip
   stdio by default; pass --stdio to include them.
+
+${chalk.bold('Auto-restart (--auto-restart):')}
+  Expired sessions are restarted automatically with a fresh MCP session
+  — on next use, or in the background whenever sessions are probed
+  (e.g. "mcpc", "mcpc grep") — instead of requiring an explicit
+  "mcpc @session restart". Server-side session state is lost on restart.
 ${jsonHelp(
   'Array of `InitializeResult` objects (one per session), extended with `toolNames` and `_mcpc` metadata',
   '`[{ protocolVersion?, capabilities?, serverInfo?, instructions?, toolNames?, _mcpc: { sessionName, server?, ... }]`',
@@ -530,6 +540,7 @@ ${jsonHelp(
           ...(opts.proxy && { proxy: opts.proxy as string }),
           ...(opts.proxyBearerToken && { proxyBearerToken: opts.proxyBearerToken as string }),
           ...(opts.stdio && { stdio: true }),
+          ...(opts.autoRestart && { autoRestart: true }),
           ...(globalOpts.x402 && { x402: globalOpts.x402 }),
           ...(globalOpts.insecure && { insecure: true }),
         });
@@ -561,6 +572,7 @@ ${jsonHelp(
           ...(opts.proxy && { proxy: opts.proxy as string }),
           ...(opts.proxyBearerToken && { proxyBearerToken: opts.proxyBearerToken as string }),
           ...(opts.stdio && { stdio: true }),
+          ...(opts.autoRestart && { autoRestart: true }),
           ...(globalOpts.x402 && { x402: globalOpts.x402 }),
           ...(globalOpts.insecure && { insecure: true }),
         });
@@ -585,6 +597,7 @@ ${jsonHelp(
           config: parsed.file,
           proxy: opts.proxy,
           proxyBearerToken: opts.proxyBearerToken,
+          ...(opts.autoRestart && { autoRestart: true }),
           ...(globalOpts.x402 && { x402: globalOpts.x402 }),
           ...(globalOpts.insecure && { insecure: true }),
         });
@@ -594,6 +607,7 @@ ${jsonHelp(
           ...(headers && { headers }),
           proxy: opts.proxy,
           proxyBearerToken: opts.proxyBearerToken,
+          ...(opts.autoRestart && { autoRestart: true }),
           ...(globalOpts.x402 && { x402: globalOpts.x402 }),
           ...(globalOpts.insecure && { insecure: true }),
         });
