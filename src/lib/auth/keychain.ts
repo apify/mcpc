@@ -6,15 +6,16 @@
  *
  * The @napi-rs/keyring native addon is loaded lazily on first use via a
  * cached import() promise.  If the addon or its shared-library dependency
- * (libsecret on Linux) is not present, a one-time warning is emitted and
- * file-based fallback is used for the entire session.
+ * (libsecret on Linux) is not present, file-based fallback is used for the
+ * entire session; a warning is shown once, when the fallback file is first
+ * created (i.e. when credentials actually get stored outside the keychain).
  */
 
-import { readFile, writeFile, unlink } from 'fs/promises';
+import { readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
 import chalk from 'chalk';
 import { createLogger, getJsonMode } from '../logger.js';
-import { getServerHost, getMcpcHome, ensureDir, fileExists } from '../utils.js';
+import { getServerHost, getMcpcHome, fileExists } from '../utils.js';
 import { withFileLock } from '../file-lock.js';
 
 const logger = createLogger('keychain');
@@ -36,6 +37,20 @@ async function fileGet(account: string): Promise<string | null> {
 }
 
 async function fileSet(account: string, value: string): Promise<void> {
+  // Warn exactly once, at the moment the fallback file gets created — i.e. when
+  // credentials first start being stored outside the OS keychain. Reads and
+  // subsequent writes stay silent (a debug-level trace is logged on every
+  // fallback occurrence in ensureProbed). The existence check must run before
+  // withFileLock, which pre-creates the file it locks.
+  if (!getJsonMode() && !(await fileExists(credentialsPath()))) {
+    logger.warn(
+      chalk.red(
+        `OS keychain unavailable, ` +
+          `falling back to file-based credential storage (${credentialsPath()}). ` +
+          `Install a keyring daemon (e.g. gnome-keyring or kwallet) for better security.`
+      )
+    );
+  }
   await withFileLock(credentialsPath(), async () => {
     const raw = await readFile(credentialsPath(), 'utf8').catch(() => '{}');
     const data = { ...(JSON.parse(raw) as Record<string, string>), [account]: value };
@@ -96,11 +111,6 @@ async function probeKeychain(EntryClass: EntryConstructor): Promise<boolean> {
   }
 }
 
-// Marker file recording that the "OS keychain unavailable" warning was shown.
-// The in-process dedup (_probePromise) is not enough: every mcpc invocation is
-// a fresh process, so without it the warning would repeat on every command.
-const warningMarkerPath = (): string => join(getMcpcHome(), '.keychain-warning-shown');
-
 // Serialise the one-time probe so concurrent callers don't race.
 let _probePromise: Promise<void> | null = null;
 
@@ -115,26 +125,11 @@ async function ensureProbed(): Promise<void> {
         // import() itself failed (missing native addon / libsecret)
         keychainAvailable = false;
       }
-      if (keychainAvailable) {
-        // Keychain works — clear the marker so a future regression warns again.
-        await unlink(warningMarkerPath()).catch(() => {});
-        return;
-      }
-      const message =
-        `OS keychain unavailable, ` +
-        `falling back to file-based credential storage (${credentialsPath()}). ` +
-        `Install a keyring daemon (e.g. gnome-keyring or kwallet) for better security.`;
-      if (getJsonMode() || (await fileExists(warningMarkerPath()))) {
-        // Warned before (or JSON mode) — keep a trace in verbose/log-file output only.
-        logger.debug(message);
-        return;
-      }
-      logger.warn(chalk.red(message));
-      try {
-        await ensureDir(getMcpcHome());
-        await writeFile(warningMarkerPath(), '', { mode: 0o600 });
-      } catch {
-        // Best-effort — a failed marker write only means the warning may repeat.
+      if (!keychainAvailable) {
+        // Debug-level only: the user-facing warning is emitted once, when the
+        // fallback file is first created (see fileSet). Warning on every probe
+        // would repeat on every mcpc invocation, since each one is a fresh process.
+        logger.debug(`OS keychain unavailable, using file-based credential storage`);
       }
     })();
   }
