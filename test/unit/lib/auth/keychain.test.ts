@@ -264,6 +264,73 @@ describe('file fallback when OS keychain unavailable', () => {
     expect(await readKeychainSessionHeaders('b')).toEqual({ token: 'bbb' });
   });
 
+  it('warns once when credentials.json is first created, not on reads', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const countWarnings = () =>
+      errorSpy.mock.calls.filter((call) => String(call[0]).includes('OS keychain unavailable'))
+        .length;
+
+    try {
+      // Read-only fallback: nothing stored yet → no warning
+      const first = await loadKeychain();
+      expect(await first.readKeychainSessionHeaders('sess')).toBeUndefined();
+      expect(countWarnings()).toBe(0);
+
+      // First write creates credentials.json → warning shown once
+      await first.storeKeychainSessionHeaders('sess', { token: 'a' });
+      expect(countWarnings()).toBe(1);
+      await first.storeKeychainSessionHeaders('other', { token: 'b' });
+      expect(countWarnings()).toBe(1);
+
+      // New "process" (fresh module instance): file exists → still no warning
+      const second = await loadKeychain();
+      await second.storeKeychainSessionHeaders('sess', { token: 'c' });
+      expect(countWarnings()).toBe(1);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('logs a debug-level trace on every invocation in verbose mode', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const debugTraces = () =>
+      errorSpy.mock.calls.filter(
+        (call) =>
+          String(call[0]).includes('OS keychain unavailable') && String(call[0]).includes('[DEBUG]')
+      ).length;
+
+    try {
+      const keychain = await loadKeychain();
+      const { setVerbose } = await import('../../../../src/lib/logger.js');
+      setVerbose(true);
+      await keychain.readKeychainSessionHeaders('sess');
+      expect(debugTraces()).toBe(1);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('warns again when the fallback file is removed', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const countWarnings = () =>
+      errorSpy.mock.calls.filter((call) => String(call[0]).includes('OS keychain unavailable'))
+        .length;
+
+    try {
+      const first = await loadKeychain();
+      await first.storeKeychainSessionHeaders('sess', { token: 'a' });
+      expect(countWarnings()).toBe(1);
+
+      // Fallback file deleted (e.g. user cleaned ~/.mcpc) → next write re-warns
+      await rm(credFile(), { force: true });
+      const second = await loadKeychain();
+      await second.storeKeychainSessionHeaders('sess', { token: 'b' });
+      expect(countWarnings()).toBe(2);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it('does not retry OS keychain once fallback is active', async () => {
     const { storeKeychainSessionHeaders, readKeychainSessionHeaders } = await loadKeychain();
 

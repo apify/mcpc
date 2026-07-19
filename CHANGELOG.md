@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The "OS keychain unavailable" warning no longer repeats on every command. It is now shown once, at the moment credentials are first stored in the fallback file (`~/.mcpc/credentials.json`).
 - `mcpc login` now explains OAuth client-registration failures with actionable guidance (use `--client-id` or `--client-metadata-url`) instead of surfacing a raw SDK JSON parse error. This affects servers that reject Dynamic Client Registration, such as Figma's remote MCP server, which only accepts an allow-list of approved clients.
 - Tool calls are no longer silently re-executed after a bridge crash or IPC timeout — a slow non-idempotent tool (payment, deploy) could previously run twice. The session is still reconnected automatically, and the error now says whether the call may have executed.
 - `tools-call` and `tasks-result` now exit with code 2 when the tool result reports an error (`isError`), matching the documented exit codes so shell scripts chaining on `&&` stop on failure.
