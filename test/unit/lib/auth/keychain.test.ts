@@ -67,6 +67,7 @@ vi.mock('chalk', () => ({
 
 let testHome: string;
 const credFile = () => join(testHome, 'credentials.json');
+const warningMarkerFile = () => join(testHome, '.keychain-warning-shown');
 
 beforeAll(async () => {
   testHome = join(tmpdir(), `mcpc-keychain-test-${Date.now()}`);
@@ -83,6 +84,7 @@ beforeEach(async () => {
   keychainStore.clear();
   keychainThrows = false;
   await rm(credFile(), { force: true });
+  await rm(warningMarkerFile(), { force: true });
 });
 
 // ---------------------------------------------------------------------------
@@ -262,6 +264,56 @@ describe('file fallback when OS keychain unavailable', () => {
 
     expect(await readKeychainSessionHeaders('a')).toEqual({ token: 'aaa' });
     expect(await readKeychainSessionHeaders('b')).toEqual({ token: 'bbb' });
+  });
+
+  it('shows the unavailable warning only once across invocations', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const countWarnings = () =>
+      errorSpy.mock.calls.filter((call) => String(call[0]).includes('OS keychain unavailable'))
+        .length;
+
+    try {
+      // First "process": warns and persists the marker file
+      const first = await loadKeychain();
+      await first.storeKeychainSessionHeaders('sess', { token: 'a' });
+      expect(countWarnings()).toBe(1);
+      await expect(stat(warningMarkerFile())).resolves.toBeDefined();
+
+      // Second "process" (fresh module instance): marker exists → no warning
+      const second = await loadKeychain();
+      await second.readKeychainSessionHeaders('sess');
+      expect(countWarnings()).toBe(1);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('warns again after the keychain recovers and then breaks again', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const countWarnings = () =>
+      errorSpy.mock.calls.filter((call) => String(call[0]).includes('OS keychain unavailable'))
+        .length;
+
+    try {
+      // Keychain broken: warning shown, marker written
+      const first = await loadKeychain();
+      await first.storeKeychainSessionHeaders('sess', { token: 'a' });
+      expect(countWarnings()).toBe(1);
+
+      // Keychain recovered: successful probe clears the marker
+      keychainThrows = false;
+      const second = await loadKeychain();
+      await second.storeKeychainSessionHeaders('sess', { token: 'b' });
+      await expect(stat(warningMarkerFile())).rejects.toThrow();
+
+      // Keychain broken again: warning shows once more
+      keychainThrows = true;
+      const third = await loadKeychain();
+      await third.readKeychainSessionHeaders('sess');
+      expect(countWarnings()).toBe(2);
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
   it('does not retry OS keychain once fallback is active', async () => {
