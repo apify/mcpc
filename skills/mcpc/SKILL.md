@@ -91,10 +91,19 @@ mcpc @apify tools-call <tool> --help    # shortcut for tools-get: that tool's de
 mcpc grep "search"                      # search tools + instructions across ALL sessions
 mcpc @apify grep "actor" --resources    # search one session
 # grep filters: --tools/--resources/--prompts/--instructions, -E regex, -s case-sensitive, -m <n> max
+# grep exits 0 on match, 1 on no matches (grep convention)
 ```
 
 Prefer progressive discovery: `grep` to find the right tool, then `tools-get` for its
 schema. This keeps token use low instead of dumping every tool definition.
+
+For scripts and CI, pin a tool's schema to catch breaking changes early:
+
+```bash
+mcpc --json @apify tools-get <tool> > expected.json          # snapshot the schema
+mcpc @apify tools-call <tool> --schema expected.json <args>  # fail fast if it drifted
+# also on tools-get; --schema-mode strict | compatible (default) | ignore
+```
 
 ## Calling tools (passing arguments)
 
@@ -168,6 +177,9 @@ mcpc logout mcp.apify.com
 # Bearer token — not stored as a profile; kept per-session
 mcpc connect mcp.apify.com @s -H "Authorization: Bearer $TOKEN"
 mcpc @s tools-list
+
+# Machine-to-machine (CI/CD, daemons) — client-credentials grant, no browser needed
+mcpc login mcp.example.com --grant client-credentials --client-id my-svc --client-secret s3cr3t
 ```
 
 With no auth flags, mcpc uses the `default` profile if one exists, otherwise it
@@ -224,13 +236,14 @@ mcpc @apify skills-get <name> --raw    # print the SKILL.md markdown (pipe to a 
 mcpc --verbose @apify tools-call <tool>   # protocol-level detail (JSON-RPC, transport)
 mcpc @apify logs                          # bridge log; -n <N>, --follow, --since 1h
 mcpc @apify ping                          # round-trip health check
+mcpc @apify logging-set-level debug       # ask the server to log more (server-side level)
 mcpc clean                                # tidy stale sessions/logs (also: mcpc clean all)
 ```
 
 ## Exit codes
 
 - `0` — success
-- `1` — client error (invalid arguments, unknown command)
+- `1` — client error (invalid arguments, unknown command); `grep` also exits 1 on no matches
 - `2` — server error (tool failed, resource not found)
 - `3` — network error
 - `4` — authentication error
