@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-21
+
 ### Changed
 
 - Installing mcpc is now much smaller and faster: the viem library used by the experimental x402 payment feature is bundled into a single ~650 KB tree-shaken file at build time instead of installing its ~70 MB dependency tree, and the npm package no longer ships README media (download shrinks from ~7 MB to ~0.4 MB).
@@ -360,7 +362,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Interactive shell mode
 - JSON output mode for scripting
 
-[Unreleased]: https://github.com/apify/mcpc/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/apify/mcpc/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/apify/mcpc/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/apify/mcpc/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/apify/mcpc/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/apify/mcpc/compare/v0.2.6...v0.3.0
