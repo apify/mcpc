@@ -184,10 +184,10 @@ export async function listSessionsAndAuthProfiles(options: {
         } else if (status === 'crashed') {
           console.log(chalk.dim(`    ↳ run: mcpc ${session.name}`));
         } else if (status === 'expired') {
-          // Auto-restart sessions recover on next use; others need an explicit restart
-          console.log(
-            chalk.dim(`    ↳ run: mcpc ${session.name}${session.autoRestart ? '' : ' restart'}`)
-          );
+          // No hint for auto-restart sessions — a background restart is already underway
+          if (!session.autoRestart) {
+            console.log(chalk.dim(`    ↳ run: mcpc ${session.name} restart`));
+          }
         } else if (status === 'disconnected') {
           // Bridge is alive and auto-recovers when the server responds again;
           // a restart forces a fresh connection if it stays stuck.
