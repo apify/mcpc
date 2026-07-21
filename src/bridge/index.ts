@@ -35,18 +35,11 @@ import { getSession, loadSessions, updateSession } from '../lib/sessions.js';
 import type { AuthCredentials, X402WalletCredentials } from '../lib/types.js';
 import { OAuthTokenManager } from '../lib/auth/oauth-token-manager.js';
 import { OAuthProvider } from '../lib/auth/oauth-provider.js';
-import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
+import type { OAuthClientProvider } from '@modelcontextprotocol/client';
 import { storeKeychainOAuthTokenInfo, readKeychainOAuthTokenInfo } from '../lib/auth/keychain.js';
 import { updateAuthProfileRefreshedAt } from '../lib/auth/profiles.js';
 import { createClientCredentialsProvider } from '../lib/auth/client-credentials.js';
-import {
-  LoggingMessageNotificationSchema,
-  ResourceUpdatedNotificationSchema,
-  type Tool,
-  type Resource,
-  type Prompt,
-  type Task,
-} from '@modelcontextprotocol/sdk/types.js';
+import type { Tool, Resource, Prompt, Task } from '@modelcontextprotocol/client';
 import { ResourceSyncManager } from './resource-sync.js';
 import type { TaskUpdate } from '../lib/types.js';
 import { createRequire } from 'module';
@@ -59,7 +52,7 @@ import type { ProxyConfig } from '../lib/types.js';
 // only here and load the implementations lazily at the x402-gated call sites.
 import type { X402PaymentCache } from '../lib/x402/fetch-middleware.js';
 import type { SignerWallet } from '../lib/x402/signer.js';
-import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js';
+import type { FetchLike } from '@modelcontextprotocol/client';
 
 // HTTP proxy and TLS settings are configured in main() after parsing --insecure flag
 
@@ -692,11 +685,9 @@ class BridgeProcess {
     logger.debug('MCP client created successfully, authProvider was:', !!clientConfig.authProvider);
 
     // Record server logging messages in the bridge log (viewable via `mcpc @session logs`)
-    this.client
-      .getSDKClient()
-      .setNotificationHandler(LoggingMessageNotificationSchema, (notification) => {
-        logger.info('[server log]', notification.params);
-      });
+    this.client.getSDKClient().setNotificationHandler('notifications/message', (notification) => {
+      logger.info('[server log]', notification.params);
+    });
 
     // Resource→file sync (resources-subscribe): load persisted subscriptions and
     // re-sync local files when the server announces a resource changed. Per the MCP
@@ -712,7 +703,7 @@ class BridgeProcess {
     this.resourceSync.load(sessionData?.resourceSubscriptions);
     this.client
       .getSDKClient()
-      .setNotificationHandler(ResourceUpdatedNotificationSchema, (notification) => {
+      .setNotificationHandler('notifications/resources/updated', (notification) => {
         logger.debug(`Resource updated notification: ${notification.params.uri}`);
         this.resourceSync?.handleUpdated(notification.params.uri);
       });
@@ -933,11 +924,15 @@ class BridgeProcess {
   private async handlePossibleExpiration(error: Error): Promise<void> {
     // ServerError wraps errors from mcp-client.ts methods. Check the original error
     // to distinguish application-level JSON-RPC errors (tool not found, etc.) from
-    // transport-level errors (HTTP 401/403/404). The SDK's McpError class (name: 'McpError')
-    // indicates a JSON-RPC error response — these are application-level and should be skipped.
+    // transport-level errors (HTTP 401/403/404). The SDK's ProtocolError class (named
+    // 'McpError' in SDK v1) indicates a JSON-RPC error response — these are
+    // application-level and should be skipped.
     if (error instanceof ServerError) {
       const originalError = (error.details as { originalError?: Error } | undefined)?.originalError;
-      if (originalError && originalError.name === 'McpError') {
+      if (
+        originalError &&
+        (originalError.name === 'ProtocolError' || originalError.name === 'McpError')
+      ) {
         return;
       }
     }

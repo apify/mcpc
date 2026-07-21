@@ -2,11 +2,7 @@
  * Unit tests for OAuth flow utility functions
  */
 
-import {
-  InvalidClientError,
-  InvalidClientMetadataError,
-  ServerError as SdkServerError,
-} from '@modelcontextprotocol/sdk/server/auth/errors.js';
+import { OAuthError, OAuthErrorCode } from '@modelcontextprotocol/client';
 import { validateClientMetadataUrl } from '../../../../src/lib/auth/oauth-utils.js';
 import { explainOAuthRegistrationFailure } from '../../../../src/lib/auth/oauth-flow.js';
 import { AuthError } from '../../../../src/lib/errors.js';
@@ -17,7 +13,8 @@ describe('explainOAuthRegistrationFailure', () => {
 
   it('rewrites the SDK non-JSON 403 error (Figma) into allow-list guidance', () => {
     // The exact error the MCP SDK surfaces for Figma's plain-text "Forbidden" body.
-    const raw = new SdkServerError(
+    const raw = new OAuthError(
+      OAuthErrorCode.ServerError,
       "HTTP 403: Invalid OAuth error response: SyntaxError: Unexpected token 'F', " +
         '"Forbidden" is not valid JSON. Raw body: Forbidden'
     );
@@ -46,7 +43,7 @@ describe('explainOAuthRegistrationFailure', () => {
   });
 
   it('recognizes OAuth-coded client rejections without an HTTP status', () => {
-    const raw = new InvalidClientError('mcpc is not an approved client');
+    const raw = new OAuthError(OAuthErrorCode.InvalidClient, 'mcpc is not an approved client');
 
     const result = explainOAuthRegistrationFailure(raw, preAuth);
 
@@ -68,7 +65,8 @@ describe('explainOAuthRegistrationFailure', () => {
   });
 
   it('does not claim an allow-list for a registration 5xx', () => {
-    const raw = new SdkServerError(
+    const raw = new OAuthError(
+      OAuthErrorCode.ServerError,
       'HTTP 500: Invalid OAuth error response: SyntaxError: bad. Raw body: <html>outage</html>'
     );
 
@@ -83,7 +81,7 @@ describe('explainOAuthRegistrationFailure', () => {
   });
 
   it('reports rejected client metadata without claiming an allow-list', () => {
-    const raw = new InvalidClientMetadataError('redirect_uri is not allowed');
+    const raw = new OAuthError(OAuthErrorCode.InvalidClientMetadata, 'redirect_uri is not allowed');
 
     const result = explainOAuthRegistrationFailure(raw, preAuth);
 
@@ -96,7 +94,8 @@ describe('explainOAuthRegistrationFailure', () => {
 
   it('truncates oversized response bodies in the message but keeps details intact', () => {
     const body = 'x'.repeat(2000);
-    const raw = new SdkServerError(
+    const raw = new OAuthError(
+      OAuthErrorCode.ServerError,
       `HTTP 403: Invalid OAuth error response: bad. Raw body: ${body}`
     );
 
@@ -110,7 +109,10 @@ describe('explainOAuthRegistrationFailure', () => {
 
   it('leaves the error unchanged once authorization has been reached', () => {
     // A 403 after the redirect is a token-exchange failure, not registration.
-    const raw = new SdkServerError('HTTP 403: Invalid OAuth error response. Raw body: Forbidden');
+    const raw = new OAuthError(
+      OAuthErrorCode.ServerError,
+      'HTTP 403: Invalid OAuth error response. Raw body: Forbidden'
+    );
 
     const result = explainOAuthRegistrationFailure(raw, { serverUrl, reachedAuthorization: true });
 

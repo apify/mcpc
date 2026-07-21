@@ -1,41 +1,36 @@
 /**
  * MCP Transport implementations
- * Re-exports and wraps transports from @modelcontextprotocol/sdk
+ * Re-exports and wraps transports from the @modelcontextprotocol/client SDK (v2)
  */
 
 // Re-export transport types and classes from SDK
-export type {
-  Transport,
-  TransportSendOptions,
-  FetchLike,
-} from '@modelcontextprotocol/sdk/shared/transport.js';
+export type { Transport, TransportSendOptions, FetchLike } from '@modelcontextprotocol/client';
 
 export {
   StdioClientTransport,
   type StdioServerParameters,
   getDefaultEnvironment,
-} from '@modelcontextprotocol/sdk/client/stdio.js';
+} from '@modelcontextprotocol/client/stdio';
 
 export {
   StreamableHTTPClientTransport,
   type StreamableHTTPClientTransportOptions,
   type StreamableHTTPReconnectionOptions,
-  StreamableHTTPError,
-} from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+  SdkHttpError,
+} from '@modelcontextprotocol/client';
 
 // Re-export auth-related types if needed
-export type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
+export type { OAuthClientProvider } from '@modelcontextprotocol/client';
 
-import type { Transport, FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js';
-import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
+import type { Transport, FetchLike, OAuthClientProvider } from '@modelcontextprotocol/client';
 import {
   StdioClientTransport,
   type StdioServerParameters,
-} from '@modelcontextprotocol/sdk/client/stdio.js';
+} from '@modelcontextprotocol/client/stdio';
 import {
   StreamableHTTPClientTransport,
   type StreamableHTTPClientTransportOptions,
-} from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+} from '@modelcontextprotocol/client';
 import { createLogger, getVerbose } from '../lib/logger.js';
 import type { ServerConfig } from '../lib/types.js';
 import { ClientError } from '../lib/errors.js';

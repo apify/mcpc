@@ -12,7 +12,7 @@
  * re-syncs on startup.
  */
 
-import type { ReadResourceResult } from '@modelcontextprotocol/sdk/types.js';
+import type { ReadResourceResult } from '@modelcontextprotocol/client';
 import type { ResourceSubscriptionEntry, ResourceSyncResult } from '../lib/types.js';
 import { selectResourceContent, writeResourceFile } from '../lib/resource-content.js';
 import { ClientError } from '../lib/errors.js';

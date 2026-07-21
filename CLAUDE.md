@@ -110,7 +110,8 @@ mcpc/
 
 **1. Core Module (`src/core/`)**
 
-- Thin, runtime-agnostic wrapper around the official `@modelcontextprotocol/sdk` client (works with Node.js ≥22.12 and Bun ≥1)
+- Thin, runtime-agnostic wrapper around the official TypeScript SDK v2 client (`@modelcontextprotocol/client`, works with Node.js ≥22.12 and Bun ≥1)
+- Protocol version negotiation is automatic: the client probes servers with `server/discover` and speaks `2026-07-28` (stateless era) when supported, falling back to the `2025-11-25` `initialize` handshake on the same connection
 - Transport abstraction: Streamable HTTP and stdio (both created via the SDK's transports)
 - Captures negotiated protocol version and MCP session ID after connect
 - Streamable HTTP connection management with reconnection delegated to the SDK (exponential backoff: 1s → 30s max, up to 10 retries)
@@ -204,7 +205,7 @@ Run `mcpc --help` and `mcpc help <command>` for the authoritative, always-curren
 
 **Streamable HTTP:**
 
-- Persistent HTTP connection with bidirectional streaming (protocol version 2025-11-25)
+- Persistent HTTP connection with bidirectional streaming (protocol version 2026-07-28, with automatic fallback to 2025-11-25)
 - Server and client can send messages in both directions over the same connection
 - Automatic reconnection with exponential backoff (1s → 30s max, up to 10 retries, handled by the SDK)
 - CLI-to-bridge IPC requests time out after 3 minutes (or `--timeout` + a 10s margin); an IPC timeout is never retried, since the request may still be executing on the server
@@ -313,13 +314,21 @@ When making changes, follow these rules to maintain the security posture:
 
 ## MCP Protocol Implementation
 
-**Protocol version:** Current latest is `2025-11-25`
+**Protocol version:** Current latest is `2026-07-28` (stateless era); `2025-11-25` remains fully supported via automatic fallback
 
-**Initialization sequence:**
+**Initialization sequence (2026-07-28, "modern" era):**
+
+1. Client probes with `server/discover`; server advertises supported protocol versions, capabilities, and identity
+2. No handshake or session ID — every request carries protocol version, client info, and capabilities in `_meta`
+3. Change notifications are opt-in via a `subscriptions/listen` stream
+
+**Initialization sequence (2025-11-25, "legacy" era fallback):**
 
 1. Client sends `initialize` request with protocol version and client capabilities
 2. Server responds with agreed version and server capabilities
 3. Client sends `initialized` notification to activate session
+
+**Era-dependent behavior in mcpc:** `ping` maps to `server/discover` on modern connections; `logging-set-level` and the task commands are 2025-11-25-only (tasks moved to the `io.modelcontextprotocol/tasks` extension, which the SDK does not implement yet); `resources-subscribe` uses `subscriptions/listen` on modern connections and `resources/subscribe` on legacy ones.
 
 **MCP Primitives:**
 
@@ -575,7 +584,8 @@ All state files are stored in `~/.mcpc/` directory (unless overridden by `MCPC_H
 
 ## Key Dependencies
 
-- `@modelcontextprotocol/sdk` - Official MCP SDK for client/server implementation
+- `@modelcontextprotocol/client` + `@modelcontextprotocol/core` - Official MCP TypeScript SDK v2 (client side; supports protocols 2026-07-28 and 2025-11-25)
+- `@modelcontextprotocol/sdk` - Official MCP SDK v1, used only by the `--proxy` MCP server and the e2e test server (migration to the v2 server packages is a planned follow-up)
 - `commander` - Command-line argument parsing and CLI framework
 - `chalk` - Terminal string styling and colors
 - `@napi-rs/keyring` - OS keychain integration for secure credential storage

@@ -500,6 +500,10 @@ ${chalk.bold('Stdio servers (command-based, run locally):')}
   Config entries spawn the command on connect, even if the handshake
   later fails — only connect to configs you trust. Bulk connects skip
   stdio by default; pass --stdio to include them.
+
+${chalk.bold('Protocol version:')}
+  mcpc negotiates MCP 2026-07-28 with servers that support it and falls
+  back to 2025-11-25 automatically. Run mcpc @session to see the version.
 ${jsonHelp(
   'Array of `InitializeResult` objects (one per session), extended with `toolNames` and `_mcpc` metadata',
   '`[{ protocolVersion?, capabilities?, serverInfo?, instructions?, toolNames?, _mcpc: { sessionName, server?, ... }]`',
@@ -1113,6 +1117,8 @@ ${chalk.bold('Async tasks (--task, --detach):')}
   If you press Ctrl+C, the task keeps running and a hint with the task ID
   is printed so you can fetch or cancel it later.
   --detach returns the task ID immediately without waiting.
+  Tasks require a server using MCP protocol 2025-11-25 (on 2026-07-28
+  servers tasks are an extension not yet supported by mcpc).
 
 ${chalk.bold('Schema validation:')}
   --schema <file>       Validate tool schema before calling (save with tools-get --json)
@@ -1363,7 +1369,7 @@ ${jsonHelp('`GetPromptResult` object', '`{ description?, messages: [{ role, cont
   // Logging commands
   program
     .command('logging-set-level <level>')
-    .description('Set MCP server logging level.')
+    .description('Set MCP server logging level (2025-11-25 servers only; removed in 2026-07-28).')
     .addHelpText('after', jsonHelp('`{ level: string }`'))
     .action(async (level, _options, command) => {
       await logging.setLogLevel(session, level, getOptionsFromCommand(command));
@@ -1372,7 +1378,7 @@ ${jsonHelp('`GetPromptResult` object', '`{ description?, messages: [{ role, cont
   // Server commands
   program
     .command('ping')
-    .description('Ping the MCP server.')
+    .description('Ping the MCP server (uses server/discover on 2026-07-28 servers).')
     .addHelpText('after', jsonHelp('`{ success: true, durationMs: number }`'))
     .action(async (_options, command) => {
       await utilities.ping(session, getOptionsFromCommand(command));

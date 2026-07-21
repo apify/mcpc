@@ -822,12 +822,13 @@ Where `mcpc` stands on each part of the MCP specification:
 
 | **Feature**                                          | **Status**                                                       |
 |:-----------------------------------------------------|:-----------------------------------------------------------------|
+| 📜 **Protocol version**                              | ✅ 2026-07-28 (auto-negotiated), falls back to 2025-11-25         |
 | 🔌 **Transport**                                     | ✅ stdio and Streamable HTTP                                      |
 | 🔑 [**Authorization**](#authentication)              | ✅ Bearer + OAuth 2.1 (client credentials, DCR, CIMD, auth code)  |
 | 🔄 [**Sessions**](#sessions)                         | ✅ Supported (with automatic keepalive)                           |
 | 📖 [**Server instructions**](#server-instructions)   | ✅ Supported                                                      |
 | 🔧 [**Tools**](#tools)                               | ✅ Supported (incl. list changed notifications)                   |
-| ⏳ [**Async tasks**](#async-tasks)                   | ✅ Supported                                                      |
+| ⏳ [**Async tasks**](#async-tasks)                   | ✅ Supported (2025-11-25 servers; 2026-07-28 tasks extension planned) |
 | 💬 [**Prompts**](#prompts)                           | ✅ Supported (incl. list changed notifications)                   |
 | 📦 [**Resources**](#resources)                       | ✅ Supported (incl. subscriptions and list changed notifications) |
 | 🧠 [**Skills**](#skills)                             | 🧪 Experimental (SEP-2640)                                       |

@@ -29,7 +29,7 @@ import type {
   ResourceSyncResult,
   ResourceUnsubscribeResult,
 } from './types.js';
-import type { ListResourceTemplatesResult } from '@modelcontextprotocol/sdk/types.js';
+import type { ListResourceTemplatesResult } from '@modelcontextprotocol/client';
 import { BridgeClient } from './bridge-client.js';
 import { ensureBridgeReady, restartBridge } from './bridge-manager.js';
 import { updateSession } from './sessions.js';

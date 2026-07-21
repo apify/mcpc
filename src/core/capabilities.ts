@@ -2,7 +2,7 @@
  * Client capabilities advertised by mcpc during connection.
  */
 
-import type { ClientCapabilities } from '@modelcontextprotocol/sdk/types.js';
+import type { ClientCapabilities } from '@modelcontextprotocol/client';
 
 /**
  * Capability key advertising client-credentials auth support, per the MCP extension

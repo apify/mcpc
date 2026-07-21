@@ -19,7 +19,7 @@
  */
 
 import type { CommandOptions, IMcpClient } from '../../lib/types.js';
-import type { ReadResourceResult, Resource } from '@modelcontextprotocol/sdk/types.js';
+import type { ReadResourceResult, Resource } from '@modelcontextprotocol/client';
 import { ServerError, ClientError } from '../../lib/errors.js';
 import { fetchAllPages } from '../../lib/utils.js';
 import { withMcpClient } from '../helpers.js';

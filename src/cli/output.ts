@@ -9,7 +9,7 @@ import type {
   PromptMessage,
   ContentBlock,
   ReadResourceResult,
-} from '@modelcontextprotocol/sdk/types.js';
+} from '@modelcontextprotocol/client';
 import type { OutputMode } from '../lib/index.js';
 import type {
   Tool,
@@ -1321,13 +1321,21 @@ function findDuplicateTextBlocks(
 export function formatCallToolResultHuman(result: CallToolResult): string {
   const lines: string[] = [];
 
-  // Identify text blocks that are just a JSON dump of structuredContent
+  // Identify text blocks that are just a JSON dump of structuredContent.
+  // Since protocol 2026-07-28 (SEP-2106), structuredContent may be any JSON value,
+  // so narrow to a plain object before key-based duplicate detection.
   const sc = result.structuredContent;
-  const hasStructuredContent = !!sc && Object.keys(sc).length > 0;
+  const scObject =
+    typeof sc === 'object' && sc !== null && !Array.isArray(sc)
+      ? (sc as Record<string, unknown>)
+      : undefined;
+  const hasStructuredContent = scObject
+    ? Object.keys(scObject).length > 0
+    : sc !== undefined && sc !== null;
   const content = result.content;
   let skipIndices = new Set<number>();
-  if (hasStructuredContent && content && sc) {
-    skipIndices = findDuplicateTextBlocks(content, sc);
+  if (hasStructuredContent && content && scObject) {
+    skipIndices = findDuplicateTextBlocks(content, scObject);
   }
 
   const visibleContent = content?.filter((_, i) => !skipIndices.has(i)) ?? [];

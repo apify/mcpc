@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Support for MCP protocol version 2026-07-28: mcpc now probes each server with `server/discover` and talks the new stateless protocol when supported, falling back to 2025-11-25 automatically. Resource subscriptions use the new `subscriptions/listen` stream (with automatic re-listen on drops), and `ping` transparently uses `server/discover` on 2026-07-28 servers. mcpc now uses the official TypeScript SDK v2 (`@modelcontextprotocol/client`).
+
 ### Changed
+
+- On servers using MCP 2026-07-28, `logging-set-level` returns an error (the protocol removed `logging/setLevel`) and the task commands (`tasks-list`, `tasks-get`, `tasks-result`, `tasks-cancel`, `tools-call --task/--detach`) report that the new tasks extension is not supported yet — they keep working unchanged on 2025-11-25 servers.
 
 - Installing mcpc is now much smaller and faster: the viem library used by the experimental x402 payment feature is bundled into a single ~650 KB tree-shaken file at build time instead of installing its ~70 MB dependency tree, and the npm package no longer ships README media (download shrinks from ~7 MB to ~0.4 MB).
 - Commands start much faster (typically ~150 ms instead of ~700 ms): x402/viem, the OAuth login stack, spinners, and the proxy layer are now loaded only when actually used.

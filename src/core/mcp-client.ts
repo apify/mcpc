@@ -1,10 +1,10 @@
 /**
  * MCP Client wrapper
- * Wraps the @modelcontextprotocol/sdk Client class with additional functionality
+ * Wraps the @modelcontextprotocol/client (SDK v2) Client class with additional functionality
  */
 
-import { Client as SDKClient, type ClientOptions } from '@modelcontextprotocol/sdk/client/index.js';
-import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
+import { Client as SDKClient, type ClientOptions } from '@modelcontextprotocol/client';
+import type { Transport, McpSubscription, ProtocolEra } from '@modelcontextprotocol/client';
 import type {
   Implementation,
   ListToolsResult,
@@ -19,8 +19,14 @@ import type {
   ListTasksResult,
   CancelTaskResult,
   Tool,
-} from '@modelcontextprotocol/sdk/types.js';
-import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
+} from '@modelcontextprotocol/client';
+import {
+  CallToolResultSchema,
+  CreateTaskResultSchema,
+  ListTasksResultSchema,
+  GetTaskResultSchema,
+  CancelTaskResultSchema,
+} from '@modelcontextprotocol/core';
 import { createNoOpLogger, type Logger } from '../lib/logger.js';
 import { ServerError, NetworkError, isShutdownError } from '../lib/errors.js';
 import { fetchAllPages } from '../lib/utils.js';
@@ -36,7 +42,7 @@ function getRootCauseMessage(error: Error): string {
   return current.message;
 }
 import type { IMcpClient, ServerDetails, ConnectionMode, TaskUpdate } from '../lib/types.js';
-import type { Task } from '@modelcontextprotocol/sdk/types.js';
+import type { Task } from '@modelcontextprotocol/client';
 
 /**
  * Convert an SDK Task to a TaskUpdate, handling exactOptionalPropertyTypes
@@ -84,6 +90,12 @@ export interface McpClientOptions extends ClientOptions {
    * Defaults to DEFAULT_REQUEST_TIMEOUT_MILLIS (60 seconds) when not specified.
    */
   requestTimeoutMillis?: number;
+
+  /**
+   * Set when the client will connect over a stdio transport. Caps the
+   * version-negotiation probe timeout (see STDIO_PROBE_TIMEOUT_MILLIS).
+   */
+  stdioTransport?: boolean;
 }
 
 /**
@@ -104,6 +116,23 @@ interface TransportWithTermination extends Transport {
 const DEFAULT_REQUEST_TIMEOUT_MILLIS = 60_000;
 
 /**
+ * Backoff bounds for re-opening the `subscriptions/listen` stream (2026-07-28 connections)
+ * after an unexpected remote drop. Mirrors the Streamable HTTP reconnection policy (1s → 30s).
+ */
+const RELISTEN_INITIAL_DELAY_MILLIS = 1_000;
+const RELISTEN_MAX_DELAY_MILLIS = 30_000;
+
+/**
+ * Timeout for the connect-time `server/discover` version-negotiation probe on stdio
+ * transports. Some stdio servers never answer unknown pre-`initialize` requests; the SDK
+ * treats a probe timeout on a local pipe as "legacy server" and falls back to `initialize`
+ * on the same stream, so a short timeout keeps connecting to such servers fast instead of
+ * waiting out the full request timeout. Not applied to HTTP, where probe silence means an
+ * outage and the SDK rejects instead of falling back.
+ */
+const STDIO_PROBE_TIMEOUT_MILLIS = 5_000;
+
+/**
  * MCP Client wrapper class
  * Provides a convenient interface to the MCP SDK Client with error handling and logging
  * Implements IMcpClient interface for compatibility with SessionClient
@@ -120,6 +149,11 @@ export class McpClient implements IMcpClient {
   private readonly configuredRequestTimeoutMillis: number;
   private cachedTools: Tool[] | null = null;
   private cachedToolsExpiresAt: number | null = null;
+  private isClosing = false;
+  /** Resource URIs subscribed on a 2026-07-28 connection (served by one listen stream). */
+  private modernSubscribedUris = new Set<string>();
+  /** The open `subscriptions/listen` stream backing modernSubscribedUris, if any. */
+  private modernListen: McpSubscription | undefined;
 
   constructor(clientInfo: Implementation, options: McpClientOptions = {}) {
     this.logger = options.logger || createNoOpLogger();
@@ -130,6 +164,12 @@ export class McpClient implements IMcpClient {
 
     this.client = new SDKClient(clientInfo, {
       capabilities: options.capabilities || {},
+      // Probe servers with `server/discover` and talk 2026-07-28 when they support it,
+      // falling back to the 2025-11-25 `initialize` handshake on the same connection.
+      versionNegotiation: {
+        mode: 'auto',
+        ...(options.stdioTransport ? { probe: { timeoutMs: STDIO_PROBE_TIMEOUT_MILLIS } } : {}),
+      },
       ...options,
     });
 
@@ -200,12 +240,16 @@ export class McpClient implements IMcpClient {
 
       this.hasConnected = true;
 
-      // Capture negotiated protocol version from transport if available
-      // StreamableHTTPClientTransport exposes protocolVersion after initialization
+      // Capture the negotiated protocol version (the client knows it for both eras;
+      // fall back to the transport for safety).
       const transportWithVersion = transport as TransportWithProtocolVersion;
-      if (transportWithVersion.protocolVersion) {
-        this.negotiatedProtocolVersion = transportWithVersion.protocolVersion;
-        this.logger.debug(`Negotiated protocol version: ${this.negotiatedProtocolVersion}`);
+      const negotiatedVersion =
+        this.client.getNegotiatedProtocolVersion() ?? transportWithVersion.protocolVersion;
+      if (negotiatedVersion) {
+        this.negotiatedProtocolVersion = negotiatedVersion;
+        this.logger.debug(
+          `Negotiated protocol version: ${this.negotiatedProtocolVersion} (${this.getProtocolEra() ?? 'unknown'} era)`
+        );
       }
 
       // Capture MCP session ID from transport if available (for session resumption)
@@ -239,8 +283,18 @@ export class McpClient implements IMcpClient {
    */
   async close(): Promise<void> {
     this.logger.debug('Closing connection...');
+    this.isClosing = true;
 
     try {
+      // Tear down the listen stream first on 2026-07-28 connections so its
+      // closed promise resolves 'local' and no re-listen is attempted.
+      if (this.modernListen) {
+        const listen = this.modernListen;
+        this.modernListen = undefined;
+        await listen.close().catch((error) => {
+          this.logger.debug('Error closing listen stream (ignored):', error);
+        });
+      }
       // For HTTP transport, terminate the session first (sends HTTP DELETE)
       // This is separate from close() in the SDK - terminateSession() sends the DELETE,
       // while close() just cleans up the client without notifying the server
@@ -294,6 +348,14 @@ export class McpClient implements IMcpClient {
   }
 
   /**
+   * Protocol era of the connection: 'modern' for 2026-07-28+ (negotiated via
+   * server/discover), 'legacy' for the 2025-era initialize handshake.
+   */
+  getProtocolEra(): ProtocolEra | undefined {
+    return this.client.getProtocolEra();
+  }
+
+  /**
    * Get the MCP session ID assigned by the server (if any)
    * This can be used for session resumption after bridge restart
    */
@@ -318,12 +380,19 @@ export class McpClient implements IMcpClient {
   }
 
   /**
-   * Ping the server
+   * Ping the server.
+   * The `ping` method was removed in protocol 2026-07-28, so on modern connections the
+   * liveness probe is a `server/discover` request instead (same round-trip semantics).
    */
   async ping(): Promise<void> {
     try {
-      this.logger.debug('Sending ping...');
-      await this.client.ping(this.getRequestOptions());
+      if (this.getProtocolEra() === 'modern') {
+        this.logger.debug('Sending server/discover (2026-07-28 liveness probe)...');
+        await this.client.discover(this.getRequestOptions());
+      } else {
+        this.logger.debug('Sending ping...');
+        await this.client.ping(this.getRequestOptions());
+      }
       this.logger.debug('Ping successful');
     } catch (error) {
       this.logger.error('Ping failed:', error);
@@ -412,11 +481,7 @@ export class McpClient implements IMcpClient {
       if (meta) {
         callParams._meta = meta;
       }
-      const result = (await this.client.callTool(
-        callParams,
-        undefined, // resultSchema - use default
-        this.getRequestOptions()
-      )) as CallToolResult;
+      const result = await this.client.callTool(callParams, this.getRequestOptions());
       this.logger.debug(`Tool ${name} completed`);
       return result;
     } catch (error) {
@@ -479,12 +544,20 @@ export class McpClient implements IMcpClient {
   }
 
   /**
-   * Subscribe to resource updates
+   * Subscribe to resource updates.
+   * On 2025-era connections this issues `resources/subscribe`; protocol 2026-07-28 replaced
+   * that with a `subscriptions/listen` stream, so on modern connections one listen stream
+   * is maintained carrying all subscribed URIs (re-opened whenever the set changes).
    */
   async subscribeResource(uri: string): Promise<void> {
     try {
       this.logger.debug(`Subscribing to resource: ${uri}`);
-      await this.client.subscribeResource({ uri }, this.getRequestOptions());
+      if (this.getProtocolEra() === 'modern') {
+        this.modernSubscribedUris.add(uri);
+        await this.reopenModernListen();
+      } else {
+        await this.client.subscribeResource({ uri }, this.getRequestOptions());
+      }
       this.logger.debug(`Subscribed to resource ${uri}`);
     } catch (error) {
       this.logger.error(`Failed to subscribe to resource ${uri}:`, error);
@@ -495,12 +568,17 @@ export class McpClient implements IMcpClient {
   }
 
   /**
-   * Unsubscribe from resource updates
+   * Unsubscribe from resource updates (see subscribeResource for the per-era mechanics)
    */
   async unsubscribeResource(uri: string): Promise<void> {
     try {
       this.logger.debug(`Unsubscribing from resource: ${uri}`);
-      await this.client.unsubscribeResource({ uri }, this.getRequestOptions());
+      if (this.getProtocolEra() === 'modern') {
+        this.modernSubscribedUris.delete(uri);
+        await this.reopenModernListen();
+      } else {
+        await this.client.unsubscribeResource({ uri }, this.getRequestOptions());
+      }
       this.logger.debug(`Unsubscribed from resource ${uri}`);
     } catch (error) {
       this.logger.error(`Failed to unsubscribe from resource ${uri}:`, error);
@@ -508,6 +586,51 @@ export class McpClient implements IMcpClient {
         `Failed to unsubscribe from resource ${uri}: ${(error as Error).message}`,
         { originalError: error }
       );
+    }
+  }
+
+  /**
+   * (Re-)open the `subscriptions/listen` stream so it carries exactly the current
+   * modernSubscribedUris set. Notifications delivered on the stream dispatch to the
+   * handlers registered via setNotificationHandler, same as 2025-era unsolicited ones.
+   */
+  private async reopenModernListen(): Promise<void> {
+    const previous = this.modernListen;
+    this.modernListen = undefined;
+    if (previous) {
+      await previous.close().catch((error) => {
+        this.logger.debug('Error closing previous listen stream (ignored):', error);
+      });
+    }
+    if (this.modernSubscribedUris.size === 0 || this.isClosing) return;
+
+    const subscription = await this.client.listen(
+      { resourceSubscriptions: [...this.modernSubscribedUris] },
+      this.getRequestOptions()
+    );
+    this.modernListen = subscription;
+
+    // Re-listen only on unexpected drops; 'local' and 'graceful' closes are deliberate.
+    void subscription.closed.then((reason) => {
+      if (reason !== 'remote' || this.modernListen !== subscription || this.isClosing) return;
+      this.modernListen = undefined;
+      void this.relistenWithBackoff();
+    });
+  }
+
+  /** Re-establish the listen stream after a remote drop, backing off 1s → 30s. */
+  private async relistenWithBackoff(): Promise<void> {
+    let delayMillis = RELISTEN_INITIAL_DELAY_MILLIS;
+    while (!this.isClosing && this.modernSubscribedUris.size > 0 && !this.modernListen) {
+      await new Promise((resolve) => setTimeout(resolve, delayMillis));
+      try {
+        await this.reopenModernListen();
+        this.logger.debug('Listen stream re-established');
+        return;
+      } catch (error) {
+        this.logger.debug(`Re-listen failed, retrying in ${delayMillis * 2}ms:`, error);
+        delayMillis = Math.min(delayMillis * 2, RELISTEN_MAX_DELAY_MILLIS);
+      }
     }
   }
 
@@ -552,9 +675,18 @@ export class McpClient implements IMcpClient {
   }
 
   /**
-   * Set the logging level on the server
+   * Set the logging level on the server.
+   * Protocol 2026-07-28 removed `logging/setLevel` (log level is per-request `_meta` there),
+   * so this only works on 2025-era connections.
    */
   async setLoggingLevel(level: LoggingLevel): Promise<void> {
+    if (this.getProtocolEra() === 'modern') {
+      throw new ServerError(
+        `logging/setLevel was removed in MCP ${this.negotiatedProtocolVersion}; ` +
+          `this server no longer supports a session-wide log level. ` +
+          `Use --verbose for client-side logging instead.`
+      );
+    }
     try {
       this.logger.debug(`Setting log level to: ${level}`);
       await this.client.setLoggingLevel(level, this.getRequestOptions());
@@ -571,25 +703,60 @@ export class McpClient implements IMcpClient {
    * Check if the server supports task-augmented tool calls
    */
   supportsTasksForToolCall(): boolean {
+    if (this.getProtocolEra() === 'modern') return false;
     const capabilities = this.client.getServerCapabilities();
     return !!capabilities?.tasks?.requests?.tools?.call;
   }
 
   /**
-   * Single access point for the SDK's task API. The `2025-11-25` experimental Tasks API
-   * (`experimental.tasks`) is superseded by the `2026-07-28` Tasks extension (SEP-2663:
-   * `tasks/get` polling, `tasks/update`, returnless `tasks/cancel`, and removal of
-   * `tasks/list`). Keeping every task call funnelled through here means that migration is a
-   * change to this one accessor rather than scattered across the file.
+   * Tasks were an experimental core feature in `2025-11-25` and moved to the
+   * `io.modelcontextprotocol/tasks` extension in `2026-07-28` (SEP-2663). The v2 SDK
+   * dropped the v1 experimental client API and does not implement the extension yet, so
+   * mcpc issues the `2025-11-25` task requests directly via `client.request()` — the wire
+   * vocabulary is still part of the SDK's legacy-era schema set. All task traffic is
+   * funnelled through the few methods below, so adopting the SDK's tasks extension API
+   * once it ships is a change to these methods only.
    */
-  private get tasksApi(): SDKClient['experimental']['tasks'] {
-    return this.client.experimental.tasks;
+  private assertTasksAvailable(): void {
+    if (this.getProtocolEra() === 'modern') {
+      throw new ServerError(
+        `Tasks are not available on this connection: MCP ${this.negotiatedProtocolVersion} moved tasks ` +
+          `to the io.modelcontextprotocol/tasks extension, which is not supported yet. ` +
+          `Task commands currently work only on servers using protocol 2025-11-25.`
+      );
+    }
   }
 
   /**
-   * Call a tool with task-augmented execution
-   * Uses the SDK's experimental callToolStream which handles task creation,
-   * polling, and result retrieval automatically via an AsyncGenerator.
+   * Issue a task-augmented `tools/call` and return the created task.
+   * The tool keeps running on the server after this returns.
+   */
+  private async createToolTask(
+    name: string,
+    args?: Record<string, unknown>,
+    meta?: Record<string, unknown>
+  ): Promise<TaskUpdate> {
+    this.assertTasksAvailable();
+    const params: Record<string, unknown> = {
+      name,
+      arguments: args || {},
+      task: {},
+    };
+    if (meta) {
+      params._meta = meta;
+    }
+    const result = await this.client.request(
+      { method: 'tools/call', params },
+      CreateTaskResultSchema,
+      this.getRequestOptions()
+    );
+    this.logger.debug(`Task created: ${result.task.taskId}`);
+    return taskToUpdate(result.task);
+  }
+
+  /**
+   * Call a tool with task-augmented execution: create the task, poll its status until it
+   * reaches a terminal state, then fetch the tool result.
    */
   async callToolWithTask(
     name: string,
@@ -599,91 +766,9 @@ export class McpClient implements IMcpClient {
   ): Promise<CallToolResult> {
     try {
       this.logger.debug(`Calling tool with task: ${name}`, args);
-
-      // Track latest task info so progress notifications can reference it
-      let currentTaskId: string | undefined;
-      let currentStatus: TaskUpdate['status'] = 'working';
-
-      const onprogress = onUpdate
-        ? (progress: {
-            progress: number;
-            total?: number | undefined;
-            message?: string | undefined;
-          }): void => {
-            if (!currentTaskId) return;
-            this.logger.debug(
-              `Task ${currentTaskId} progress: ${progress.progress}/${progress.total ?? '?'}${progress.message ? ` - ${progress.message}` : ''}`
-            );
-            const update: TaskUpdate = {
-              taskId: currentTaskId,
-              status: currentStatus,
-            };
-            if (progress.message) {
-              update.progressMessage = progress.message;
-            }
-            update.progress = progress.progress;
-            if (progress.total !== undefined) {
-              update.progressTotal = progress.total;
-            }
-            onUpdate(update);
-          }
-        : undefined;
-
-      const requestOptions = { ...this.getRequestOptions(), task: {} };
-      if (onprogress) {
-        (requestOptions as Record<string, unknown>).onprogress = onprogress;
-      }
-
-      const callParams: {
-        name: string;
-        arguments: Record<string, unknown>;
-        _meta?: Record<string, unknown>;
-      } = {
-        name,
-        arguments: args || {},
-      };
-      if (meta) {
-        callParams._meta = meta;
-      }
-
-      const stream = this.tasksApi.callToolStream(callParams, CallToolResultSchema, requestOptions);
-
-      let result: CallToolResult | undefined;
-
-      for await (const message of stream) {
-        switch (message.type) {
-          case 'taskCreated':
-            this.logger.debug(`Task created: ${message.task.taskId}`);
-            currentTaskId = message.task.taskId;
-            currentStatus = message.task.status;
-            onUpdate?.(taskToUpdate(message.task));
-            break;
-
-          case 'taskStatus':
-            this.logger.debug(`Task ${message.task.taskId} status: ${message.task.status}`);
-            currentTaskId = message.task.taskId;
-            currentStatus = message.task.status;
-            onUpdate?.(taskToUpdate(message.task));
-            break;
-
-          case 'result':
-            this.logger.debug(`Task completed with result for tool ${name}`);
-            result = message.result;
-            break;
-
-          case 'error':
-            this.logger.error(`Task error for tool ${name}:`, message.error);
-            throw new ServerError(`Tool ${name} task failed: ${message.error.message}`, {
-              originalError: message.error,
-            });
-        }
-      }
-
-      if (!result) {
-        throw new ServerError(`Tool ${name} task completed without a result`);
-      }
-
-      return result;
+      const created = await this.createToolTask(name, args, meta);
+      onUpdate?.(created);
+      return await this.pollTask(created.taskId, onUpdate);
     } catch (error) {
       if (error instanceof ServerError) throw error;
       this.logger.error(`Failed to call tool ${name} with task:`, error);
@@ -704,38 +789,7 @@ export class McpClient implements IMcpClient {
   ): Promise<TaskUpdate> {
     try {
       this.logger.debug(`Calling tool detached: ${name}`, args);
-      const callParams: {
-        name: string;
-        arguments: Record<string, unknown>;
-        _meta?: Record<string, unknown>;
-      } = {
-        name,
-        arguments: args || {},
-      };
-      if (meta) {
-        callParams._meta = meta;
-      }
-      const stream = this.tasksApi.callToolStream(callParams, CallToolResultSchema, {
-        ...this.getRequestOptions(),
-        task: {},
-      });
-
-      for await (const message of stream) {
-        if (message.type === 'taskCreated') {
-          this.logger.debug(`Task created (detached): ${message.task.taskId}`);
-          const update = taskToUpdate(message.task);
-          // Break out of the generator — this closes the stream
-          // The task continues running on the server
-          return update;
-        }
-        if (message.type === 'error') {
-          throw new ServerError(`Tool ${name} task failed: ${message.error.message}`, {
-            originalError: message.error,
-          });
-        }
-      }
-
-      throw new ServerError(`Tool ${name} task stream ended without creating a task`);
+      return await this.createToolTask(name, args, meta);
     } catch (error) {
       if (error instanceof ServerError) throw error;
       this.logger.error(`Failed to call tool ${name} detached:`, error);
@@ -781,6 +835,12 @@ export class McpClient implements IMcpClient {
           );
         }
 
+        // input_required: tasks/result delivers the queued server messages and
+        // blocks until the task reaches a terminal state.
+        if (task.status === 'input_required') {
+          return await this.getTaskResult(taskId);
+        }
+
         await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MILLIS));
       }
     } catch (error) {
@@ -798,7 +858,12 @@ export class McpClient implements IMcpClient {
   async listTasks(cursor?: string): Promise<ListTasksResult> {
     try {
       this.logger.debug('Listing tasks...', cursor ? { cursor } : {});
-      const result = await this.tasksApi.listTasks(cursor, this.getRequestOptions());
+      this.assertTasksAvailable();
+      const result = await this.client.request(
+        { method: 'tasks/list', ...(cursor ? { params: { cursor } } : {}) },
+        ListTasksResultSchema,
+        this.getRequestOptions()
+      );
       this.logger.debug(`Found ${result.tasks.length} tasks`);
       return result;
     } catch (error) {
@@ -815,7 +880,12 @@ export class McpClient implements IMcpClient {
   async getTask(taskId: string): Promise<GetTaskResult> {
     try {
       this.logger.debug(`Getting task: ${taskId}`);
-      const result = await this.tasksApi.getTask(taskId, this.getRequestOptions());
+      this.assertTasksAvailable();
+      const result = await this.client.request(
+        { method: 'tasks/get', params: { taskId } },
+        GetTaskResultSchema,
+        this.getRequestOptions()
+      );
       this.logger.debug(`Task ${taskId} status: ${result.status}`);
       return result;
     } catch (error) {
@@ -834,8 +904,9 @@ export class McpClient implements IMcpClient {
   async getTaskResult(taskId: string): Promise<CallToolResult> {
     try {
       this.logger.debug(`Getting task result: ${taskId}`);
-      const result = await this.tasksApi.getTaskResult(
-        taskId,
+      this.assertTasksAvailable();
+      const result = await this.client.request(
+        { method: 'tasks/result', params: { taskId } },
         CallToolResultSchema,
         this.getRequestOptions()
       );
@@ -855,7 +926,12 @@ export class McpClient implements IMcpClient {
   async cancelTask(taskId: string): Promise<CancelTaskResult> {
     try {
       this.logger.debug(`Cancelling task: ${taskId}`);
-      const result = await this.tasksApi.cancelTask(taskId, this.getRequestOptions());
+      this.assertTasksAvailable();
+      const result = await this.client.request(
+        { method: 'tasks/cancel', params: { taskId } },
+        CancelTaskResultSchema,
+        this.getRequestOptions()
+      );
       this.logger.debug(`Task ${taskId} cancelled`);
       return result;
     } catch (error) {

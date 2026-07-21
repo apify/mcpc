@@ -2,9 +2,12 @@
  * Factory functions for creating MCP clients with transports
  */
 
-import type { ClientCapabilities, ListChangedHandlers } from '@modelcontextprotocol/sdk/types.js';
-import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
-import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js';
+import type {
+  ClientCapabilities,
+  ListChangedHandlers,
+  OAuthClientProvider,
+  FetchLike,
+} from '@modelcontextprotocol/client';
 import { McpClient, type McpClientOptions } from './mcp-client.js';
 import { createTransportFromConfig } from './transports.js';
 import { type ServerConfig } from '../lib/types.js';
@@ -127,6 +130,9 @@ export async function createMcpClient(options: CreateMcpClientOptions): Promise<
     ...(options.serverConfig.timeout && {
       requestTimeoutMillis: options.serverConfig.timeout * 1000,
     }),
+    // Cap the version-negotiation probe timeout on stdio (local servers answer fast;
+    // some legacy ones never answer pre-initialize requests at all)
+    ...(options.serverConfig.command && { stdioTransport: true }),
   };
 
   const client = new McpClient(options.clientInfo, clientOptions);
