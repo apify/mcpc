@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - On servers using MCP 2026-07-28, `logging-set-level` returns an error (the protocol removed `logging/setLevel`) and the task commands (`tasks-list`, `tasks-get`, `tasks-result`, `tasks-cancel`, `tools-call --task/--detach`) report that the new tasks extension is not supported yet — they keep working unchanged on 2025-11-25 servers.
 
+## [0.5.0] - 2026-07-21
+
+### Changed
+
 - Installing mcpc is now much smaller and faster: the viem library used by the experimental x402 payment feature is bundled into a single ~650 KB tree-shaken file at build time instead of installing its ~70 MB dependency tree, and the npm package no longer ships README media (download shrinks from ~7 MB to ~0.4 MB).
 - Commands start much faster (typically ~150 ms instead of ~700 ms): x402/viem, the OAuth login stack, spinners, and the proxy layer are now loaded only when actually used.
 - `mcpc x402` (with no subcommand) now shows your wallet info and funding QR code instead of the command help. Run `mcpc help x402` for the full command reference. The `mcpc x402 info` subcommand is deprecated in favor of bare `mcpc x402` and will be removed in a future release.
@@ -366,7 +370,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Interactive shell mode
 - JSON output mode for scripting
 
-[Unreleased]: https://github.com/apify/mcpc/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/apify/mcpc/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/apify/mcpc/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/apify/mcpc/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/apify/mcpc/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/apify/mcpc/compare/v0.2.6...v0.3.0
