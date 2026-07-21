@@ -1068,7 +1068,7 @@ mcpc @apify ping --json
 
 #### Async tasks
 
-MCP servers can execute tools as [async tasks](https://modelcontextprotocol.io/specification/latest/server/utilities/tasks)
+MCP servers can execute tools as [async tasks](https://modelcontextprotocol.io/specification/latest/basic/utilities/tasks)
 that run in the background and report progress. `mcpc` supports the full task lifecycle:
 
 ```bash
@@ -1343,7 +1343,7 @@ See [CONTRIBUTING](./CONTRIBUTING.md) for development setup, architecture overvi
 | [EstebanForge/mcp-cli-ent](https://github.com/EstebanForge/mcp-cli-ent) | Go     |    15 |      56 |       3 | ✅     | ✅    | —         | —       | —     | ✅        | ✅       | —     | ✅    | ✅   | ✅          | —    | —   |
 | [domdomegg/call-mcp](https://github.com/domdomegg/call-mcp)             | TS     |     1 |      20 |       2 | ✅     | ✅    | —         | —       | —     | ✅        | —        | ✅    | ✅    | ✅   | —           | —    | —   |
 
-**Legend:** ✅ = supported, ⚠️ = stale (no commits in 3+ months), **Commits** = total commits, **Contrib** = contributors, **Tasks** = [async tasks](https://modelcontextprotocol.io/specification/latest/server/utilities/tasks), **x402** = [x402 payment protocol](https://www.x402.org/) support, **LLM** = requires/uses an LLM.
+**Legend:** ✅ = supported, ⚠️ = stale (no commits in 3+ months), **Commits** = total commits, **Contrib** = contributors, **Tasks** = [async tasks](https://modelcontextprotocol.io/specification/latest/basic/utilities/tasks), **x402** = [x402 payment protocol](https://www.x402.org/) support, **LLM** = requires/uses an LLM.
 
 **Notes:**
 
