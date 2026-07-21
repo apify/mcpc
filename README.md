@@ -8,11 +8,11 @@
 [![License](https://img.shields.io/npm/l/@apify/mcpc.svg)](https://github.com/apify/mcpc/blob/main/LICENSE)
 
 `mcpc` is a command-line client for the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)
-that maps every MCP operation to an intuitive command for interactive shell use, scripting, and AI agents.
+that maps every MCP operation to an intuitive shell command.
 
-`mcpc` is your new Swiss Army knife for MCP. Reach for it to manually inspect and debug MCP servers,
-to script repeatable MCP workflows in plain shell, or to give AI coding agents the full power of modern
-MCP through the most universal interface there is: the UNIX shell.
+Use it to manually inspect and debug MCP servers, to script repeatable MCP workflows in plain shell, or to
+give AI agents the full MCP protocol through a single `Bash()` tool call — so they can interact with any MCP
+server and its latest capabilities using the most universal interface there is: the UNIX shell.
 
 **Key features:**
 
