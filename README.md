@@ -8,11 +8,11 @@
 [![License](https://img.shields.io/npm/l/@apify/mcpc.svg)](https://github.com/apify/mcpc/blob/main/LICENSE)
 
 `mcpc` is a command-line client for the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)
-that maps every MCP operation to an intuitive command for interactive shell use, scripting, and AI agents.
+that maps every MCP operation to an intuitive shell command.
 
-`mcpc` is your new Swiss Army knife for MCP. Reach for it to manually inspect and debug MCP servers,
-to script repeatable MCP workflows in plain shell, or to give AI coding agents the full power of modern
-MCP through the most universal interface there is: the UNIX shell.
+Use it to manually inspect and debug MCP servers, to script repeatable MCP workflows in plain shell, or to
+give AI agents the full MCP protocol through a single `Bash()` tool call, so they can interact with any MCP
+server and its latest capabilities using the most universal interface there is: the UNIX shell.
 
 **Key features:**
 
@@ -1068,7 +1068,7 @@ mcpc @apify ping --json
 
 #### Async tasks
 
-MCP servers can execute tools as [async tasks](https://modelcontextprotocol.io/specification/latest/server/utilities/tasks)
+MCP servers can execute tools as [async tasks](https://modelcontextprotocol.io/specification/latest/basic/utilities/tasks)
 that run in the background and report progress. `mcpc` supports the full task lifecycle:
 
 ```bash
@@ -1343,7 +1343,7 @@ See [CONTRIBUTING](./CONTRIBUTING.md) for development setup, architecture overvi
 | [EstebanForge/mcp-cli-ent](https://github.com/EstebanForge/mcp-cli-ent) | Go     |    15 |      56 |       3 | ✅     | ✅    | —         | —       | —     | ✅        | ✅       | —     | ✅    | ✅   | ✅          | —    | —   |
 | [domdomegg/call-mcp](https://github.com/domdomegg/call-mcp)             | TS     |     1 |      20 |       2 | ✅     | ✅    | —         | —       | —     | ✅        | —        | ✅    | ✅    | ✅   | —           | —    | —   |
 
-**Legend:** ✅ = supported, ⚠️ = stale (no commits in 3+ months), **Commits** = total commits, **Contrib** = contributors, **Tasks** = [async tasks](https://modelcontextprotocol.io/specification/latest/server/utilities/tasks), **x402** = [x402 payment protocol](https://www.x402.org/) support, **LLM** = requires/uses an LLM.
+**Legend:** ✅ = supported, ⚠️ = stale (no commits in 3+ months), **Commits** = total commits, **Contrib** = contributors, **Tasks** = [async tasks](https://modelcontextprotocol.io/specification/latest/basic/utilities/tasks), **x402** = [x402 payment protocol](https://www.x402.org/) support, **LLM** = requires/uses an LLM.
 
 **Notes:**
 
