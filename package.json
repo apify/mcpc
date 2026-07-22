@@ -71,6 +71,7 @@
     "@eslint/js": "^10.0.1",
     "@modelcontextprotocol/node": "2.0.0-beta.5",
     "@modelcontextprotocol/server": "2.0.0-beta.5",
+    "@modelcontextprotocol/server-filesystem": "2026.7.10",
     "@types/node": "^25.9.4",
     "@types/proper-lockfile": "^4.1.4",
     "@types/qrcode-terminal": "^0.12.2",

@@ -971,9 +971,13 @@ EOF
 
 # Create config for filesystem server
 # Usage: create_fs_config [path]
+# Runs the pnpm-pinned copy from node_modules instead of `npx -y` so tests
+# never hit the npm registry at runtime — a fresh npx install of the latest
+# version is slow and occasionally lands a broken dependency tree in CI.
 create_fs_config() {
   local path="${1:-$TEST_TMP}"
-  create_stdio_config "fs" "npx" "-y" "@modelcontextprotocol/server-filesystem" "$path"
+  create_stdio_config "fs" "node" \
+    "$PROJECT_ROOT/node_modules/@modelcontextprotocol/server-filesystem/dist/index.js" "$path"
 }
 
 # ============================================================================
