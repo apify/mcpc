@@ -554,7 +554,19 @@ export class McpClient implements IMcpClient {
       this.logger.debug(`Subscribing to resource: ${uri}`);
       if (this.getProtocolEra() === 'modern') {
         this.modernSubscribedUris.add(uri);
-        await this.reopenModernListen();
+        try {
+          await this.reopenModernListen();
+        } catch (error) {
+          // Roll back so re-listen attempts don't keep requesting the rejected URI,
+          // and restore the stream for any previously honored subscriptions.
+          this.modernSubscribedUris.delete(uri);
+          if (this.modernSubscribedUris.size > 0) {
+            await this.reopenModernListen().catch((reopenError) => {
+              this.logger.warn('Failed to restore listen stream after rollback:', reopenError);
+            });
+          }
+          throw error;
+        }
       } else {
         await this.client.subscribeResource({ uri }, this.getRequestOptions());
       }
@@ -608,6 +620,22 @@ export class McpClient implements IMcpClient {
       { resourceSubscriptions: [...this.modernSubscribedUris] },
       this.getRequestOptions()
     );
+
+    // The listen acknowledgment is the 2026-07-28 signal for subscription support
+    // (there is no resources.subscribe capability flag anymore) — fail loudly when
+    // the server did not agree to deliver updates for a requested URI.
+    const honoredUris = new Set(subscription.honoredFilter.resourceSubscriptions ?? []);
+    const unhonoredUris = [...this.modernSubscribedUris].filter((uri) => !honoredUris.has(uri));
+    if (unhonoredUris.length > 0) {
+      await subscription.close().catch((error) => {
+        this.logger.debug('Error closing unhonored listen stream (ignored):', error);
+      });
+      throw new ServerError(
+        `Server does not support subscriptions for ${unhonoredUris.join(', ')} ` +
+          `(not honored in the subscriptions/listen acknowledgment)`
+      );
+    }
+
     this.modernListen = subscription;
 
     // Re-listen only on unexpected drops; 'local' and 'graceful' closes are deliberate.

@@ -1368,13 +1368,19 @@ class BridgeProcess {
           if (!this.resourceSync) {
             throw new NetworkError('MCP client not connected');
           }
-          const details = await this.client.getServerDetails();
-          if (!details.capabilities?.resources?.subscribe) {
-            throw new ClientError(
-              `Server does not support resource subscriptions (no resources.subscribe capability).\n` +
-                `To download the resource once instead, run:\n` +
-                `  mcpc ${this.options.sessionName} resources-read ${params.uri} -o <file>`
-            );
+          // The resources.subscribe capability flag exists only in the 2025-era protocol.
+          // On 2026-07-28 connections subscription support is signalled by the
+          // subscriptions/listen acknowledgment instead, so let the subscribe attempt
+          // decide there — it fails loudly when the server does not honor the URI.
+          if (this.client.getProtocolEra() !== 'modern') {
+            const details = await this.client.getServerDetails();
+            if (!details.capabilities?.resources?.subscribe) {
+              throw new ClientError(
+                `Server does not support resource subscriptions (no resources.subscribe capability).\n` +
+                  `To download the resource once instead, run:\n` +
+                  `  mcpc ${this.options.sessionName} resources-read ${params.uri} -o <file>`
+              );
+            }
           }
           await this.client.subscribeResource(params.uri);
           try {

@@ -24,8 +24,15 @@ import {
   addFormats,
 } from '@modelcontextprotocol/client/validators/ajv';
 
-/** `$schema` URIs of pre-2020-12 dialects routed to the draft-07 engine. */
-const LEGACY_DIALECT_PATTERN = /^https?:\/\/json-schema\.org\/draft-0[467]\/schema#?$/;
+/**
+ * `$schema` URIs of pre-2020-12 dialects routed to the tolerant draft-07 engine.
+ * Includes draft 2019-09: the SDK's default engine rejects its dialect URI outright,
+ * while the draft-07 engine (strict mode off, schema self-validation off) compiles it
+ * and simply ignores the few 2019-09-only keywords — validating is strictly better
+ * than failing every call to such a tool.
+ */
+const LEGACY_DIALECT_PATTERN =
+  /^https?:\/\/json-schema\.org\/(draft-0[467]|draft\/2019-09)\/schema#?$/;
 
 export class DialectAwareJsonSchemaValidator implements jsonSchemaValidator {
   /** SDK default engine (JSON Schema 2020-12), constructed lazily by the SDK itself. */

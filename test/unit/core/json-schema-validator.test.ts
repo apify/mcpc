@@ -55,4 +55,57 @@ describe('DialectAwareJsonSchemaValidator', () => {
     expect(validate({ items: ['a'] }).valid).toBe(true);
     expect(validate({ items: [42] }).valid).toBe(false);
   });
+
+  it.each([
+    'http://json-schema.org/draft-04/schema#',
+    'http://json-schema.org/draft-06/schema#',
+    'https://json-schema.org/draft-07/schema',
+  ])('validates a schema stamped with legacy dialect %s', (dialect) => {
+    const schema = {
+      $schema: dialect,
+      type: 'object',
+      properties: { name: { type: 'string' } },
+      required: ['name'],
+    };
+
+    const validate = provider.getValidator<{ name: string }>(schema);
+    expect(validate({ name: 'ok' }).valid).toBe(true);
+    expect(validate({}).valid).toBe(false);
+  });
+
+  it('validates a draft-2019-09-stamped schema instead of rejecting the dialect', () => {
+    // Pinned decision: 2019-09 routes to the tolerant draft-07 engine, because the SDK's
+    // default engine rejects the 2019-09 dialect URI outright. 2019-09-only keywords are
+    // ignored rather than enforced — better than failing every call to such a tool.
+    const schema = {
+      $schema: 'https://json-schema.org/draft/2019-09/schema',
+      type: 'object',
+      properties: { count: { type: 'integer' } },
+      required: ['count'],
+    };
+
+    const validate = provider.getValidator<{ count: number }>(schema);
+    expect(validate({ count: 1 }).valid).toBe(true);
+    expect(validate({ count: 'nope' }).valid).toBe(false);
+  });
+
+  it('resolves internal $ref and composition keywords in draft-07 schemas', () => {
+    const schema = {
+      $schema: 'http://json-schema.org/draft-07/schema#',
+      type: 'object',
+      definitions: {
+        entry: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+      },
+      properties: {
+        entry: { $ref: '#/definitions/entry' },
+        value: { anyOf: [{ type: 'string' }, { type: 'number' }] },
+      },
+      required: ['entry', 'value'],
+    };
+
+    const validate = provider.getValidator<{ entry: { id: string }; value: unknown }>(schema);
+    expect(validate({ entry: { id: 'a' }, value: 1 }).valid).toBe(true);
+    expect(validate({ entry: { id: 'a' }, value: true }).valid).toBe(false);
+    expect(validate({ entry: {}, value: 'x' }).valid).toBe(false);
+  });
 });
