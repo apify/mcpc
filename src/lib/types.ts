@@ -7,7 +7,6 @@
 import type {
   Tool,
   Resource,
-  ResourceTemplate,
   Prompt,
   PromptArgument,
   Implementation,
@@ -35,13 +34,18 @@ import type {
   GetTaskResult,
   ListTasksResult,
   CancelTaskResult,
-} from '@modelcontextprotocol/sdk/types.js';
+} from '@modelcontextprotocol/client';
+
+/**
+ * A single resource template entry. The SDK v2 does not export this type directly,
+ * so it is derived from the list result it appears in.
+ */
+export type ResourceTemplate = ListResourceTemplatesResult['resourceTemplates'][number];
 
 // Re-export core MCP types for external use
 export type {
   Tool,
   Resource,
-  ResourceTemplate,
   Prompt,
   PromptArgument,
   Implementation,

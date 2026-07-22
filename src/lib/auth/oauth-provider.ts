@@ -12,12 +12,12 @@
  *    - No keychain I/O during runtime (token manager handles state)
  */
 
-import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
 import type {
+  OAuthClientProvider,
   OAuthClientMetadata,
   OAuthClientInformationMixed,
   OAuthTokens,
-} from '@modelcontextprotocol/sdk/shared/auth.js';
+} from '@modelcontextprotocol/client';
 import { OAuthTokenManager } from './oauth-token-manager.js';
 import {
   readKeychainOAuthTokenInfo,

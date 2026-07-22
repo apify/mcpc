@@ -2230,6 +2230,50 @@ describe('formatCallToolResultHuman', () => {
     expect(output).not.toContain('Structured content');
   });
 
+  // Since protocol 2026-07-28 (SEP-2106), structuredContent may be any JSON value,
+  // not just an object — non-object values must render without key-based dedup logic.
+  it('should show an array structuredContent when content is empty (SEP-2106)', () => {
+    const result = {
+      content: [],
+      structuredContent: [1, 2, 3],
+    };
+    const output = formatCallToolResultHuman(result);
+    expect(output).toContain('Structured content:');
+    expect(output).toContain('1');
+    expect(output).toContain('3');
+  });
+
+  it('should show a primitive structuredContent when content is empty (SEP-2106)', () => {
+    const result = {
+      content: [],
+      structuredContent: 42,
+    };
+    const output = formatCallToolResultHuman(result);
+    expect(output).toContain('Structured content:');
+    expect(output).toContain('42');
+  });
+
+  it('should keep text content untouched alongside a non-object structuredContent', () => {
+    const result = {
+      content: [{ type: 'text' as const, text: 'summary' }],
+      structuredContent: ['a', 'b'],
+    };
+    const output = formatCallToolResultHuman(result);
+    expect(output).toContain('Content:');
+    expect(output).toContain('summary');
+    expect(output).not.toContain('Structured content');
+  });
+
+  it('should treat a null structuredContent as absent (SEP-2106)', () => {
+    const result = {
+      content: [],
+      structuredContent: null,
+    };
+    const output = formatCallToolResultHuman(result);
+    expect(output).not.toContain('Structured content');
+    expect(output).toContain('(no content)');
+  });
+
   it('should skip the duplicate text block when it matches structuredContent', () => {
     const sc = { results: [{ title: 'Test', url: 'https://example.com' }] };
     const result = {
