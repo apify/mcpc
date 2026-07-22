@@ -4,6 +4,12 @@
 source "$(dirname "$0")/../../lib/framework.sh"
 test_init "sessions/failover"
 
+# This suite asserts the 2025-era expired-session flow: after a bridge crash the
+# server rejects the stale MCP session ID and the session must be explicitly
+# restarted. Stateless 2026-07-28 connections have no session ID to reject
+# (crash recovery there is covered by sessions/bridge-resilience).
+require_server_protocol legacy
+
 # Start test server
 start_test_server
 
@@ -35,10 +41,12 @@ test_pass
 # Test: kill bridge process
 test_case "kill bridge process"
 _kill_tree "$bridge_pid"
-sleep 1
 
-# Verify it's no longer running
+# Verify it's no longer running. The SIGTERM shutdown is graceful (session
+# DELETE + client close, each with its own timeout budget), so allow up to 10s
+# instead of a fixed sleep — on slow machines 1s is not enough (flaky).
 if is_windows; then
+  sleep 1
   if tasklist //FI "PID eq $bridge_pid" //NH 2>/dev/null | grep -q "$bridge_pid"; then
     test_fail "bridge should not be running"
     exit 1
@@ -48,7 +56,7 @@ if is_windows; then
   # to simulate the session being invalidated.
   curl -s -X POST "$TEST_SERVER_URL/control/expire-session" >/dev/null
 else
-  if kill -0 "$bridge_pid" 2>/dev/null; then
+  if ! wait_for "! kill -0 $bridge_pid 2>/dev/null" 10; then
     test_fail "bridge should not be running"
     exit 1
   fi

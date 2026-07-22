@@ -633,6 +633,24 @@ _TEST_SERVER_PID=""
 _PROXY_SERVER_PID=""
 _HTTPS_WRAPPER_PID=""
 
+# Protocol era served by the test server (the protocol-version test matrix):
+#   legacy - test/e2e/server/index.ts (MCP SDK v1, protocol 2025-11-25)
+#   modern - test/e2e/server/index-v2.ts (MCP SDK v2, protocol 2026-07-28)
+# Set by run.sh --server-protocol; defaults to legacy.
+E2E_SERVER_PROTOCOL="${E2E_SERVER_PROTOCOL:-legacy}"
+
+# Skip the whole test unless the active test-server protocol era matches.
+# Call right after test_init in era-specific tests:
+#   require_server_protocol legacy   # e.g. sessions, tasks, logging-set-level
+#   require_server_protocol modern   # e.g. pure-2026-07-28 behaviors
+require_server_protocol() {
+  local required="$1"
+  if [[ "$E2E_SERVER_PROTOCOL" != "$required" ]]; then
+    echo "# SKIP: test requires the $required-protocol test server (active: $E2E_SERVER_PROTOCOL)"
+    exit 0
+  fi
+}
+
 # Start test MCP server
 # Usage: start_test_server [env_vars...]
 # Example: start_test_server PAGINATION_SIZE=2 LATENCY_MS=100
@@ -648,9 +666,15 @@ start_test_server() {
     env_str+=" $var"
   done
 
+  # Pick the server implementation for the active protocol era
+  local server_script="test/e2e/server/index.ts"
+  if [[ "$E2E_SERVER_PROTOCOL" == "modern" ]]; then
+    server_script="test/e2e/server/index-v2.ts"
+  fi
+
   # Start server
   cd "$PROJECT_ROOT"
-  env $env_str npx tsx test/e2e/server/index.ts >"$_TEST_RUN_DIR/server.log" 2>&1 &
+  env $env_str npx tsx "$server_script" >"$_TEST_RUN_DIR/server.log" 2>&1 &
   _TEST_SERVER_PID=$!
 
   # Wait for server to be ready
@@ -923,12 +947,20 @@ create_stdio_config() {
   local config_file="$TEST_TMP/config-$name.json"
   local args_json=$(printf '%s\n' "${native_args[@]}" | jq -R . | jq -s .)
 
+  # Forward proxy/TLS settings to the spawned server. The MCP SDK gives stdio
+  # children a minimal env whitelist (HOME, PATH, ...) that drops proxy and CA
+  # vars, so in proxied/TLS-intercepted environments an `npx`-launched server
+  # would stall retrying npm registry requests. Empty when none are set.
+  local env_json
+  env_json=$(jq -n 'env | {HTTP_PROXY, HTTPS_PROXY, NO_PROXY, http_proxy, https_proxy, no_proxy, NODE_EXTRA_CA_CERTS, SSL_CERT_FILE} | with_entries(select(.value != null))')
+
   cat > "$config_file" <<EOF
 {
   "mcpServers": {
     "$name": {
       "command": "$command",
-      "args": $args_json
+      "args": $args_json,
+      "env": $env_json
     }
   }
 }

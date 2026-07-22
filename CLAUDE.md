@@ -103,7 +103,7 @@ mcpc/
 │   └── mcpc-bridge     # Bridge process executable
 └── test/
     └── e2e/
-        └── server/     # Test MCP server for E2E tests
+        └── server/     # Test MCP servers for E2E tests (2025-11-25 + 2026-07-28)
 ```
 
 ### Core Components
@@ -430,10 +430,11 @@ Environment variable substitution supported: `${VAR_NAME}`
 
 - Real MCP server implementations
 - Cross-runtime testing (Node.js and Bun)
+- Protocol-version matrix: the suites run against two test servers — `test/e2e/server/index.ts` (MCP SDK v1, protocol 2025-11-25) and `test/e2e/server/index-v2.ts` (MCP SDK v2, pure 2026-07-28, legacy requests rejected) — selected via `./test/e2e/run.sh --server-protocol legacy|modern` (default: legacy). Both serve the same surface from shared `fixtures.ts`; era-specific suites skip themselves with `require_server_protocol <era>`. Each future MCP revision adds a matrix column instead of a rewrite.
 
 **Test utilities:**
 
-- `test/e2e/server/` - Test MCP server
+- `test/e2e/server/` - Test MCP servers (one per protocol era) + shared fixtures
 - `test/e2e/lib/framework.sh` - Shell test framework for E2E suites
 
 ## Runtime Requirements
