@@ -111,7 +111,7 @@ mcpc/
 **1. Core Module (`src/core/`)**
 
 - Thin, runtime-agnostic wrapper around the official TypeScript SDK v2 client (`@modelcontextprotocol/client`, works with Node.js ≥22.12 and Bun ≥1)
-- Protocol version negotiation is automatic: the client probes servers with `server/discover` and speaks `2026-07-28` (stateless era) when supported, falling back to the `2025-11-25` `initialize` handshake on the same connection
+- Protocol version negotiation is automatic: the client probes servers with `server/discover` and speaks `2026-07-28` (stateless era) when supported, falling back to the legacy `initialize` handshake on the same connection (which negotiates `2025-11-25` down to `2024-10-07`)
 - Transport abstraction: Streamable HTTP and stdio (both created via the SDK's transports)
 - Captures negotiated protocol version and MCP session ID after connect
 - Streamable HTTP connection management with reconnection delegated to the SDK (exponential backoff: 1s → 30s max, up to 10 retries)
@@ -314,7 +314,7 @@ When making changes, follow these rules to maintain the security posture:
 
 ## MCP Protocol Implementation
 
-**Protocol version:** Current latest is `2026-07-28` (stateless era); `2025-11-25` remains fully supported via automatic fallback
+**Protocol version:** Current latest is `2026-07-28` (stateless era); `2025-11-25` and older versions (down to `2024-10-07`) remain fully supported via automatic fallback
 
 **Initialization sequence (2026-07-28, "modern" era):**
 

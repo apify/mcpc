@@ -503,7 +503,8 @@ ${chalk.bold('Stdio servers (command-based, run locally):')}
 
 ${chalk.bold('Protocol version:')}
   mcpc negotiates MCP 2026-07-28 with servers that support it and falls
-  back to 2025-11-25 automatically. Run mcpc @session to see the version.
+  back to older versions (2025-11-25 down to 2024-10-07) automatically.
+  Run mcpc @session to see the negotiated version.
 ${jsonHelp(
   'Array of `InitializeResult` objects (one per session), extended with `toolNames` and `_mcpc` metadata',
   '`[{ protocolVersion?, capabilities?, serverInfo?, instructions?, toolNames?, _mcpc: { sessionName, server?, ... }]`',
@@ -1369,7 +1370,10 @@ ${jsonHelp('`GetPromptResult` object', '`{ description?, messages: [{ role, cont
   // Logging commands
   program
     .command('logging-set-level <level>')
-    .description('Set MCP server logging level (2025-11-25 servers only; removed in 2026-07-28).')
+    .description(
+      'Set MCP server logging level (deprecated: removed in MCP 2026-07-28, works on ' +
+        '2025-11-25 servers only, and will be removed in a future mcpc release).'
+    )
     .addHelpText('after', jsonHelp('`{ level: string }`'))
     .action(async (level, _options, command) => {
       await logging.setLogLevel(session, level, getOptionsFromCommand(command));

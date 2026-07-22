@@ -9,11 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Support for MCP protocol version 2026-07-28: mcpc now probes each server with `server/discover` and talks the new stateless protocol when supported, falling back to 2025-11-25 automatically. Resource subscriptions use the new `subscriptions/listen` stream (with automatic re-listen on drops), and `ping` transparently uses `server/discover` on 2026-07-28 servers. mcpc now uses the official TypeScript SDK v2 (`@modelcontextprotocol/client`).
+- Support for MCP protocol version 2026-07-28: mcpc now probes each server with `server/discover` and talks the new stateless protocol when supported, falling back to older protocol versions (2025-11-25 down to 2024-10-07) automatically. Resource subscriptions use the new `subscriptions/listen` stream (with automatic re-listen on drops), and `ping` transparently uses `server/discover` on 2026-07-28 servers. mcpc now uses the official TypeScript SDK v2 (`@modelcontextprotocol/client`).
 
 ### Changed
 
 - On servers using MCP 2026-07-28, `logging-set-level` returns an error (the protocol removed `logging/setLevel`) and the task commands (`tasks-list`, `tasks-get`, `tasks-result`, `tasks-cancel`, `tools-call --task/--detach`) report that the new tasks extension is not supported yet — they keep working unchanged on 2025-11-25 servers.
+
+### Deprecated
+
+- The `logging-set-level` command is deprecated and will be removed in a future release: MCP 2026-07-28 removed the underlying `logging/setLevel` request. It keeps working on 2025-11-25 servers during the deprecation window.
 
 ## [0.5.0] - 2026-07-21
 

@@ -135,6 +135,14 @@ export async function createMcpClient(options: CreateMcpClientOptions): Promise<
     ...(options.serverConfig.command && { stdioTransport: true }),
   };
 
+  // Tolerate tool schemas stamped with pre-2020-12 dialects (draft-07 etc.), which the
+  // SDK's default validator rejects outright — most 2025-era servers emit them.
+  // Loaded dynamically so the bundled AJV engine is only paid for when a client is created.
+  if (!clientOptions.jsonSchemaValidator) {
+    const { DialectAwareJsonSchemaValidator } = await import('./json-schema-validator.js');
+    clientOptions.jsonSchemaValidator = new DialectAwareJsonSchemaValidator();
+  }
+
   const client = new McpClient(options.clientInfo, clientOptions);
 
   // Create and connect transport if autoConnect is true

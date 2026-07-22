@@ -822,7 +822,7 @@ Where `mcpc` stands on each part of the MCP specification:
 
 | **Feature**                                          | **Status**                                                       |
 |:-----------------------------------------------------|:-----------------------------------------------------------------|
-| 📜 **Protocol version**                              | ✅ 2026-07-28 (auto-negotiated), falls back to 2025-11-25         |
+| 📜 **Protocol version**                              | ✅ 2026-07-28 (auto-negotiated), falls back to 2025-11-25 or older |
 | 🔌 **Transport**                                     | ✅ stdio and Streamable HTTP                                      |
 | 🔑 [**Authorization**](#authentication)              | ✅ Bearer + OAuth 2.1 (client credentials, DCR, CIMD, auth code)  |
 | 🔄 [**Sessions**](#sessions)                         | ✅ Supported (with automatic keepalive)                           |
@@ -832,14 +832,14 @@ Where `mcpc` stands on each part of the MCP specification:
 | 💬 [**Prompts**](#prompts)                           | ✅ Supported (incl. list changed notifications)                   |
 | 📦 [**Resources**](#resources)                       | ✅ Supported (incl. subscriptions and list changed notifications) |
 | 🧠 [**Skills**](#skills)                             | 🧪 Experimental (SEP-2640)                                       |
-| 📝 [**Logging**](#server-logs)                       | ✅ Supported (deprecated by MCP)                                  |
+| 📝 [**Logging**](#server-logs)                       | ⚠️ Deprecated (removed by MCP 2026-07-28)                         |
 | 🔔 [**Notifications**](#list-change-notifications)   | ✅ Supported                                                      |
 | 📄 [**Pagination**](#pagination)                     | ✅ Supported                                                      |
 | 🏓 [**Ping**](#ping)                                 | ✅ Supported                                                      |
 | 📁 **Roots**                                         | ❌ Not planned (deprecated by MCP)                                |
 | ❓ **Elicitation**                                   | 🚧 Planned                                                       |
 | 🔤 **Completion**                                    | 🚧 Planned                                                       |
-| 🤖 **Sampling**                                      | ❌ Not applicable (no LLM access)                                 |
+| 🤖 **Sampling**                                      | ❌ Not planned (deprecated by MCP)                                |
 
 Beyond the interactive browser login, the **Authorization** row above also covers the OAuth
 **client-credentials** grant (the [`io.modelcontextprotocol/oauth-client-credentials`](https://modelcontextprotocol.io/extensions/auth/oauth-client-credentials)
