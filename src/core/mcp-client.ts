@@ -4,7 +4,12 @@
  */
 
 import { Client as SDKClient, type ClientOptions } from '@modelcontextprotocol/client';
-import type { Transport, McpSubscription, ProtocolEra } from '@modelcontextprotocol/client';
+import type {
+  Transport,
+  McpSubscription,
+  ProtocolEra,
+  SubscriptionFilter,
+} from '@modelcontextprotocol/client';
 import type {
   Implementation,
   ListToolsResult,
@@ -258,6 +263,11 @@ export class McpClient implements IMcpClient {
         this.mcpSessionId = transport.sessionId;
         this.logger.debug(`MCP session ID: ${this.mcpSessionId}`);
       }
+
+      // On 2026-07-28 connections the SDK auto-opens a subscriptions/listen stream for
+      // the configured listChanged handlers, but never re-opens it after a drop —
+      // without this watch, list-change notifications would silently stop.
+      this.watchListChangedStream(this.client.autoOpenedSubscription);
 
       const serverVersion = this.client.getServerVersion();
       const serverCapabilities = this.client.getServerCapabilities();
@@ -646,7 +656,37 @@ export class McpClient implements IMcpClient {
     });
   }
 
-  /** Re-establish the listen stream after a remote drop, backing off 1s → 30s. */
+  /**
+   * Re-open the listChanged `subscriptions/listen` stream when it drops unexpectedly
+   * (2026-07-28 connections). Notifications on the new stream dispatch to the handlers
+   * the SDK registered at connect, so delivery resumes transparently.
+   */
+  private watchListChangedStream(subscription: McpSubscription | undefined): void {
+    if (!subscription) return;
+    void subscription.closed.then((reason) => {
+      if (reason !== 'remote' || this.isClosing) return;
+      void this.relistenListChangedWithBackoff(subscription.honoredFilter);
+    });
+  }
+
+  /** Re-establish the listChanged listen stream after a remote drop, backing off 1s → 30s. */
+  private async relistenListChangedWithBackoff(filter: SubscriptionFilter): Promise<void> {
+    let delayMillis = RELISTEN_INITIAL_DELAY_MILLIS;
+    while (!this.isClosing) {
+      await new Promise((resolve) => setTimeout(resolve, delayMillis));
+      try {
+        const subscription = await this.client.listen(filter, this.getRequestOptions());
+        this.watchListChangedStream(subscription);
+        this.logger.debug('listChanged listen stream re-established');
+        return;
+      } catch (error) {
+        this.logger.debug(`listChanged re-listen failed, retrying in ${delayMillis * 2}ms:`, error);
+        delayMillis = Math.min(delayMillis * 2, RELISTEN_MAX_DELAY_MILLIS);
+      }
+    }
+  }
+
+  /** Re-establish the resource-subscription listen stream after a remote drop, backing off 1s → 30s. */
   private async relistenWithBackoff(): Promise<void> {
     let delayMillis = RELISTEN_INITIAL_DELAY_MILLIS;
     while (!this.isClosing && this.modernSubscribedUris.size > 0 && !this.modernListen) {

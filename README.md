@@ -1039,8 +1039,13 @@ never executes hooks, scripts, or other frontmatter-declared behavior.
 #### List change notifications
 
 When connected via a [session](#sessions), `mcpc` automatically handles `list_changed`
-notifications for tools, resources, and prompts (delivered over the `subscriptions/listen`
-stream on `2026-07-28` servers, and as unsolicited notifications on `2025-11-25` ones).
+notifications for tools, resources, and prompts. On `2025-11-25` servers these arrive as
+unsolicited notifications; on `2026-07-28` servers (where unsolicited notifications no
+longer exist) the session bridge opts in by opening a `subscriptions/listen` stream at
+connect and re-opens it automatically if it drops — the behavior is identical from the
+outside. As a safety net on `2026-07-28` connections, the bridge's tools cache also
+expires after 60 seconds, so a missed notification can never leave `tools-list` or
+[`grep`](#grep-search-across-sessions) stale for long.
 The bridge process tracks when each notification type was last received.
 The timestamps are available in the JSON output of `mcpc @session --json` under the `_mcpc.notifications`
 field - see [Server instructions](#server-instructions).
