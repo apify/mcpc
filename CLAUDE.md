@@ -198,7 +198,7 @@ Run `mcpc --help` and `mcpc help <command>` for the authoritative, always-curren
 - 🟡 **disconnected** - Bridge process running but server unreachable (lastSeenAt stale >~65s); auto-recovers when server responds
 - 🟡 **crashed** - Bridge process crashed or killed; auto-reconnects in the background
 - 🔴 **unauthorized** - Server rejected authentication (401/403) or token refresh failed; requires `login` then `restart`
-- 🔴 **expired** - Server rejected session ID (404); requires `restart`
+- 🔴 **expired** - Server rejected session ID (404); requires `restart` (sessions created with `connect --auto-restart` are restarted automatically with a fresh session on next use, or in the background whenever sessions are probed, e.g. by `mcpc` or `mcpc grep`)
 
 ### Transport Implementation
 

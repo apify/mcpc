@@ -213,6 +213,35 @@ export async function updateSession(
 }
 
 /**
+ * Remove the stored MCP session id so the next bridge start creates a fresh
+ * MCP session instead of attempting resumption. Used by auto-restart recovery
+ * (`connect --auto-restart`) after the server has rejected the old session id.
+ */
+export async function clearSessionMcpSessionId(sessionName: string): Promise<void> {
+  const filePath = getSessionsFilePath();
+  return withFileLock(
+    filePath,
+    async () => {
+      const storage = await loadSessionsInternal();
+
+      const session = storage.sessions[sessionName];
+      if (!session) {
+        throw new ClientError(`Session not found: ${sessionName}`);
+      }
+      if (session.mcpSessionId === undefined) {
+        return;
+      }
+
+      delete session.mcpSessionId;
+      await saveSessionsInternal(storage);
+
+      logger.debug(`Cleared MCP session id for ${sessionName}`);
+    },
+    SESSIONS_DEFAULT_CONTENT
+  );
+}
+
+/**
  * Delete a session
  * @param sessionName - Name of the session to delete (without @ prefix)
  */
@@ -415,9 +444,15 @@ export async function consolidateSessions(
       // without a profile (e.g. static bearer token via --header) cannot self-heal, so
       // retrying would just flip the status back to 'connecting' on every `mcpc` call
       // and hide the real state from the user.
+      // Expired sessions are included only when created with `connect --auto-restart` —
+      // their rejected MCP session id is dropped so the restart creates a fresh session.
       for (const [name, session] of Object.entries(storage.sessions)) {
         const isRetryableUnauthorized = session?.status === 'unauthorized' && !!session.profileName;
-        if ((session?.status === 'crashed' || isRetryableUnauthorized) && !session.pid) {
+        const isAutoRestartExpired = session?.status === 'expired' && !!session.autoRestart;
+        if (
+          (session?.status === 'crashed' || isRetryableUnauthorized || isAutoRestartExpired) &&
+          !session.pid
+        ) {
           // Skip if a connection was already attempted within the cooldown window
           const lastAttempt = session.lastConnectionAttemptAt
             ? new Date(session.lastConnectionAttemptAt).getTime()
@@ -434,6 +469,11 @@ export async function consolidateSessions(
             continue;
           }
           session.lastConnectionAttemptAt = new Date(now).toISOString();
+          if (isAutoRestartExpired) {
+            // The server rejected the old session id — drop it so the restarted
+            // bridge connects fresh instead of retrying resumption forever.
+            delete session.mcpSessionId;
+          }
           // Use 'connecting' if session has never successfully connected, 'reconnecting' otherwise
           session.status = session.lastSeenAt ? 'reconnecting' : 'connecting';
           hasChanges = true;

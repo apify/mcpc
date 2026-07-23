@@ -33,7 +33,7 @@ import type { ListResourceTemplatesResult } from '@modelcontextprotocol/sdk/type
 import { BridgeClient } from './bridge-client.js';
 import { ensureBridgeReady, restartBridge } from './bridge-manager.js';
 import { updateSession } from './sessions.js';
-import { NetworkError, IpcTimeoutError } from './errors.js';
+import { NetworkError, IpcTimeoutError, isBridgeReported } from './errors.js';
 import { getSocketPath, generateRequestId } from './utils.js';
 import { createLogger } from './logger.js';
 
@@ -68,9 +68,12 @@ export class SessionClient implements IMcpClient {
    * 2. Reconnect
    * 3. Retry the operation once — but only for idempotent operations
    *
-   * Two cases are deliberately NOT retried:
+   * Three cases are deliberately NOT retried:
    * - IPC timeouts: the bridge is likely healthy and still processing the request;
    *   restarting would kill the in-flight request and retrying could execute it twice.
+   * - Bridge-reported network errors: the MCP *server* failed, not the bridge — the
+   *   bridge is alive and manages its own session status (e.g. marking the session
+   *   expired), so restarting it would be pointless and would race that bookkeeping.
    * - Non-idempotent operations (tool calls) after a socket failure: the bridge died
    *   with the request in flight, so the server may already have executed it. We
    *   restart the bridge to recover the session, but surface the uncertainty to the
@@ -101,6 +104,15 @@ export class SessionClient implements IMcpClient {
         error.message =
           `${error.message}. The bridge did not respond in time; the request may still be ` +
           `running on the server. For details, run: mcpc ${this.sessionName} logs`;
+        throw error;
+      }
+
+      // A NetworkError reported by the bridge itself means the MCP *server* was
+      // unreachable or rejected the request — the bridge process is alive and
+      // maintains its own session status (e.g. marking the session expired).
+      // Restarting it here would be pointless and would race that bookkeeping.
+      if (isBridgeReported(error)) {
+        error.message = `${error.message}. For details, run: mcpc ${this.sessionName} logs`;
         throw error;
       }
 
@@ -381,6 +393,13 @@ export class SessionClient implements IMcpClient {
         error.message =
           `${error.message}. The bridge did not respond in time; the tool call may still be ` +
           `running on the server. For details, run: mcpc ${this.sessionName} logs`;
+        throw error;
+      }
+
+      // Bridge-reported network error: the server failed, not the bridge —
+      // don't restart (see withRetry for the full rationale)
+      if (isBridgeReported(error)) {
+        error.message = `${error.message}. For details, run: mcpc ${this.sessionName} logs`;
         throw error;
       }
 

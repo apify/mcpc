@@ -134,6 +134,7 @@ type ConnectSessionOptions = {
   proxyBearerToken?: string;
   x402?: X402SchemePreference;
   insecure?: boolean;
+  autoRestart?: boolean;
   skipDetails?: boolean;
   quiet?: boolean;
 };
@@ -367,6 +368,8 @@ export async function connectSession(
     ...(proxyConfig && { proxy: proxyConfig }),
     ...(options.x402 && { x402: options.x402 }),
     ...(options.insecure && { insecure: true }),
+    // Persist auto-restart preference (absence leaves an existing session unchanged)
+    ...(options.autoRestart && { autoRestart: true }),
     // Clear any previous error status (unauthorized, expired) when reconnecting
     ...(isReconnect && { status: 'active' }),
   };
@@ -604,6 +607,7 @@ type BulkConnectOptions = {
   stdio?: boolean;
   x402?: X402SchemePreference;
   insecure?: boolean;
+  autoRestart?: boolean;
 };
 
 /**

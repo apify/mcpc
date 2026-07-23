@@ -109,7 +109,8 @@ export interface ProxyConfig {
  * - connecting: Bridge is starting up for the first time (initial connect in progress)
  * - reconnecting: Bridge crashed and is being automatically restarted
  * - unauthorized: Server rejected authentication (401/403) or token refresh failed. Recovery: login then restart.
- * - expired: Server indicated session is no longer valid (e.g., 404 response). Recovery: restart.
+ * - expired: Server indicated session is no longer valid (e.g., 404 response). Recovery: restart
+ *   (automatic for sessions created with `connect --auto-restart`).
  * - crashed: Bridge process crashed, session might or might not be usable. Bridge will be restarted on next command.
  */
 export type SessionStatus =
@@ -157,6 +158,13 @@ export interface SessionData {
    */
   x402?: X402SchemePreference;
   insecure?: boolean; // Skip TLS certificate verification
+  /**
+   * Restart expired sessions automatically (set by `connect --auto-restart`).
+   * When the server rejects the stored MCP session id, the session is restarted
+   * with a fresh MCP session instead of failing until an explicit `restart`.
+   * Previous session state (e.g. added tools, async tasks) is lost on such a restart.
+   */
+  autoRestart?: boolean;
   pid?: number; // Bridge process PID
   protocolVersion?: string; // Negotiated MCP version
   mcpSessionId?: string; // Server-assigned MCP session ID for resumption (stateful Streamable HTTP only)
