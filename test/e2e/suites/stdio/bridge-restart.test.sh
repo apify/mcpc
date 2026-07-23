@@ -52,15 +52,17 @@ test_pass
 # Test: kill the bridge process
 test_case "kill bridge process"
 _kill_tree "$original_pid"
-# Wait for process to actually die
-sleep 1
+# Wait for the process to actually die. The SIGTERM shutdown is graceful (the
+# stdio child gets close-stdin → SIGTERM → SIGKILL escalation with timeouts),
+# so allow up to 10s instead of a fixed sleep — 1s is flaky on slow machines.
 if is_windows; then
+  sleep 1
   if tasklist //FI "PID eq $original_pid" //NH 2>/dev/null | grep -q "$original_pid"; then
     test_fail "bridge process should have been killed"
     exit 1
   fi
 else
-  if kill -0 "$original_pid" 2>/dev/null; then
+  if ! wait_for "! kill -0 $original_pid 2>/dev/null" 10; then
     test_fail "bridge process should have been killed"
     exit 1
   fi

@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - On servers using MCP 2026-07-28, `logging-set-level` returns an error (the protocol removed `logging/setLevel`) and the task commands (`tasks-list`, `tasks-get`, `tasks-result`, `tasks-cancel`, `tools-call --task/--detach`) report that the new tasks extension is not supported yet — they keep working unchanged on 2025-11-25 servers.
+- Updated the MCP TypeScript SDK v2 to `2.0.0-beta.5`, which fixes interoperability with 2026-07-28 servers built on the latest SDK betas (they require the new `Mcp-Method` request header that older clients did not send).
 
 ### Deprecated
 
