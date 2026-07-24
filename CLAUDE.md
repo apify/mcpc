@@ -153,7 +153,7 @@ mcpc/
   - Skills: `skills-list`, `skills-get`
   - Other: `grep`, `logs`, `ping`, `logging-set-level`, `restart`, `close`, `help`
 - `mcpc connect <server> @<name>` - Create a named persistent session (also bulk: `mcpc connect <file>` for all config entries, `mcpc connect` for auto-discovered configs; `--proxy` exposes the session as a local MCP HTTP server)
-- `mcpc login <server> [--profile <name>]` - Login via OAuth and save auth profile (`--grant client-credentials` for non-interactive M2M auth)
+- `mcpc login <server> [--profile <name>]` - Login via OAuth and save auth profile (`--grant client-credentials` for non-interactive M2M auth, `--grant id-jag` for enterprise-managed authorization via the corporate IdP)
 - `mcpc logout <server> [--profile <name>]` - Delete an authentication profile
 - `mcpc grep <pattern>` - Search tools/instructions (and optionally resources/prompts) across all sessions
 - `mcpc x402 <subcommand>` - Configure an x402 payment wallet (experimental)
@@ -307,7 +307,7 @@ When making changes, follow these rules to maintain the security posture:
 - Use `execFile()` (array args) instead of `exec()` (shell string) when spawning processes
 - Escape any user-controlled or server-controlled data before embedding in HTML responses
 - Send sensitive data (headers, tokens) via IPC socket, never via CLI arguments or environment variables
-- Read all keychain values needed to start a bridge in the CLI **before** `spawn()`. After spawn the bridge arms a short IPC-credential timeout; on macOS a Keychain password dialog can block longer than that timeout, so a post-spawn keychain read races the bridge timer and causes ENOENT (#55). The CLI is the only process attached to a TTY and can show the dialog without the user wondering why a background process is asking. Bridge-side keychain access is permitted only on the OAuth refresh path (`oauth-token-manager` callbacks in `src/bridge/index.ts`), where it is needed to persist rotated refresh tokens for long-running sessions
+- Read all keychain values needed to start a bridge in the CLI **before** `spawn()`. After spawn the bridge arms a short IPC-credential timeout; on macOS a Keychain password dialog can block longer than that timeout, so a post-spawn keychain read races the bridge timer and causes ENOENT (#55). The CLI is the only process attached to a TTY and can show the dialog without the user wondering why a background process is asking. Bridge-side keychain access is permitted only on the OAuth token refresh paths (the `oauth-token-manager` callbacks and the id-jag provider callbacks in `src/bridge/index.ts`), where it is needed to persist rotated refresh tokens for long-running sessions
 - Validate and sanitize all external input (URLs, session names, profile names) before use
 - Default to HTTPS; only allow HTTP for localhost/127.0.0.1
 - When adding HTTP servers (even localhost-only), validate the Host header against expected values
@@ -528,6 +528,8 @@ On failure, the error message includes instructions on how to login. This ensure
 - `src/lib/auth/oauth-token-manager.ts` - Token validation and refresh
 - `src/lib/auth/token-refresh.ts` - Token refresh logic with keychain persistence
 - `src/lib/auth/client-credentials.ts` - Non-interactive client-credentials grant (`login --grant client-credentials`)
+- `src/lib/auth/id-jag.ts` - Enterprise-managed authorization (SEP-990, ID-JAG) runtime: token exchange at the IdP, ID token refresh, SDK provider (bridge-safe, no interactive code)
+- `src/lib/auth/id-jag-login.ts` - Interactive IdP SSO login for the id_jag grant (`login --grant id-jag`)
 - `src/lib/auth/auth-page.ts` - HTML for the OAuth callback result page (escaped)
 
 **Session-to-Profile Relationship:**

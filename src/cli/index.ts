@@ -641,7 +641,8 @@ ${jsonHelp(
     .option('--scope <scopes>', 'OAuth scopes to request (e.g. --scope "read write")')
     .option(
       '--grant <type>',
-      'OAuth grant: authorization-code (default, interactive) or client-credentials (machine-to-machine)'
+      'OAuth grant: authorization-code (default, interactive), client-credentials ' +
+        '(machine-to-machine), or id-jag (enterprise-managed authorization via your IdP)'
     )
     .option('--client-id <id>', 'Pre-registered OAuth client ID (skips CIMD and DCR)')
     .option('--client-secret <secret>', 'Pre-registered OAuth client secret (requires --client-id)')
@@ -653,6 +654,16 @@ ${jsonHelp(
     .option(
       '--token-endpoint <url>',
       'OAuth token endpoint (client-credentials only; auto-discovered if omitted)'
+    )
+    .option('--idp <url>', 'Enterprise IdP issuer URL (id-jag only)')
+    .option('--idp-client-id <id>', 'Client ID pre-registered at the enterprise IdP (id-jag only)')
+    .option(
+      '--idp-client-secret <secret>',
+      'Client secret for the enterprise IdP; omit for public IdP clients (id-jag only)'
+    )
+    .option(
+      '--idp-scope <scopes>',
+      'OIDC scopes for the IdP SSO (id-jag only; default: "openid profile email offline_access")'
     )
     .option(
       '--client-metadata-url <url>',
@@ -704,6 +715,24 @@ ${chalk.bold('Machine-to-machine authentication (for CI/CD and daemons):')}
   --token-endpoint <url> for servers without discoverable metadata.
 
   See https://modelcontextprotocol.io/extensions/auth/oauth-client-credentials
+
+${chalk.bold("Enterprise-managed authorization (SSO via your organization's IdP):")}
+  Pass --grant id-jag when your organization controls MCP server access
+  centrally through its identity provider (e.g. Okta). You sign in once with
+  your corporate SSO; mcpc then obtains MCP tokens via identity assertion
+  grants (ID-JAG) without any per-server consent screens:
+
+  mcpc login mcp.example.com --grant id-jag \\
+    --idp https://acme.okta.com --idp-client-id <idp-client> \\
+    --client-id <mcp-as-client> --client-secret <secret>
+
+  Both clients are pre-registered by your IT team: --idp-client-id at the
+  enterprise IdP (add --idp-client-secret if it is a confidential client),
+  --client-id/--client-secret at the MCP server's authorization server.
+  --scope requests MCP-server scopes; --idp-scope overrides the OIDC scopes
+  used for the SSO itself.
+
+  See https://modelcontextprotocol.io/extensions/auth/enterprise-managed-authorization
 ${jsonHelp('Interactive prompts go to stderr; stdout is a clean JSON object', '`{ profile, serverUrl, scopes }`')}`
     )
     .action(async (server, opts, command) => {
@@ -746,6 +775,10 @@ ${jsonHelp('Interactive prompts go to stderr; stdout is a clean JSON object', '`
         clientKeyAlg: opts.clientKeyAlg,
         tokenEndpoint: opts.tokenEndpoint,
         clientMetadataUrl: opts.clientMetadataUrl,
+        idp: opts.idp,
+        idpClientId: opts.idpClientId,
+        idpClientSecret: opts.idpClientSecret,
+        idpScope: opts.idpScope,
         ...(callbackPort !== undefined ? { callbackPort } : {}),
         ...(callbackHost ? { callbackHost } : {}),
         ...getOptionsFromCommand(command),

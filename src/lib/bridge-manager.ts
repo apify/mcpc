@@ -43,6 +43,7 @@ import {
   readKeychainOAuthTokenInfo,
   readKeychainOAuthClientInfo,
   readKeychainClientCredentials,
+  readKeychainIdJagCredentials,
   readKeychainSessionHeaders,
   readKeychainProxyBearerToken,
 } from './auth/keychain.js';
@@ -547,7 +548,21 @@ async function loadAuthCredentials(
     logger.debug(`Looking up auth profile ${profileName} for ${serverUrl}`);
 
     const profile = await getAuthProfile(serverUrl, profileName);
-    if (profile?.oauthGrant === 'client_credentials') {
+    if (profile?.oauthGrant === 'id_jag') {
+      // Enterprise-managed authorization: load the stored IdP + client material so
+      // the bridge can build the SDK cross-app-access provider.
+      const idJag = await readKeychainIdJagCredentials(profile.serverUrl, profileName);
+      if (idJag) {
+        credentials.serverUrl = profile.serverUrl;
+        credentials.oauthGrant = 'id_jag';
+        credentials.idJag = idJag;
+        logger.debug(`Found id-jag material for profile ${profileName}`);
+      } else {
+        logger.warn(
+          `Profile ${profileName} uses the id-jag grant but no material was found in the keychain`
+        );
+      }
+    } else if (profile?.oauthGrant === 'client_credentials') {
       // Client-credentials grant: load the stored secret/key so the bridge can
       // build the SDK provider that fetches and refreshes tokens itself.
       const cc = await readKeychainClientCredentials(profile.serverUrl, profileName);

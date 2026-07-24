@@ -233,8 +233,11 @@ export interface SessionsStorage {
  * - authorization_code: interactive, browser-based flow (the default; assumed when absent)
  * - client_credentials: machine-to-machine flow (no user), per the MCP extension
  *   `io.modelcontextprotocol/oauth-client-credentials`
+ * - id_jag: enterprise-managed authorization (SEP-990): SSO at the enterprise IdP,
+ *   then identity-assertion JWT authorization grants (ID-JAG) for the MCP server,
+ *   per the MCP extension `io.modelcontextprotocol/enterprise-managed-authorization`
  */
-export type OAuthGrant = 'authorization_code' | 'client_credentials';
+export type OAuthGrant = 'authorization_code' | 'client_credentials' | 'id_jag';
 
 /**
  * Authentication profile data stored in ~/.mcpc/profiles.json
@@ -253,6 +256,8 @@ export interface AuthProfile {
   oauthGrant?: OAuthGrant;
   // OAuth metadata
   oauthIssuer: string;
+  /** Enterprise IdP issuer URL (id_jag grant only). */
+  idpIssuer?: string;
   scopes?: string[];
   // User info (from OIDC id_token, if available)
   userEmail?: string;
@@ -269,6 +274,36 @@ export interface AuthProfile {
  */
 export interface AuthProfilesStorage {
   profiles: Record<string, Record<string, AuthProfile>>; // serverUrl -> profileName -> AuthProfile
+}
+
+/**
+ * Enterprise-managed authorization (SEP-990) material for the `id_jag` grant.
+ * Stored as one keychain blob per profile and delivered to the bridge via IPC.
+ * The bridge exchanges `idToken` at the IdP for an ID-JAG (RFC 8693 token
+ * exchange) and the ID-JAG at the MCP authorization server for an access token
+ * (RFC 7523 jwt-bearer) — both handled by the MCP SDK.
+ */
+export interface IdJagCredentials {
+  /** Enterprise IdP issuer URL. */
+  idpIssuer: string;
+  /** IdP token endpoint, discovered and pinned at login so the bridge never re-discovers. */
+  idpTokenEndpoint: string;
+  /** Client pre-registered at the enterprise IdP. */
+  idpClientId: string;
+  /** IdP client secret (absent for public IdP clients). */
+  idpClientSecret?: string;
+  /** Current OIDC ID token from the IdP — the subject of the RFC 8693 exchange. */
+  idToken: string;
+  /** ID token expiry (`exp` claim, unix seconds). */
+  idTokenExpiresAt?: number;
+  /** IdP refresh token; renews the ID token when the IdP granted offline access. */
+  idpRefreshToken?: string;
+  /** Client registered at the MCP authorization server. */
+  mcpClientId: string;
+  /** Secret for the MCP authorization server client (required by the SDK provider). */
+  mcpClientSecret: string;
+  /** Space-separated scopes requested for the MCP server. */
+  scope?: string;
 }
 
 /**
@@ -301,6 +336,8 @@ export interface AuthCredentials {
   keyAlg?: string; // JWT signing algorithm for the private_key_jwt variant (e.g. RS256)
   scope?: string; // space-separated scopes requested by the client-credentials grant
   tokenEndpoint?: string; // explicit token endpoint (--token-endpoint); bypasses discovery
+  // Enterprise-managed authorization material (id_jag grant; sent via IPC, never CLI args)
+  idJag?: IdJagCredentials;
   // HTTP headers (from --header flags, stored in keychain)
   headers?: Record<string, string>;
   // Bearer token the bridge's proxy server requires (from --proxy-bearer-token).

@@ -204,10 +204,15 @@ export async function listSessionsAndAuthProfiles(options: {
         const hostStr = getServerHost(profile.serverUrl);
         const nameStr = theme.magenta(profile.name);
         // Client-credentials profiles have no user identity; label the grant instead.
-        const annotation =
+        // Enterprise (id_jag) profiles carry the user identity from the IdP SSO —
+        // append "enterprise" so they are distinguishable from plain OAuth logins.
+        let annotation =
           profile.userEmail ||
           profile.userName ||
           (profile.oauthGrant === 'client_credentials' ? 'client credentials' : '');
+        if (profile.oauthGrant === 'id_jag') {
+          annotation = annotation ? `${annotation}, enterprise` : 'enterprise';
+        }
         // Show refreshedAt if available, otherwise createdAt
         const timeAgo = formatTimeAgo(profile.refreshedAt || profile.createdAt);
         const timeLabel = profile.refreshedAt ? 'refreshed' : 'created';

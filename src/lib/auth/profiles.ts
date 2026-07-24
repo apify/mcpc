@@ -23,6 +23,7 @@ import {
   removeKeychainOAuthClientInfo,
   removeKeychainOAuthTokenInfo,
   removeKeychainClientCredentials,
+  removeKeychainIdJagCredentials,
 } from './keychain.js';
 
 const logger = createLogger('auth-profiles');
@@ -287,6 +288,7 @@ export async function deleteAuthProfiles(
           await removeKeychainOAuthClientInfo(profile.serverUrl, profile.name);
           await removeKeychainOAuthTokenInfo(profile.serverUrl, profile.name);
           await removeKeychainClientCredentials(profile.serverUrl, profile.name);
+          await removeKeychainIdJagCredentials(profile.serverUrl, profile.name);
           logger.debug(
             `Removed keychain entries for profile: ${profile.name} on ${getServerHost(profile.serverUrl)}`
           );

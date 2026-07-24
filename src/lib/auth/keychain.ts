@@ -17,6 +17,7 @@ import chalk from 'chalk';
 import { createLogger, getJsonMode } from '../logger.js';
 import { getServerHost, getMcpcHome, fileExists } from '../utils.js';
 import { withFileLock } from '../file-lock.js';
+import type { IdJagCredentials } from '../types.js';
 
 const logger = createLogger('keychain');
 const SERVICE_NAME = 'mcpc';
@@ -227,6 +228,9 @@ const oauthTokensAccount = (serverUrl: string, profileName: string): string =>
 const oauthClientCredentialsAccount = (serverUrl: string, profileName: string): string =>
   `auth-profile:${getServerHost(serverUrl)}:${profileName}:client-credentials`;
 
+const oauthIdJagAccount = (serverUrl: string, profileName: string): string =>
+  `auth-profile:${getServerHost(serverUrl)}:${profileName}:id-jag`;
+
 const sessionHeadersAccount = (sessionName: string): string => `session:${sessionName}:headers`;
 
 const proxyBearerTokenAccount = (sessionName: string): string =>
@@ -355,6 +359,37 @@ export async function removeKeychainClientCredentials(
 ): Promise<boolean> {
   logger.debug(`Deleting client-credentials material for ${profileName} @ ${serverUrl}`);
   return keychainDelete(oauthClientCredentialsAccount(serverUrl, profileName));
+}
+
+/** Store enterprise-managed authorization (id_jag) material for an auth profile. */
+export async function storeKeychainIdJagCredentials(
+  serverUrl: string,
+  profileName: string,
+  info: IdJagCredentials
+): Promise<void> {
+  logger.debug(`Storing id-jag material for ${profileName} @ ${serverUrl}`);
+  await keychainSet(oauthIdJagAccount(serverUrl, profileName), JSON.stringify(info));
+}
+
+/** Read enterprise-managed authorization (id_jag) material for an auth profile. */
+export async function readKeychainIdJagCredentials(
+  serverUrl: string,
+  profileName: string
+): Promise<IdJagCredentials | undefined> {
+  logger.debug(`Retrieving id-jag material for ${profileName} @ ${serverUrl}`);
+  return keychainGetParsed<IdJagCredentials>(
+    oauthIdJagAccount(serverUrl, profileName),
+    'id-jag material'
+  );
+}
+
+/** Delete enterprise-managed authorization (id_jag) material for an auth profile. */
+export async function removeKeychainIdJagCredentials(
+  serverUrl: string,
+  profileName: string
+): Promise<boolean> {
+  logger.debug(`Deleting id-jag material for ${profileName} @ ${serverUrl}`);
+  return keychainDelete(oauthIdJagAccount(serverUrl, profileName));
 }
 
 /** Store custom HTTP headers for a session. */
