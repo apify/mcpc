@@ -35,6 +35,8 @@ import {
   theme,
 } from '../output.js';
 import { withMcpClient, resolveTarget, resolveAuthProfile } from '../helpers.js';
+// Imported directly (not via the core barrel) so the CLI doesn't eagerly load the MCP SDK
+import { isSupportedMcpVersion, SUPPORTED_MCP_VERSIONS } from '../../core/protocol.js';
 import {
   deleteSession,
   saveSession,
@@ -132,6 +134,7 @@ type ConnectSessionOptions = {
   noProfile?: boolean;
   proxy?: string;
   proxyBearerToken?: string;
+  mcpVersion?: string;
   x402?: X402SchemePreference;
   insecure?: boolean;
   skipDetails?: boolean;
@@ -256,6 +259,14 @@ export async function connectSession(
   // Validate proxy-bearer-token is only used with --proxy
   if (options.proxyBearerToken && !options.proxy) {
     throw new ClientError('--proxy-bearer-token requires --proxy to be specified');
+  }
+
+  // Validate --mcp-version (if provided)
+  if (options.mcpVersion && !isSupportedMcpVersion(options.mcpVersion)) {
+    throw new ClientError(
+      `Unsupported MCP protocol version: ${options.mcpVersion}\n` +
+        `Supported versions: ${SUPPORTED_MCP_VERSIONS.join(', ')}`
+    );
   }
 
   // Check if session already exists
@@ -460,9 +471,14 @@ export async function connectSession(
       };
       console.log(formatOutput([failed], 'json'));
     } else {
+      const pinHint = serverConfig.mcpVersion
+        ? `  The session is pinned to MCP ${serverConfig.mcpVersion}. If the server does not\n` +
+          `  support that version, reconnect without --mcp-version to auto-negotiate.\n`
+        : '';
       console.log(
         formatWarning(
           `Session ${name} created but server is not responding: ${errorMsg}\n` +
+            pinHint +
             `  The session will auto-recover when the server becomes available.\n` +
             `  Check status with: mcpc ${name}`
         )
@@ -602,6 +618,7 @@ type BulkConnectOptions = {
   proxy?: string;
   proxyBearerToken?: string;
   stdio?: boolean;
+  mcpVersion?: string;
   x402?: X402SchemePreference;
   insecure?: boolean;
 };

@@ -133,6 +133,8 @@ export async function createMcpClient(options: CreateMcpClientOptions): Promise<
     // Cap the version-negotiation probe timeout on stdio (local servers answer fast;
     // some legacy ones never answer pre-initialize requests at all)
     ...(options.serverConfig.command && { stdioTransport: true }),
+    // Pin the MCP protocol version when requested (strict, no fallback)
+    ...(options.serverConfig.mcpVersion && { mcpVersion: options.serverConfig.mcpVersion }),
   };
 
   // Tolerate tool schemas stamped with pre-2020-12 dialects (draft-07 etc.), which the

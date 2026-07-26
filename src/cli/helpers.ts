@@ -80,6 +80,7 @@ export async function resolveTarget(
     timeoutSecs?: number;
     verbose?: boolean;
     profile?: string;
+    mcpVersion?: string;
   } = {}
 ): Promise<ServerConfig> {
   if (options.verbose) {
@@ -106,6 +107,7 @@ export async function resolveTarget(
       ...serverConfig,
       ...(Object.keys(mergedHeaders).length > 0 && { headers: mergedHeaders }),
       ...(options.timeoutSecs && { timeout: options.timeoutSecs }),
+      ...(options.mcpVersion && { mcpVersion: options.mcpVersion }),
     };
   }
 
@@ -129,6 +131,7 @@ export async function resolveTarget(
     url,
     ...(Object.keys(headers).length > 0 && { headers }),
     ...(options.timeoutSecs && { timeout: options.timeoutSecs }),
+    ...(options.mcpVersion && { mcpVersion: options.mcpVersion }),
   };
 }
 

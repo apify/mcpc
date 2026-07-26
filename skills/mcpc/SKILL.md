@@ -58,6 +58,9 @@ mcpc connect                             # discover standard configs + connect e
   (`mcp.apify.com` → `@apify`). A matching session (same server + auth) is reused.
 - **Stdio (command-based) entries launch a local process on connect** — only connect
   to configs you trust. Bulk connects skip stdio entries unless you pass `--stdio`.
+- The MCP protocol version is negotiated automatically. Pass
+  `--mcp-version <version>` (e.g. `--mcp-version 2025-11-25`) to pin one exact
+  version — the connection fails if the server does not support it.
 - `login` / `logout` only accept an MCP server URL (a bare host or full
   `http(s)://` URL) — not config files or auto-discovery.
 

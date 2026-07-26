@@ -294,7 +294,15 @@ export async function showServerDetails(
     const resourceSubscriptions = Object.values(sessionData?.resourceSubscriptions ?? {});
 
     if (options.outputMode === 'human') {
-      console.log(formatServerDetails(serverDetails, target, tools, resourceSubscriptions));
+      console.log(
+        formatServerDetails(
+          serverDetails,
+          target,
+          tools,
+          resourceSubscriptions,
+          context.serverConfig?.mcpVersion
+        )
+      );
     } else {
       // JSON output MUST match MCP InitializeResult structure!
       // See https://modelcontextprotocol.io/specification/2025-11-25/schema#initializeresult

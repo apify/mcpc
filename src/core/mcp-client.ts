@@ -33,8 +33,9 @@ import {
   CancelTaskResultSchema,
 } from '@modelcontextprotocol/core';
 import { createNoOpLogger, type Logger } from '../lib/logger.js';
-import { ServerError, NetworkError, isShutdownError } from '../lib/errors.js';
+import { ClientError, ServerError, NetworkError, isShutdownError } from '../lib/errors.js';
 import { fetchAllPages } from '../lib/utils.js';
+import { isModernMcpVersion, isSupportedMcpVersion, SUPPORTED_MCP_VERSIONS } from './protocol.js';
 
 /**
  * Traverse the .cause chain to find the deepest (most specific) error message
@@ -101,6 +102,13 @@ export interface McpClientOptions extends ClientOptions {
    * version-negotiation probe timeout (see STDIO_PROBE_TIMEOUT_MILLIS).
    */
   stdioTransport?: boolean;
+
+  /**
+   * Pin the MCP protocol version instead of auto-negotiating (strict: the
+   * connection fails unless the server agrees to exactly this version).
+   * Must be one of SUPPORTED_MCP_VERSIONS.
+   */
+  mcpVersion?: string;
 }
 
 /**
@@ -138,6 +146,41 @@ const RELISTEN_MAX_DELAY_MILLIS = 30_000;
 const STDIO_PROBE_TIMEOUT_MILLIS = 5_000;
 
 /**
+ * Compute the SDK version-negotiation options for an optional `--mcp-version` pin.
+ *
+ * - No pin: probe with `server/discover` and talk 2026-07-28 when the server supports
+ *   it, falling back to the legacy `initialize` handshake on the same connection.
+ * - Modern pin (2026-07-28+): the SDK's `{ pin }` mode — the server must offer exactly
+ *   that revision, no fallback.
+ * - Legacy pin: plain `initialize` handshake (no probe) offering only the pinned
+ *   version; the SDK rejects the connection if the server counter-offers anything else.
+ *
+ * Exported for unit tests.
+ */
+export function resolveVersionOptions(
+  mcpVersion: string | undefined,
+  stdioTransport: boolean | undefined
+): Pick<ClientOptions, 'versionNegotiation' | 'supportedProtocolVersions'> {
+  const probe = stdioTransport ? { probe: { timeoutMs: STDIO_PROBE_TIMEOUT_MILLIS } } : {};
+  if (mcpVersion === undefined) {
+    return { versionNegotiation: { mode: 'auto', ...probe } };
+  }
+  if (!isSupportedMcpVersion(mcpVersion)) {
+    throw new ClientError(
+      `Unsupported MCP protocol version: ${mcpVersion}\n` +
+        `Supported versions: ${SUPPORTED_MCP_VERSIONS.join(', ')}`
+    );
+  }
+  if (isModernMcpVersion(mcpVersion)) {
+    return { versionNegotiation: { mode: { pin: mcpVersion }, ...probe } };
+  }
+  return {
+    versionNegotiation: { mode: 'legacy' },
+    supportedProtocolVersions: [mcpVersion],
+  };
+}
+
+/**
  * MCP Client wrapper class
  * Provides a convenient interface to the MCP SDK Client with error handling and logging
  * Implements IMcpClient interface for compatibility with SessionClient
@@ -169,13 +212,10 @@ export class McpClient implements IMcpClient {
 
     this.client = new SDKClient(clientInfo, {
       capabilities: options.capabilities || {},
-      // Probe servers with `server/discover` and talk 2026-07-28 when they support it,
-      // falling back to the 2025-11-25 `initialize` handshake on the same connection.
-      versionNegotiation: {
-        mode: 'auto',
-        ...(options.stdioTransport ? { probe: { timeoutMs: STDIO_PROBE_TIMEOUT_MILLIS } } : {}),
-      },
       ...options,
+      // Placed after the spread so a caller-supplied versionNegotiation never
+      // overrides the mcpVersion pin (or the default auto negotiation).
+      ...resolveVersionOptions(options.mcpVersion, options.stdioTransport),
     });
 
     // Set up error handling

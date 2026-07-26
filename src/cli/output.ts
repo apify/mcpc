@@ -1600,7 +1600,8 @@ export function formatServerDetails(
   details: ServerDetails,
   target: string,
   tools?: Tool[],
-  resourceSubscriptions?: ResourceSubscriptionEntry[]
+  resourceSubscriptions?: ResourceSubscriptionEntry[],
+  pinnedMcpVersion?: string
 ): string {
   const lines: string[] = [];
   const bullet = chalk.dim('*');
@@ -1620,7 +1621,11 @@ export function formatServerDetails(
   // any request may hit any server instance; stateful = stdio process or HTTP session id)
   const hasMode = connectionMode !== undefined && connectionMode !== 'unknown';
   if (protocolVersion || hasMode) {
-    const mode = hasMode ? ` (${connectionMode})` : '';
+    const modeParts = [
+      ...(hasMode ? [connectionMode] : []),
+      ...(pinnedMcpVersion ? ['pinned'] : []),
+    ];
+    const mode = modeParts.length > 0 ? ` (${modeParts.join(', ')})` : '';
     lines.push(chalk.bold('Protocol:') + ` ${protocolVersion ?? 'unknown'}${mode}`);
     lines.push('');
   }
