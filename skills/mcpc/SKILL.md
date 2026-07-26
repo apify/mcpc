@@ -183,6 +183,11 @@ mcpc @s tools-list
 
 # Machine-to-machine (CI/CD, daemons) — client-credentials grant, no browser needed
 mcpc login mcp.example.com --grant client-credentials --client-id my-svc --client-secret s3cr3t
+
+# Enterprise-managed authorization — SSO once at the corporate IdP (e.g. Okta),
+# then identity assertion grants (ID-JAG); clients are pre-registered by IT
+mcpc login mcp.example.com --grant id-jag --idp https://acme.okta.com \
+  --idp-client-id idp-client --client-id mcp-client --client-secret s3cr3t
 ```
 
 With no auth flags, mcpc uses the `default` profile if one exists, otherwise it

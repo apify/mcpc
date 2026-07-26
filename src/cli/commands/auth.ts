@@ -36,6 +36,10 @@ export async function login(
     clientKeyAlg?: string;
     tokenEndpoint?: string;
     clientMetadataUrl?: string | false;
+    idp?: string;
+    idpClientId?: string;
+    idpClientSecret?: string;
+    idpScope?: string;
     callbackPort?: number;
     callbackHost?: string;
   }
@@ -49,14 +53,29 @@ export async function login(
     // Resolve the grant type (default: the interactive authorization-code flow).
     // Accept both hyphen and underscore spellings (e.g. "client_credentials").
     const grant = (options.grant ?? 'authorization-code').toLowerCase().replace(/_/g, '-');
-    if (grant !== 'authorization-code' && grant !== 'client-credentials') {
+    if (grant !== 'authorization-code' && grant !== 'client-credentials' && grant !== 'id-jag') {
       throw new ClientError(
-        `Invalid --grant "${grant}". Supported values: authorization-code (default), client-credentials.`
+        `Invalid --grant "${grant}". Supported values: authorization-code (default), ` +
+          `client-credentials, id-jag.`
       );
+    }
+
+    // The --idp-* flags only apply to the enterprise-managed authorization grant.
+    if (grant !== 'id-jag') {
+      if (options.idp || options.idpClientId || options.idpClientSecret || options.idpScope) {
+        throw new ClientError(
+          '--idp/--idp-client-id/--idp-client-secret/--idp-scope require --grant id-jag'
+        );
+      }
     }
 
     if (grant === 'client-credentials') {
       await loginWithClientCredentials(normalizedUrl, profileName, options);
+      return;
+    }
+
+    if (grant === 'id-jag') {
+      await loginWithIdJag(normalizedUrl, profileName, options);
       return;
     }
 
@@ -276,6 +295,104 @@ async function loginWithClientCredentials(
           profile: profileName,
           serverUrl: normalizedUrl,
           grant: 'client_credentials',
+          scopes: result.scopes,
+        },
+        'json'
+      )
+    );
+  }
+}
+
+/**
+ * Login with enterprise-managed authorization (SEP-990, ID-JAG): interactive SSO
+ * at the enterprise IdP, then identity-assertion grants for the MCP server.
+ * Throws on invalid flag combinations (ClientError, exit 1); the caller maps
+ * errors to their exit codes.
+ */
+async function loginWithIdJag(
+  normalizedUrl: string,
+  profileName: string,
+  options: {
+    outputMode: OutputMode;
+    scope?: string;
+    clientId?: string;
+    clientSecret?: string;
+    clientKey?: string;
+    clientKeyAlg?: string;
+    tokenEndpoint?: string;
+    clientMetadataUrl?: string | false;
+    idp?: string;
+    idpClientId?: string;
+    idpClientSecret?: string;
+    idpScope?: string;
+    callbackPort?: number;
+    callbackHost?: string;
+  }
+): Promise<void> {
+  if (!options.idp || !options.idpClientId) {
+    throw new ClientError(
+      '--grant id-jag requires --idp <issuer-url> and --idp-client-id ' +
+        '(the client your organization pre-registered at the enterprise IdP)'
+    );
+  }
+  if (!options.clientId || !options.clientSecret) {
+    throw new ClientError(
+      '--grant id-jag requires --client-id and --client-secret ' +
+        "(a confidential client registered at the MCP server's authorization server)"
+    );
+  }
+
+  // Flags of the other grants have no meaning here.
+  if (options.clientKey || options.clientKeyAlg) {
+    throw new ClientError('--client-key/--client-key-alg require --grant client-credentials');
+  }
+  if (options.tokenEndpoint) {
+    throw new ClientError('--token-endpoint is only supported with --grant client-credentials');
+  }
+  if (typeof options.clientMetadataUrl === 'string') {
+    throw new ClientError('--client-metadata-url cannot be used with --grant id-jag');
+  }
+
+  if (options.outputMode === 'human') {
+    console.log(formatInfo(`Starting enterprise-managed authorization (SSO via ${options.idp})`));
+    console.log(formatInfo(`Server: ${normalizedUrl}`));
+    console.log(formatInfo(`Profile: ${theme.magenta(profileName)}`));
+  }
+
+  const { loginIdJag } = await import('../../lib/auth/id-jag-login.js');
+  const result = await loginIdJag(normalizedUrl, profileName, {
+    idpIssuer: options.idp,
+    idpClientId: options.idpClientId,
+    mcpClientId: options.clientId,
+    mcpClientSecret: options.clientSecret,
+    ...(options.idpClientSecret ? { idpClientSecret: options.idpClientSecret } : {}),
+    ...(options.idpScope ? { idpScope: options.idpScope } : {}),
+    ...(options.scope ? { scope: options.scope } : {}),
+    ...(options.callbackPort !== undefined ? { callbackPort: options.callbackPort } : {}),
+    ...(options.callbackHost ? { callbackHost: options.callbackHost } : {}),
+  });
+
+  if (options.outputMode === 'human') {
+    console.log(formatSuccess('Authentication successful!'));
+    console.log(formatInfo(`Profile ${theme.magenta(profileName)} saved`));
+    if (result.profile.userEmail || result.profile.userName) {
+      console.log(
+        formatInfo(
+          `User: ${result.profile.userName || ''}${result.profile.userEmail ? ` <${result.profile.userEmail}>` : ''}`.trim()
+        )
+      );
+    }
+    if (result.scopes && result.scopes.length > 0) {
+      console.log(formatInfo(`Scopes: ${result.scopes.join(', ')}`));
+    }
+  } else {
+    console.log(
+      formatOutput(
+        {
+          profile: profileName,
+          serverUrl: normalizedUrl,
+          grant: 'id_jag',
+          idpIssuer: result.profile.idpIssuer,
           scopes: result.scopes,
         },
         'json'

@@ -31,7 +31,7 @@ const logger = createLogger('oauth-flow');
  * issuer identifier; when present the SDK validates it against the discovered
  * authorization server before redeeming the code (mix-up attack defense).
  */
-interface CallbackResult {
+export interface CallbackResult {
   code: string;
   state?: string;
   iss?: string;
@@ -529,6 +529,82 @@ function promptForCallbackUrl(): {
   });
 
   return { promise, cleanup };
+}
+
+/**
+ * Find an available loopback port for the OAuth callback server: the exact
+ * `--callback-port` when given, otherwise the first free port from mcpc's
+ * fixed callback port list.
+ */
+export async function findCallbackPort(callbackPort?: number): Promise<number> {
+  return findAvailablePort(callbackPort ? [callbackPort] : MCPC_OAUTH_CALLBACK_PORTS);
+}
+
+/**
+ * Drive one interactive authorization redirect: start the loopback callback
+ * server on `port`, show the authorization URL, ask for confirmation before
+ * opening the browser (with paste-the-callback-URL fallback when the browser
+ * cannot be opened, and Esc to cancel), and wait for the authorization code.
+ *
+ * Used by login flows that build their own authorization URL — e.g. the
+ * enterprise IdP SSO of the id-jag grant. `performOAuthFlow` below keeps its
+ * own copy of this choreography because it is interleaved with the SDK's
+ * `auth()` orchestration.
+ */
+export async function runInteractiveAuthorization(
+  authorizationUrl: URL,
+  port: number,
+  context: { serverUrl: string; profileName: string; scope?: string }
+): Promise<CallbackResult> {
+  const { server, codePromise, destroyConnections } = startCallbackServer(port, context);
+  let escapeHandler: ReturnType<typeof waitForEscapeKey> | null = null;
+  let pasteHandler: ReturnType<typeof promptForCallbackUrl> | null = null;
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(port, '127.0.0.1', () => {
+        logger.debug(`Callback server listening on port ${port}`);
+        resolve();
+      });
+    });
+
+    // Interactive chatter goes to stderr so stdout stays clean for --json output.
+    console.error(`\nAuthorization URL: ${authorizationUrl.toString()}`);
+    const confirmed = await waitForEnterKey(
+      'Press Enter to open browser (any other key to cancel): '
+    );
+    if (!confirmed) {
+      throw new ClientError('Authentication cancelled by user');
+    }
+
+    console.error('Opening browser...');
+    const opened = await tryOpenBrowser(authorizationUrl.toString());
+
+    const racers: Promise<CallbackResult>[] = [codePromise];
+    if (opened) {
+      console.error('If the browser does not open automatically, please visit the URL above.');
+      console.error('Press Esc to cancel.\n');
+      escapeHandler = waitForEscapeKey();
+      racers.push(escapeHandler.promise as Promise<CallbackResult>);
+    } else {
+      console.error(
+        '\nCould not open browser. Please open the authorization URL above in your browser.'
+      );
+      console.error(
+        'After authorizing, copy the full callback URL from the browser address bar and paste it here.'
+      );
+      pasteHandler = promptForCallbackUrl();
+      racers.push(pasteHandler.promise);
+    }
+
+    return await Promise.race(racers);
+  } finally {
+    escapeHandler?.cleanup();
+    pasteHandler?.cleanup();
+    destroyConnections();
+    server.close();
+  }
 }
 
 /**

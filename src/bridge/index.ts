@@ -39,6 +39,11 @@ import type { OAuthClientProvider } from '@modelcontextprotocol/client';
 import { storeKeychainOAuthTokenInfo, readKeychainOAuthTokenInfo } from '../lib/auth/keychain.js';
 import { updateAuthProfileRefreshedAt } from '../lib/auth/profiles.js';
 import { createClientCredentialsProvider } from '../lib/auth/client-credentials.js';
+import { createIdJagProvider } from '../lib/auth/id-jag.js';
+import {
+  storeKeychainIdJagCredentials,
+  readKeychainIdJagCredentials,
+} from '../lib/auth/keychain.js';
 import type { Tool, Resource, Prompt, Task } from '@modelcontextprotocol/client';
 import { ResourceSyncManager } from './resource-sync.js';
 import type { TaskUpdate } from '../lib/types.js';
@@ -99,6 +104,10 @@ class BridgeProcess {
   // True when authProvider is a client-credentials provider — drives the
   // `oauth-client-credentials` extension capability declaration on initialize.
   private usesClientCredentials = false;
+
+  // True when authProvider is an enterprise-managed-authorization (id_jag) provider —
+  // drives the `enterprise-managed-authorization` extension capability declaration.
+  private usesIdJag = false;
 
   // HTTP headers (received via IPC, stored in memory only)
   private headers: Record<string, string> | null = null;
@@ -176,10 +185,45 @@ class BridgeProcess {
     logger.debug(`  privateKey: ${credentials.privateKeyPem ? 'present' : 'absent'}`);
     logger.debug(`  headers: ${credentials.headers ? Object.keys(credentials.headers).length : 0}`);
     logger.debug(`  proxyBearerToken: ${credentials.proxyBearerToken ? 'present' : 'absent'}`);
+    logger.debug(`  idJag: ${credentials.idJag ? 'present' : 'absent'}`);
 
-    // Client-credentials grant: build the SDK provider that fetches + refreshes
-    // tokens itself. No token manager / no static header — the SDK transport drives it.
-    if (credentials.oauthGrant === 'client_credentials' && credentials.clientId) {
+    // Enterprise-managed authorization (id_jag): build the SDK cross-app-access
+    // provider. It exchanges the stored IdP ID token for an ID-JAG and the ID-JAG
+    // for an MCP access token — the SDK transport drives it, like client-credentials.
+    if (credentials.oauthGrant === 'id_jag' && credentials.idJag) {
+      const idJag = credentials.idJag;
+      logger.debug(`  idToken: ${idJag.idToken ? 'present' : 'MISSING'}`);
+      logger.debug(`  idpRefreshToken: ${idJag.idpRefreshToken ? 'present' : 'absent'}`);
+      this.authProvider = createIdJagProvider(idJag, {
+        serverUrl: credentials.serverUrl,
+        profileName: credentials.profileName,
+        callbacks: {
+          // Reload the material before each exchange (another process may have
+          // rotated the IdP refresh token). Keychain reads/writes here are the
+          // sanctioned OAuth token refresh path (see #55) — the initial material
+          // was still loaded CLI-side pre-spawn and delivered via IPC.
+          reloadCredentials: async () => {
+            logger.debug('Reloading id-jag material from keychain before exchange...');
+            return readKeychainIdJagCredentials(credentials.serverUrl, credentials.profileName);
+          },
+          // Persist rotated IdP tokens after an ID token refresh.
+          onIdTokenRefresh: async (updated) => {
+            logger.debug('IdP ID token refreshed, persisting to keychain');
+            await storeKeychainIdJagCredentials(
+              credentials.serverUrl,
+              credentials.profileName,
+              updated
+            );
+            await updateAuthProfileRefreshedAt(credentials.serverUrl, credentials.profileName);
+            logger.debug('Profile refreshedAt timestamp updated');
+          },
+        },
+      });
+      this.usesIdJag = true;
+      logger.debug('Enterprise-managed authorization (id-jag) provider created for SDK transport');
+      // Client-credentials grant: build the SDK provider that fetches + refreshes
+      // tokens itself. No token manager / no static header — the SDK transport drives it.
+    } else if (credentials.oauthGrant === 'client_credentials' && credentials.clientId) {
       this.authProvider = createClientCredentialsProvider({
         clientId: credentials.clientId,
         ...(credentials.clientSecret ? { clientSecret: credentials.clientSecret } : {}),
@@ -618,7 +662,10 @@ class BridgeProcess {
     const clientConfig: CreateMcpClientOptions = {
       clientInfo: { name: 'mcpc', version: mcpcVersion },
       serverConfig,
-      capabilities: buildClientCapabilities({ clientCredentials: this.usesClientCredentials }),
+      capabilities: buildClientCapabilities({
+        clientCredentials: this.usesClientCredentials,
+        enterpriseManagedAuth: this.usesIdJag,
+      }),
       // Pass auth provider for automatic token refresh (HTTP transport only)
       ...(this.authProvider && { authProvider: this.authProvider }),
       // Pass session ID for resumption (HTTP transport only)
