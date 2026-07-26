@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - On servers using MCP 2026-07-28, `logging-set-level` returns an error (the protocol removed `logging/setLevel`) and the task commands (`tasks-list`, `tasks-get`, `tasks-result`, `tasks-cancel`, `tools-call --task/--detach`) report that the new tasks extension is not supported yet — they keep working unchanged on 2025-11-25 servers.
 - Updated the MCP TypeScript SDK v2 to `2.0.0-beta.5`, which fixes interoperability with 2026-07-28 servers built on the latest SDK betas (they require the new `Mcp-Method` request header that older clients did not send).
 
+### Fixed
+
+- Sessions resumed after a bridge restart (e.g. crash recovery) no longer lose their negotiated protocol version: session details showed `Protocol: unknown` and, worse, requests were sent without the required `MCP-Protocol-Version` header. The stored version is now restored on resumption, and the server name is shown again in session details.
+
 ### Deprecated
 
 - The `logging-set-level` command is deprecated and will be removed in a future release: MCP 2026-07-28 removed the underlying `logging/setLevel` request. It keeps working on 2025-11-25 servers during the deprecation window.
