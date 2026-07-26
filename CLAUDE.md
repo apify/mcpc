@@ -112,6 +112,7 @@ mcpc/
 
 - Thin, runtime-agnostic wrapper around the official TypeScript SDK v2 client (`@modelcontextprotocol/client`, works with Node.js ≥22.12 and Bun ≥1)
 - Protocol version negotiation is automatic: the client probes servers with `server/discover` and speaks `2026-07-28` (stateless era) when supported, falling back to the legacy `initialize` handshake on the same connection (which negotiates `2025-11-25` down to `2024-10-07`)
+- `mcpc connect --mcp-version <version>` (or an `mcpVersion` field in a config entry) pins one exact protocol version instead — strict, no fallback; the supported list lives in `src/core/protocol.ts` (kept dependency-free so the CLI never loads the SDK at startup; a unit test guards drift against the SDK's list)
 - Transport abstraction: Streamable HTTP and stdio (both created via the SDK's transports)
 - Captures negotiated protocol version and MCP session ID after connect
 - Streamable HTTP connection management with reconnection delegated to the SDK (exponential backoff: 1s → 30s max, up to 10 retries)

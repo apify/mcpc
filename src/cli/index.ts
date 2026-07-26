@@ -28,6 +28,8 @@ import { clean } from './commands/clean.js';
 import { MCPC_OAUTH_CALLBACK_HOSTS, MCPC_OAUTH_CALLBACK_PORTS } from '../lib/auth/oauth-utils.js';
 import type { OutputMode, X402SchemePreference } from '../lib/index.js';
 import { X402_SCHEME_PREFERENCES } from '../lib/index.js';
+// Imported directly (not via the core barrel) so the CLI doesn't eagerly load the MCP SDK
+import { SUPPORTED_MCP_VERSIONS } from '../core/protocol.js';
 import {
   extractOptions,
   preProcessX402Argv,
@@ -474,6 +476,10 @@ Full docs: ${docsUrl}`
     .option('--proxy-bearer-token <token>', 'Require authentication for access to proxy server')
     .option('--stdio', 'Launch all local stdio servers from selected config files')
     .option(
+      '--mcp-version <version>',
+      'Pin the MCP protocol version, e.g. 2025-11-25 (default: auto-negotiate)'
+    )
+    .option(
       '--x402 [scheme]',
       'Enable x402 auto-payment using the configured wallet; optional scheme: auto (default, prefer upto), upto, or exact.'
     )
@@ -504,6 +510,9 @@ ${chalk.bold('Stdio servers (command-based, run locally):')}
 ${chalk.bold('Protocol version:')}
   mcpc negotiates MCP 2026-07-28 with servers that support it and falls
   back to older versions (2025-11-25 down to 2024-10-07) automatically.
+  Pass --mcp-version to pin one exact version instead — the connection
+  fails if the server does not support it. Supported values:
+  ${SUPPORTED_MCP_VERSIONS.join(', ')}.
   Run mcpc @session to see the negotiated version.
 ${jsonHelp(
   'Array of `InitializeResult` objects (one per session), extended with `toolNames` and `_mcpc` metadata',
@@ -535,6 +544,7 @@ ${jsonHelp(
           ...(opts.proxy && { proxy: opts.proxy as string }),
           ...(opts.proxyBearerToken && { proxyBearerToken: opts.proxyBearerToken as string }),
           ...(opts.stdio && { stdio: true }),
+          ...(opts.mcpVersion && { mcpVersion: opts.mcpVersion as string }),
           ...(globalOpts.x402 && { x402: globalOpts.x402 }),
           ...(globalOpts.insecure && { insecure: true }),
         });
@@ -566,6 +576,7 @@ ${jsonHelp(
           ...(opts.proxy && { proxy: opts.proxy as string }),
           ...(opts.proxyBearerToken && { proxyBearerToken: opts.proxyBearerToken as string }),
           ...(opts.stdio && { stdio: true }),
+          ...(opts.mcpVersion && { mcpVersion: opts.mcpVersion as string }),
           ...(globalOpts.x402 && { x402: globalOpts.x402 }),
           ...(globalOpts.insecure && { insecure: true }),
         });
@@ -590,6 +601,7 @@ ${jsonHelp(
           config: parsed.file,
           proxy: opts.proxy,
           proxyBearerToken: opts.proxyBearerToken,
+          ...(opts.mcpVersion && { mcpVersion: opts.mcpVersion as string }),
           ...(globalOpts.x402 && { x402: globalOpts.x402 }),
           ...(globalOpts.insecure && { insecure: true }),
         });
@@ -599,6 +611,7 @@ ${jsonHelp(
           ...(headers && { headers }),
           proxy: opts.proxy,
           proxyBearerToken: opts.proxyBearerToken,
+          ...(opts.mcpVersion && { mcpVersion: opts.mcpVersion as string }),
           ...(globalOpts.x402 && { x402: globalOpts.x402 }),
           ...(globalOpts.insecure && { insecure: true }),
         });

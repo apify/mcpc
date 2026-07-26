@@ -343,6 +343,12 @@ with `grep`, server keepalive and status checks by [periodic probing](#ping), ch
 notifications, resource-to-file syncs, and automatic OAuth token refresh. It is also more
 efficient than forcing every MCP command to rediscover the server and reauthenticate.
 
+The protocol version is negotiated automatically (`mcpc @session` shows the result). To pin
+one exact version instead, pass `--mcp-version` to `connect` (e.g.
+`mcpc connect mcp.apify.com --mcp-version 2025-11-25`) — the connection then fails if the
+server does not support that version. Config file entries can set the same via an
+`mcpVersion` field.
+
 Sessions are given names prefixed with `@` (e.g. `@apify`),
 which then serve as unique references in commands.
 
