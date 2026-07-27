@@ -570,15 +570,19 @@ describe('truncate', () => {
 
   it('should handle edge cases', () => {
     expect(truncate('abc', 3)).toBe('abc');
-    expect(truncate('abcd', 3)).toBe('...');
+    // No room for the suffix plus any text, so cut without one rather than overflow
+    expect(truncate('abcd', 3)).toBe('abc');
+    expect(truncate('abcd', 0)).toBe('');
   });
 
-  it('should end with a custom suffix without exceeding maxLength', () => {
+  it('should count the suffix towards maxLength', () => {
     expect(truncate('hello world', 11, ' [trimmed]')).toBe('hello world');
-    const result = truncate('hello world', 10, ' [trimmed]');
-    expect(result).toBe(' [trimmed]');
-    expect(result.length).toBe(10);
     expect(truncate('hello world, this is long', 20, ' [trimmed]')).toBe('hello worl [trimmed]');
+
+    // A suffix that leaves no room for text is dropped, keeping the result within maxLength
+    const result = truncate('hello world', 10, ' [trimmed]');
+    expect(result).toBe('hello worl');
+    expect(result.length).toBe(10);
   });
 });
 
