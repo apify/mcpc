@@ -30,6 +30,29 @@ command=$(json_get ".sessions[] | select(.name == \"$SESSION\") | .serverConfig.
 assert_not_empty "$command" "command should be present for stdio transport"
 test_pass
 
+# Test: negotiated protocol version is detected for stdio sessions.
+# Regression guard: MCP SDK v1's stdio client transport never exposed the
+# negotiated protocolVersion (typescript-sdk#1468), so mcpc <= 0.5.0 showed
+# "Protocol: unknown" for every stdio server. The v2 client reports it via
+# getNegotiatedProtocolVersion() regardless of transport.
+test_case "protocol version is detected for stdio session"
+run_mcpc "$SESSION"
+assert_success
+assert_contains "$STDOUT" "Protocol: 20"
+assert_not_contains "$STDOUT" "Protocol: unknown"
+test_pass
+
+# Test: protocol version is present in --json session details
+test_case "protocol version in --json session details"
+run_mcpc --json "$SESSION"
+assert_success
+protocol_version=$(json_get ".protocolVersion")
+case "$protocol_version" in
+  20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;;
+  *) test_fail "protocolVersion should be a date-formatted MCP version, got: $protocol_version" ;;
+esac
+test_pass
+
 # Test: list tools via stdio session
 test_case "tools-list works via stdio session"
 run_xmcpc "$SESSION" tools-list

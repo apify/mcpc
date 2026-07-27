@@ -56,6 +56,14 @@ export interface CreateMcpClientOptions {
   mcpSessionId?: string;
 
   /**
+   * Protocol version negotiated by the session being resumed (HTTP transport only,
+   * pass together with mcpSessionId). The SDK skips the handshake when resuming, so
+   * the transport needs the original version to keep sending the required
+   * MCP-Protocol-Version header.
+   */
+  protocolVersion?: string;
+
+  /**
    * Custom fetch function for the transport (HTTP transport only)
    * Used by x402 payment middleware
    */
@@ -155,6 +163,7 @@ export async function createMcpClient(options: CreateMcpClientOptions): Promise<
     const transportOptions: {
       authProvider?: OAuthClientProvider;
       mcpSessionId?: string;
+      protocolVersion?: string;
       customFetch?: FetchLike;
       onStderrLine?: (line: string) => void;
     } = {};
@@ -163,6 +172,9 @@ export async function createMcpClient(options: CreateMcpClientOptions): Promise<
     }
     if (options.mcpSessionId) {
       transportOptions.mcpSessionId = options.mcpSessionId;
+      if (options.protocolVersion) {
+        transportOptions.protocolVersion = options.protocolVersion;
+      }
     }
     if (options.customFetch) {
       transportOptions.customFetch = options.customFetch;

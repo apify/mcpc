@@ -400,9 +400,16 @@ export class McpClient implements IMcpClient {
   /**
    * Protocol era of the connection: 'modern' for 2026-07-28+ (negotiated via
    * server/discover), 'legacy' for the 2025-era initialize handshake.
+   * A resumed HTTP session skips the handshake, so the SDK client never learns
+   * the era; derive it from the restored protocol version instead.
    */
   getProtocolEra(): ProtocolEra | undefined {
-    return this.client.getProtocolEra();
+    const sdkEra = this.client.getProtocolEra();
+    if (sdkEra) return sdkEra;
+    if (this.negotiatedProtocolVersion) {
+      return isModernMcpVersion(this.negotiatedProtocolVersion) ? 'modern' : 'legacy';
+    }
+    return undefined;
   }
 
   /**

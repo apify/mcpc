@@ -166,6 +166,14 @@ export interface CreateTransportOptions {
   mcpSessionId?: string;
 
   /**
+   * Protocol version negotiated by the session being resumed (HTTP transport only).
+   * The SDK skips the initialize handshake when mcpSessionId is provided, so the
+   * transport must be seeded with the original version to keep sending the
+   * required MCP-Protocol-Version header on all requests.
+   */
+  protocolVersion?: string;
+
+  /**
    * Custom fetch function (HTTP transport only)
    * Used by x402 middleware to intercept and modify requests
    */
@@ -220,10 +228,16 @@ export function createTransportFromConfig(
       logger.debug('No authProvider provided for HTTP transport');
     }
 
-    // Set session ID for resuming a previous MCP session
+    // Set session ID for resuming a previous MCP session, restoring the protocol
+    // version negotiated by the original handshake (the SDK skips the handshake on
+    // resumption, so the version cannot be re-negotiated)
     if (options.mcpSessionId) {
       transportOptions.sessionId = options.mcpSessionId;
       logger.debug(`Setting mcpSessionId for session resumption: ${options.mcpSessionId}`);
+      if (options.protocolVersion) {
+        transportOptions.protocolVersion = options.protocolVersion;
+        logger.debug(`Restoring negotiated protocol version: ${options.protocolVersion}`);
+      }
     }
 
     if (config.headers !== undefined) {

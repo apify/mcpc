@@ -75,6 +75,7 @@ interface BridgeOptions {
   profileName?: string; // Auth profile name for token refresh
   proxyConfig?: ProxyConfig; // Proxy server configuration
   mcpSessionId?: string; // MCP session ID for resumption (Streamable HTTP only)
+  protocolVersion?: string; // Protocol version negotiated by the resumed session (only set with mcpSessionId)
   /** x402 scheme preference; presence enables x402 auto-payment, absence disables. */
   x402?: X402SchemePreference;
   insecure?: boolean; // Skip TLS certificate verification
@@ -670,6 +671,11 @@ class BridgeProcess {
       ...(this.authProvider && { authProvider: this.authProvider }),
       // Pass session ID for resumption (HTTP transport only)
       ...(this.options.mcpSessionId && { mcpSessionId: this.options.mcpSessionId }),
+      // Restore the previously negotiated protocol version on resumption: the SDK skips
+      // the handshake when a session ID is supplied, so without this the reconnected
+      // transport would not know which MCP-Protocol-Version header to send
+      ...(this.options.mcpSessionId &&
+        this.options.protocolVersion && { protocolVersion: this.options.protocolVersion }),
       // Pass x402 fetch middleware (HTTP transport only)
       ...(customFetch && { customFetch }),
       // Route stdio server stderr into the bridge log + tail buffer
@@ -1479,9 +1485,19 @@ class BridgeProcess {
           break;
         }
 
-        case 'getServerDetails':
-          result = await this.client.getServerDetails();
+        case 'getServerDetails': {
+          const details = await this.client.getServerDetails();
+          // A resumed HTTP session skips the initialize handshake, so the SDK client
+          // has no serverInfo; fall back to the value persisted at original connect.
+          if (!details.serverInfo) {
+            const session = await getSession(this.options.sessionName);
+            if (session?.serverInfo) {
+              details.serverInfo = session.serverInfo;
+            }
+          }
+          result = details;
           break;
+        }
 
         case 'listTasks': {
           const cursor = message.params as string | undefined;
@@ -1771,7 +1787,7 @@ async function main(): Promise<void> {
 
   if (args.length < 2) {
     console.error(
-      'Usage: mcpc-bridge <sessionName> <transportConfigJson> [--verbose] [--profile <name>] [--proxy-host <host>] [--proxy-port <port>] [--mcp-session-id <id>] [--x402 <auto|upto|exact>] [--insecure]'
+      'Usage: mcpc-bridge <sessionName> <transportConfigJson> [--verbose] [--profile <name>] [--proxy-host <host>] [--proxy-port <port>] [--mcp-session-id <id>] [--protocol-version <version>] [--x402 <auto|upto|exact>] [--insecure]'
     );
     process.exit(1);
   }
@@ -1804,6 +1820,13 @@ async function main(): Promise<void> {
   const mcpSessionIdIndex = args.indexOf('--mcp-session-id');
   if (mcpSessionIdIndex !== -1 && args[mcpSessionIdIndex + 1]) {
     mcpSessionId = args[mcpSessionIdIndex + 1];
+  }
+
+  // Parse --protocol-version argument (protocol version negotiated by the resumed session)
+  let protocolVersion: string | undefined;
+  const protocolVersionIndex = args.indexOf('--protocol-version');
+  if (protocolVersionIndex !== -1 && args[protocolVersionIndex + 1]) {
+    protocolVersion = args[protocolVersionIndex + 1];
   }
 
   // Parse `--x402 <scheme>` (CLI always spawns the bridge with an explicit value).
@@ -1841,6 +1864,9 @@ async function main(): Promise<void> {
     }
     if (mcpSessionId) {
       bridgeOptions.mcpSessionId = mcpSessionId;
+    }
+    if (protocolVersion) {
+      bridgeOptions.protocolVersion = protocolVersion;
     }
     if (x402) {
       bridgeOptions.x402 = x402;

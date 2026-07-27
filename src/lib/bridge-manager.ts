@@ -117,6 +117,7 @@ export interface StartBridgeOptions {
   headers?: Record<string, string>; // Headers to send via IPC (caller stores in keychain)
   proxyConfig?: ProxyConfig; // Proxy server configuration
   mcpSessionId?: string; // MCP session ID for resumption (Streamable HTTP only)
+  protocolVersion?: string; // Protocol version negotiated by the resumed session (only pass with mcpSessionId)
   /** x402 scheme preference; presence enables x402 auto-payment, absence disables. */
   x402?: X402SchemePreference;
   insecure?: boolean; // Skip TLS certificate verification
@@ -150,6 +151,7 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
     headers,
     proxyConfig,
     mcpSessionId,
+    protocolVersion,
     x402,
     insecure,
   } = options;
@@ -209,10 +211,17 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
     args.push('--proxy-port', String(proxyConfig.port));
   }
 
-  // Pass MCP session ID for resumption (if available)
+  // Pass MCP session ID for resumption (if available), along with the protocol version
+  // negotiated by the original session — the SDK skips the handshake on resumption, so
+  // the bridge must seed the transport with the version to keep the required
+  // MCP-Protocol-Version header on all requests
   if (mcpSessionId) {
     args.push('--mcp-session-id', mcpSessionId);
     logger.debug(`Passing MCP session ID for resumption: ${mcpSessionId}`);
+    if (protocolVersion) {
+      args.push('--protocol-version', protocolVersion);
+      logger.debug(`Passing negotiated protocol version for resumption: ${protocolVersion}`);
+    }
   }
 
   // Pass x402 scheme preference (presence enables x402).
@@ -504,6 +513,10 @@ export async function restartBridge(sessionName: string): Promise<StartBridgeRes
   if (session.mcpSessionId) {
     bridgeOptions.mcpSessionId = session.mcpSessionId;
     logger.debug(`Using saved MCP session ID for resumption: ${session.mcpSessionId}`);
+    if (session.protocolVersion) {
+      bridgeOptions.protocolVersion = session.protocolVersion;
+      logger.debug(`Using saved protocol version for resumption: ${session.protocolVersion}`);
+    }
   }
   if (session.x402) {
     bridgeOptions.x402 = session.x402;
