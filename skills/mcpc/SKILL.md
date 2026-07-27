@@ -168,8 +168,12 @@ mcpc @apify tasks-result <taskId>               # block until the final result i
 mcpc @apify tasks-cancel <taskId>
 ```
 
-Task commands need a server on MCP protocol 2025-11-25; on 2026-07-28 servers
-they return an error (the new tasks extension is not supported yet).
+Task commands need a server on MCP protocol 2025-11-25 that advertises the tasks
+capability (`tools-list` flags it per tool as `[task:optional|required|forbidden]`).
+Otherwise `--task`/`--detach` and the `tasks-*` commands fail with an error — they
+never silently fall back to a synchronous call, so `--detach` output always has a
+`taskId` or a non-zero exit code. On 2026-07-28 servers tasks are an extension mcpc
+does not support yet.
 
 ## Authentication
 

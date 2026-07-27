@@ -9,7 +9,12 @@ import { initProxy, proxyFetch } from '../lib/proxy.js';
 import { createServer, type Server as NetServer, type Socket } from 'net';
 import { unlink } from 'fs/promises';
 import { dirname } from 'path';
-import { createMcpClient, CreateMcpClientOptions, buildClientCapabilities } from '../core/index.js';
+import {
+  createMcpClient,
+  CreateMcpClientOptions,
+  buildClientCapabilities,
+  tasksUnsupportedByServerMessage,
+} from '../core/index.js';
 import type { McpClient } from '../core/index.js';
 import type {
   ServerConfig,
@@ -48,14 +53,15 @@ import type { AuthCredentials, X402WalletCredentials } from '../lib/types.js';
 import { OAuthTokenManager } from '../lib/auth/oauth-token-manager.js';
 import { OAuthProvider } from '../lib/auth/oauth-provider.js';
 import type { OAuthClientProvider } from '@modelcontextprotocol/client';
-import { storeKeychainOAuthTokenInfo, readKeychainOAuthTokenInfo } from '../lib/auth/keychain.js';
-import { updateAuthProfileRefreshedAt } from '../lib/auth/profiles.js';
-import { createClientCredentialsProvider } from '../lib/auth/client-credentials.js';
-import { createIdJagProvider } from '../lib/auth/id-jag.js';
 import {
+  storeKeychainOAuthTokenInfo,
+  readKeychainOAuthTokenInfo,
   storeKeychainIdJagCredentials,
   readKeychainIdJagCredentials,
 } from '../lib/auth/keychain.js';
+import { updateAuthProfileRefreshedAt } from '../lib/auth/profiles.js';
+import { createClientCredentialsProvider } from '../lib/auth/client-credentials.js';
+import { createIdJagProvider } from '../lib/auth/id-jag.js';
 import type { Tool, Resource, Prompt, Task } from '@modelcontextprotocol/client';
 import { ResourceSyncManager } from './resource-sync.js';
 import type { TaskUpdate } from '../lib/types.js';
@@ -242,9 +248,9 @@ class BridgeProcess {
       });
       this.usesIdJag = true;
       logger.debug('Enterprise-managed authorization (id-jag) provider created for SDK transport');
+    } else if (credentials.oauthGrant === 'client_credentials' && credentials.clientId) {
       // Client-credentials grant: build the SDK provider that fetches + refreshes
       // tokens itself. No token manager / no static header — the SDK transport drives it.
-    } else if (credentials.oauthGrant === 'client_credentials' && credentials.clientId) {
       this.authProvider = createClientCredentialsProvider({
         clientId: credentials.clientId,
         ...(credentials.clientSecret ? { clientSecret: credentials.clientSecret } : {}),
@@ -1387,8 +1393,21 @@ class BridgeProcess {
           // Helper to execute the tool call (used for initial attempt and 402 retry)
           // Capture client ref — guaranteed non-null by check at top of handleMcpRequest
           const client = this.client;
+
+          // Refuse --task/--detach unless this connection can really run tasks. The CLI
+          // checks first and reports the same reason; this is the backstop for direct
+          // callers and for a capability that changed since that check. Falling through
+          // to a plain tools/call would run the tool synchronously and hand --detach
+          // callers a tool result where they expect a task ID.
+          if (params.useTask) {
+            client.assertTasksAvailable();
+            if (!client.supportsTasksForToolCall()) {
+              throw new ClientError(tasksUnsupportedByServerMessage());
+            }
+          }
+
           const executeToolCall = async (): Promise<unknown> => {
-            if (params.useTask && client.supportsTasksForToolCall()) {
+            if (params.useTask) {
               if (params.detach) {
                 // Detached execution: start task and return task ID immediately
                 const taskUpdate = await client.callToolDetached(

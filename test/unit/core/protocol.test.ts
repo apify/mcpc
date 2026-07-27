@@ -9,6 +9,8 @@ import {
   SUPPORTED_PROTOCOL_VERSIONS,
   isModernProtocolVersion,
   isSupportedProtocolVersion,
+  tasksUnavailableMessage,
+  tasksUnsupportedByServerMessage,
 } from '../../../src/core/protocol.js';
 import { resolveVersionOptions } from '../../../src/core/mcp-client.js';
 import { ClientError } from '../../../src/lib/errors.js';
@@ -35,6 +37,44 @@ describe('protocol version constants', () => {
     expect(isSupportedProtocolVersion('2024-10-07')).toBe(true);
     expect(isSupportedProtocolVersion('1999-01-01')).toBe(false);
     expect(isSupportedProtocolVersion('')).toBe(false);
+  });
+});
+
+describe('tasksUnavailableMessage', () => {
+  // Shared by the CLI (which gates tools-call --task/--detach) and McpClient (which
+  // gates the tasks/* requests), so both report the identical reason.
+  it('names the negotiated version and the extension', () => {
+    const message = tasksUnavailableMessage('2026-07-28');
+    expect(message).toContain('2026-07-28');
+    expect(message).toContain('io.modelcontextprotocol/tasks extension');
+    expect(message).toContain('2025-11-25');
+  });
+
+  it('has no trailing period, so the bridge\'s ". For details, run: ..." never doubles up', () => {
+    expect(tasksUnavailableMessage('2026-07-28')).not.toMatch(/\.$/);
+    expect(tasksUnavailableMessage(undefined)).not.toMatch(/\.$/);
+  });
+
+  it('falls back to the latest modern version when none is known', () => {
+    expect(tasksUnavailableMessage(undefined)).toContain(MODERN_PROTOCOL_VERSIONS[0]!);
+  });
+});
+
+describe('tasksUnsupportedByServerMessage', () => {
+  it('names the missing capability and how to proceed', () => {
+    const message = tasksUnsupportedByServerMessage();
+    expect(message).toContain('tasks.requests.tools.call');
+    expect(message).toContain('--task/--detach');
+    // The flags are refused, so the message must say what to run instead.
+    expect(message).toMatch(/without them/);
+  });
+
+  it('has no trailing period, so the bridge\'s ". For details, run: ..." never doubles up', () => {
+    expect(tasksUnsupportedByServerMessage()).not.toMatch(/\.$/);
+  });
+
+  it('is distinct from the protocol-era reason', () => {
+    expect(tasksUnsupportedByServerMessage()).not.toEqual(tasksUnavailableMessage('2026-07-28'));
   });
 });
 

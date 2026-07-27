@@ -857,7 +857,7 @@ Where `mcpc` stands on each part of the MCP specification:
 | 📁 **Roots**                                         | ❌ Not planned (deprecated by MCP)                                |
 | ❓ **Elicitation**                                   | 🚧 Planned                                                       |
 | 🔤 **Completion**                                    | 🚧 Planned                                                       |
-| 🤖 **Sampling**                                      | ❌ Not planned (deprecated by MCP)                                |
+| 🤖 **Sampling**                                      | ❌ Not applicable (no LLM access)                                 |
 
 Beyond the interactive browser login, the **Authorization** row above also covers the OAuth
 **client-credentials** grant (the [`io.modelcontextprotocol/oauth-client-credentials`](https://modelcontextprotocol.io/extensions/auth/oauth-client-credentials)
@@ -1152,9 +1152,12 @@ completes.
 `tools-list` and `tools-get` show task support annotations per tool:
 `[task:optional]`, `[task:required]`, or `[task:forbidden]`.
 
-Task commands require a server using protocol `2025-11-25`. In `2026-07-28` tasks moved to
-the `io.modelcontextprotocol/tasks` extension, which `mcpc` does not support yet — task
-commands on such servers return an error explaining this.
+Task commands require a server that advertises the tasks capability and uses protocol
+`2025-11-25`. In `2026-07-28` tasks moved to the `io.modelcontextprotocol/tasks` extension,
+which `mcpc` does not support yet. When either is missing, `--task`/`--detach` and the
+`tasks-*` commands fail with an error explaining which of the two it is — they never fall
+back to a plain synchronous call, because the flags change the shape of the output and
+`--detach` callers would be left parsing a task ID that is not there.
 
 ## Configuration
 

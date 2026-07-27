@@ -36,3 +36,37 @@ export function isModernProtocolVersion(version: string): boolean {
 export function isSupportedProtocolVersion(version: string): boolean {
   return SUPPORTED_PROTOCOL_VERSIONS.includes(version);
 }
+
+/**
+ * Explain why task commands do not work on a modern connection. Lives here (rather than
+ * in the core client) so the CLI — which gates `tools-call --task/--detach` before
+ * dispatching, and must not load the SDK at startup — reports the identical reason.
+ *
+ * Intentionally has no trailing period. Both messages surface either straight from the
+ * CLI (where period-less errors are the house style) or relayed from the bridge, which
+ * appends ". For details, run: mcpc @session logs" — a period here would double up.
+ */
+export function tasksUnavailableMessage(protocolVersion?: string): string {
+  return (
+    `Tasks are not available on this connection: MCP ${protocolVersion ?? MODERN_PROTOCOL_VERSIONS[0]} ` +
+    `moved tasks to the io.modelcontextprotocol/tasks extension, which is not supported yet. ` +
+    `Task commands currently work only on servers using protocol 2025-11-25`
+  );
+}
+
+/**
+ * Explain that the server itself does not offer task-augmented tool calls, even though
+ * the protocol has them. Kept next to {@link tasksUnavailableMessage} for the same
+ * reason: both the CLI and the bridge refuse `--task`/`--detach` with this text.
+ *
+ * Intentionally has no trailing period. Both messages surface either straight from the
+ * CLI (where period-less errors are the house style) or relayed from the bridge, which
+ * appends ". For details, run: mcpc @session logs" — a period here would double up.
+ */
+export function tasksUnsupportedByServerMessage(): string {
+  return (
+    `This server does not support task-augmented tool calls ` +
+    `(no tasks.requests.tools.call capability), so --task/--detach cannot be used. ` +
+    `Re-run the command without them to call the tool synchronously`
+  );
+}

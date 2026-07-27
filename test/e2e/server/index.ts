@@ -10,6 +10,8 @@
  *   LATENCY_MS - artificial latency in ms (default: 0)
  *   REQUIRE_AUTH - require Authorization header (default: false)
  *   NO_TOOLS - disable tools capability (default: false)
+ *   NO_TASKS - serve tools but withhold the tasks capability, so --task/--detach
+ *     must be refused rather than silently run synchronously (default: false)
  *   NO_RESOURCES - disable resources capability (default: false)
  *   NO_PROMPTS - disable prompts capability (default: false)
  *   WITH_SKILLS - enable the io.modelcontextprotocol/skills extension and
@@ -71,6 +73,8 @@ const PAGINATION_SIZE = parseInt(process.env.PAGINATION_SIZE || '0', 10);
 const LATENCY_MS = parseInt(process.env.LATENCY_MS || '0', 10);
 const REQUIRE_AUTH = process.env.REQUIRE_AUTH === 'true';
 const NO_TOOLS = process.env.NO_TOOLS === 'true';
+// Serve tools but withhold the tasks capability, so `--task`/`--detach` must refuse
+const NO_TASKS = process.env.NO_TASKS === 'true';
 const NO_RESOURCES = process.env.NO_RESOURCES === 'true';
 const NO_PROMPTS = process.env.NO_PROMPTS === 'true';
 const WITH_SKILLS = process.env.WITH_SKILLS === 'true';
@@ -143,11 +147,13 @@ function createMcpServer(): Server {
   };
   if (!NO_TOOLS) {
     capabilities.tools = { listChanged: true };
-    capabilities.tasks = {
-      list: {},
-      cancel: {},
-      requests: { tools: { call: {} } },
-    };
+    if (!NO_TASKS) {
+      capabilities.tasks = {
+        list: {},
+        cancel: {},
+        requests: { tools: { call: {} } },
+      };
+    }
   }
   if (!NO_RESOURCES) {
     capabilities.resources = { subscribe: true, listChanged: true };
@@ -256,55 +262,58 @@ function createMcpServer(): Server {
       return callTestTool(name, args);
     });
 
-    // Task management handlers
-    server.setRequestHandler(GetTaskRequestSchema, async (request) => {
-      const { taskId } = request.params;
-      const entry = taskStore.get(taskId);
-      if (!entry) {
-        throw new Error(`Task not found: ${taskId}`);
-      }
-      return entry.task;
-    });
+    // Task management handlers. Skipped under NO_TASKS: the SDK refuses to register a
+    // handler for a capability the server did not declare.
+    if (!NO_TASKS) {
+      server.setRequestHandler(GetTaskRequestSchema, async (request) => {
+        const { taskId } = request.params;
+        const entry = taskStore.get(taskId);
+        if (!entry) {
+          throw new Error(`Task not found: ${taskId}`);
+        }
+        return entry.task;
+      });
 
-    server.setRequestHandler(GetTaskPayloadRequestSchema, async (request) => {
-      const { taskId } = request.params;
-      const entry = taskStore.get(taskId);
-      if (!entry) {
-        throw new Error(`Task not found: ${taskId}`);
-      }
-      // Block until task reaches terminal state
-      while (entry.task.status === 'working' || entry.task.status === 'input_required') {
-        await new Promise((resolve) => setTimeout(resolve, 200));
-      }
-      if (entry.result) {
-        return entry.result;
-      }
-      throw new Error(`Task ${taskId} has no result (status: ${entry.task.status})`);
-    });
+      server.setRequestHandler(GetTaskPayloadRequestSchema, async (request) => {
+        const { taskId } = request.params;
+        const entry = taskStore.get(taskId);
+        if (!entry) {
+          throw new Error(`Task not found: ${taskId}`);
+        }
+        // Block until task reaches terminal state
+        while (entry.task.status === 'working' || entry.task.status === 'input_required') {
+          await new Promise((resolve) => setTimeout(resolve, 200));
+        }
+        if (entry.result) {
+          return entry.result;
+        }
+        throw new Error(`Task ${taskId} has no result (status: ${entry.task.status})`);
+      });
 
-    server.setRequestHandler(ListTasksRequestSchema, async () => {
-      const allTasks = Array.from(taskStore.values()).map((e) => e.task);
-      return { tasks: allTasks };
-    });
+      server.setRequestHandler(ListTasksRequestSchema, async () => {
+        const allTasks = Array.from(taskStore.values()).map((e) => e.task);
+        return { tasks: allTasks };
+      });
 
-    server.setRequestHandler(CancelTaskRequestSchema, async (request) => {
-      const { taskId } = request.params;
-      const entry = taskStore.get(taskId);
-      if (!entry) {
-        throw new Error(`Task not found: ${taskId}`);
-      }
-      if (
-        entry.task.status === 'completed' ||
-        entry.task.status === 'failed' ||
-        entry.task.status === 'cancelled'
-      ) {
-        throw new Error(`Cannot cancel task in terminal state: ${entry.task.status}`);
-      }
-      entry.task.status = 'cancelled';
-      entry.task.lastUpdatedAt = new Date().toISOString();
-      entry.abortController?.abort();
-      return entry.task;
-    });
+      server.setRequestHandler(CancelTaskRequestSchema, async (request) => {
+        const { taskId } = request.params;
+        const entry = taskStore.get(taskId);
+        if (!entry) {
+          throw new Error(`Task not found: ${taskId}`);
+        }
+        if (
+          entry.task.status === 'completed' ||
+          entry.task.status === 'failed' ||
+          entry.task.status === 'cancelled'
+        ) {
+          throw new Error(`Cannot cancel task in terminal state: ${entry.task.status}`);
+        }
+        entry.task.status = 'cancelled';
+        entry.task.lastUpdatedAt = new Date().toISOString();
+        entry.abortController?.abort();
+        return entry.task;
+      });
+    } // end if (!NO_TASKS)
   } // end if (!NO_TOOLS)
 
   // Resources (only register handlers if capability is enabled)
