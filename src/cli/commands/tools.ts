@@ -18,9 +18,11 @@ import {
   formatInfo,
   formatTaskCommandsHint,
 } from '../output.js';
-import { ClientError } from '../../lib/errors.js';
+import { ClientError, ServerError } from '../../lib/errors.js';
 import type { CallToolResult, CommandOptions, TaskUpdate } from '../../lib/types.js';
 import { withMcpClient } from '../helpers.js';
+// Imported directly (not via the core barrel) so the CLI doesn't eagerly load the MCP SDK
+import { isModernProtocolVersion, tasksUnavailableMessage } from '../../core/protocol.js';
 import { parseCommandArgs, hasStdinData, readStdinArgs } from '../parser.js';
 import {
   loadSchemaFromFile,
@@ -183,6 +185,12 @@ function formatElapsed(millis: number): string {
 /**
  * Check if task-augmented execution should be used for a tool call.
  * Tasks are opt-in via --task or --detach flags.
+ *
+ * Throws when the connection's protocol has no tasks at all (2026-07-28 moved them to
+ * the io.modelcontextprotocol/tasks extension, which mcpc does not support yet).
+ * Falling back to a plain synchronous call there would hand `--detach` callers a tool
+ * result where they parse a taskId, with exit code 0. A 2025-era server that merely
+ * lacks the tasks capability still falls back with a warning, as it always has.
  */
 async function shouldUseTask(
   client: import('../../lib/types.js').IMcpClient,
@@ -190,6 +198,9 @@ async function shouldUseTask(
 ): Promise<boolean> {
   if (!async_) return false;
   const details = await client.getServerDetails();
+  if (details.protocolVersion && isModernProtocolVersion(details.protocolVersion)) {
+    throw new ServerError(tasksUnavailableMessage(details.protocolVersion));
+  }
   return !!details.capabilities?.tasks?.requests?.tools?.call;
 }
 

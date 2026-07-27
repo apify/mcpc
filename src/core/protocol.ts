@@ -36,3 +36,18 @@ export function isModernProtocolVersion(version: string): boolean {
 export function isSupportedProtocolVersion(version: string): boolean {
   return SUPPORTED_PROTOCOL_VERSIONS.includes(version);
 }
+
+/**
+ * Explain why task commands do not work on a modern connection. Lives here so the
+ * CLI (which gates `tools-call --task/--detach` before dispatching) and the core
+ * client (which gates the `tasks/*` requests) report the identical reason.
+ *
+ * Intentionally has no trailing period: the CLI appends ". For details, run: ..."
+ */
+export function tasksUnavailableMessage(protocolVersion?: string): string {
+  return (
+    `Tasks are not available on this connection: MCP ${protocolVersion ?? MODERN_PROTOCOL_VERSIONS[0]} ` +
+    `moved tasks to the io.modelcontextprotocol/tasks extension, which is not supported yet. ` +
+    `Task commands currently work only on servers using protocol 2025-11-25`
+  );
+}

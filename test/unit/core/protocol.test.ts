@@ -9,6 +9,7 @@ import {
   SUPPORTED_PROTOCOL_VERSIONS,
   isModernProtocolVersion,
   isSupportedProtocolVersion,
+  tasksUnavailableMessage,
 } from '../../../src/core/protocol.js';
 import { resolveVersionOptions } from '../../../src/core/mcp-client.js';
 import { ClientError } from '../../../src/lib/errors.js';
@@ -35,6 +36,26 @@ describe('protocol version constants', () => {
     expect(isSupportedProtocolVersion('2024-10-07')).toBe(true);
     expect(isSupportedProtocolVersion('1999-01-01')).toBe(false);
     expect(isSupportedProtocolVersion('')).toBe(false);
+  });
+});
+
+describe('tasksUnavailableMessage', () => {
+  // Shared by the CLI (which gates tools-call --task/--detach) and McpClient (which
+  // gates the tasks/* requests), so both report the identical reason.
+  it('names the negotiated version and the extension', () => {
+    const message = tasksUnavailableMessage('2026-07-28');
+    expect(message).toContain('2026-07-28');
+    expect(message).toContain('io.modelcontextprotocol/tasks extension');
+    expect(message).toContain('2025-11-25');
+  });
+
+  it('has no trailing period, since callers append ". For details, run: ..."', () => {
+    expect(tasksUnavailableMessage('2026-07-28')).not.toMatch(/\.$/);
+    expect(tasksUnavailableMessage(undefined)).not.toMatch(/\.$/);
+  });
+
+  it('falls back to the latest modern version when none is known', () => {
+    expect(tasksUnavailableMessage(undefined)).toContain(MODERN_PROTOCOL_VERSIONS[0]!);
   });
 });
 

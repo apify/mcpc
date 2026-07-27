@@ -857,7 +857,7 @@ Where `mcpc` stands on each part of the MCP specification:
 | 📁 **Roots**                                         | ❌ Not planned (deprecated by MCP)                                |
 | ❓ **Elicitation**                                   | 🚧 Planned                                                       |
 | 🔤 **Completion**                                    | 🚧 Planned                                                       |
-| 🤖 **Sampling**                                      | ❌ Not planned (deprecated by MCP)                                |
+| 🤖 **Sampling**                                      | ❌ Not applicable (no LLM access)                                 |
 
 Beyond the interactive browser login, the **Authorization** row above also covers the OAuth
 **client-credentials** grant (the [`io.modelcontextprotocol/oauth-client-credentials`](https://modelcontextprotocol.io/extensions/auth/oauth-client-credentials)

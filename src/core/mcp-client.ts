@@ -38,8 +38,11 @@ import { fetchAllPages } from '../lib/utils.js';
 import {
   isModernProtocolVersion,
   isSupportedProtocolVersion,
+  tasksUnavailableMessage,
   SUPPORTED_PROTOCOL_VERSIONS,
 } from './protocol.js';
+import type { IMcpClient, ServerDetails, ConnectionMode, TaskUpdate } from '../lib/types.js';
+import type { Task } from '@modelcontextprotocol/client';
 
 /**
  * Traverse the .cause chain to find the deepest (most specific) error message
@@ -51,8 +54,6 @@ function getRootCauseMessage(error: Error): string {
   }
   return current.message;
 }
-import type { IMcpClient, ServerDetails, ConnectionMode, TaskUpdate } from '../lib/types.js';
-import type { Task } from '@modelcontextprotocol/client';
 
 /**
  * Convert an SDK Task to a TaskUpdate, handling exactOptionalPropertyTypes
@@ -81,8 +82,7 @@ interface TransportWithProtocolVersion extends Transport {
  * Fallback freshness window for the in-memory tools cache on stateless connections.
  * Stateless servers (2026-07-28) may not push tools/list_changed (no standing stream), so the
  * cache would otherwise go stale silently. Stateful connections rely on notification-driven
- * invalidation and use no expiry. Phase 1 will replace this fixed value with the server's
- * ttlMs/cacheScope hint.
+ * invalidation and use no expiry.
  */
 const STATELESS_TOOLS_CACHE_TTL_MILLIS = 60_000;
 
@@ -703,7 +703,12 @@ export class McpClient implements IMcpClient {
     void subscription.closed.then((reason) => {
       if (reason !== 'remote' || this.modernListen !== subscription || this.isClosing) return;
       this.modernListen = undefined;
-      void this.relistenWithBackoff();
+      void this.relistenWithBackoff('Resource subscription', async () => {
+        // Another subscribe/unsubscribe may have rebuilt the stream while we backed
+        // off, or dropped the last URI — either way there is nothing left to retry.
+        if (this.modernListen || this.modernSubscribedUris.size === 0) return;
+        await this.reopenModernListen();
+      });
     });
   }
 
@@ -716,39 +721,34 @@ export class McpClient implements IMcpClient {
     if (!subscription) return;
     void subscription.closed.then((reason) => {
       if (reason !== 'remote' || this.isClosing) return;
-      void this.relistenListChangedWithBackoff(subscription.honoredFilter);
+      void this.relistenWithBackoff('listChanged', () =>
+        this.reopenListChanged(subscription.honoredFilter)
+      );
     });
   }
 
-  /** Re-establish the listChanged listen stream after a remote drop, backing off 1s → 30s. */
-  private async relistenListChangedWithBackoff(filter: SubscriptionFilter): Promise<void> {
+  /** Re-open the listChanged stream with the same filter and keep watching the new one. */
+  private async reopenListChanged(filter: SubscriptionFilter): Promise<void> {
+    const subscription = await this.client.listen(filter, this.getRequestOptions());
+    this.watchListChangedStream(subscription);
+  }
+
+  /**
+   * Retry `reopen` until it succeeds, backing off 1s → 30s. Retries indefinitely
+   * (until close): a bridge session may outlive any outage, and giving up would
+   * silently stop delivering notifications for the rest of its life.
+   */
+  private async relistenWithBackoff(label: string, reopen: () => Promise<void>): Promise<void> {
     let delayMillis = RELISTEN_INITIAL_DELAY_MILLIS;
     while (!this.isClosing) {
       await new Promise((resolve) => setTimeout(resolve, delayMillis));
       try {
-        const subscription = await this.client.listen(filter, this.getRequestOptions());
-        this.watchListChangedStream(subscription);
-        this.logger.debug('listChanged listen stream re-established');
+        await reopen();
+        this.logger.debug(`${label} listen stream re-established`);
         return;
       } catch (error) {
-        this.logger.debug(`listChanged re-listen failed, retrying in ${delayMillis * 2}ms:`, error);
         delayMillis = Math.min(delayMillis * 2, RELISTEN_MAX_DELAY_MILLIS);
-      }
-    }
-  }
-
-  /** Re-establish the resource-subscription listen stream after a remote drop, backing off 1s → 30s. */
-  private async relistenWithBackoff(): Promise<void> {
-    let delayMillis = RELISTEN_INITIAL_DELAY_MILLIS;
-    while (!this.isClosing && this.modernSubscribedUris.size > 0 && !this.modernListen) {
-      await new Promise((resolve) => setTimeout(resolve, delayMillis));
-      try {
-        await this.reopenModernListen();
-        this.logger.debug('Listen stream re-established');
-        return;
-      } catch (error) {
-        this.logger.debug(`Re-listen failed, retrying in ${delayMillis * 2}ms:`, error);
-        delayMillis = Math.min(delayMillis * 2, RELISTEN_MAX_DELAY_MILLIS);
+        this.logger.debug(`${label} re-listen failed, retrying in ${delayMillis}ms:`, error);
       }
     }
   }
@@ -803,7 +803,7 @@ export class McpClient implements IMcpClient {
       throw new ServerError(
         `logging/setLevel was removed in MCP ${this.negotiatedProtocolVersion}; ` +
           `this server no longer supports a session-wide log level. ` +
-          `Use --verbose for client-side logging instead.`
+          `Use --verbose for client-side logging instead`
       );
     }
     try {
@@ -835,14 +835,15 @@ export class McpClient implements IMcpClient {
    * vocabulary is still part of the SDK's legacy-era schema set. All task traffic is
    * funnelled through the few methods below, so adopting the SDK's tasks extension API
    * once it ships is a change to these methods only.
+   *
+   * Public so the bridge can reject `tools-call --task/--detach` up front: without that
+   * check a detached call on a modern connection would silently return a tool result
+   * where the caller expects a task ID. Always call this *outside* the try blocks below,
+   * so its message reaches the user as-is instead of nested in a "Failed to ..." wrapper.
    */
-  private assertTasksAvailable(): void {
+  assertTasksAvailable(): void {
     if (this.getProtocolEra() === 'modern') {
-      throw new ServerError(
-        `Tasks are not available on this connection: MCP ${this.negotiatedProtocolVersion} moved tasks ` +
-          `to the io.modelcontextprotocol/tasks extension, which is not supported yet. ` +
-          `Task commands currently work only on servers using protocol 2025-11-25.`
-      );
+      throw new ServerError(tasksUnavailableMessage(this.negotiatedProtocolVersion));
     }
   }
 
@@ -975,9 +976,9 @@ export class McpClient implements IMcpClient {
    * List tasks on the server
    */
   async listTasks(cursor?: string): Promise<ListTasksResult> {
+    this.assertTasksAvailable();
     try {
       this.logger.debug('Listing tasks...', cursor ? { cursor } : {});
-      this.assertTasksAvailable();
       const result = await this.client.request(
         { method: 'tasks/list', ...(cursor ? { params: { cursor } } : {}) },
         ListTasksResultSchema,
@@ -997,9 +998,9 @@ export class McpClient implements IMcpClient {
    * Get a task's current status
    */
   async getTask(taskId: string): Promise<GetTaskResult> {
+    this.assertTasksAvailable();
     try {
       this.logger.debug(`Getting task: ${taskId}`);
-      this.assertTasksAvailable();
       const result = await this.client.request(
         { method: 'tasks/get', params: { taskId } },
         GetTaskResultSchema,
@@ -1021,9 +1022,9 @@ export class McpClient implements IMcpClient {
    * the MCP `tasks/result` protocol method.
    */
   async getTaskResult(taskId: string): Promise<CallToolResult> {
+    this.assertTasksAvailable();
     try {
       this.logger.debug(`Getting task result: ${taskId}`);
-      this.assertTasksAvailable();
       const result = await this.client.request(
         { method: 'tasks/result', params: { taskId } },
         CallToolResultSchema,
@@ -1043,9 +1044,9 @@ export class McpClient implements IMcpClient {
    * Cancel a running task
    */
   async cancelTask(taskId: string): Promise<CancelTaskResult> {
+    this.assertTasksAvailable();
     try {
       this.logger.debug(`Cancelling task: ${taskId}`);
-      this.assertTasksAvailable();
       const result = await this.client.request(
         { method: 'tasks/cancel', params: { taskId } },
         CancelTaskResultSchema,
