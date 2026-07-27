@@ -91,4 +91,43 @@ test_pass
 
 run_mcpc "$MISMATCH_SESSION" close 2>/dev/null || true
 
+# =============================================================================
+# Test: a config entry's `protocolVersion` field pins the same way
+# =============================================================================
+
+CONFIG_FILE="$(to_native_path "$TEST_TMP/pinned-server.json")"
+cat > "$CONFIG_FILE" <<EOF
+{
+  "mcpServers": {
+    "pinned": {
+      "url": "$TEST_SERVER_URL",
+      "headers": { "X-Test": "true" },
+      "protocolVersion": "$MATCH_VERSION"
+    },
+    "bogus": {
+      "url": "$TEST_SERVER_URL",
+      "headers": { "X-Test": "true" },
+      "protocolVersion": "1999-01-01"
+    }
+  }
+}
+EOF
+
+test_case "config entry protocolVersion pins the connection"
+CONFIG_SESSION=$(session_name "cfg")
+run_mcpc connect "$CONFIG_FILE:pinned" "$CONFIG_SESSION"
+assert_success
+_SESSIONS_CREATED+=("$CONFIG_SESSION")
+assert_contains "$STDOUT" "Protocol: $MATCH_VERSION"
+assert_contains "$STDOUT" "pinned"
+test_pass
+
+run_mcpc "$CONFIG_SESSION" close 2>/dev/null || true
+
+test_case "config entry with an unsupported protocolVersion is rejected"
+run_mcpc connect "$CONFIG_FILE:bogus" "$(session_name "cfgbad")"
+assert_failure
+assert_contains "$STDERR" "Unsupported MCP protocol version: 1999-01-01"
+test_pass
+
 test_done
