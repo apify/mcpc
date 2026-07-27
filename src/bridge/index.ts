@@ -9,7 +9,12 @@ import { initProxy, proxyFetch } from '../lib/proxy.js';
 import { createServer, type Server as NetServer, type Socket } from 'net';
 import { unlink } from 'fs/promises';
 import { dirname } from 'path';
-import { createMcpClient, CreateMcpClientOptions, buildClientCapabilities } from '../core/index.js';
+import {
+  createMcpClient,
+  CreateMcpClientOptions,
+  buildClientCapabilities,
+  tasksUnsupportedByServerMessage,
+} from '../core/index.js';
 import type { McpClient } from '../core/index.js';
 import type {
   ServerConfig,
@@ -1389,18 +1394,20 @@ class BridgeProcess {
           // Capture client ref — guaranteed non-null by check at top of handleMcpRequest
           const client = this.client;
 
-          // Reject --task/--detach on connections where tasks do not exist at all
-          // (2026-07-28 moved them to an extension mcpc does not support yet). Falling
-          // through to a plain tools/call would run the tool synchronously and hand
-          // --detach callers a tool result where they expect a task ID. A 2025-era
-          // server that simply lacks the tasks capability still falls back silently,
-          // which is the long-standing behavior for those servers.
+          // Refuse --task/--detach unless this connection can really run tasks. The CLI
+          // checks first and reports the same reason; this is the backstop for direct
+          // callers and for a capability that changed since that check. Falling through
+          // to a plain tools/call would run the tool synchronously and hand --detach
+          // callers a tool result where they expect a task ID.
           if (params.useTask) {
             client.assertTasksAvailable();
+            if (!client.supportsTasksForToolCall()) {
+              throw new ClientError(tasksUnsupportedByServerMessage());
+            }
           }
 
           const executeToolCall = async (): Promise<unknown> => {
-            if (params.useTask && client.supportsTasksForToolCall()) {
+            if (params.useTask) {
               if (params.detach) {
                 // Detached execution: start task and return task ID immediately
                 const taskUpdate = await client.callToolDetached(

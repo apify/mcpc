@@ -1164,8 +1164,12 @@ ${chalk.bold('Async tasks (--task, --detach):')}
   If you press Ctrl+C, the task keeps running and a hint with the task ID
   is printed so you can fetch or cancel it later.
   --detach returns the task ID immediately without waiting.
-  Tasks require a server using MCP protocol 2025-11-25 (on 2026-07-28
-  servers tasks are an extension not yet supported by mcpc).
+  Both flags require a server that advertises the tasks capability and uses
+  MCP protocol 2025-11-25 (on 2026-07-28 servers tasks are an extension not
+  yet supported by mcpc). If it does not, the command fails instead of
+  running the tool synchronously — the flags change the output shape, so the
+  fallback would silently return a result where a task ID is expected.
+  Check per-tool support in tools-list: [task:optional|required|forbidden].
 
 ${chalk.bold('Schema validation:')}
   --schema <file>       Validate tool schema before calling (save with tools-get --json)
