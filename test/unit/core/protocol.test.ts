@@ -1,14 +1,14 @@
 /**
- * Unit tests for MCP protocol version constants and the --mcp-version pin mapping
+ * Unit tests for MCP protocol version constants and the --protocol-version pin mapping
  */
 
-import { SUPPORTED_PROTOCOL_VERSIONS } from '@modelcontextprotocol/client';
+import { SUPPORTED_PROTOCOL_VERSIONS as SDK_SUPPORTED_PROTOCOL_VERSIONS } from '@modelcontextprotocol/client';
 import {
-  MODERN_MCP_VERSIONS,
-  LEGACY_MCP_VERSIONS,
-  SUPPORTED_MCP_VERSIONS,
-  isModernMcpVersion,
-  isSupportedMcpVersion,
+  MODERN_PROTOCOL_VERSIONS,
+  LEGACY_PROTOCOL_VERSIONS,
+  SUPPORTED_PROTOCOL_VERSIONS,
+  isModernProtocolVersion,
+  isSupportedProtocolVersion,
 } from '../../../src/core/protocol.js';
 import { resolveVersionOptions } from '../../../src/core/mcp-client.js';
 import { ClientError } from '../../../src/lib/errors.js';
@@ -17,21 +17,24 @@ describe('protocol version constants', () => {
   it('legacy list stays in sync with the SDK (drift guard)', () => {
     // protocol.ts hardcodes the list so the CLI never loads the SDK at startup;
     // this test catches drift when the SDK is upgraded.
-    expect(LEGACY_MCP_VERSIONS).toEqual(SUPPORTED_PROTOCOL_VERSIONS);
+    expect(LEGACY_PROTOCOL_VERSIONS).toEqual(SDK_SUPPORTED_PROTOCOL_VERSIONS);
   });
 
   it('supported list is modern versions followed by legacy versions', () => {
-    expect(SUPPORTED_MCP_VERSIONS).toEqual([...MODERN_MCP_VERSIONS, ...LEGACY_MCP_VERSIONS]);
+    expect(SUPPORTED_PROTOCOL_VERSIONS).toEqual([
+      ...MODERN_PROTOCOL_VERSIONS,
+      ...LEGACY_PROTOCOL_VERSIONS,
+    ]);
   });
 
   it('classifies modern and legacy versions', () => {
-    expect(isModernMcpVersion('2026-07-28')).toBe(true);
-    expect(isModernMcpVersion('2025-11-25')).toBe(false);
-    expect(isSupportedMcpVersion('2026-07-28')).toBe(true);
-    expect(isSupportedMcpVersion('2025-11-25')).toBe(true);
-    expect(isSupportedMcpVersion('2024-10-07')).toBe(true);
-    expect(isSupportedMcpVersion('1999-01-01')).toBe(false);
-    expect(isSupportedMcpVersion('')).toBe(false);
+    expect(isModernProtocolVersion('2026-07-28')).toBe(true);
+    expect(isModernProtocolVersion('2025-11-25')).toBe(false);
+    expect(isSupportedProtocolVersion('2026-07-28')).toBe(true);
+    expect(isSupportedProtocolVersion('2025-11-25')).toBe(true);
+    expect(isSupportedProtocolVersion('2024-10-07')).toBe(true);
+    expect(isSupportedProtocolVersion('1999-01-01')).toBe(false);
+    expect(isSupportedProtocolVersion('')).toBe(false);
   });
 });
 

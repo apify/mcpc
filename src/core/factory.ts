@@ -142,7 +142,9 @@ export async function createMcpClient(options: CreateMcpClientOptions): Promise<
     // some legacy ones never answer pre-initialize requests at all)
     ...(options.serverConfig.command && { stdioTransport: true }),
     // Pin the MCP protocol version when requested (strict, no fallback)
-    ...(options.serverConfig.mcpVersion && { mcpVersion: options.serverConfig.mcpVersion }),
+    ...(options.serverConfig.protocolVersion && {
+      protocolVersion: options.serverConfig.protocolVersion,
+    }),
   };
 
   // Tolerate tool schemas stamped with pre-2020-12 dialects (draft-07 etc.), which the

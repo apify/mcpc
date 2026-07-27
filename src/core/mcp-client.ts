@@ -35,7 +35,11 @@ import {
 import { createNoOpLogger, type Logger } from '../lib/logger.js';
 import { ClientError, ServerError, NetworkError, isShutdownError } from '../lib/errors.js';
 import { fetchAllPages } from '../lib/utils.js';
-import { isModernMcpVersion, isSupportedMcpVersion, SUPPORTED_MCP_VERSIONS } from './protocol.js';
+import {
+  isModernProtocolVersion,
+  isSupportedProtocolVersion,
+  SUPPORTED_PROTOCOL_VERSIONS,
+} from './protocol.js';
 
 /**
  * Traverse the .cause chain to find the deepest (most specific) error message
@@ -106,9 +110,9 @@ export interface McpClientOptions extends ClientOptions {
   /**
    * Pin the MCP protocol version instead of auto-negotiating (strict: the
    * connection fails unless the server agrees to exactly this version).
-   * Must be one of SUPPORTED_MCP_VERSIONS.
+   * Must be one of SUPPORTED_PROTOCOL_VERSIONS.
    */
-  mcpVersion?: string;
+  protocolVersion?: string;
 }
 
 /**
@@ -146,7 +150,7 @@ const RELISTEN_MAX_DELAY_MILLIS = 30_000;
 const STDIO_PROBE_TIMEOUT_MILLIS = 5_000;
 
 /**
- * Compute the SDK version-negotiation options for an optional `--mcp-version` pin.
+ * Compute the SDK version-negotiation options for an optional `--protocol-version` pin.
  *
  * - No pin: probe with `server/discover` and talk 2026-07-28 when the server supports
  *   it, falling back to the legacy `initialize` handshake on the same connection.
@@ -158,25 +162,25 @@ const STDIO_PROBE_TIMEOUT_MILLIS = 5_000;
  * Exported for unit tests.
  */
 export function resolveVersionOptions(
-  mcpVersion: string | undefined,
+  protocolVersion: string | undefined,
   stdioTransport: boolean | undefined
 ): Pick<ClientOptions, 'versionNegotiation' | 'supportedProtocolVersions'> {
   const probe = stdioTransport ? { probe: { timeoutMs: STDIO_PROBE_TIMEOUT_MILLIS } } : {};
-  if (mcpVersion === undefined) {
+  if (protocolVersion === undefined) {
     return { versionNegotiation: { mode: 'auto', ...probe } };
   }
-  if (!isSupportedMcpVersion(mcpVersion)) {
+  if (!isSupportedProtocolVersion(protocolVersion)) {
     throw new ClientError(
-      `Unsupported MCP protocol version: ${mcpVersion}\n` +
-        `Supported versions: ${SUPPORTED_MCP_VERSIONS.join(', ')}`
+      `Unsupported MCP protocol version: ${protocolVersion}\n` +
+        `Supported versions: ${SUPPORTED_PROTOCOL_VERSIONS.join(', ')}`
     );
   }
-  if (isModernMcpVersion(mcpVersion)) {
-    return { versionNegotiation: { mode: { pin: mcpVersion }, ...probe } };
+  if (isModernProtocolVersion(protocolVersion)) {
+    return { versionNegotiation: { mode: { pin: protocolVersion }, ...probe } };
   }
   return {
     versionNegotiation: { mode: 'legacy' },
-    supportedProtocolVersions: [mcpVersion],
+    supportedProtocolVersions: [protocolVersion],
   };
 }
 
@@ -214,8 +218,8 @@ export class McpClient implements IMcpClient {
       capabilities: options.capabilities || {},
       ...options,
       // Placed after the spread so a caller-supplied versionNegotiation never
-      // overrides the mcpVersion pin (or the default auto negotiation).
-      ...resolveVersionOptions(options.mcpVersion, options.stdioTransport),
+      // overrides the protocolVersion pin (or the default auto negotiation).
+      ...resolveVersionOptions(options.protocolVersion, options.stdioTransport),
     });
 
     // Set up error handling
@@ -407,7 +411,7 @@ export class McpClient implements IMcpClient {
     const sdkEra = this.client.getProtocolEra();
     if (sdkEra) return sdkEra;
     if (this.negotiatedProtocolVersion) {
-      return isModernMcpVersion(this.negotiatedProtocolVersion) ? 'modern' : 'legacy';
+      return isModernProtocolVersion(this.negotiatedProtocolVersion) ? 'modern' : 'legacy';
     }
     return undefined;
   }
