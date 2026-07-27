@@ -219,6 +219,20 @@ async function renderConnectedSession(
 }
 
 /**
+ * Reject a pinned protocol version that mcpc cannot speak, before any connection is attempted.
+ * A pin can come from `--protocol-version` or from a config entry's `protocolVersion` field,
+ * so both are checked and get the same error.
+ */
+function assertSupportedProtocolVersion(version: string | undefined): void {
+  if (version && !isSupportedProtocolVersion(version)) {
+    throw new ClientError(
+      `Unsupported MCP protocol version: ${version}\n` +
+        `Supported versions: ${SUPPORTED_PROTOCOL_VERSIONS.join(', ')}`
+    );
+  }
+}
+
+/**
  * Creates a new session, starts a bridge process, and instructs it to connect an MCP server.
  * If session already exists with crashed bridge, reconnects it automatically
  */
@@ -262,12 +276,7 @@ export async function connectSession(
   }
 
   // Validate --protocol-version (if provided)
-  if (options.protocolVersion && !isSupportedProtocolVersion(options.protocolVersion)) {
-    throw new ClientError(
-      `Unsupported MCP protocol version: ${options.protocolVersion}\n` +
-        `Supported versions: ${SUPPORTED_PROTOCOL_VERSIONS.join(', ')}`
-    );
-  }
+  assertSupportedProtocolVersion(options.protocolVersion);
 
   // Check if session already exists
   const existingSession = await getSession(name);
@@ -302,6 +311,9 @@ export async function connectSession(
 
   // Resolve target to transport config
   const serverConfig = await resolveTarget(target, options);
+
+  // Re-check the effective pin, which may come from a config entry's `protocolVersion`
+  assertSupportedProtocolVersion(serverConfig.protocolVersion);
 
   // Detect conflicting auth flags: --profile and --header "Authorization: ..." are mutually exclusive
   const hasExplicitAuthHeader = serverConfig.headers?.Authorization !== undefined;
