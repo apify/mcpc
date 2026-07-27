@@ -48,7 +48,7 @@ const sessionName = `conformance-${process.pid}`;
 const sessionArg = `@${sessionName}`;
 const env = { ...process.env, MCPC_HOME_DIR: homeDir, MCPC_JSON: '1' };
 
-function runMcpc(args, { timeoutMs, allowTimeout = false } = {}) {
+function runMcpc(args, { timeoutMs, allowTimeout = false, expectExitCode = 0 } = {}) {
     return new Promise((res, rej) => {
         const child = spawn(mcpcBin, args, { env, stdio: 'inherit' });
         let timedOut = false;
@@ -68,8 +68,15 @@ function runMcpc(args, { timeoutMs, allowTimeout = false } = {}) {
         child.once('exit', (code) => {
             if (timer) clearTimeout(timer);
             if (timedOut && allowTimeout) res();
-            else if (code === 0) res();
-            else rej(new Error(`mcpc ${args.join(' ')} exited with code ${code}`));
+            else if (code === expectExitCode) res();
+            else if (expectExitCode === 0)
+                rej(new Error(`mcpc ${args.join(' ')} exited with code ${code}`));
+            else
+                rej(
+                    new Error(
+                        `mcpc ${args.join(' ')} exited with code ${code}, expected ${expectExitCode}`
+                    )
+                );
         });
     });
 }
@@ -127,10 +134,14 @@ async function main() {
             await runMcpc([sessionArg, 'tools-get', 'add_numbers']);
             await runMcpc([sessionArg, 'tools-call', 'add_numbers', 'a:=2', 'b:=3']);
             await runMcpc([sessionArg, 'tools-call', 'add_numbers', '{"a":10,"b":32}']);
-            // The server does not advertise the `tasks` capability, so
-            // --task falls back to a synchronous call with a warning.  This
-            // verifies mcpc handles the fallback path cleanly.
-            await runMcpc([sessionArg, 'tools-call', 'add_numbers', 'a:=1', 'b:=1', '--task']);
+            // The server does not advertise the `tasks` capability, so --task
+            // must be refused with a server error (exit code 2) rather than
+            // silently downgraded to a synchronous call — the flags change the
+            // output shape, so a fallback would hand scripts a result where
+            // they parse a taskId.
+            await runMcpc([sessionArg, 'tools-call', 'add_numbers', 'a:=1', 'b:=1', '--task'], {
+                expectExitCode: 2,
+            });
             await runMcpc([sessionArg, 'ping']);
             // Best-effort: the SDK server replies with -32601 for methods
             // it has no handler for, which we tolerate so we still exercise
