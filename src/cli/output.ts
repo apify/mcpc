@@ -25,6 +25,7 @@ import type {
 import { extractAllTextContent } from './tool-result.js';
 import { getSession } from '../lib/sessions.js';
 import { getBridgeLogPath } from '../lib/log-reader.js';
+import { isModernProtocolVersion } from '../core/protocol.js';
 
 // Re-export for external use
 export { extractAllTextContent } from './tool-result.js';
@@ -1630,7 +1631,15 @@ export function formatServerDetails(
     lines.push('');
   }
 
-  // Capabilities - only show what the server actually exposes
+  // Capabilities - only show what the server actually exposes.
+  // Some capabilities are era-dependent: a 2026-07-28 server may still advertise
+  // `logging` (log notifications survived) or `tasks`, but the matching mcpc commands
+  // don't work there — `logging/setLevel` was removed from the protocol and tasks moved
+  // to an extension mcpc doesn't support yet. Annotate those and drop the commands,
+  // instead of advertising something that only errors out.
+  const isModern = !!protocolVersion && isModernProtocolVersion(protocolVersion);
+  const unusableOnModern = chalk.gray(`(not usable on MCP ${protocolVersion})`);
+
   lines.push(chalk.bold('Capabilities:'));
 
   const capabilityList: string[] = [];
@@ -1655,7 +1664,9 @@ export function formatServerDetails(
   }
 
   if (capabilities?.logging) {
-    capabilityList.push(`${bullet} logging`);
+    // Modern era: log notifications still arrive, but logging-set-level is gone
+    const note = isModern ? ` ${chalk.gray('(notifications only)')}` : '';
+    capabilityList.push(`${bullet} logging${note}`);
   }
 
   if (capabilities?.completions) {
@@ -1666,7 +1677,8 @@ export function formatServerDetails(
     const features: string[] = [];
     if (capabilities.tasks.requests?.tools?.call) features.push('tools');
     const featureStr = features.length > 0 ? ` (${features.join(', ')})` : '';
-    capabilityList.push(`${bullet} tasks${featureStr}`);
+    const note = isModern ? ` ${unusableOnModern}` : '';
+    capabilityList.push(`${bullet} tasks${featureStr}${note}`);
   }
 
   // Experimental extension: io.modelcontextprotocol/skills (SEP-2640).
@@ -1758,14 +1770,15 @@ export function formatServerDetails(
     );
   }
 
-  if (capabilities?.tasks) {
+  // Task and logging commands are 2025-era only — see the capabilities note above
+  if (capabilities?.tasks && !isModern) {
     commands.push(`${bullet} ${bt}mcpc ${target} tasks-list${bt}`);
     commands.push(`${bullet} ${bt}mcpc ${target} tasks-get <taskId>${bt}`);
     commands.push(`${bullet} ${bt}mcpc ${target} tasks-result <taskId>${bt}`);
     commands.push(`${bullet} ${bt}mcpc ${target} tasks-cancel <taskId>${bt}`);
   }
 
-  if (capabilities?.logging) {
+  if (capabilities?.logging && !isModern) {
     commands.push(`${bullet} ${bt}mcpc ${target} logging-set-level <lvl>${bt}`);
   }
 

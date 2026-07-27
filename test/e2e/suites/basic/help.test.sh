@@ -158,4 +158,67 @@ assert_success
 assert_eq "$STDOUT" "$HELP_OUTPUT" "help and --help output should match"
 test_pass
 
+# =============================================================================
+# Help formatting invariants (cover the whole help surface)
+# =============================================================================
+
+# Print the continuation lines Commander emits when a description is too long to
+# fit next to its term: inside an Options:/Commands: block they start way past the
+# term column instead of at column 3.
+_wrapped_help_lines() {
+  awk '
+    /^(Options|Commands):/ { inblock = 1; next }
+    /^[^ ]/ { inblock = 0 }
+    inblock && (match($0, /[^ ]/) - 1) >= 12 { print }
+  '
+}
+
+# Collect the session subcommands from the help screen itself, so commands added
+# later are covered without touching this test.
+run_mcpc @test-session --help
+SESSION_COMMANDS=$(printf '%s\n' "$STDOUT" | awk '
+  /^Commands:/ { inblock = 1; next }
+  /^[^ ]/ { inblock = 0 }
+  inblock && match($0, /[^ ]/) == 3 { print $1 }
+')
+
+# Every description must fit on one line — a wrapped one turns the command list
+# into a wall of text for humans and agents alike. Details belong in help sections.
+test_case "no help screen wraps an option or command description"
+WRAPPED=""
+for screen in "--help" "help connect" "help login" "help logout" "help clean" "help grep" \
+  "help close" "help restart" "help x402" "x402 sign --help" "@test-session --help"; do
+  # shellcheck disable=SC2086
+  run_mcpc $screen
+  found=$(printf '%s\n' "$STDOUT" | _wrapped_help_lines)
+  [[ -n "$found" ]] && WRAPPED+="mcpc $screen:"$'\n'"$found"$'\n'
+done
+for cmd in $SESSION_COMMANDS; do
+  run_mcpc @test-session "$cmd" --help
+  found=$(printf '%s\n' "$STDOUT" | _wrapped_help_lines)
+  [[ -n "$found" ]] && WRAPPED+="mcpc @test-session $cmd --help:"$'\n'"$found"$'\n'
+done
+if [[ -n "$WRAPPED" ]]; then
+  test_fail "wrapped help descriptions (shorten them, move details to addHelpText):"$'\n'"$WRAPPED"
+  exit 1
+fi
+test_pass
+
+# Agents discover the machine-readable shape from --help, so every session command
+# must document its --json output.
+test_case "every session command documents its JSON output"
+MISSING=""
+for cmd in $SESSION_COMMANDS; do
+  run_mcpc @test-session "$cmd" --help
+  assert_success
+  if ! printf '%s\n' "$STDOUT" | grep -q "JSON output (--json):"; then
+    MISSING+=" $cmd"
+  fi
+done
+if [[ -n "$MISSING" ]]; then
+  test_fail "session commands without a JSON output section (add jsonHelp()):$MISSING"
+  exit 1
+fi
+test_pass
+
 test_done

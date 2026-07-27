@@ -1100,6 +1100,48 @@ describe('formatServerDetails', () => {
     expect(output).not.toContain('(unknown)');
   });
 
+  it('annotates logging and tasks as era-limited on a 2026-07-28 connection', () => {
+    const details: ServerDetails = {
+      protocolVersion: '2026-07-28',
+      capabilities: {
+        tools: { listChanged: false },
+        logging: {},
+        tasks: { requests: { tools: { call: true } } },
+      },
+      serverInfo: { name: 'Modern Server', version: '1.0.0' },
+      connectionMode: 'stateless',
+    };
+
+    const output = formatServerDetails(details, '@modern');
+
+    // Capabilities are still listed (the server advertises them), but flagged
+    expect(output).toContain('logging (notifications only)');
+    expect(output).toContain('tasks (tools) (not usable on MCP 2026-07-28)');
+
+    // ...and the commands that would only error out are not offered
+    expect(output).not.toContain('logging-set-level');
+    expect(output).not.toContain('tasks-list');
+    expect(output).toContain('mcpc @modern tools-list');
+  });
+
+  it('offers logging and tasks commands on a 2025-era connection', () => {
+    const details: ServerDetails = {
+      protocolVersion: '2025-11-25',
+      capabilities: {
+        logging: {},
+        tasks: { requests: { tools: { call: true } } },
+      },
+      serverInfo: { name: 'Legacy Server', version: '1.0.0' },
+    };
+
+    const output = formatServerDetails(details, '@legacy');
+
+    expect(output).toContain('* logging\n');
+    expect(output).not.toContain('not usable on MCP');
+    expect(output).toContain('mcpc @legacy logging-set-level');
+    expect(output).toContain('mcpc @legacy tasks-list');
+  });
+
   it('should format server info with minimal features', () => {
     const details: ServerDetails = {
       capabilities: {},

@@ -165,6 +165,17 @@ function getOptionsFromCommand(command: Command): HandlerOptions {
 
 const SCHEMA_BASE = 'https://modelcontextprotocol.io/specification/2025-11-25/schema';
 
+/**
+ * JSON help shared by every command that prints a session's server details:
+ * `mcpc @session` (no command) and `restart`, which shows the details again.
+ */
+const SERVER_DETAILS_JSON_HELP = `${jsonHelp(
+  '`InitializeResult` object, extended with `toolNames` and `_mcpc` metadata',
+  '`{ protocolVersion?, capabilities?, serverInfo?, instructions?, toolNames?, _mcpc: {...} }`',
+  `${SCHEMA_BASE}#initializeresult`
+)}  \`_mcpc\`: \`{ sessionName, profileName?, server, stateless, logPath?, resourceSubscriptions? }\`
+`;
+
 async function main(): Promise<void> {
   // Disambiguate `--x402 <non-scheme>` (URL, @session, etc.) so Commander's
   // greedy [optional] arg parser doesn't eat the next positional as the value.
@@ -475,14 +486,8 @@ Full docs: ${docsUrl}`
     .option('--proxy <[host:]port>', 'Start proxy MCP server for session')
     .option('--proxy-bearer-token <token>', 'Require authentication for access to proxy server')
     .option('--stdio', 'Launch all local stdio servers from selected config files')
-    .option(
-      '--protocol-version <version>',
-      'Pin the MCP protocol version, e.g. 2025-11-25 (default: auto-negotiate)'
-    )
-    .option(
-      '--x402 [scheme]',
-      'Enable x402 auto-payment using the configured wallet; optional scheme: auto (default, prefer upto), upto, or exact.'
-    )
+    .option('--protocol-version <version>', 'Pin the MCP protocol version (see below)')
+    .option('--x402 [scheme]', 'Enable x402 auto-payment (see below)')
     .addHelpText(
       'after',
       `
@@ -514,6 +519,10 @@ ${chalk.bold('Protocol version:')}
   fails if the server does not support it. Supported values:
   ${SUPPORTED_PROTOCOL_VERSIONS.join(', ')}.
   Run mcpc @session to see the negotiated version.
+
+${chalk.bold('x402 payments (experimental):')}
+  --x402 pays for paid tool calls from the wallet set up with mcpc x402.
+  Schemes: auto (default, prefers upto), upto, exact.
 ${jsonHelp(
   'Array of `InitializeResult` objects (one per session), extended with `toolNames` and `_mcpc` metadata',
   '`[{ protocolVersion?, capabilities?, serverInfo?, instructions?, toolNames?, _mcpc: { sessionName, server?, ... }]`',
@@ -636,6 +645,10 @@ ${jsonHelp(
     .command('restart [@session]')
     .usage('<@session> [options]')
     .description('Restart a session (losing all state)')
+    .addHelpText(
+      'after',
+      `\nAfter restarting, the session details are shown again.\n${SERVER_DETAILS_JSON_HELP}`
+    )
     .action(async (sessionName, _opts, command) => {
       if (!sessionName) {
         throw new ClientError(
@@ -652,45 +665,29 @@ ${jsonHelp(
     .description('Log in to a server and save an OAuth profile')
     .option('--profile <name>', 'Profile name (default: "default")')
     .option('--scope <scopes>', 'OAuth scopes to request (e.g. --scope "read write")')
-    .option(
-      '--grant <type>',
-      'OAuth grant: authorization-code (default, interactive), client-credentials ' +
-        '(machine-to-machine), or id-jag (enterprise-managed authorization via your IdP)'
-    )
+    .option('--grant <type>', 'Grant: authorization-code (default), client-credentials, id-jag')
     .option('--client-id <id>', 'Pre-registered OAuth client ID (skips CIMD and DCR)')
     .option('--client-secret <secret>', 'Pre-registered OAuth client secret (requires --client-id)')
     .option(
       '--client-key <pem-or-path>',
-      'Private key (PEM file path or literal) for the private_key_jwt client-credentials variant'
+      'Private key (PEM path or literal) for private_key_jwt auth'
     )
     .option('--client-key-alg <alg>', 'JWT signing algorithm for --client-key (default: RS256)')
     .option(
       '--token-endpoint <url>',
-      'OAuth token endpoint (client-credentials only; auto-discovered if omitted)'
+      'OAuth token endpoint (client-credentials only, auto-discovered)'
     )
     .option('--idp <url>', 'Enterprise IdP issuer URL (id-jag only)')
     .option('--idp-client-id <id>', 'Client ID pre-registered at the enterprise IdP (id-jag only)')
-    .option(
-      '--idp-client-secret <secret>',
-      'Client secret for the enterprise IdP; omit for public IdP clients (id-jag only)'
-    )
-    .option(
-      '--idp-scope <scopes>',
-      'OIDC scopes for the IdP SSO (id-jag only; default: "openid profile email offline_access")'
-    )
-    .option(
-      '--client-metadata-url <url>',
-      'HTTPS URL of an OAuth CIMD (default: https://apify.github.io/mcpc/client-metadata.json)'
-    )
+    .option('--idp-client-secret <secret>', 'Client secret for the enterprise IdP (id-jag only)')
+    .option('--idp-scope <scopes>', 'OIDC scopes for the IdP SSO (id-jag only, see below)')
+    .option('--client-metadata-url <url>', 'HTTPS URL of an OAuth CIMD (default: mcpc CIMD)')
     .option('--no-client-metadata-url', 'Disable CIMD; force DCR on CIMD-capable servers')
     .option(
       '--callback-port <port>',
-      `Loopback port for OAuth callback (default: first free of ${MCPC_OAUTH_CALLBACK_PORTS.join(', ')})`
+      `Loopback port for OAuth callback (default: ${MCPC_OAUTH_CALLBACK_PORTS.join('/')})`
     )
-    .option(
-      '--callback-host <host>',
-      'Host in the OAuth callback redirect URI: 127.0.0.1 (default) or localhost'
-    )
+    .option('--callback-host <host>', 'OAuth callback host: 127.0.0.1 (default) or localhost')
     .addHelpText(
       'after',
       `
@@ -743,7 +740,7 @@ ${chalk.bold("Enterprise-managed authorization (SSO via your organization's IdP)
   enterprise IdP (add --idp-client-secret if it is a confidential client),
   --client-id/--client-secret at the MCP server's authorization server.
   --scope requests MCP-server scopes; --idp-scope overrides the OIDC scopes
-  used for the SSO itself.
+  used for the SSO itself (default: "openid profile email offline_access").
 
   See https://modelcontextprotocol.io/extensions/auth/enterprise-managed-authorization
 ${jsonHelp('Interactive prompts go to stderr; stdout is a clean JSON object', '`{ profile, serverUrl, scopes }`')}`
@@ -1025,6 +1022,7 @@ function registerSessionCommands(program: Command, session: string): void {
   program
     .command('close')
     .description('Close MCP session.')
+    .addHelpText('after', jsonHelp('`{ sessionName, closed: true }`'))
     .action(async (_options, command) => {
       await sessions.closeSession(session, getOptionsFromCommand(command));
     });
@@ -1033,6 +1031,10 @@ function registerSessionCommands(program: Command, session: string): void {
   program
     .command('restart')
     .description('Restart MCP session (losing all state).')
+    .addHelpText(
+      'after',
+      `\nAfter restarting, the session details are shown again.\n${SERVER_DETAILS_JSON_HELP}`
+    )
     .action(async (_options, command) => {
       await sessions.restartSession(session, getOptionsFromCommand(command));
     });
@@ -1420,11 +1422,16 @@ ${jsonHelp('`GetPromptResult` object', '`{ description?, messages: [{ role, cont
   // Logging commands
   program
     .command('logging-set-level <level>')
-    .description(
-      'Set MCP server logging level (deprecated: removed in MCP 2026-07-28, works on ' +
-        '2025-11-25 servers only, and will be removed in a future mcpc release).'
+    .description('Set MCP server logging level (deprecated).')
+    .addHelpText(
+      'after',
+      `
+${chalk.bold('Deprecated:')}
+  MCP 2026-07-28 removed logging/setLevel, so this works on 2025-11-25 (and older)
+  servers only and will be removed in a future mcpc release. Use --verbose for
+  client-side logging instead.
+${jsonHelp('`{ level: string }`')}`
     )
-    .addHelpText('after', jsonHelp('`{ level: string }`'))
     .action(async (level, _options, command) => {
       await logging.setLogLevel(session, level, getOptionsFromCommand(command));
     });
@@ -1432,8 +1439,15 @@ ${jsonHelp('`GetPromptResult` object', '`{ description?, messages: [{ role, cont
   // Server commands
   program
     .command('ping')
-    .description('Ping the MCP server (uses server/discover on 2026-07-28 servers).')
-    .addHelpText('after', jsonHelp('`{ success: true, durationMs: number }`'))
+    .description('Ping the MCP server.')
+    .addHelpText(
+      'after',
+      `
+${chalk.bold('Notes:')}
+  Measures the request roundtrip. MCP 2026-07-28 removed \`ping\`, so on modern
+  connections the liveness probe is \`server/discover\` instead.
+${jsonHelp('`{ success: true, durationMs: number }`')}`
+    )
     .action(async (_options, command) => {
       await utilities.ping(session, getOptionsFromCommand(command));
     });
@@ -1517,7 +1531,9 @@ function createSessionProgram(): Command {
     .option('--insecure', 'Skip TLS certificate verification (for self-signed certs)')
     .addHelpText(
       'after',
-      `\nWhen no command is given, shows server info, capabilities, and tools.\n`
+      `
+When no command is given, shows server info, capabilities, and tools.
+${SERVER_DETAILS_JSON_HELP}`
     );
 
   return program;
