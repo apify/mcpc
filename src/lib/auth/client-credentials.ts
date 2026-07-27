@@ -32,7 +32,11 @@ import { createLogger } from '../logger.js';
 import type { OAuthClientCredentialsInfo } from './keychain.js';
 import { storeKeychainClientCredentials } from './keychain.js';
 import { getAuthProfile, saveAuthProfile } from './profiles.js';
-import { discoverAuthServerMetadata, type AuthServerMetadata } from './oauth-utils.js';
+import {
+  discoverAuthServerMetadata,
+  discoverAuthServerViaProtectedResource,
+  type AuthServerMetadata,
+} from './oauth-utils.js';
 
 const logger = createLogger('client-credentials');
 
@@ -189,7 +193,14 @@ async function validateClientCredentials(
     // Token endpoint pinned via --token-endpoint: skip discovery entirely.
     metadata = { token_endpoint: info.tokenEndpoint };
   } else {
-    metadata = await discoverAuthServerMetadata(serverUrl);
+    // RFC 9728 first: it is the mechanism the MCP spec prescribes and the only
+    // one that finds an authorization server hosted on a different origin than
+    // the MCP server. Fall back to probing the MCP origin directly for servers
+    // that publish authorization-server metadata but no protected-resource
+    // document.
+    metadata =
+      (await discoverAuthServerViaProtectedResource(serverUrl)) ??
+      (await discoverAuthServerMetadata(serverUrl));
     if (!metadata?.token_endpoint) {
       throw new AuthError(
         `Could not find an OAuth token endpoint for ${serverUrl}. ` +

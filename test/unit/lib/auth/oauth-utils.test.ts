@@ -7,6 +7,7 @@ import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import {
   DEFAULT_CLIENT_METADATA_URL,
+  discoverAuthServerViaProtectedResource,
   discoverTokenEndpoint,
   getOAuthServerUrl,
   MCPC_OAUTH_CALLBACK_PORTS,
@@ -213,6 +214,114 @@ describe('discoverTokenEndpoint', () => {
       'https://example.com/.well-known/oauth-authorization-server',
       'https://example.com/.well-known/openid-configuration',
     ]);
+  });
+});
+
+describe('discoverAuthServerViaProtectedResource', () => {
+  let fetchSpy: MockInstance;
+
+  beforeEach(() => {
+    fetchSpy = vi.spyOn(proxyModule, 'proxyFetch');
+  });
+
+  afterEach(() => {
+    fetchSpy.mockRestore();
+  });
+
+  it('follows protected resource metadata to an authorization server on another origin', async () => {
+    // The case direct well-known probes against the MCP origin cannot solve.
+    fetchSpy.mockImplementation((url: string) => {
+      if (url === 'https://mcp.example.com/.well-known/oauth-protected-resource/mcp') {
+        return Promise.resolve(
+          mockResponse({ authorization_servers: ['https://auth.example.com'] })
+        );
+      }
+      if (url === 'https://auth.example.com/.well-known/oauth-authorization-server') {
+        return Promise.resolve(mockResponse({ token_endpoint: 'https://auth.example.com/token' }));
+      }
+      return Promise.resolve(mockResponse(null, false));
+    });
+
+    const metadata = await discoverAuthServerViaProtectedResource('https://mcp.example.com/mcp');
+    expect(metadata?.token_endpoint).toBe('https://auth.example.com/token');
+  });
+
+  it('falls back to the origin-wide protected resource document', async () => {
+    fetchSpy.mockImplementation((url: string) => {
+      if (url === 'https://mcp.example.com/.well-known/oauth-protected-resource') {
+        return Promise.resolve(
+          mockResponse({ authorization_servers: ['https://auth.example.com'] })
+        );
+      }
+      if (url === 'https://auth.example.com/.well-known/oauth-authorization-server') {
+        return Promise.resolve(mockResponse({ token_endpoint: 'https://auth.example.com/token' }));
+      }
+      return Promise.resolve(mockResponse(null, false));
+    });
+
+    const metadata = await discoverAuthServerViaProtectedResource('https://mcp.example.com/mcp');
+    expect(metadata?.token_endpoint).toBe('https://auth.example.com/token');
+  });
+
+  it('inserts the well-known segment before an issuer path (RFC 8414)', async () => {
+    const calledUrls: string[] = [];
+    fetchSpy.mockImplementation((url: string) => {
+      calledUrls.push(url);
+      if (url === 'https://mcp.example.com/.well-known/oauth-protected-resource/mcp') {
+        return Promise.resolve(
+          mockResponse({ authorization_servers: ['https://auth.example.com/tenant1'] })
+        );
+      }
+      if (url === 'https://auth.example.com/.well-known/oauth-authorization-server/tenant1') {
+        return Promise.resolve(mockResponse({ token_endpoint: 'https://auth.example.com/token' }));
+      }
+      return Promise.resolve(mockResponse(null, false));
+    });
+
+    const metadata = await discoverAuthServerViaProtectedResource('https://mcp.example.com/mcp');
+    expect(metadata?.token_endpoint).toBe('https://auth.example.com/token');
+    expect(calledUrls).toContain(
+      'https://auth.example.com/.well-known/oauth-authorization-server/tenant1'
+    );
+  });
+
+  it('tries the next issuer when the first exposes no token endpoint', async () => {
+    fetchSpy.mockImplementation((url: string) => {
+      if (url === 'https://mcp.example.com/.well-known/oauth-protected-resource/mcp') {
+        return Promise.resolve(
+          mockResponse({
+            authorization_servers: ['https://broken.example.com', 'https://auth.example.com'],
+          })
+        );
+      }
+      if (url === 'https://auth.example.com/.well-known/oauth-authorization-server') {
+        return Promise.resolve(mockResponse({ token_endpoint: 'https://auth.example.com/token' }));
+      }
+      return Promise.resolve(mockResponse(null, false));
+    });
+
+    const metadata = await discoverAuthServerViaProtectedResource('https://mcp.example.com/mcp');
+    expect(metadata?.token_endpoint).toBe('https://auth.example.com/token');
+  });
+
+  it('returns undefined when no protected resource document exists', async () => {
+    fetchSpy.mockImplementation(() => Promise.resolve(mockResponse(null, false)));
+    expect(
+      await discoverAuthServerViaProtectedResource('https://mcp.example.com/mcp')
+    ).toBeUndefined();
+  });
+
+  it('ignores a malformed authorization_servers value', async () => {
+    fetchSpy.mockImplementation((url: string) => {
+      if (url.includes('oauth-protected-resource')) {
+        return Promise.resolve(mockResponse({ authorization_servers: 'https://auth.example.com' }));
+      }
+      return Promise.resolve(mockResponse(null, false));
+    });
+
+    expect(
+      await discoverAuthServerViaProtectedResource('https://mcp.example.com/mcp')
+    ).toBeUndefined();
   });
 });
 
