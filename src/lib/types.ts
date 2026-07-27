@@ -82,11 +82,13 @@ export const DISCONNECTED_THRESHOLD_MILLIS = 2 * KEEPALIVE_INTERVAL_MILLIS + 500
 
 /**
  * Upper bound on server instructions persisted in sessions.json (see `SessionData.instructions`).
- * The file is read by every mcpc command, so an oversized blob is dropped rather than
- * slowing down the whole CLI; the session still works, it just cannot show the
- * instructions after a resumption.
+ * The file is read by every mcpc command, so oversized instructions are trimmed rather than
+ * slowing down the whole CLI.
  */
 export const MAX_PERSISTED_INSTRUCTIONS_CHARS = 32_768;
+
+/** Marks the end of server instructions trimmed to MAX_PERSISTED_INSTRUCTIONS_CHARS. */
+export const TRIMMED_INSTRUCTIONS_NOTICE = '\n\n[... trimmed excessive length]';
 
 /** Valid x402 scheme preferences. Canonical source for CLI validation and type-narrowing. */
 export const X402_SCHEME_PREFERENCES = ['auto', 'upto', 'exact'] as const;
@@ -186,8 +188,8 @@ export interface SessionData {
   capabilities?: ServerCapabilities;
   /**
    * Server instructions reported by the initialize handshake, persisted alongside
-   * `capabilities`. Omitted when the server sends none, or when they are larger than
-   * {@link MAX_PERSISTED_INSTRUCTIONS_CHARS} (sessions.json is read on every command).
+   * `capabilities`. Trimmed to {@link MAX_PERSISTED_INSTRUCTIONS_CHARS} (sessions.json is
+   * read on every command), and omitted when the server sends none.
    */
   instructions?: string | undefined;
   status?: SessionStatus; // Session health status (default: active)

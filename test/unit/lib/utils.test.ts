@@ -572,6 +572,14 @@ describe('truncate', () => {
     expect(truncate('abc', 3)).toBe('abc');
     expect(truncate('abcd', 3)).toBe('...');
   });
+
+  it('should end with a custom suffix without exceeding maxLength', () => {
+    expect(truncate('hello world', 11, ' [trimmed]')).toBe('hello world');
+    const result = truncate('hello world', 10, ' [trimmed]');
+    expect(result).toBe(' [trimmed]');
+    expect(result.length).toBe(10);
+    expect(truncate('hello world, this is long', 20, ' [trimmed]')).toBe('hello worl [trimmed]');
+  });
 });
 
 describe('isProcessAlive', () => {

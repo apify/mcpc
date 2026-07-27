@@ -39,8 +39,10 @@ test_pass
 test_case "capabilities and instructions persisted after connect"
 capabilities=$(json_get ".sessions[] | select(.name == \"$SESSION\") | .capabilities | tostring")
 assert_contains "$capabilities" "tools" "capabilities should be stored after connect"
-# Instructions are deliberately omitted from the session list (they can be kilobytes),
-# so read them straight from sessions.json
+# The session list reports only whether instructions exist (they can be kilobytes),
+# so read the text itself straight from sessions.json
+has_instructions=$(json_get ".sessions[] | select(.name == \"$SESSION\") | .hasInstructions")
+assert_eq "$has_instructions" "true" "session list should report hasInstructions"
 stored_instructions=$(jq -r ".sessions[\"$SESSION\"].instructions" "$MCPC_HOME_DIR/sessions.json")
 assert_contains "$stored_instructions" "E2E test server" "instructions should be stored after connect"
 test_pass

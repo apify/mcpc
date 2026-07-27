@@ -139,11 +139,14 @@ export async function listSessionsAndAuthProfiles(options: {
     // sessions.json) is mapped to the public `stateless` field here so the list output
     // matches `mcpc @<session>` and `mcpc connect` (null until the mode is known).
     // Server instructions are persisted for session resumption but kept out of the list —
-    // they can be kilobytes per session. Read them with `mcpc --json @<session>`.
-    const sessionsWithStatus = sessions.map(({ connectionMode, instructions: _, ...session }) => ({
+    // they can be kilobytes per session. Only their presence is reported, as
+    // `hasInstructions` (they are not part of the advertised capabilities); read the text
+    // itself with `mcpc --json @<session>`.
+    const sessionsWithStatus = sessions.map(({ connectionMode, instructions, ...session }) => ({
       ...session,
       status: getBridgeStatus(session),
       ...statelessField(connectionMode),
+      hasInstructions: !!instructions,
     }));
     console.log(
       formatOutput(

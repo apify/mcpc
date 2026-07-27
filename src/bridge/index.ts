@@ -21,6 +21,7 @@ import type {
 import {
   KEEPALIVE_INTERVAL_MILLIS,
   MAX_PERSISTED_INSTRUCTIONS_CHARS,
+  TRIMMED_INSTRUCTIONS_NOTICE,
   X402_SCHEME_PREFERENCES,
 } from '../lib/types.js';
 import { createLogger, setVerbose, initFileLogger, closeFileLogger } from '../lib/index.js';
@@ -32,6 +33,7 @@ import {
   ensureSecureTempDir,
   cleanupOrphanedLogFiles,
   isSessionExpiredError,
+  truncate,
   StderrTail,
 } from '../lib/index.js';
 import {
@@ -844,13 +846,13 @@ class BridgeProcess {
       const instructions = serverDetails.instructions;
       if (instructions && instructions.length > MAX_PERSISTED_INSTRUCTIONS_CHARS) {
         logger.debug(
-          `Not persisting server instructions (${instructions.length} chars, ` +
-            `limit ${MAX_PERSISTED_INSTRUCTIONS_CHARS}); they will be missing after a resumption`
+          `Trimming server instructions before persisting them (${instructions.length} chars, ` +
+            `limit ${MAX_PERSISTED_INSTRUCTIONS_CHARS})`
         );
-        sessionUpdate.instructions = undefined;
-      } else {
-        sessionUpdate.instructions = instructions;
       }
+      sessionUpdate.instructions = instructions
+        ? truncate(instructions, MAX_PERSISTED_INSTRUCTIONS_CHARS, TRIMMED_INSTRUCTIONS_NOTICE)
+        : instructions;
     }
     if (newMcpSessionId) {
       sessionUpdate.mcpSessionId = newMcpSessionId;

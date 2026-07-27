@@ -515,13 +515,15 @@ export function stringifyJson(obj: unknown, pretty = false): string {
 }
 
 /**
- * Truncate a string to a maximum length
+ * Truncate a string to a maximum length, ending it with `suffix` so readers can tell
+ * the text is incomplete. The result never exceeds `maxLength`, unless `suffix` alone
+ * is longer than that.
  */
-export function truncate(str: string, maxLength: number): string {
+export function truncate(str: string, maxLength: number, suffix = '...'): string {
   if (str.length <= maxLength) {
     return str;
   }
-  return str.slice(0, maxLength - 3) + '...';
+  return str.slice(0, Math.max(0, maxLength - suffix.length)) + suffix;
 }
 
 /**
