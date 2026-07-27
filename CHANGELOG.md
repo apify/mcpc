@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Sessions resumed after a bridge restart (e.g. crash recovery) no longer lose their negotiated protocol version: session details showed `Protocol: unknown` and, worse, requests were sent without the required `MCP-Protocol-Version` header. The stored version is now restored on resumption, and the server name is shown again in session details.
+- Resumed sessions also keep their server capabilities and instructions, which previously vanished after a bridge restart: `mcpc @session` showed no capabilities, `grep` no longer found the server instructions, and `resources-subscribe` wrongly refused with "server does not support resource subscriptions".
 
 ### Deprecated
 

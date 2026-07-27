@@ -80,6 +80,14 @@ export const KEEPALIVE_INTERVAL_MILLIS = 30_000;
 /** Threshold for considering a session disconnected (bridge alive but server unreachable) */
 export const DISCONNECTED_THRESHOLD_MILLIS = 2 * KEEPALIVE_INTERVAL_MILLIS + 5000; // ~2 missed pings + 5s buffer
 
+/**
+ * Upper bound on server instructions persisted in sessions.json (see `SessionData.instructions`).
+ * The file is read by every mcpc command, so an oversized blob is dropped rather than
+ * slowing down the whole CLI; the session still works, it just cannot show the
+ * instructions after a resumption.
+ */
+export const MAX_PERSISTED_INSTRUCTIONS_CHARS = 32_768;
+
 /** Valid x402 scheme preferences. Canonical source for CLI validation and type-narrowing. */
 export const X402_SCHEME_PREFERENCES = ['auto', 'upto', 'exact'] as const;
 export type X402SchemePreference = (typeof X402_SCHEME_PREFERENCES)[number];
@@ -170,6 +178,18 @@ export interface SessionData {
     name: string;
     version: string;
   };
+  /**
+   * Server capabilities reported by the initialize handshake. Persisted because a
+   * resumed session reuses the server-side session and therefore skips the handshake,
+   * leaving the client with no capabilities of its own.
+   */
+  capabilities?: ServerCapabilities;
+  /**
+   * Server instructions reported by the initialize handshake, persisted alongside
+   * `capabilities`. Omitted when the server sends none, or when they are larger than
+   * {@link MAX_PERSISTED_INSTRUCTIONS_CHARS} (sessions.json is read on every command).
+   */
+  instructions?: string | undefined;
   status?: SessionStatus; // Session health status (default: active)
   proxy?: ProxyConfig; // Proxy server configuration (if enabled)
   notifications?: SessionNotifications; // Last list change notification timestamps
