@@ -11,8 +11,19 @@ import { unlink } from 'fs/promises';
 import { dirname } from 'path';
 import { createMcpClient, CreateMcpClientOptions, buildClientCapabilities } from '../core/index.js';
 import type { McpClient } from '../core/index.js';
-import type { ServerConfig, IpcMessage, LoggingLevel, X402SchemePreference } from '../lib/index.js';
-import { KEEPALIVE_INTERVAL_MILLIS, X402_SCHEME_PREFERENCES } from '../lib/types.js';
+import type {
+  ServerConfig,
+  IpcMessage,
+  LoggingLevel,
+  X402SchemePreference,
+  ServerDetails,
+} from '../lib/index.js';
+import {
+  KEEPALIVE_INTERVAL_MILLIS,
+  MAX_PERSISTED_INSTRUCTIONS_CHARS,
+  TRIMMED_INSTRUCTIONS_NOTICE,
+  X402_SCHEME_PREFERENCES,
+} from '../lib/types.js';
 import { createLogger, setVerbose, initFileLogger, closeFileLogger } from '../lib/index.js';
 import {
   fileExists,
@@ -22,6 +33,7 @@ import {
   ensureSecureTempDir,
   cleanupOrphanedLogFiles,
   isSessionExpiredError,
+  truncate,
   StderrTail,
 } from '../lib/index.js';
 import {
@@ -129,6 +141,14 @@ class BridgeProcess {
 
   // Resource→file sync for resources-subscribe (created once the MCP client connects)
   private resourceSync: ResourceSyncManager | null = null;
+
+  // Handshake results persisted at the original connect, used only when this bridge
+  // resumed a server-side session: resumption skips `initialize`, so the SDK client
+  // reports no serverInfo/capabilities/instructions of its own (see #325).
+  private resumedHandshakeDetails: Pick<
+    ServerDetails,
+    'serverInfo' | 'capabilities' | 'instructions'
+  > | null = null;
 
   // Promise to track when auth credentials are received (for startup sequencing)
   private authCredentialsReceived: Promise<void> | null = null;
@@ -761,8 +781,19 @@ class BridgeProcess {
         this.resourceSync?.handleUpdated(notification.params.uri);
       });
 
+    // Resuming a server-side session skips the initialize handshake, so remember the
+    // values persisted by the connect that did perform it — they are the only source
+    // of server capabilities and instructions for the rest of this bridge's life.
+    if (this.options.mcpSessionId && sessionData) {
+      this.resumedHandshakeDetails = {
+        ...(sessionData.serverInfo && { serverInfo: sessionData.serverInfo }),
+        ...(sessionData.capabilities && { capabilities: sessionData.capabilities }),
+        ...(sessionData.instructions && { instructions: sessionData.instructions }),
+      };
+    }
+
     // Update session with protocol version, MCP session ID, and lastSeenAt
-    const serverDetails = await this.client.getServerDetails();
+    const serverDetails = await this.getServerDetails();
     const newMcpSessionId = this.client.getMcpSessionId();
 
     // Detect session ID mismatch: we tried to resume but server did not return the
@@ -807,6 +838,22 @@ class BridgeProcess {
     if (serverDetails.serverInfo) {
       sessionUpdate.serverInfo = serverDetails.serverInfo;
     }
+    // Capabilities and instructions come from the handshake only, so persist them for
+    // future resumptions. They travel together: writing instructions unconditionally
+    // here also clears stale text when a reconnect finds the server no longer sends any.
+    if (serverDetails.capabilities) {
+      sessionUpdate.capabilities = serverDetails.capabilities;
+      const instructions = serverDetails.instructions;
+      if (instructions && instructions.length > MAX_PERSISTED_INSTRUCTIONS_CHARS) {
+        logger.debug(
+          `Trimming server instructions before persisting them (${instructions.length} chars, ` +
+            `limit ${MAX_PERSISTED_INSTRUCTIONS_CHARS})`
+        );
+      }
+      sessionUpdate.instructions = instructions
+        ? truncate(instructions, MAX_PERSISTED_INSTRUCTIONS_CHARS, TRIMMED_INSTRUCTIONS_NOTICE)
+        : instructions;
+    }
     if (newMcpSessionId) {
       sessionUpdate.mcpSessionId = newMcpSessionId;
       logger.info(`MCP-Session-Id saved for resumption: ${newMcpSessionId}`);
@@ -828,6 +875,32 @@ class BridgeProcess {
         logger.warn('Failed to pre-populate tools cache:', err);
       });
     }
+  }
+
+  /**
+   * Server details for this connection, with the handshake-only fields restored from
+   * sessions.json when the bridge resumed an existing server-side session. Resumption
+   * reuses the session and skips `initialize`, so the SDK client would otherwise report
+   * no server name, no capabilities and no instructions at all (see #325).
+   *
+   * Always use this instead of `client.getServerDetails()` inside the bridge.
+   */
+  private async getServerDetails(): Promise<ServerDetails> {
+    if (!this.client) {
+      throw new NetworkError('MCP client not connected');
+    }
+    const details = await this.client.getServerDetails();
+    const persisted = this.resumedHandshakeDetails;
+    if (!persisted) return details;
+
+    if (!details.serverInfo && persisted.serverInfo) details.serverInfo = persisted.serverInfo;
+    if (!details.capabilities && persisted.capabilities) {
+      details.capabilities = persisted.capabilities;
+    }
+    if (!details.instructions && persisted.instructions) {
+      details.instructions = persisted.instructions;
+    }
+    return details;
   }
 
   /**
@@ -880,7 +953,7 @@ class BridgeProcess {
     }
 
     // Get upstream server instructions to pass to proxy clients
-    const serverDetails = await this.client.getServerDetails();
+    const serverDetails = await this.getServerDetails();
     const instructions = serverDetails.instructions;
 
     const proxyOptions: ConstructorParameters<typeof ProxyServer>[0] = {
@@ -1426,7 +1499,7 @@ class BridgeProcess {
           // subscriptions/listen acknowledgment instead, so let the subscribe attempt
           // decide there — it fails loudly when the server does not honor the URI.
           if (this.client.getProtocolEra() !== 'modern') {
-            const details = await this.client.getServerDetails();
+            const details = await this.getServerDetails();
             if (!details.capabilities?.resources?.subscribe) {
               throw new ClientError(
                 `Server does not support resource subscriptions (no resources.subscribe capability).\n` +
@@ -1485,19 +1558,9 @@ class BridgeProcess {
           break;
         }
 
-        case 'getServerDetails': {
-          const details = await this.client.getServerDetails();
-          // A resumed HTTP session skips the initialize handshake, so the SDK client
-          // has no serverInfo; fall back to the value persisted at original connect.
-          if (!details.serverInfo) {
-            const session = await getSession(this.options.sessionName);
-            if (session?.serverInfo) {
-              details.serverInfo = session.serverInfo;
-            }
-          }
-          result = details;
+        case 'getServerDetails':
+          result = await this.getServerDetails();
           break;
-        }
 
         case 'listTasks': {
           const cursor = message.params as string | undefined;

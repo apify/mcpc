@@ -138,10 +138,15 @@ export async function listSessionsAndAuthProfiles(options: {
     // Add bridge status to JSON output. The persisted `connectionMode` enum (stored in
     // sessions.json) is mapped to the public `stateless` field here so the list output
     // matches `mcpc @<session>` and `mcpc connect` (null until the mode is known).
-    const sessionsWithStatus = sessions.map(({ connectionMode, ...session }) => ({
+    // Server instructions are persisted for session resumption but kept out of the list —
+    // they can be kilobytes per session. Only their presence is reported, as
+    // `hasInstructions` (they are not part of the advertised capabilities); read the text
+    // itself with `mcpc --json @<session>`.
+    const sessionsWithStatus = sessions.map(({ connectionMode, instructions, ...session }) => ({
       ...session,
       status: getBridgeStatus(session),
       ...statelessField(connectionMode),
+      hasInstructions: !!instructions,
     }));
     console.log(
       formatOutput(

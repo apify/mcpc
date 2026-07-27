@@ -1,11 +1,12 @@
 #!/bin/bash
-# Test: session resumption after a bridge crash preserves the negotiated protocol version
+# Test: session resumption after a bridge crash preserves the negotiated protocol
+# version, the server capabilities and the server instructions
 #
 # Regression guard: the SDK skips the initialize handshake when resuming with a
-# preserved MCP-Session-Id, so the client never re-learns the protocol version.
-# mcpc must seed the reconnected transport with the version persisted in
-# sessions.json — otherwise session details show "Protocol: unknown" and requests
-# go out without the required MCP-Protocol-Version header.
+# preserved MCP-Session-Id, so the client never re-learns any of it. mcpc must
+# restore the values persisted in sessions.json — otherwise session details show
+# "Protocol: unknown" with no capabilities and no instructions, and requests go
+# out without the required MCP-Protocol-Version header.
 
 source "$(dirname "$0")/../../lib/framework.sh"
 test_init "sessions/resume"
@@ -32,6 +33,18 @@ bridge_pid=$(json_get ".sessions[] | select(.name == \"$SESSION\") | .pid")
 assert_not_empty "$protocol_version" "protocolVersion should be stored after connect"
 assert_not_empty "$mcp_session_id" "mcpSessionId should be stored after connect"
 assert_not_empty "$bridge_pid" "bridge PID should be stored after connect"
+test_pass
+
+# Test: capabilities and instructions are persisted so a resumed bridge can restore them
+test_case "capabilities and instructions persisted after connect"
+capabilities=$(json_get ".sessions[] | select(.name == \"$SESSION\") | .capabilities | tostring")
+assert_contains "$capabilities" "tools" "capabilities should be stored after connect"
+# The session list reports only whether instructions exist (they can be kilobytes),
+# so read the text itself straight from sessions.json
+has_instructions=$(json_get ".sessions[] | select(.name == \"$SESSION\") | .hasInstructions")
+assert_eq "$has_instructions" "true" "session list should report hasInstructions"
+stored_instructions=$(jq -r ".sessions[\"$SESSION\"].instructions" "$MCPC_HOME_DIR/sessions.json")
+assert_contains "$stored_instructions" "E2E test server" "instructions should be stored after connect"
 test_pass
 
 # Test: crash the bridge without graceful shutdown (no HTTP DELETE, so the
@@ -80,6 +93,35 @@ json_protocol=$(json_get ".protocolVersion")
 json_server_name=$(json_get ".serverInfo.name")
 assert_eq "$json_protocol" "$protocol_version" "JSON protocolVersion should match original"
 assert_not_empty "$json_server_name" "JSON serverInfo.name should be present after resume"
+test_pass
+
+# Test: capabilities survive resumption — without them the session reports
+# "(none)" and the resources-subscribe pre-check below wrongly refuses
+test_case "capabilities preserved after resume"
+json_capabilities=$(json_get ".capabilities | tostring")
+assert_contains "$json_capabilities" "tools" "JSON capabilities should be present after resume"
+run_mcpc "$SESSION"
+assert_success
+assert_contains "$STDOUT" "tools (" "session details should still list the tools capability"
+test_pass
+
+# Test: instructions survive resumption (shown in session details, searched by `grep`)
+test_case "instructions preserved after resume"
+assert_contains "$STDOUT" "E2E test server" "session details should still show instructions"
+run_mcpc --json "$SESSION" grep "E2E test server" --instructions
+assert_success
+assert_json "$STDOUT" '.sessions[0].instructions | type == "string"' \
+  "grep should still match the server instructions after resume"
+test_pass
+
+# Test: the resources.subscribe capability check accepts a resumed session
+test_case "resources-subscribe works after resume"
+subscribe_uri="test://dynamic/counter"
+run_mcpc "$SESSION" resources-subscribe "$subscribe_uri" "$TEST_TMP/resume-sync.txt"
+assert_success
+assert_not_contains "$STDOUT" "does not support resource subscriptions"
+run_mcpc "$SESSION" resources-unsubscribe "$subscribe_uri"
+assert_success
 test_pass
 
 # Test: close session
