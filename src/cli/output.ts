@@ -1601,7 +1601,7 @@ export function formatServerDetails(
   target: string,
   tools?: Tool[],
   resourceSubscriptions?: ResourceSubscriptionEntry[],
-  pinnedMcpVersion?: string
+  pinnedProtocolVersion?: string
 ): string {
   const lines: string[] = [];
   const bullet = chalk.dim('*');
@@ -1623,7 +1623,7 @@ export function formatServerDetails(
   if (protocolVersion || hasMode) {
     const modeParts = [
       ...(hasMode ? [connectionMode] : []),
-      ...(pinnedMcpVersion ? ['pinned'] : []),
+      ...(pinnedProtocolVersion ? ['pinned'] : []),
     ];
     const mode = modeParts.length > 0 ? ` (${modeParts.join(', ')})` : '';
     lines.push(chalk.bold('Protocol:') + ` ${protocolVersion ?? 'unknown'}${mode}`);

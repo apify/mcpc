@@ -305,7 +305,7 @@ export async function showServerDetails(
           target,
           tools,
           resourceSubscriptions,
-          context.serverConfig?.mcpVersion
+          context.serverConfig?.protocolVersion
         )
       );
     } else {

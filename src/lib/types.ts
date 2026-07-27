@@ -95,7 +95,7 @@ export interface ServerConfig {
   args?: string[]; // For stdio transport
   env?: Record<string, string>; // Environment variables for stdio transport
   timeout?: number; // Request timeout in SECONDS (field name kept as `timeout` for mcp.json / sessions.json compatibility)
-  mcpVersion?: string; // Pin the MCP protocol version (strict, no fallback; absent = auto-negotiate)
+  protocolVersion?: string; // Pin the MCP protocol version (strict, no fallback; absent = auto-negotiate)
 }
 
 /**

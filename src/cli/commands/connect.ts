@@ -36,7 +36,7 @@ import {
 } from '../output.js';
 import { withMcpClient, resolveTarget, resolveAuthProfile } from '../helpers.js';
 // Imported directly (not via the core barrel) so the CLI doesn't eagerly load the MCP SDK
-import { isSupportedMcpVersion, SUPPORTED_MCP_VERSIONS } from '../../core/protocol.js';
+import { isSupportedProtocolVersion, SUPPORTED_PROTOCOL_VERSIONS } from '../../core/protocol.js';
 import {
   deleteSession,
   saveSession,
@@ -134,7 +134,7 @@ type ConnectSessionOptions = {
   noProfile?: boolean;
   proxy?: string;
   proxyBearerToken?: string;
-  mcpVersion?: string;
+  protocolVersion?: string;
   x402?: X402SchemePreference;
   insecure?: boolean;
   skipDetails?: boolean;
@@ -261,11 +261,11 @@ export async function connectSession(
     throw new ClientError('--proxy-bearer-token requires --proxy to be specified');
   }
 
-  // Validate --mcp-version (if provided)
-  if (options.mcpVersion && !isSupportedMcpVersion(options.mcpVersion)) {
+  // Validate --protocol-version (if provided)
+  if (options.protocolVersion && !isSupportedProtocolVersion(options.protocolVersion)) {
     throw new ClientError(
-      `Unsupported MCP protocol version: ${options.mcpVersion}\n` +
-        `Supported versions: ${SUPPORTED_MCP_VERSIONS.join(', ')}`
+      `Unsupported MCP protocol version: ${options.protocolVersion}\n` +
+        `Supported versions: ${SUPPORTED_PROTOCOL_VERSIONS.join(', ')}`
     );
   }
 
@@ -471,9 +471,9 @@ export async function connectSession(
       };
       console.log(formatOutput([failed], 'json'));
     } else {
-      const pinHint = serverConfig.mcpVersion
-        ? `  The session is pinned to MCP ${serverConfig.mcpVersion}. If the server does not\n` +
-          `  support that version, reconnect without --mcp-version to auto-negotiate.\n`
+      const pinHint = serverConfig.protocolVersion
+        ? `  The session is pinned to MCP ${serverConfig.protocolVersion}. If the server does not\n` +
+          `  support that version, reconnect without --protocol-version to auto-negotiate.\n`
         : '';
       console.log(
         formatWarning(
@@ -618,7 +618,7 @@ type BulkConnectOptions = {
   proxy?: string;
   proxyBearerToken?: string;
   stdio?: boolean;
-  mcpVersion?: string;
+  protocolVersion?: string;
   x402?: X402SchemePreference;
   insecure?: boolean;
 };

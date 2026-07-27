@@ -59,8 +59,8 @@ mcpc connect                             # discover standard configs + connect e
 - **Stdio (command-based) entries launch a local process on connect** — only connect
   to configs you trust. Bulk connects skip stdio entries unless you pass `--stdio`.
 - The MCP protocol version is negotiated automatically. Pass
-  `--mcp-version <version>` (e.g. `--mcp-version 2025-11-25`) to pin one exact
-  version — the connection fails if the server does not support it.
+  `--protocol-version <version>` (e.g. `--protocol-version 2025-11-25`) to pin
+  one exact version — the connection fails if the server does not support it.
 - `login` / `logout` only accept an MCP server URL (a bare host or full
   `http(s)://` URL) — not config files or auto-discovery.
 

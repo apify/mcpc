@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - New `mcpc login <server> --grant id-jag` for MCP's [Enterprise-Managed Authorization](https://modelcontextprotocol.io/extensions/auth/enterprise-managed-authorization) extension: sign in once with your corporate SSO (`--idp <issuer>`), and mcpc obtains MCP server tokens via identity assertion grants (ID-JAG) without per-server consent screens.
 - Support for MCP protocol version 2026-07-28: mcpc now probes each server with `server/discover` and talks the new stateless protocol when supported, falling back to older protocol versions (2025-11-25 down to 2024-10-07) automatically. Resource subscriptions use the new `subscriptions/listen` stream (with automatic re-listen on drops), and `ping` transparently uses `server/discover` on 2026-07-28 servers. mcpc now uses the official TypeScript SDK v2 (`@modelcontextprotocol/client`).
-- New `--mcp-version` option for `mcpc connect` to pin the MCP protocol version (e.g. `--mcp-version 2025-11-25`) instead of auto-negotiating; the connection fails if the server does not support the pinned version. Also supported as an `mcpVersion` field in mcp.json config entries.
+- New `--protocol-version` option for `mcpc connect` to pin the MCP protocol version (e.g. `--protocol-version 2025-11-25`) instead of auto-negotiating; the connection fails if the server does not support the pinned version. Also supported as a `protocolVersion` field in mcp.json config entries.
 
 ### Changed
 
