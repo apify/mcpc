@@ -211,13 +211,12 @@ MISSING=""
 for cmd in $SESSION_COMMANDS; do
   run_mcpc @test-session "$cmd" --help
   assert_success
-  # Either the jsonHelp() block or an inline "With --json, ..." sentence documents it
-  if ! printf '%s\n' "$STDOUT" | grep -qE "JSON output \(--json\):|With --json"; then
+  if ! printf '%s\n' "$STDOUT" | grep -q "JSON output (--json):"; then
     MISSING+=" $cmd"
   fi
 done
 if [[ -n "$MISSING" ]]; then
-  test_fail "session commands without a documented --json output (add jsonHelp()):$MISSING"
+  test_fail "session commands without a JSON output section (add jsonHelp()):$MISSING"
   exit 1
 fi
 test_pass

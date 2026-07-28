@@ -173,31 +173,47 @@ const SCHEMA_BASE = 'https://modelcontextprotocol.io/specification/2025-11-25/sc
 const SERVER_DETAILS_JSON_SHAPE =
   '{ protocolVersion?, capabilities?, serverInfo?, instructions?, toolNames?, _mcpc: { sessionName, server?, ... } }';
 
-/**
- * JSON help shared by `connect` and by every command that prints a session's server
- * details: `mcpc @session` (no command) and `restart`, which shows the details again.
- *
- * Deliberately not the `jsonHelp()` block: a "JSON output (--json):" heading under the
- * session help would read as if it described every subcommand listed above it, while it
- * only applies to the details output itself. One inline sentence instead, same wording
- * and same shape example on all three screens.
- */
-function serverDetailsJsonHelp(returns: 'object' | 'array'): string {
-  // The array intro is broken over two lines to stay inside the 100-column help width
-  const intro =
-    returns === 'array'
-      ? `With --json, returns an array of \`InitializeResult\` objects (one per session), each
-extended with \`toolNames\` and \`_mcpc\` metadata:`
-      : `With --json, returns the \`InitializeResult\` object extended with \`toolNames\` and \`_mcpc\` metadata:`;
-  const shape = returns === 'array' ? `[${SERVER_DETAILS_JSON_SHAPE}]` : SERVER_DETAILS_JSON_SHAPE;
+const SERVER_DETAILS_JSON_META = 'extended with `toolNames` and `_mcpc` metadata';
 
-  return `${intro}
-\`${shape}\`
-Schema: ${SCHEMA_BASE}#initializeresult
-`;
+/**
+ * The shared description of that output: what a command returns and the shape example
+ * for it. Rendered two ways below — as the standard `jsonHelp()` block, or as one inline
+ * sentence — so the wording and the example never drift between the two.
+ */
+function serverDetailsJson(returns: 'object' | 'array'): { subject: string; shape: string } {
+  return returns === 'array'
+    ? {
+        subject: 'Array of `InitializeResult` objects (one per session),',
+        shape: `\`[${SERVER_DETAILS_JSON_SHAPE}]\``,
+      }
+    : { subject: '`InitializeResult` object', shape: `\`${SERVER_DETAILS_JSON_SHAPE}\`` };
 }
 
-const SERVER_DETAILS_JSON_HELP = serverDetailsJsonHelp('object');
+/**
+ * Standard "JSON output (--json):" block for the commands that print server details:
+ * `connect` (an array of entries) and `restart` (the details of the restarted session).
+ */
+function serverDetailsJsonHelp(returns: 'object' | 'array'): string {
+  const { subject, shape } = serverDetailsJson(returns);
+  return jsonHelp(
+    `${subject} ${SERVER_DETAILS_JSON_META}`,
+    shape,
+    `${SCHEMA_BASE}#initializeresult`
+  );
+}
+
+/**
+ * Same content as one inline sentence, for the `mcpc @session` help screen. A
+ * "JSON output (--json):" heading there would read as if it described every subcommand
+ * listed above it, while it only applies to the no-command details output.
+ */
+const SERVER_DETAILS_JSON_HELP_INLINE = ((): string => {
+  const { subject, shape } = serverDetailsJson('object');
+  return `With --json, returns the ${subject} ${SERVER_DETAILS_JSON_META}:
+${shape}
+Schema: ${SCHEMA_BASE}#initializeresult
+`;
+})();
 
 async function main(): Promise<void> {
   // Disambiguate `--x402 <non-scheme>` (URL, @session, etc.) so Commander's
@@ -546,7 +562,6 @@ ${chalk.bold('Protocol version:')}
 ${chalk.bold('x402 payments (experimental):')}
   --x402 pays for paid tool calls from the wallet set up with mcpc x402.
   Schemes: auto (default, prefers upto), upto, exact.
-
 ${serverDetailsJsonHelp('array')}`
     )
     .action(async (server, sessionName, opts, command) => {
@@ -667,7 +682,7 @@ ${serverDetailsJsonHelp('array')}`
     .description('Restart a session (losing all state)')
     .addHelpText(
       'after',
-      `\nAfter restarting, the session details are shown again.\n${SERVER_DETAILS_JSON_HELP}`
+      `\nAfter restarting, the session details are shown again.\n${serverDetailsJsonHelp('object')}`
     )
     .action(async (sessionName, _opts, command) => {
       if (!sessionName) {
@@ -1053,7 +1068,7 @@ function registerSessionCommands(program: Command, session: string): void {
     .description('Restart MCP session (losing all state).')
     .addHelpText(
       'after',
-      `\nAfter restarting, the session details are shown again.\n${SERVER_DETAILS_JSON_HELP}`
+      `\nAfter restarting, the session details are shown again.\n${serverDetailsJsonHelp('object')}`
     )
     .action(async (_options, command) => {
       await sessions.restartSession(session, getOptionsFromCommand(command));
@@ -1553,7 +1568,7 @@ function createSessionProgram(): Command {
       'after',
       `
 When no command is given, shows server info, capabilities, and tools.
-${SERVER_DETAILS_JSON_HELP}`
+${SERVER_DETAILS_JSON_HELP_INLINE}`
     );
 
   return program;
