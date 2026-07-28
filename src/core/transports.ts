@@ -129,24 +129,6 @@ export function createStreamableHttpTransport(
     fetch: fetchFn,
   });
 
-  // Verify authProvider is correctly attached
-  // @ts-expect-error accessing private property for debugging
-  const hasAuthProvider = !!transport._authProvider;
-  logger.debug('Transport created, authProvider attached:', hasAuthProvider);
-
-  // Verification: Test that tokens() is actually callable
-  // Note: This is a non-blocking test - the actual tokens() call during requests
-  // is what matters. This just verifies the authProvider is correctly attached.
-  if (hasAuthProvider) {
-    // @ts-expect-error accessing private property for debugging
-    const authProvider = transport._authProvider as OAuthClientProvider;
-    if (typeof authProvider.tokens === 'function') {
-      logger.debug('authProvider.tokens() is a function - verification passed');
-    } else {
-      logger.error('authProvider.tokens() is NOT a function - this is a bug!');
-    }
-  }
-
   return transport as Transport;
 }
 

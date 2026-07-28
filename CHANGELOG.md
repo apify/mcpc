@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `mcpc login --grant client-credentials` now finds the authorization server via protected resource metadata (RFC 9728), so it works against servers whose authorization server lives on a different origin. Previously discovery only probed the MCP server's own origin and failed with "Could not find an OAuth token endpoint", forcing you to pass `--token-endpoint` by hand.
 - Sessions resumed after a bridge restart (e.g. crash recovery) no longer lose their negotiated protocol version: session details showed `Protocol: unknown` and, worse, requests were sent without the required `MCP-Protocol-Version` header. The stored version is now restored on resumption, and the server name is shown again in session details.
 - Resumed sessions also keep their server capabilities and instructions, which previously vanished after a bridge restart: `mcpc @session` showed no capabilities, `grep` no longer found the server instructions, and `resources-subscribe` wrongly refused with "server does not support resource subscriptions".
+- `mcpc login` no longer prints the SDK warning about a missing `discoveryState()` implementation. The OAuth provider now records the discovered authorization server between the redirect and the code exchange, enabling the SEP-2352 mix-up attack check (the code is only redeemed at the server that minted it).
+- Bridge logs no longer report the spurious `authProvider.tokens() is NOT a function - this is a bug!` error when connecting with OAuth — a stale debug check left over from the SDK v1 era; authentication itself was unaffected.
 
 ### Deprecated
 

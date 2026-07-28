@@ -16,6 +16,7 @@ import type {
   OAuthClientProvider,
   OAuthClientMetadata,
   OAuthClientInformationMixed,
+  OAuthDiscoveryState,
   OAuthTokens,
 } from '@modelcontextprotocol/client';
 import { OAuthTokenManager } from './oauth-token-manager.js';
@@ -133,6 +134,7 @@ export class OAuthProvider implements OAuthClientProvider {
   // Auth flow state (only used during interactive OAuth)
   private _authProfile?: AuthProfile;
   private _codeVerifier?: string;
+  private _discoveryState?: OAuthDiscoveryState;
   private _clientInformation?: OAuthClientInformationMixed;
 
   constructor(options: OAuthProviderOptions) {
@@ -373,5 +375,21 @@ export class OAuthProvider implements OAuthClientProvider {
       throw new Error('Code verifier not found');
     }
     return this._codeVerifier;
+  }
+
+  /**
+   * Persist OAuth discovery state (SEP-2352). The SDK records the discovered
+   * authorization server here on the redirect leg and reads it back on the
+   * callback leg to verify the code is redeemed at the same server that
+   * minted it (mix-up attack defense). The spec requires the same durability
+   * as `codeVerifier`, which mcpc keeps in memory — both legs of the login
+   * flow run through one provider instance in a single process.
+   */
+  async saveDiscoveryState(state: OAuthDiscoveryState): Promise<void> {
+    this._discoveryState = state;
+  }
+
+  async discoveryState(): Promise<OAuthDiscoveryState | undefined> {
+    return this._discoveryState;
   }
 }
