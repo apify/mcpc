@@ -5,7 +5,7 @@
 # Regression guard: the SDK skips the initialize handshake when resuming with a
 # preserved MCP-Session-Id, so the client never re-learns any of it. mcpc must
 # restore the values persisted in sessions.json — otherwise session details show
-# "MCP version: unknown" with no capabilities and no instructions, and requests go
+# "MCP: version unknown" with no capabilities and no instructions, and requests go
 # out without the required MCP-Protocol-Version header.
 
 source "$(dirname "$0")/../../lib/framework.sh"
@@ -80,8 +80,8 @@ test_pass
 test_case "protocol version preserved after resume"
 run_mcpc "$SESSION"
 assert_success
-assert_contains "$STDOUT" "MCP version: $protocol_version"
-assert_not_contains "$STDOUT" "MCP version: unknown"
+assert_contains "$STDOUT" "MCP: version $protocol_version"
+assert_not_contains "$STDOUT" "MCP: version unknown"
 test_pass
 
 # Test: server info is still shown in session details after resume

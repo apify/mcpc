@@ -1634,7 +1634,7 @@ export function formatServerDetails(
     const pinned = pinnedProtocolVersion ? ` ${chalk.gray('(pinned)')}` : '';
     const mode = connectionMode && connectionMode !== 'unknown' ? ` (${connectionMode})` : '';
     const via = transport ? chalk.gray(' / ') + `${formatTransportKind(transport)}${mode}` : '';
-    lines.push(chalk.bold('MCP version:') + ` ${protocolVersion}${pinned}${via}`);
+    lines.push(chalk.bold('MCP:') + ` version ${protocolVersion}${pinned}${via}`);
     lines.push('');
   }
 
