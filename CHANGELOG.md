@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Resumed sessions also keep their server capabilities and instructions, which previously vanished after a bridge restart: `mcpc @session` showed no capabilities, `grep` no longer found the server instructions, and `resources-subscribe` wrongly refused with "server does not support resource subscriptions".
 - `mcpc login` no longer prints the SDK warning about a missing `discoveryState()` implementation. The OAuth provider now records the discovered authorization server between the redirect and the code exchange, enabling the SEP-2352 mix-up attack check (the code is only redeemed at the server that minted it).
 - Bridge logs no longer report the spurious `authProvider.tokens() is NOT a function - this is a bug!` error when connecting with OAuth — a stale debug check left over from the SDK v1 era; authentication itself was unaffected.
+- Bridge logs no longer show a scary `Transport error: ... Bad Request: No valid session ID provided` stack trace when connecting to a server without 2026-07-28 support. That HTTP 400 is the server declining the `server/discover` version probe — the expected signal to fall back to the older protocol — and is now logged as a single debug line.
 
 ### Deprecated
 

@@ -11,8 +11,10 @@
  */
 
 import { vi } from 'vitest';
-import { McpClient } from '../../../src/core/mcp-client.js';
+import { SdkHttpError, SdkErrorCode } from '@modelcontextprotocol/client';
+import { McpClient, isExpectedProbeRejection } from '../../../src/core/mcp-client.js';
 import { ServerError } from '../../../src/lib/errors.js';
+import { Logger } from '../../../src/lib/logger.js';
 
 vi.mock('@modelcontextprotocol/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@modelcontextprotocol/client')>();
@@ -479,5 +481,81 @@ describe('close', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('server/discover probe rejection', () => {
+  function probeRejection(status: number): SdkHttpError {
+    return new SdkHttpError(
+      SdkErrorCode.ClientHttpNotImplemented,
+      'Error POSTing to endpoint: {"jsonrpc":"2.0","error":{"code":-32000,"message":"Bad Request"},"id":null}',
+      { status, statusText: 'Bad Request' }
+    );
+  }
+
+  function makeLoggerSpy() {
+    const logger = new Logger('test');
+    return {
+      logger,
+      debug: vi.spyOn(logger, 'debug').mockImplementation(() => {}),
+      log: vi.spyOn(logger, 'log').mockImplementation(() => {}),
+    };
+  }
+
+  it('recognizes non-auth 4xx probe answers as expected', () => {
+    expect(isExpectedProbeRejection(probeRejection(400))).toBe(true);
+    expect(isExpectedProbeRejection(probeRejection(404))).toBe(true);
+    expect(isExpectedProbeRejection(probeRejection(405))).toBe(true);
+  });
+
+  it('keeps auth failures, server errors, and plain errors as real errors', () => {
+    expect(isExpectedProbeRejection(probeRejection(401))).toBe(false);
+    expect(isExpectedProbeRejection(probeRejection(403))).toBe(false);
+    expect(isExpectedProbeRejection(probeRejection(500))).toBe(false);
+    expect(isExpectedProbeRejection(new Error('boom'))).toBe(false);
+  });
+
+  it('logs a clean fallback line instead of a transport error during auto negotiation', async () => {
+    const { logger, debug, log } = makeLoggerSpy();
+    // Mimic the real timing: the probe is declined mid-connect, before hasConnected is set.
+    (stubSdkClient.connect as ReturnType<typeof vi.fn>).mockImplementation(
+      async (transport: { onerror?: (error: Error) => void }) => {
+        transport.onerror?.(probeRejection(400));
+      }
+    );
+    const client = new McpClient({ name: 'test', version: '0.0.0' }, { logger });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await client.connect(httpTransport('sess-1') as any);
+
+    expect(debug).toHaveBeenCalledWith(expect.stringContaining('server/discover'));
+    expect(log).not.toHaveBeenCalledWith(expect.anything(), 'Transport error:', expect.anything());
+  });
+
+  it('keeps the raw transport error when the protocol version is pinned', async () => {
+    const { logger, log } = makeLoggerSpy();
+    (stubSdkClient.connect as ReturnType<typeof vi.fn>).mockImplementation(
+      async (transport: { onerror?: (error: Error) => void }) => {
+        transport.onerror?.(probeRejection(400));
+      }
+    );
+    const client = new McpClient(
+      { name: 'test', version: '0.0.0' },
+      { logger, protocolVersion: '2025-11-25' }
+    );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await client.connect(httpTransport('sess-1') as any);
+
+    expect(log).toHaveBeenCalledWith('debug', 'Transport error:', expect.any(SdkHttpError));
+  });
+
+  it('keeps logging 4xx transport errors once the connection is established', async () => {
+    const { logger, log } = makeLoggerSpy();
+    const transport = httpTransport('sess-1');
+    const client = new McpClient({ name: 'test', version: '0.0.0' }, { logger });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await client.connect(transport as any);
+
+    (transport.onerror as (error: Error) => void)(probeRejection(400));
+    expect(log).toHaveBeenCalledWith('error', 'Transport error:', expect.any(SdkHttpError));
   });
 });
