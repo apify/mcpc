@@ -1240,7 +1240,7 @@ ${toolsCallCombinedJsonHelp}`
       'after',
       jsonHelp(
         'Array of `Resource` objects',
-        '`[{ uri, name?, description?, mimeType? }, ...]`',
+        '`[{ uri, name, description?, mimeType? }, ...]`',
         `${SCHEMA_BASE}#resource`
       )
     )
@@ -1315,7 +1315,7 @@ ${jsonHelp('`{ subscribed: true, uri, file, bytes, mimeType? }`')}`
       'after',
       jsonHelp(
         'Array of `ResourceTemplate` objects',
-        '`[{ uriTemplate, name?, description?, mimeType? }, ...]`',
+        '`[{ uriTemplate, name, description?, mimeType? }, ...]`',
         `${SCHEMA_BASE}#resourcetemplate`
       )
     )
