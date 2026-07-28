@@ -1608,7 +1608,7 @@ export function formatServerDetails(
   const bullet = chalk.dim('*');
   const bt = chalk.gray('`'); // backtick
 
-  const { serverInfo, capabilities, instructions, protocolVersion, connectionMode } = details;
+  const { serverInfo, capabilities, instructions, protocolVersion } = details;
 
   // Server info
   if (serverInfo) {
@@ -1618,16 +1618,13 @@ export function formatServerDetails(
     lines.push('');
   }
 
-  // Protocol version + whether the connection is stateful (stateless = 2026-07-28 model,
-  // any request may hit any server instance; stateful = stdio process or HTTP session id)
-  const hasMode = connectionMode !== undefined && connectionMode !== 'unknown';
-  if (protocolVersion || hasMode) {
-    const modeParts = [
-      ...(hasMode ? [connectionMode] : []),
-      ...(pinnedProtocolVersion ? ['pinned'] : []),
-    ];
-    const mode = modeParts.length > 0 ? ` (${modeParts.join(', ')})` : '';
-    lines.push(chalk.bold('Protocol:') + ` ${protocolVersion ?? 'unknown'}${mode}`);
+  // Negotiated MCP protocol version, plus "(pinned)" when --protocol-version fixed it.
+  // The connection's stateful/stateless mode is deliberately not shown: mcpc's session
+  // abstracts it away, so there is nothing to act on. It stays in `--json` (the
+  // `_mcpc.stateless` field) for callers that care about resumability.
+  if (protocolVersion) {
+    const pinned = pinnedProtocolVersion ? ` ${chalk.gray('(pinned)')}` : '';
+    lines.push(chalk.bold('MCP version:') + ` ${protocolVersion}${pinned}`);
     lines.push('');
   }
 

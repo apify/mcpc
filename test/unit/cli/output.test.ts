@@ -1060,7 +1060,7 @@ describe('formatServerDetails', () => {
     expect(output).toContain('This is the server instructions.');
   });
 
-  it('shows protocol version with the stateless mode suffix', () => {
+  it('shows the negotiated MCP version without the connection mode', () => {
     const details: ServerDetails = {
       protocolVersion: '2026-07-28',
       capabilities: {},
@@ -1070,34 +1070,23 @@ describe('formatServerDetails', () => {
 
     const output = formatServerDetails(details, '@s');
 
-    expect(output).toContain('Protocol: 2026-07-28 (stateless)');
+    // The stateful/stateless mode is --json-only (`_mcpc.stateless`)
+    expect(output).toContain('MCP version: 2026-07-28');
+    expect(output).not.toContain('stateless');
+    expect(output).not.toContain('stateful');
   });
 
-  it('shows protocol version with the stateful mode suffix', () => {
+  it('marks a pinned MCP version', () => {
     const details: ServerDetails = {
       protocolVersion: '2025-11-25',
       capabilities: {},
-      serverInfo: { name: 'Stateful Server', version: '1.0.0' },
+      serverInfo: { name: 'Pinned Server', version: '1.0.0' },
       connectionMode: 'stateful',
     };
 
-    const output = formatServerDetails(details, '@s');
+    const output = formatServerDetails(details, '@s', undefined, undefined, '2025-11-25');
 
-    expect(output).toContain('Protocol: 2025-11-25 (stateful)');
-  });
-
-  it('omits the connection mode suffix when it is unknown', () => {
-    const details: ServerDetails = {
-      protocolVersion: '2025-11-25',
-      capabilities: {},
-      serverInfo: { name: 'S', version: '1.0.0' },
-      connectionMode: 'unknown',
-    };
-
-    const output = formatServerDetails(details, '@s');
-
-    expect(output).toContain('Protocol: 2025-11-25');
-    expect(output).not.toContain('(unknown)');
+    expect(output).toContain('MCP version: 2025-11-25 (pinned)');
   });
 
   it('annotates logging and tasks as era-limited on a 2026-07-28 connection', () => {
