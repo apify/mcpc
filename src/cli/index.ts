@@ -1556,7 +1556,7 @@ function createSessionProgram(): Command {
 
   program
     .name('mcpc <@session>')
-    .description('Execute MCP commands on a connected session.')
+    .description('Show MCP session info or execute commands.')
     .helpOption('-h, --help', 'Display help')
     .option('--json', 'Output in JSON format for scripting and code mode')
     .option('--verbose', 'Enable debug logging')
