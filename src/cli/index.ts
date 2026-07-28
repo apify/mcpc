@@ -1264,9 +1264,10 @@ ${chalk.bold('Output:')}
   matching <uri> (or the first one) — use --json to get all items.
 ${jsonHelp(
   '`ReadResourceResult` object',
-  '`{ contents: [{ uri, mimeType?, text? | blob? }] }`',
+  '`{ contents: [{ uri, mimeType?, text? | blob? }], ttlMs?, cacheScope? }`',
   `${SCHEMA_BASE}#readresourceresult`
 )}
+  \`ttlMs\`/\`cacheScope\` are caching hints only present on 2026-07-28 connections.
   With \`-o\`: \`{ uri, file, bytes, mimeType? }\` summary instead.
 `
     )
@@ -1358,10 +1359,11 @@ ${chalk.bold('Names:')}
   \`name\`, \`nested/path\`, or \`skill://...\` URI. For \`archive\` skills, use
   \`resources-read <url>\`. With --json, --raw is ignored.
 ${jsonHelp(
-  '`ReadResourceResult`: `{ contents: [{ uri, mimeType?, text? | blob? }] }`',
+  '`ReadResourceResult`: `{ contents: [{ uri, mimeType?, text? | blob? }], ttlMs?, cacheScope? }`',
   undefined,
   `${SCHEMA_BASE}#readresourceresult`
-)}`
+)}
+  \`ttlMs\`/\`cacheScope\` are caching hints only present on 2026-07-28 connections.`
     )
     .action(async (name, options, command) => {
       await skills.getSkill(session, name, {
