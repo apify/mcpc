@@ -429,7 +429,7 @@ mcpc @apify tools-list
 ### OAuth profiles
 
 For OAuth-enabled remote MCP servers, `mcpc` implements the full OAuth 2.1 flow with PKCE as
-mandated by the [MCP authorization spec](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization):
+mandated by the [MCP authorization spec](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization):
 `WWW-Authenticate` 401 challenges, Protected Resource Metadata and authorization server metadata
 discovery, all three [client registration approaches](#client-registration-approaches),
 [resource indicators (RFC 8707)](https://www.rfc-editor.org/rfc/rfc8707), and automatic
@@ -479,7 +479,7 @@ mcpc logout mcp.apify.com --profile work
 ### Client registration approaches
 
 When logging in, `mcpc` supports all three OAuth client registration approaches defined in the
-[MCP authorization spec](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization#client-registration-approaches),
+[MCP authorization spec](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization#client-registration-approaches),
 picking the one the authorization server advertises in its OAuth metadata:
 
 | **Approach**                            | **`mcpc login` flags**                              |
@@ -511,7 +511,7 @@ mcpc login mcp.example.com --client-metadata-url https://example.com/my-client.j
 mcpc login mcp.example.com --no-client-metadata-url
 ```
 
-See the [MCP authorization spec](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization#client-registration-approaches)
+See the [MCP authorization spec](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization#client-registration-approaches)
 for details on each approach and the format of Client ID Metadata Documents.
 
 ### Authentication precedence

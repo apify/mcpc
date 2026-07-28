@@ -698,7 +698,7 @@ ${chalk.bold('Client registration (how mcpc identifies itself to the server):')}
   3. Dynamic Client Registration (DCR): fallback when CIMD is unsupported or
      disabled and the server exposes a registration_endpoint.
 
-  See https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization
+  See https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization
 
 ${chalk.bold('Machine-to-machine authentication (for CI/CD and daemons):')}
   Pass --grant client-credentials, --client-id, and one credential:

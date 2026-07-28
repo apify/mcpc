@@ -9,7 +9,7 @@
 import { jsonHelp } from './output.js';
 
 /** Base URL of the MCP schema reference the `--json` help sections link to */
-export const SCHEMA_BASE = 'https://modelcontextprotocol.io/specification/2025-11-25/schema';
+export const SCHEMA_BASE = 'https://modelcontextprotocol.io/specification/2026-07-28/schema';
 
 /**
  * The one JSON shape every server-details command returns: MCP `InitializeResult`

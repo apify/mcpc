@@ -315,7 +315,7 @@ export async function showServerDetails(
       );
     } else {
       // JSON output MUST match MCP InitializeResult structure!
-      // See https://modelcontextprotocol.io/specification/2025-11-25/schema#initializeresult
+      // See https://modelcontextprotocol.io/specification/2026-07-28/schema#initializeresult
       // Build _mcpc.server with redacted headers for security
       const server: ServerConfig = {
         ...context.serverConfig,
