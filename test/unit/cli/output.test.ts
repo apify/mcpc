@@ -1060,44 +1060,102 @@ describe('formatServerDetails', () => {
     expect(output).toContain('This is the server instructions.');
   });
 
-  it('shows protocol version with the stateless mode suffix', () => {
+  it('shows the MCP version with the transport and its connection mode', () => {
     const details: ServerDetails = {
       protocolVersion: '2026-07-28',
       capabilities: {},
       serverInfo: { name: 'Stateless Server', version: '1.0.0' },
       connectionMode: 'stateless',
+      transport: 'streamable-http',
     };
 
     const output = formatServerDetails(details, '@s');
 
-    expect(output).toContain('Protocol: 2026-07-28 (stateless)');
+    expect(output).toContain('MCP version: 2026-07-28 / Streamable HTTP (stateless)');
   });
 
-  it('shows protocol version with the stateful mode suffix', () => {
+  it('names the stdio transport', () => {
     const details: ServerDetails = {
       protocolVersion: '2025-11-25',
       capabilities: {},
-      serverInfo: { name: 'Stateful Server', version: '1.0.0' },
+      serverInfo: { name: 'Local Server', version: '1.0.0' },
       connectionMode: 'stateful',
+      transport: 'stdio',
     };
 
     const output = formatServerDetails(details, '@s');
 
-    expect(output).toContain('Protocol: 2025-11-25 (stateful)');
+    expect(output).toContain('MCP version: 2025-11-25 / stdio (stateful)');
   });
 
-  it('omits the connection mode suffix when it is unknown', () => {
+  it('marks a pinned MCP version and omits an unknown connection mode', () => {
+    const details: ServerDetails = {
+      protocolVersion: '2025-11-25',
+      capabilities: {},
+      serverInfo: { name: 'Pinned Server', version: '1.0.0' },
+      connectionMode: 'unknown',
+      transport: 'streamable-http',
+    };
+
+    const output = formatServerDetails(details, '@s', undefined, undefined, '2025-11-25');
+
+    expect(output).toContain('MCP version: 2025-11-25 (pinned) / Streamable HTTP');
+    expect(output).not.toContain('(unknown)');
+  });
+
+  it('shows the MCP version alone when the transport is not known yet', () => {
     const details: ServerDetails = {
       protocolVersion: '2025-11-25',
       capabilities: {},
       serverInfo: { name: 'S', version: '1.0.0' },
-      connectionMode: 'unknown',
     };
 
     const output = formatServerDetails(details, '@s');
 
-    expect(output).toContain('Protocol: 2025-11-25');
-    expect(output).not.toContain('(unknown)');
+    // No transport part, so no " / ..." suffix on the version line
+    expect(output).toContain('MCP version: 2025-11-25\n');
+  });
+
+  it('annotates logging and tasks as era-limited on a 2026-07-28 connection', () => {
+    const details: ServerDetails = {
+      protocolVersion: '2026-07-28',
+      capabilities: {
+        tools: { listChanged: false },
+        logging: {},
+        tasks: { requests: { tools: { call: true } } },
+      },
+      serverInfo: { name: 'Modern Server', version: '1.0.0' },
+      connectionMode: 'stateless',
+    };
+
+    const output = formatServerDetails(details, '@modern');
+
+    // Capabilities are still listed (the server advertises them), but flagged
+    expect(output).toContain('logging (notifications only)');
+    expect(output).toContain('tasks (tools) (not usable on MCP 2026-07-28)');
+
+    // ...and the commands that would only error out are not offered
+    expect(output).not.toContain('logging-set-level');
+    expect(output).not.toContain('tasks-list');
+    expect(output).toContain('mcpc @modern tools-list');
+  });
+
+  it('offers logging and tasks commands on a 2025-era connection', () => {
+    const details: ServerDetails = {
+      protocolVersion: '2025-11-25',
+      capabilities: {
+        logging: {},
+        tasks: { requests: { tools: { call: true } } },
+      },
+      serverInfo: { name: 'Legacy Server', version: '1.0.0' },
+    };
+
+    const output = formatServerDetails(details, '@legacy');
+
+    expect(output).toContain('* logging\n');
+    expect(output).not.toContain('not usable on MCP');
+    expect(output).toContain('mcpc @legacy logging-set-level');
+    expect(output).toContain('mcpc @legacy tasks-list');
   });
 
   it('should format server info with minimal features', () => {

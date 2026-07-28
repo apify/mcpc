@@ -639,6 +639,18 @@ _HTTPS_WRAPPER_PID=""
 # Set by run.sh --server-protocol; defaults to legacy.
 E2E_SERVER_PROTOCOL="${E2E_SERVER_PROTOCOL:-legacy}"
 
+# Skip the whole test suite with a reason and exit successfully.
+# Writes a `.skipped` marker into the test's run dir so run.sh can report the suite
+# as skipped instead of passed — a silent `✓` would hide a whole missing matrix column.
+skip_suite() {
+  local reason="${1:-no reason given}"
+  echo "# SKIP: $reason"
+  if [[ -n "${_TEST_RUN_DIR:-}" ]]; then
+    echo "$reason" > "$_TEST_RUN_DIR/.skipped"
+  fi
+  exit 0
+}
+
 # Skip the whole test unless the active test-server protocol era matches.
 # Call right after test_init in era-specific tests:
 #   require_server_protocol legacy   # e.g. sessions, tasks, logging-set-level
@@ -646,8 +658,7 @@ E2E_SERVER_PROTOCOL="${E2E_SERVER_PROTOCOL:-legacy}"
 require_server_protocol() {
   local required="$1"
   if [[ "$E2E_SERVER_PROTOCOL" != "$required" ]]; then
-    echo "# SKIP: test requires the $required-protocol test server (active: $E2E_SERVER_PROTOCOL)"
-    exit 0
+    skip_suite "test requires the $required-protocol test server (active: $E2E_SERVER_PROTOCOL)"
   fi
 }
 

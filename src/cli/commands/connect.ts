@@ -184,6 +184,7 @@ async function buildConnectResultEntry(
           ...(options.configFile && { configFile: options.configFile }),
           ...(options.entry && { entry: options.entry }),
           status,
+          ...(serverDetails.transport && { transport: serverDetails.transport }),
           ...statelessField(serverDetails.connectionMode),
         },
         ...(serverDetails.protocolVersion && { protocolVersion: serverDetails.protocolVersion }),

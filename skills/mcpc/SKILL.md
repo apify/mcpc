@@ -69,7 +69,7 @@ mcpc connect                             # discover standard configs + connect e
 ```bash
 mcpc                     # list all sessions and their state
 mcpc @apify              # session details, capabilities, tools (also reports the
-                         # negotiated protocol version and stateful vs stateless)
+                         # negotiated MCP version and the transport carrying it)
 mcpc restart @apify      # restart (after server updates, or to recover an 'expired' session)
 mcpc close @apify        # tear the session down
 ```

@@ -40,13 +40,13 @@ test_case "connect with a matching --protocol-version succeeds"
 run_mcpc connect "$TEST_SERVER_URL" "$SESSION" --header "X-Test: true" --protocol-version "$MATCH_VERSION"
 assert_success
 _SESSIONS_CREATED+=("$SESSION")
-assert_contains "$STDOUT" "Protocol: $MATCH_VERSION"
+assert_contains "$STDOUT" "MCP version: $MATCH_VERSION"
 test_pass
 
 test_case "session info shows the negotiated version as pinned"
 run_mcpc "$SESSION"
 assert_success
-assert_contains "$STDOUT" "Protocol: $MATCH_VERSION"
+assert_contains "$STDOUT" "MCP version: $MATCH_VERSION"
 assert_contains "$STDOUT" "pinned"
 test_pass
 
@@ -63,7 +63,7 @@ run_mcpc "$SESSION" restart
 assert_success
 run_mcpc "$SESSION"
 assert_success
-assert_contains "$STDOUT" "Protocol: $MATCH_VERSION"
+assert_contains "$STDOUT" "MCP version: $MATCH_VERSION"
 assert_contains "$STDOUT" "pinned"
 test_pass
 
@@ -86,7 +86,7 @@ _SESSIONS_CREATED+=("$MISMATCH_SESSION")
 # The session record is created but the handshake must fail — the CLI reports the
 # failure (with the pin hint) instead of a connected server.
 assert_contains "$STDOUT$STDERR" "pinned to MCP $MISMATCH_VERSION"
-assert_not_contains "$STDOUT" "Protocol: $MISMATCH_VERSION"
+assert_not_contains "$STDOUT" "MCP version: $MISMATCH_VERSION"
 test_pass
 
 run_mcpc "$MISMATCH_SESSION" close 2>/dev/null || true
@@ -118,7 +118,7 @@ CONFIG_SESSION=$(session_name "cfg")
 run_mcpc connect "$CONFIG_FILE:pinned" "$CONFIG_SESSION"
 assert_success
 _SESSIONS_CREATED+=("$CONFIG_SESSION")
-assert_contains "$STDOUT" "Protocol: $MATCH_VERSION"
+assert_contains "$STDOUT" "MCP version: $MATCH_VERSION"
 assert_contains "$STDOUT" "pinned"
 test_pass
 

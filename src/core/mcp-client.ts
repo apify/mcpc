@@ -41,7 +41,13 @@ import {
   tasksUnavailableMessage,
   SUPPORTED_PROTOCOL_VERSIONS,
 } from './protocol.js';
-import type { IMcpClient, ServerDetails, ConnectionMode, TaskUpdate } from '../lib/types.js';
+import type {
+  IMcpClient,
+  ServerDetails,
+  ConnectionMode,
+  TransportKind,
+  TaskUpdate,
+} from '../lib/types.js';
 import type { Task } from '@modelcontextprotocol/client';
 
 /**
@@ -397,6 +403,8 @@ export class McpClient implements IMcpClient {
     if (serverInfo) details.serverInfo = serverInfo;
     if (instructions) details.instructions = instructions;
     details.connectionMode = this.deriveConnectionMode();
+    const transport = this.deriveTransportKind();
+    if (transport) details.transport = transport;
 
     return Promise.resolve(details);
   }
@@ -432,12 +440,19 @@ export class McpClient implements IMcpClient {
    */
   private deriveConnectionMode(): ConnectionMode {
     if (!this.hasConnected) return 'unknown';
-    // Only the Streamable HTTP transport exposes terminateSession() (it sends an HTTP DELETE);
-    // its absence indicates a stdio transport. The method exists on the HTTP transport
-    // regardless of whether a session id was issued, so it reliably distinguishes the two.
-    const isHttpTransport = typeof this.transport?.terminateSession === 'function';
-    if (!isHttpTransport) return 'stateful';
+    if (this.deriveTransportKind() !== 'streamable-http') return 'stateful';
     return this.mcpSessionId ? 'stateful' : 'stateless';
+  }
+
+  /**
+   * Derive which transport carries this connection (undefined before the first connect).
+   * Only the Streamable HTTP transport exposes terminateSession() (it sends an HTTP DELETE);
+   * its absence indicates a stdio transport. The method exists on the HTTP transport
+   * regardless of whether a session id was issued, so it reliably distinguishes the two.
+   */
+  private deriveTransportKind(): TransportKind | undefined {
+    if (!this.hasConnected) return undefined;
+    return typeof this.transport?.terminateSession === 'function' ? 'streamable-http' : 'stdio';
   }
 
   /**

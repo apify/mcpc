@@ -33,13 +33,23 @@ test_pass
 # Test: negotiated protocol version is detected for stdio sessions.
 # Regression guard: MCP SDK v1's stdio client transport never exposed the
 # negotiated protocolVersion (typescript-sdk#1468), so mcpc <= 0.5.0 showed
-# "Protocol: unknown" for every stdio server. The v2 client reports it via
+# "MCP version: unknown" for every stdio server. The v2 client reports it via
 # getNegotiatedProtocolVersion() regardless of transport.
 test_case "protocol version is detected for stdio session"
 run_mcpc "$SESSION"
 assert_success
-assert_contains "$STDOUT" "Protocol: 20"
-assert_not_contains "$STDOUT" "Protocol: unknown"
+assert_contains "$STDOUT" "MCP version: 20"
+assert_not_contains "$STDOUT" "MCP version: unknown"
+# The same line names the transport: a stdio child process is always stateful
+assert_contains "$STDOUT" "stdio (stateful)"
+test_pass
+
+# Test: --json reports the transport next to the stateless flag
+test_case "transport in --json session details"
+run_mcpc --json "$SESSION"
+assert_success
+assert_eq "$(json_get '._mcpc.transport')" "stdio" "transport should be stdio"
+assert_eq "$(json_get '._mcpc.stateless')" "false" "stdio connections are stateful"
 test_pass
 
 # Test: protocol version is present in --json session details

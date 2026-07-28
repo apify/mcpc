@@ -21,10 +21,12 @@ import type {
   Task,
   CallToolResult,
   ResourceSubscriptionEntry,
+  TransportKind,
 } from '../lib/types.js';
 import { extractAllTextContent } from './tool-result.js';
 import { getSession } from '../lib/sessions.js';
 import { getBridgeLogPath } from '../lib/log-reader.js';
+import { isModernProtocolVersion } from '../core/protocol.js';
 
 // Re-export for external use
 export { extractAllTextContent } from './tool-result.js';
@@ -1593,6 +1595,11 @@ export function formatJsonError(error: Error, code: number): string {
   });
 }
 
+/** Human-readable name of a transport kind (the `--json` field keeps the wire spelling). */
+function formatTransportKind(transport: TransportKind): string {
+  return transport === 'stdio' ? 'stdio' : 'Streamable HTTP';
+}
+
 /**
  * Format server details for human-readable output
  */
@@ -1607,7 +1614,8 @@ export function formatServerDetails(
   const bullet = chalk.dim('*');
   const bt = chalk.gray('`'); // backtick
 
-  const { serverInfo, capabilities, instructions, protocolVersion, connectionMode } = details;
+  const { serverInfo, capabilities, instructions, protocolVersion, connectionMode, transport } =
+    details;
 
   // Server info
   if (serverInfo) {
@@ -1617,20 +1625,28 @@ export function formatServerDetails(
     lines.push('');
   }
 
-  // Protocol version + whether the connection is stateful (stateless = 2026-07-28 model,
-  // any request may hit any server instance; stateful = stdio process or HTTP session id)
-  const hasMode = connectionMode !== undefined && connectionMode !== 'unknown';
-  if (protocolVersion || hasMode) {
-    const modeParts = [
-      ...(hasMode ? [connectionMode] : []),
-      ...(pinnedProtocolVersion ? ['pinned'] : []),
-    ];
-    const mode = modeParts.length > 0 ? ` (${modeParts.join(', ')})` : '';
-    lines.push(chalk.bold('Protocol:') + ` ${protocolVersion ?? 'unknown'}${mode}`);
+  // One line for how mcpc is talking to the server: the negotiated protocol version
+  // ("(pinned)" when --protocol-version fixed it), the transport, and whether that
+  // transport carries server-side session state. The mode belongs to the transport, not
+  // to the version: a 2025-11-25 HTTP server that issues no session id is stateless too,
+  // while stdio is always stateful. Mirrored in `--json` as `_mcpc.transport`/`stateless`.
+  if (protocolVersion) {
+    const pinned = pinnedProtocolVersion ? ` ${chalk.gray('(pinned)')}` : '';
+    const mode = connectionMode && connectionMode !== 'unknown' ? ` (${connectionMode})` : '';
+    const via = transport ? chalk.gray(' / ') + `${formatTransportKind(transport)}${mode}` : '';
+    lines.push(chalk.bold('MCP version:') + ` ${protocolVersion}${pinned}${via}`);
     lines.push('');
   }
 
-  // Capabilities - only show what the server actually exposes
+  // Capabilities - only show what the server actually exposes.
+  // Some capabilities are era-dependent: a 2026-07-28 server may still advertise
+  // `logging` (log notifications survived) or `tasks`, but the matching mcpc commands
+  // don't work there — `logging/setLevel` was removed from the protocol and tasks moved
+  // to an extension mcpc doesn't support yet. Annotate those and drop the commands,
+  // instead of advertising something that only errors out.
+  const isModern = !!protocolVersion && isModernProtocolVersion(protocolVersion);
+  const unusableOnModern = chalk.gray(`(not usable on MCP ${protocolVersion})`);
+
   lines.push(chalk.bold('Capabilities:'));
 
   const capabilityList: string[] = [];
@@ -1655,7 +1671,9 @@ export function formatServerDetails(
   }
 
   if (capabilities?.logging) {
-    capabilityList.push(`${bullet} logging`);
+    // Modern era: log notifications still arrive, but logging-set-level is gone
+    const note = isModern ? ` ${chalk.gray('(notifications only)')}` : '';
+    capabilityList.push(`${bullet} logging${note}`);
   }
 
   if (capabilities?.completions) {
@@ -1666,7 +1684,8 @@ export function formatServerDetails(
     const features: string[] = [];
     if (capabilities.tasks.requests?.tools?.call) features.push('tools');
     const featureStr = features.length > 0 ? ` (${features.join(', ')})` : '';
-    capabilityList.push(`${bullet} tasks${featureStr}`);
+    const note = isModern ? ` ${unusableOnModern}` : '';
+    capabilityList.push(`${bullet} tasks${featureStr}${note}`);
   }
 
   // Experimental extension: io.modelcontextprotocol/skills (SEP-2640).
@@ -1758,14 +1777,15 @@ export function formatServerDetails(
     );
   }
 
-  if (capabilities?.tasks) {
+  // Task and logging commands are 2025-era only — see the capabilities note above
+  if (capabilities?.tasks && !isModern) {
     commands.push(`${bullet} ${bt}mcpc ${target} tasks-list${bt}`);
     commands.push(`${bullet} ${bt}mcpc ${target} tasks-get <taskId>${bt}`);
     commands.push(`${bullet} ${bt}mcpc ${target} tasks-result <taskId>${bt}`);
     commands.push(`${bullet} ${bt}mcpc ${target} tasks-cancel <taskId>${bt}`);
   }
 
-  if (capabilities?.logging) {
+  if (capabilities?.logging && !isModern) {
     commands.push(`${bullet} ${bt}mcpc ${target} logging-set-level <lvl>${bt}`);
   }
 

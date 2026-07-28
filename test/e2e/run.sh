@@ -476,6 +476,7 @@ echo ""
 
 PASSED=0
 FAILED=0
+SKIPPED=0
 FAILED_TESTS=()
 
 for test in "${TESTS[@]}"; do
@@ -485,7 +486,12 @@ for test in "${TESTS[@]}"; do
 
   if [[ -f "$result_file" ]]; then
     result=$(cat "$result_file")
-    if [[ "$result" == "0" ]]; then
+    # A suite that skipped itself (skip_suite / require_server_protocol) exits 0 but
+    # ran nothing — report it as skipped so a whole missing matrix column can't look green
+    if [[ "$result" == "0" && -f "$test_dir/.skipped" ]]; then
+      echo -e "${YELLOW}⊘${NC} $test_id ${DIM}($(cat "$test_dir/.skipped"))${NC}"
+      ((SKIPPED++)) || true
+    elif [[ "$result" == "0" ]]; then
       echo -e "${GREEN}✓${NC} $test_id"
       ((PASSED++)) || true
     else
@@ -503,9 +509,10 @@ done
 # Summary
 echo ""
 echo -e "${BLUE}────────────────────────────────────────${NC}"
-echo "Total:  $((PASSED + FAILED))"
-echo -e "Passed: ${GREEN}$PASSED${NC}"
-echo -e "Failed: ${RED}$FAILED${NC}"
+echo "Total:   $((PASSED + FAILED + SKIPPED))"
+echo -e "Passed:  ${GREEN}$PASSED${NC}"
+echo -e "Skipped: ${YELLOW}$SKIPPED${NC}"
+echo -e "Failed:  ${RED}$FAILED${NC}"
 
 # Show failed test logs
 if [[ ${#FAILED_TESTS[@]} -gt 0 ]]; then
