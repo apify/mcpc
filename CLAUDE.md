@@ -270,7 +270,7 @@ Run `mcpc --help` and `mcpc help <command>` for the authoritative, always-curren
 
 ### Security Considerations
 
-Implements [MCP security best practices](https://modelcontextprotocol.io/specification/2025-11-25/basic/security_best_practices):
+Implements [MCP security best practices](https://modelcontextprotocol.io/specification/2026-07-28/basic/security_best_practices):
 
 **Credential protection:**
 

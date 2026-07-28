@@ -315,7 +315,9 @@ export async function showServerDetails(
       );
     } else {
       // JSON output MUST match MCP InitializeResult structure!
-      // See https://modelcontextprotocol.io/specification/2025-11-25/schema#initializeresult
+      // InitializeResult is a 2025-11-25-only concept (2026-07-28 replaced the initialize
+      // handshake with server/discover's DiscoverResult) — see
+      // https://modelcontextprotocol.io/specification/2025-11-25/schema#initializeresult
       // Build _mcpc.server with redacted headers for security
       const server: ServerConfig = {
         ...context.serverConfig,

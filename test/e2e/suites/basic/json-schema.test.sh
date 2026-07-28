@@ -1,7 +1,7 @@
 #!/bin/bash
 # Test: JSON output schema consistency with MCP specification
 # Ensures --json output matches the MCP protocol specification
-# Reference: https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle
+# Reference: https://modelcontextprotocol.io/specification/2026-07-28/basic/lifecycle
 
 source "$(dirname "$0")/../../lib/framework.sh"
 test_init "basic/json-schema"

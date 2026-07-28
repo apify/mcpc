@@ -13,6 +13,7 @@ import chalk from 'chalk';
 import { formatJson, formatJsonError, jsonHelp, rainbow, theme } from './output.js';
 import {
   SCHEMA_BASE,
+  LEGACY_SCHEMA_BASE,
   SERVER_DETAILS_JSON_HELP_INLINE,
   serverDetailsJsonHelp,
 } from './help-text.js';
@@ -698,7 +699,7 @@ ${chalk.bold('Client registration (how mcpc identifies itself to the server):')}
   3. Dynamic Client Registration (DCR): fallback when CIMD is unsupported or
      disabled and the server exposes a registration_endpoint.
 
-  See https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization
+  See https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization
 
 ${chalk.bold('Machine-to-machine authentication (for CI/CD and daemons):')}
   Pass --grant client-credentials, --client-id, and one credential:
@@ -1116,6 +1117,10 @@ ${jsonHelp(
     `${SCHEMA_BASE}#calltoolresult`
   );
 
+  // TODO: CreateTaskResult/Task only exist on the 2025-11-25 schema page — tasks moved to the
+  // io.modelcontextprotocol/tasks extension for 2026-07-28, which the SDK doesn't implement yet
+  // (see CLAUDE.md). Once the SDK adds it, point this (and the #task links on tasks-list/
+  // tasks-get/tasks-result) at wherever that extension's schema ends up living.
   const toolsCallCombinedJsonHelp = `
 ${chalk.bold('JSON output (--json):')}
   \`CallToolResult\` object:
@@ -1124,7 +1129,7 @@ ${chalk.bold('JSON output (--json):')}
 
   With \`--detach\`: \`CreateTaskResult\` object:
   \`{ taskId: string, status: string }\`
-  Schema: ${SCHEMA_BASE}#createtaskresult
+  Schema: ${LEGACY_SCHEMA_BASE}#createtaskresult
 `;
 
   program
@@ -1186,7 +1191,7 @@ ${toolsCallCombinedJsonHelp}`
       jsonHelp(
         '`{ tasks: Task[] }`',
         '`{ tasks: [{ taskId, status, ttl, createdAt, lastUpdatedAt, statusMessage?, pollInterval? }] }`',
-        `${SCHEMA_BASE}#task`
+        `${LEGACY_SCHEMA_BASE}#task`
       )
     )
     .action(async (_options, command) => {
@@ -1201,7 +1206,7 @@ ${toolsCallCombinedJsonHelp}`
       jsonHelp(
         '`Task` object',
         '`{ taskId, status, ttl, createdAt, lastUpdatedAt, statusMessage?, pollInterval? }`',
-        `${SCHEMA_BASE}#task`
+        `${LEGACY_SCHEMA_BASE}#task`
       )
     )
     .action(async (taskId, _options, command) => {
@@ -1224,7 +1229,7 @@ ${toolsCallCombinedJsonHelp}`
       jsonHelp(
         '`Task` object',
         '`{ taskId, status, ttl, createdAt, lastUpdatedAt, statusMessage?, pollInterval? }`',
-        `${SCHEMA_BASE}#task`
+        `${LEGACY_SCHEMA_BASE}#task`
       )
     )
     .action(async (taskId, _options, command) => {
@@ -1239,7 +1244,7 @@ ${toolsCallCombinedJsonHelp}`
       'after',
       jsonHelp(
         'Array of `Resource` objects',
-        '`[{ uri, name?, description?, mimeType? }, ...]`',
+        '`[{ uri, name, description?, mimeType? }, ...]`',
         `${SCHEMA_BASE}#resource`
       )
     )
@@ -1263,9 +1268,10 @@ ${chalk.bold('Output:')}
   matching <uri> (or the first one) — use --json to get all items.
 ${jsonHelp(
   '`ReadResourceResult` object',
-  '`{ contents: [{ uri, mimeType?, text? | blob? }] }`',
+  '`{ contents: [{ uri, mimeType?, text? | blob? }], ttlMs?, cacheScope? }`',
   `${SCHEMA_BASE}#readresourceresult`
 )}
+  \`ttlMs\`/\`cacheScope\` are caching hints only present on 2026-07-28 connections.
   With \`-o\`: \`{ uri, file, bytes, mimeType? }\` summary instead.
 `
     )
@@ -1314,7 +1320,7 @@ ${jsonHelp('`{ subscribed: true, uri, file, bytes, mimeType? }`')}`
       'after',
       jsonHelp(
         'Array of `ResourceTemplate` objects',
-        '`[{ uriTemplate, name?, description?, mimeType? }, ...]`',
+        '`[{ uriTemplate, name, description?, mimeType? }, ...]`',
         `${SCHEMA_BASE}#resourcetemplate`
       )
     )
@@ -1357,7 +1363,7 @@ ${chalk.bold('Names:')}
   \`name\`, \`nested/path\`, or \`skill://...\` URI. For \`archive\` skills, use
   \`resources-read <url>\`. With --json, --raw is ignored.
 ${jsonHelp(
-  '`ReadResourceResult`: `{ contents: [{ uri, mimeType?, text? | blob? }] }`',
+  '`ReadResourceResult`: `{ contents: [{ uri, mimeType?, text? | blob? }], ttlMs?, cacheScope? }`',
   undefined,
   `${SCHEMA_BASE}#readresourceresult`
 )}`
