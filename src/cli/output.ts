@@ -1617,24 +1617,25 @@ export function formatServerDetails(
   const { serverInfo, capabilities, instructions, protocolVersion, connectionMode, transport } =
     details;
 
-  // Server info
-  if (serverInfo) {
-    lines.push(
-      chalk.bold('Server:') + ` ${serverInfo.name} (version: ${serverInfo.version || 'N/A'})`
-    );
-    lines.push('');
-  }
-
   // One line for how mcpc is talking to the server: the negotiated protocol version
   // ("(pinned)" when --protocol-version fixed it), the transport, and whether that
   // transport carries server-side session state. The mode belongs to the transport, not
   // to the version: a 2025-11-25 HTTP server that issues no session id is stateless too,
   // while stdio is always stateful. Mirrored in `--json` as `_mcpc.transport`/`stateless`.
+  // Comes first: the connection is what the rest of the screen is reported over.
   if (protocolVersion) {
     const pinned = pinnedProtocolVersion ? ` ${chalk.gray('(pinned)')}` : '';
     const mode = connectionMode && connectionMode !== 'unknown' ? ` (${connectionMode})` : '';
     const via = transport ? chalk.gray(' / ') + `${formatTransportKind(transport)}${mode}` : '';
     lines.push(chalk.bold('MCP:') + ` version ${protocolVersion}${pinned}${via}`);
+    lines.push('');
+  }
+
+  // Server info
+  if (serverInfo) {
+    lines.push(
+      chalk.bold('Server:') + ` ${serverInfo.name} (version: ${serverInfo.version || 'N/A'})`
+    );
     lines.push('');
   }
 
