@@ -3,6 +3,11 @@
 # nx self-replicator, etc.). 7200 minutes = 5 days.
 minimumReleaseAge: 7200
 
+# Explicitly requested versions that are newer than minimumReleaseAge allows.
+# Remove entries once the pinned version is older than the age limit.
+minimumReleaseAgeExclude:
+  - "@modelcontextprotocol/sdk"
+
 # @napi-rs/keyring ships a native node binding that needs to be built/copied
 # into place on install. Without this entry pnpm v10 refuses to run its
 # postinstall script and the keychain feature breaks at runtime.
