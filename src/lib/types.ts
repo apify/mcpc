@@ -143,6 +143,13 @@ export type SessionStatus =
 export type ConnectionMode = 'stateful' | 'stateless' | 'unknown';
 
 /**
+ * Transport carrying the MCP connection: a local child process speaking over stdin/stdout,
+ * or Streamable HTTP. Derived from the live transport, so it reflects what is actually in
+ * use rather than what the config asked for.
+ */
+export type TransportKind = 'stdio' | 'streamable-http';
+
+/**
  * Notification timestamps for list change events
  * Tracks when the server last notified about changes to tools, prompts, or resources
  */
@@ -480,6 +487,8 @@ export interface ServerDetails {
   instructions?: string;
   /** Whether the connection carries server-side session state (derived from transport + session id) */
   connectionMode?: ConnectionMode;
+  /** Transport carrying the connection (derived from the live transport) */
+  transport?: TransportKind;
 }
 
 /**

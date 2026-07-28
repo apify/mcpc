@@ -173,7 +173,7 @@ const SERVER_DETAILS_JSON_HELP = `${jsonHelp(
   '`InitializeResult` object, extended with `toolNames` and `_mcpc` metadata',
   '`{ protocolVersion?, capabilities?, serverInfo?, instructions?, toolNames?, _mcpc: {...} }`',
   `${SCHEMA_BASE}#initializeresult`
-)}  \`_mcpc\`: \`{ sessionName, profileName?, server, stateless, logPath?, resourceSubscriptions? }\`
+)}  \`_mcpc\`: \`{ sessionName, profileName?, server, transport, stateless, logPath?, ... }\`
 `;
 
 async function main(): Promise<void> {

@@ -135,6 +135,23 @@ describe('connection mode', () => {
   });
 });
 
+describe('transport kind', () => {
+  it('reports streamable-http for an HTTP transport', async () => {
+    const client = await connectClient({ transport: httpTransport('sess-1') });
+    expect((await client.getServerDetails()).transport).toBe('streamable-http');
+  });
+
+  it('reports stdio for a stdio transport', async () => {
+    const client = await connectClient({ transport: stdioTransport(), era: 'modern' });
+    expect((await client.getServerDetails()).transport).toBe('stdio');
+  });
+
+  it('reports nothing before connecting', async () => {
+    const client = new McpClient({ name: 'test', version: '0.0.0' });
+    expect((await client.getServerDetails()).transport).toBeUndefined();
+  });
+});
+
 describe('protocol era', () => {
   it('uses the era reported by the SDK client', async () => {
     const client = await connectClient({ era: 'modern' });

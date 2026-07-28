@@ -21,6 +21,7 @@ import type {
   Task,
   CallToolResult,
   ResourceSubscriptionEntry,
+  TransportKind,
 } from '../lib/types.js';
 import { extractAllTextContent } from './tool-result.js';
 import { getSession } from '../lib/sessions.js';
@@ -1594,6 +1595,11 @@ export function formatJsonError(error: Error, code: number): string {
   });
 }
 
+/** Human-readable name of a transport kind (the `--json` field keeps the wire spelling). */
+function formatTransportKind(transport: TransportKind): string {
+  return transport === 'stdio' ? 'stdio' : 'Streamable HTTP';
+}
+
 /**
  * Format server details for human-readable output
  */
@@ -1608,7 +1614,8 @@ export function formatServerDetails(
   const bullet = chalk.dim('*');
   const bt = chalk.gray('`'); // backtick
 
-  const { serverInfo, capabilities, instructions, protocolVersion } = details;
+  const { serverInfo, capabilities, instructions, protocolVersion, connectionMode, transport } =
+    details;
 
   // Server info
   if (serverInfo) {
@@ -1618,13 +1625,16 @@ export function formatServerDetails(
     lines.push('');
   }
 
-  // Negotiated MCP protocol version, plus "(pinned)" when --protocol-version fixed it.
-  // The connection's stateful/stateless mode is deliberately not shown: mcpc's session
-  // abstracts it away, so there is nothing to act on. It stays in `--json` (the
-  // `_mcpc.stateless` field) for callers that care about resumability.
+  // One line for how mcpc is talking to the server: the negotiated protocol version
+  // ("(pinned)" when --protocol-version fixed it), the transport, and whether that
+  // transport carries server-side session state. The mode belongs to the transport, not
+  // to the version: a 2025-11-25 HTTP server that issues no session id is stateless too,
+  // while stdio is always stateful. Mirrored in `--json` as `_mcpc.transport`/`stateless`.
   if (protocolVersion) {
     const pinned = pinnedProtocolVersion ? ` ${chalk.gray('(pinned)')}` : '';
-    lines.push(chalk.bold('MCP version:') + ` ${protocolVersion}${pinned}`);
+    const mode = connectionMode && connectionMode !== 'unknown' ? ` (${connectionMode})` : '';
+    const via = transport ? chalk.gray(' / ') + `${formatTransportKind(transport)}${mode}` : '';
+    lines.push(chalk.bold('MCP version:') + ` ${protocolVersion}${pinned}${via}`);
     lines.push('');
   }
 

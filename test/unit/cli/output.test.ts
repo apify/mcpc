@@ -1060,33 +1060,60 @@ describe('formatServerDetails', () => {
     expect(output).toContain('This is the server instructions.');
   });
 
-  it('shows the negotiated MCP version without the connection mode', () => {
+  it('shows the MCP version with the transport and its connection mode', () => {
     const details: ServerDetails = {
       protocolVersion: '2026-07-28',
       capabilities: {},
       serverInfo: { name: 'Stateless Server', version: '1.0.0' },
       connectionMode: 'stateless',
+      transport: 'streamable-http',
     };
 
     const output = formatServerDetails(details, '@s');
 
-    // The stateful/stateless mode is --json-only (`_mcpc.stateless`)
-    expect(output).toContain('MCP version: 2026-07-28');
-    expect(output).not.toContain('stateless');
-    expect(output).not.toContain('stateful');
+    expect(output).toContain('MCP version: 2026-07-28 / Streamable HTTP (stateless)');
   });
 
-  it('marks a pinned MCP version', () => {
+  it('names the stdio transport', () => {
+    const details: ServerDetails = {
+      protocolVersion: '2025-11-25',
+      capabilities: {},
+      serverInfo: { name: 'Local Server', version: '1.0.0' },
+      connectionMode: 'stateful',
+      transport: 'stdio',
+    };
+
+    const output = formatServerDetails(details, '@s');
+
+    expect(output).toContain('MCP version: 2025-11-25 / stdio (stateful)');
+  });
+
+  it('marks a pinned MCP version and omits an unknown connection mode', () => {
     const details: ServerDetails = {
       protocolVersion: '2025-11-25',
       capabilities: {},
       serverInfo: { name: 'Pinned Server', version: '1.0.0' },
-      connectionMode: 'stateful',
+      connectionMode: 'unknown',
+      transport: 'streamable-http',
     };
 
     const output = formatServerDetails(details, '@s', undefined, undefined, '2025-11-25');
 
-    expect(output).toContain('MCP version: 2025-11-25 (pinned)');
+    expect(output).toContain('MCP version: 2025-11-25 (pinned) / Streamable HTTP');
+    expect(output).not.toContain('(unknown)');
+  });
+
+  it('shows the MCP version alone when the transport is not known yet', () => {
+    const details: ServerDetails = {
+      protocolVersion: '2025-11-25',
+      capabilities: {},
+      serverInfo: { name: 'S', version: '1.0.0' },
+    };
+
+    const output = formatServerDetails(details, '@s');
+
+    // No transport part, so no " / ..." suffix on the version line
+    expect(output).toContain('MCP version: 2025-11-25\n');
   });
 
   it('annotates logging and tasks as era-limited on a 2026-07-28 connection', () => {

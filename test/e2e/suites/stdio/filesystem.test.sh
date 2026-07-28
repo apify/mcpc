@@ -40,6 +40,16 @@ run_mcpc "$SESSION"
 assert_success
 assert_contains "$STDOUT" "MCP version: 20"
 assert_not_contains "$STDOUT" "MCP version: unknown"
+# The same line names the transport: a stdio child process is always stateful
+assert_contains "$STDOUT" "stdio (stateful)"
+test_pass
+
+# Test: --json reports the transport next to the stateless flag
+test_case "transport in --json session details"
+run_mcpc --json "$SESSION"
+assert_success
+assert_eq "$(json_get '._mcpc.transport')" "stdio" "transport should be stdio"
+assert_eq "$(json_get '._mcpc.stateless')" "false" "stdio connections are stateful"
 test_pass
 
 # Test: protocol version is present in --json session details

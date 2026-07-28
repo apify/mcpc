@@ -341,6 +341,7 @@ export async function showServerDetails(
               sessionName: context.sessionName,
               profileName: context.profileName,
               server,
+              ...(serverDetails.transport && { transport: serverDetails.transport }),
               ...statelessField(connectionMode),
               ...(logPath && { logPath }),
               ...(resourceSubscriptions.length > 0 && { resourceSubscriptions }),

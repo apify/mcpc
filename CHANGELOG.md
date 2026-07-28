@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - On servers using MCP 2026-07-28, `logging-set-level` returns an error (the protocol removed `logging/setLevel`) and the task commands (`tasks-list`, `tasks-get`, `tasks-result`, `tasks-cancel`, `tools-call --task/--detach`) report that the new tasks extension is not supported yet — they keep working unchanged on 2025-11-25 servers.
-- `mcpc @session` now labels the negotiated protocol version `MCP version:` (was `Protocol:`) and no longer prints whether the connection is stateful or stateless — the session abstracts that away, and `--json` still reports it as `_mcpc.stateless`.
+- `mcpc @session` now reports the connection on one line — `MCP version: 2025-11-25 / Streamable HTTP (stateless)` — naming the protocol (the label was just `Protocol:`) and the transport carrying it. `--json` gained the matching `_mcpc.transport` field next to `_mcpc.stateless`.
 - `mcpc @session` no longer suggests commands that cannot work on a 2026-07-28 connection: the `logging` and `tasks` capabilities are flagged as era-limited, and `logging-set-level` / `tasks-*` are left out of the suggested commands.
 - `tools-call --task/--detach` against a server that does not support task-augmented tool calls now fails instead of printing a warning and running the tool synchronously. The flags change the shape of the output, so the fallback left `--detach` callers parsing a `taskId` that was never there, with exit code 0.
 - Updated the MCP TypeScript SDK v2 to `2.0.0-beta.5`, which fixes interoperability with 2026-07-28 servers built on the latest SDK betas (they require the new `Mcp-Method` request header that older clients did not send).
