@@ -3,8 +3,8 @@
 # nx self-replicator, etc.). 7200 minutes = 5 days.
 minimumReleaseAge: 7200
 
-# The MCP TypeScript SDK v2 betas ship fast and mcpc tracks them closely (the
-# 2026-07-28 protocol support depends on the latest beta), so exempt the SDK
+# The MCP TypeScript SDK v2 ships fast and mcpc tracks it closely (the
+# 2026-07-28 protocol support depends on the latest release), so exempt the SDK
 # packages from the release-age gate. Scoped to the official
 # @modelcontextprotocol org only; everything else keeps the 5-day quarantine.
 minimumReleaseAgeExclude:
