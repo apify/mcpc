@@ -60,6 +60,7 @@ import type { ProxyConfig } from '../lib/types.js';
 import type { X402PaymentCache } from '../lib/x402/fetch-middleware.js';
 import type { SignerWallet } from '../lib/x402/signer.js';
 import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js';
+import { buildX402RetryMeta } from './x402-retry.js';
 
 // HTTP proxy and TLS settings are configured in main() after parsing --insecure flag
 
@@ -1281,10 +1282,7 @@ class BridgeProcess {
             paymentPayload?: Record<string, unknown>
           ): Promise<unknown> => {
             const requestMeta = paymentPayload
-              ? {
-                  ...params._meta,
-                  ['x402/payment']: paymentPayload,
-                }
+              ? buildX402RetryMeta(params._meta, paymentPayload)
               : params._meta;
 
             if (params.useTask && client.supportsTasksForToolCall()) {
