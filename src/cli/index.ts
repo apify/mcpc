@@ -1366,8 +1366,7 @@ ${jsonHelp(
   '`ReadResourceResult`: `{ contents: [{ uri, mimeType?, text? | blob? }], ttlMs?, cacheScope? }`',
   undefined,
   `${SCHEMA_BASE}#readresourceresult`
-)}
-  \`ttlMs\`/\`cacheScope\` are caching hints only present on 2026-07-28 connections.`
+)}`
     )
     .action(async (name, options, command) => {
       await skills.getSkill(session, name, {
