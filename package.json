@@ -1,6 +1,6 @@
 {
   "name": "@apify/mcpc",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Universal command-line client for the Model Context Protocol (MCP).",
   "type": "module",
   "keywords": [
