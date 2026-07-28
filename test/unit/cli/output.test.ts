@@ -1071,7 +1071,7 @@ describe('formatServerDetails', () => {
 
     const output = formatServerDetails(details, '@s');
 
-    expect(output).toContain('MCP version: 2026-07-28 / Streamable HTTP (stateless)');
+    expect(output).toContain('MCP: version 2026-07-28 / Streamable HTTP (stateless)');
   });
 
   it('names the stdio transport', () => {
@@ -1085,7 +1085,7 @@ describe('formatServerDetails', () => {
 
     const output = formatServerDetails(details, '@s');
 
-    expect(output).toContain('MCP version: 2025-11-25 / stdio (stateful)');
+    expect(output).toContain('MCP: version 2025-11-25 / stdio (stateful)');
   });
 
   it('marks a pinned MCP version and omits an unknown connection mode', () => {
@@ -1099,7 +1099,7 @@ describe('formatServerDetails', () => {
 
     const output = formatServerDetails(details, '@s', undefined, undefined, '2025-11-25');
 
-    expect(output).toContain('MCP version: 2025-11-25 (pinned) / Streamable HTTP');
+    expect(output).toContain('MCP: version 2025-11-25 (pinned) / Streamable HTTP');
     expect(output).not.toContain('(unknown)');
   });
 
@@ -1113,7 +1113,7 @@ describe('formatServerDetails', () => {
     const output = formatServerDetails(details, '@s');
 
     // No transport part, so no " / ..." suffix on the version line
-    expect(output).toContain('MCP version: 2025-11-25\n');
+    expect(output).toContain('MCP: version 2025-11-25\n');
   });
 
   it('annotates logging and tasks as era-limited on a 2026-07-28 connection', () => {
@@ -1169,7 +1169,7 @@ describe('formatServerDetails', () => {
     // Should contain server version without protocol version
     expect(output).toContain('Server:');
     expect(output).toContain('Minimal Server (version: 0.1.0)');
-    expect(output).not.toContain('MCP version');
+    expect(output).not.toContain('MCP:');
 
     // Should show (none) for capabilities
     expect(output).toContain('Capabilities:');

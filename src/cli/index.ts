@@ -11,6 +11,11 @@ import { setVerbose, setJsonMode, closeFileLogger } from '../lib/index.js';
 import { isMcpError, formatHumanError, ClientError } from '../lib/index.js';
 import chalk from 'chalk';
 import { formatJson, formatJsonError, jsonHelp, rainbow, theme } from './output.js';
+import {
+  SCHEMA_BASE,
+  SERVER_DETAILS_JSON_HELP_INLINE,
+  serverDetailsJsonHelp,
+} from './help-text.js';
 import * as tools from './commands/tools.js';
 import * as resources from './commands/resources.js';
 import * as skills from './commands/skills.js';
@@ -162,19 +167,6 @@ function getOptionsFromCommand(command: Command): HandlerOptions {
 
   return options;
 }
-
-const SCHEMA_BASE = 'https://modelcontextprotocol.io/specification/2025-11-25/schema';
-
-/**
- * JSON help shared by every command that prints a session's server details:
- * `mcpc @session` (no command) and `restart`, which shows the details again.
- */
-const SERVER_DETAILS_JSON_HELP = `${jsonHelp(
-  '`InitializeResult` object, extended with `toolNames` and `_mcpc` metadata',
-  '`{ protocolVersion?, capabilities?, serverInfo?, instructions?, toolNames?, _mcpc: {...} }`',
-  `${SCHEMA_BASE}#initializeresult`
-)}  \`_mcpc\`: \`{ sessionName, profileName?, server, transport, stateless, logPath?, ... }\`
-`;
 
 async function main(): Promise<void> {
   // Disambiguate `--x402 <non-scheme>` (URL, @session, etc.) so Commander's
@@ -523,11 +515,7 @@ ${chalk.bold('Protocol version:')}
 ${chalk.bold('x402 payments (experimental):')}
   --x402 pays for paid tool calls from the wallet set up with mcpc x402.
   Schemes: auto (default, prefers upto), upto, exact.
-${jsonHelp(
-  'Array of `InitializeResult` objects (one per session), extended with `toolNames` and `_mcpc` metadata',
-  '`[{ protocolVersion?, capabilities?, serverInfo?, instructions?, toolNames?, _mcpc: { sessionName, server?, ... }]`',
-  `${SCHEMA_BASE}#initializeresult`
-)}`
+${serverDetailsJsonHelp('array')}`
     )
     .action(async (server, sessionName, opts, command) => {
       const globalOpts = getOptionsFromCommand(command);
@@ -647,7 +635,7 @@ ${jsonHelp(
     .description('Restart a session (losing all state)')
     .addHelpText(
       'after',
-      `\nAfter restarting, the session details are shown again.\n${SERVER_DETAILS_JSON_HELP}`
+      `\nAfter restarting, the session details are shown again.\n${serverDetailsJsonHelp('object')}`
     )
     .action(async (sessionName, _opts, command) => {
       if (!sessionName) {
@@ -1033,7 +1021,7 @@ function registerSessionCommands(program: Command, session: string): void {
     .description('Restart MCP session (losing all state).')
     .addHelpText(
       'after',
-      `\nAfter restarting, the session details are shown again.\n${SERVER_DETAILS_JSON_HELP}`
+      `\nAfter restarting, the session details are shown again.\n${serverDetailsJsonHelp('object')}`
     )
     .action(async (_options, command) => {
       await sessions.restartSession(session, getOptionsFromCommand(command));
@@ -1521,7 +1509,7 @@ function createSessionProgram(): Command {
 
   program
     .name('mcpc <@session>')
-    .description('Execute MCP commands on a connected session.')
+    .description('Show MCP session info or execute commands.')
     .helpOption('-h, --help', 'Display help')
     .option('--json', 'Output in JSON format for scripting and code mode')
     .option('--verbose', 'Enable debug logging')
@@ -1533,7 +1521,7 @@ function createSessionProgram(): Command {
       'after',
       `
 When no command is given, shows server info, capabilities, and tools.
-${SERVER_DETAILS_JSON_HELP}`
+${SERVER_DETAILS_JSON_HELP_INLINE}`
     );
 
   return program;
