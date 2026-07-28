@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Updated dependencies, including the MCP TypeScript SDK to 1.30.0.
+
 ## [0.5.0] - 2026-07-21
 
 ### Changed
