@@ -895,9 +895,13 @@ mcpc @apify
 mcpc @apify --json
 ```
 
-In [JSON mode](#json-mode), the resulting object adheres
-to [`InitializeResult`](https://modelcontextprotocol.io/specification/latest/schema#initializeresult) object schema,
-and includes the `_mcpc` field with relevant server/session metadata.
+In [JSON mode](#json-mode), the resulting object adheres to the schema of the server's
+handshake result — [`InitializeResult`](https://modelcontextprotocol.io/specification/2025-11-25/schema#initializeresult)
+on `2025-11-25` connections, [`DiscoverResult`](https://modelcontextprotocol.io/specification/2026-07-28/schema#discoverresult)
+on `2026-07-28` ones — and includes the `_mcpc` field with relevant server/session metadata.
+`protocolVersion` is always the version actually in use, while `supportedVersions` (every
+version the server offers) and `_meta` come from `server/discover` and are therefore absent
+on `2025-11-25` connections.
 
 ```json
 {
@@ -912,6 +916,7 @@ and includes the `_mcpc` field with relevant server/session metadata.
     }
   },
   "protocolVersion": "2026-07-28",
+  "supportedVersions": ["2026-07-28", "2025-11-25"],
   "capabilities": {
     "logging": {},
     "prompts": {},
@@ -922,7 +927,13 @@ and includes the `_mcpc` field with relevant server/session metadata.
     "name": "apify-mcp-server",
     "version": "1.0.0"
   },
-  "instructions": "Apify is the largest marketplace of tools for web scraping..."
+  "instructions": "Apify is the largest marketplace of tools for web scraping...",
+  "_meta": {
+    "io.modelcontextprotocol/serverInfo": {
+      "name": "apify-mcp-server",
+      "version": "1.0.0"
+    }
+  }
 }
 ```
 

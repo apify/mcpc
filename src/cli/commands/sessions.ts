@@ -291,8 +291,15 @@ export async function showServerDetails(
 ): Promise<void> {
   await withMcpClient(target, options, async (client, context) => {
     const serverDetails = await client.getServerDetails();
-    const { serverInfo, capabilities, instructions, protocolVersion, connectionMode } =
-      serverDetails;
+    const {
+      serverInfo,
+      capabilities,
+      instructions,
+      protocolVersion,
+      supportedVersions,
+      connectionMode,
+      _meta,
+    } = serverDetails;
 
     // Get tools list (uses bridge cache when available, no extra server call)
     const cachedToolsResult = await client.listAllTools();
@@ -314,10 +321,11 @@ export async function showServerDetails(
         )
       );
     } else {
-      // JSON output MUST match MCP InitializeResult structure!
-      // InitializeResult is a 2025-11-25-only concept (2026-07-28 replaced the initialize
-      // handshake with server/discover's DiscoverResult) — see
+      // JSON output MUST match the server's handshake result: MCP `InitializeResult` on
+      // 2025-11-25 connections, `DiscoverResult` (`supportedVersions`, `_meta`) on
+      // 2026-07-28 ones. `ServerDetails` reconciles the two — see its doc comment.
       // https://modelcontextprotocol.io/specification/2025-11-25/schema#initializeresult
+      // https://modelcontextprotocol.io/specification/2026-07-28/schema#discoverresult
       // Build _mcpc.server with redacted headers for security
       const server: ServerConfig = {
         ...context.serverConfig,
@@ -349,9 +357,11 @@ export async function showServerDetails(
               ...(resourceSubscriptions.length > 0 && { resourceSubscriptions }),
             },
             protocolVersion,
+            ...(supportedVersions && { supportedVersions }),
             capabilities,
             serverInfo,
             instructions,
+            ...(_meta && { _meta }),
             ...(tools.length > 0 && { toolNames: tools.map((t) => t.name) }),
           },
           'json'

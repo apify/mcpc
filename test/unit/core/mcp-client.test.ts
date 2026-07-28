@@ -56,12 +56,15 @@ let era: 'modern' | 'legacy' | undefined;
 let negotiatedVersion: string | undefined;
 let listenQueue: StubSubscription[];
 let listenCalls: unknown[];
+/** The `server/discover` result the stub reports; undefined on legacy connections. */
+let discoverResult: Record<string, unknown> | undefined;
 
 function resetSdkStub(): void {
   era = 'legacy';
   negotiatedVersion = '2025-11-25';
   listenQueue = [];
   listenCalls = [];
+  discoverResult = undefined;
   stubSdkClient = {
     connect: vi.fn().mockResolvedValue(undefined),
     close: vi.fn().mockResolvedValue(undefined),
@@ -70,6 +73,7 @@ function resetSdkStub(): void {
     getInstructions: vi.fn().mockReturnValue(undefined),
     getNegotiatedProtocolVersion: vi.fn(() => negotiatedVersion),
     getProtocolEra: vi.fn(() => era),
+    getDiscoverResult: vi.fn(() => discoverResult),
     ping: vi.fn().mockResolvedValue(undefined),
     discover: vi.fn().mockResolvedValue({}),
     listTools: vi.fn().mockResolvedValue({ tools: [] }),
@@ -151,6 +155,33 @@ describe('transport kind', () => {
   it('reports nothing before connecting', async () => {
     const client = new McpClient({ name: 'test', version: '0.0.0' });
     expect((await client.getServerDetails()).transport).toBeUndefined();
+  });
+});
+
+describe('server details', () => {
+  it('reports the discover-only fields on a modern connection', async () => {
+    discoverResult = {
+      supportedVersions: ['2026-07-28', '2025-11-25'],
+      capabilities: {},
+      _meta: { 'io.modelcontextprotocol/serverInfo': { name: 'stub', version: '1.0.0' } },
+    };
+    const client = await connectClient({ era: 'modern' });
+
+    const details = await client.getServerDetails();
+    expect(details.protocolVersion).toBe('2026-07-28');
+    expect(details.supportedVersions).toEqual(['2026-07-28', '2025-11-25']);
+    expect(details._meta).toEqual({
+      'io.modelcontextprotocol/serverInfo': { name: 'stub', version: '1.0.0' },
+    });
+  });
+
+  it('omits them on a legacy connection, which has no discover result', async () => {
+    const client = await connectClient({ era: 'legacy' });
+
+    const details = await client.getServerDetails();
+    expect(details.protocolVersion).toBe('2025-11-25');
+    expect(details.supportedVersions).toBeUndefined();
+    expect(details._meta).toBeUndefined();
   });
 });
 
@@ -433,6 +464,52 @@ describe('tools cache', () => {
     await client.listAllTools();
     expect(stubSdkClient.listTools).toHaveBeenCalledTimes(2);
     vi.mocked(Date.now).mockRestore();
+  });
+
+  it('honors a server-sent ttlMs cache hint over the stateless fallback', async () => {
+    const client = await connectClient({ transport: httpTransport(undefined), era: 'modern' });
+    stubSdkClient.listTools = vi.fn().mockResolvedValue({ tools: [{ name: 'a' }], ttlMs: 5_000 });
+
+    const start = Date.now();
+    await client.listAllTools();
+    expect(stubSdkClient.listTools).toHaveBeenCalledTimes(1);
+
+    // Still fresh per the hint, even though the stateless fallback would also hold here.
+    vi.spyOn(Date, 'now').mockReturnValue(start + 4_000);
+    await client.listAllTools();
+    expect(stubSdkClient.listTools).toHaveBeenCalledTimes(1);
+
+    // Expired per the hint, long before the 60s stateless fallback would have.
+    vi.mocked(Date.now).mockReturnValue(start + 6_000);
+    await client.listAllTools();
+    expect(stubSdkClient.listTools).toHaveBeenCalledTimes(2);
+    vi.mocked(Date.now).mockRestore();
+  });
+
+  it('treats ttlMs 0 as immediately stale on a stateful connection', async () => {
+    const client = await connectClient({ transport: httpTransport('sess-1'), era: 'modern' });
+    stubSdkClient.listTools = vi.fn().mockResolvedValue({ tools: [{ name: 'a' }], ttlMs: 0 });
+
+    await client.listAllTools();
+    await client.listAllTools();
+    expect(stubSdkClient.listTools).toHaveBeenCalledTimes(2);
+  });
+
+  it('bypasses the SDK response cache when refreshing', async () => {
+    const client = await connectClient({ era: 'legacy' });
+    stubSdkClient.listTools = vi.fn().mockResolvedValue({ tools: [{ name: 'a' }] });
+
+    await client.listAllTools();
+    expect(stubSdkClient.listTools).toHaveBeenLastCalledWith(
+      { cursor: undefined },
+      expect.not.objectContaining({ cacheMode: expect.anything() })
+    );
+
+    await client.listAllTools({ refreshCache: true });
+    expect(stubSdkClient.listTools).toHaveBeenLastCalledWith(
+      { cursor: undefined },
+      expect.objectContaining({ cacheMode: 'refresh' })
+    );
   });
 
   it('refetches on an explicit refresh and after invalidation', async () => {

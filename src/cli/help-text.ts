@@ -21,14 +21,22 @@ export const SCHEMA_BASE = 'https://modelcontextprotocol.io/specification/2026-0
 export const LEGACY_SCHEMA_BASE = 'https://modelcontextprotocol.io/specification/2025-11-25/schema';
 
 /**
- * The one JSON shape every server-details command returns: MCP `InitializeResult`
- * extended with `toolNames` and an `_mcpc` metadata block. `connect` returns an array
- * of these (one per session), the session details screens return a single one.
+ * The one JSON shape every server-details command returns: the server's handshake result
+ * — MCP `InitializeResult` on 2025-11-25 connections, `DiscoverResult` on 2026-07-28 ones
+ * — extended with `toolNames` and an `_mcpc` metadata block. `connect` returns an array of
+ * these (one per session), the session details screens return a single one.
+ *
+ * `supportedVersions` and `_meta` only appear on 2026-07-28 connections (the legacy
+ * handshake carries neither); `protocolVersion` is always the version actually in use.
  */
 const SERVER_DETAILS_JSON_SHAPE =
-  '{ protocolVersion?, capabilities?, serverInfo?, instructions?, toolNames?, _mcpc: { sessionName, server?, ... } }';
+  '{ protocolVersion?, supportedVersions?, capabilities?, serverInfo?, instructions?, _meta?, toolNames?, _mcpc: { sessionName, server?, ... } }';
 
 const SERVER_DETAILS_JSON_META = 'extended with `toolNames` and `_mcpc` metadata';
+
+/** Which MCP result the shape mirrors, per protocol era. */
+const SERVER_DETAILS_JSON_ERAS =
+  '`InitializeResult` on MCP 2025-11-25, `DiscoverResult` on 2026-07-28';
 
 /**
  * The shared description of that output: what a command returns and the shape example
@@ -38,11 +46,17 @@ const SERVER_DETAILS_JSON_META = 'extended with `toolNames` and `_mcpc` metadata
 function serverDetailsJson(returns: 'object' | 'array'): { subject: string; shape: string } {
   return returns === 'array'
     ? {
-        subject: 'Array of `InitializeResult` objects (one per session),',
+        subject: `array of server details objects, one per session (${SERVER_DETAILS_JSON_ERAS}),`,
         shape: `\`[${SERVER_DETAILS_JSON_SHAPE}]\``,
       }
-    : { subject: '`InitializeResult` object', shape: `\`${SERVER_DETAILS_JSON_SHAPE}\`` };
+    : {
+        subject: `server details object (${SERVER_DETAILS_JSON_ERAS})`,
+        shape: `\`${SERVER_DETAILS_JSON_SHAPE}\``,
+      };
 }
+
+/** Both handshake-result schemas, each on the spec page whose anchor resolves. */
+const SERVER_DETAILS_SCHEMA_URLS = `${LEGACY_SCHEMA_BASE}#initializeresult (2025-11-25), ${SCHEMA_BASE}#discoverresult (2026-07-28)`;
 
 /**
  * Standard "JSON output (--json):" block for the commands that print server details:
@@ -51,9 +65,9 @@ function serverDetailsJson(returns: 'object' | 'array'): { subject: string; shap
 export function serverDetailsJsonHelp(returns: 'object' | 'array'): string {
   const { subject, shape } = serverDetailsJson(returns);
   return jsonHelp(
-    `${subject} ${SERVER_DETAILS_JSON_META}`,
+    `${subject.charAt(0).toUpperCase()}${subject.slice(1)} ${SERVER_DETAILS_JSON_META}`,
     shape,
-    `${LEGACY_SCHEMA_BASE}#initializeresult`
+    SERVER_DETAILS_SCHEMA_URLS
   );
 }
 
@@ -66,6 +80,6 @@ export const SERVER_DETAILS_JSON_HELP_INLINE = ((): string => {
   const { subject, shape } = serverDetailsJson('object');
   return `With --json, returns the ${subject} ${SERVER_DETAILS_JSON_META}:
 ${shape}
-Schema: ${LEGACY_SCHEMA_BASE}#initializeresult
+Schema: ${SERVER_DETAILS_SCHEMA_URLS}
 `;
 })();
