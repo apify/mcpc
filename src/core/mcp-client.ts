@@ -3,7 +3,11 @@
  * Wraps the @modelcontextprotocol/client (SDK v2) Client class with additional functionality
  */
 
-import { Client as SDKClient, type ClientOptions } from '@modelcontextprotocol/client';
+import {
+  Client as SDKClient,
+  SdkHttpError,
+  type ClientOptions,
+} from '@modelcontextprotocol/client';
 import type {
   Transport,
   McpSubscription,
@@ -191,6 +195,22 @@ export function resolveVersionOptions(
 }
 
 /**
+ * True for the expected HTTP rejection of the connect-time `server/discover` version
+ * probe: servers that don't speak 2026-07-28 answer the probe POST with a 4xx
+ * (typically 400 "no valid session ID", 404, or 405), the transport surfaces it via
+ * `onerror`, and the SDK then falls back to the legacy `initialize` handshake on the
+ * same connection. 401/403 are excluded — those mean the server wants authentication,
+ * which the negotiation reports as a real error.
+ *
+ * Exported for unit tests.
+ */
+export function isExpectedProbeRejection(error: unknown): error is SdkHttpError {
+  if (!(error instanceof SdkHttpError)) return false;
+  const { status } = error;
+  return status >= 400 && status < 500 && status !== 401 && status !== 403;
+}
+
+/**
  * MCP Client wrapper class
  * Provides a convenient interface to the MCP SDK Client with error handling and logging
  * Implements IMcpClient interface for compatibility with SessionClient
@@ -208,6 +228,13 @@ export class McpClient implements IMcpClient {
   private cachedTools: Tool[] | null = null;
   private cachedToolsExpiresAt: number | null = null;
   private isClosing = false;
+  /**
+   * Whether the connection auto-negotiates the protocol version, i.e. a declined
+   * `server/discover` probe falls back to the legacy `initialize` handshake instead of
+   * failing. Pinned connections either skip the probe (legacy pin) or treat a declined
+   * probe as a real failure (modern pin), so their errors are never rewritten.
+   */
+  private readonly autoNegotiates: boolean;
   /** Resource URIs subscribed on a 2026-07-28 connection (served by one listen stream). */
   private modernSubscribedUris = new Set<string>();
   /** The open `subscriptions/listen` stream backing modernSubscribedUris, if any. */
@@ -219,6 +246,7 @@ export class McpClient implements IMcpClient {
       this.requestTimeoutMillis = options.requestTimeoutMillis;
     }
     this.configuredRequestTimeoutMillis = this.requestTimeoutMillis;
+    this.autoNegotiates = options.protocolVersion === undefined;
 
     this.client = new SDKClient(clientInfo, {
       capabilities: options.capabilities || {},
@@ -281,6 +309,16 @@ export class McpClient implements IMcpClient {
         // Ignore abort errors - these occur when connection is closed intentionally
         if (isShutdownError(error)) {
           this.logger.debug('Transport aborted (expected during close)');
+          return;
+        }
+        // A 4xx answer to the connect-time server/discover probe is how servers
+        // without 2026-07-28 support decline it — the SDK falls back to the legacy
+        // initialize handshake, so don't log it as a transport error.
+        if (!this.hasConnected && this.autoNegotiates && isExpectedProbeRejection(error)) {
+          this.logger.debug(
+            `Server declined the server/discover version probe (HTTP ${error.status}), ` +
+              'falling back to the legacy initialize handshake'
+          );
           return;
         }
         // Don't duplicate logging of errors on initial connection
