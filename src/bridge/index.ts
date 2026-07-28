@@ -1165,12 +1165,15 @@ class BridgeProcess {
    */
   private async handlePaymentRequiredRetry(
     toolResult: unknown,
-    retryFn: () => Promise<unknown>
+    retryFn: (paymentPayload: Record<string, unknown>) => Promise<unknown>
   ): Promise<{ handled: true; result: unknown } | { handled: false }> {
     if (!this.x402Wallet) return { handled: false };
 
-    const { extractPaymentRequiredFromResult, extractAcceptFromPaymentRequired } =
-      await import('../lib/x402/fetch-middleware.js');
+    const {
+      decodePaymentPayload,
+      extractPaymentRequiredFromResult,
+      extractAcceptFromPaymentRequired,
+    } = await import('../lib/x402/fetch-middleware.js');
     const paymentRequired = extractPaymentRequiredFromResult(toolResult);
     if (!paymentRequired) return { handled: false };
 
@@ -1184,6 +1187,7 @@ class BridgeProcess {
 
     // Invalidate cache and sign fresh
     this.x402PaymentCache.signature = null;
+    let paymentPayload: Record<string, unknown>;
     try {
       const { signPayment } = await import('../lib/x402/signer.js');
       const signed = await signPayment({
@@ -1191,6 +1195,7 @@ class BridgeProcess {
         accept: parsed.accept,
         resource: parsed.resource,
       });
+      paymentPayload = decodePaymentPayload(signed.paymentSignatureBase64);
       this.x402PaymentCache.signature = signed.paymentSignatureBase64;
       logger.debug(
         `Fresh payment signed for retry: $${signed.amountUsd.toFixed(6)} to ${signed.to} on ${signed.networkLabel}`
@@ -1200,9 +1205,15 @@ class BridgeProcess {
       return { handled: false };
     }
 
-    // Retry once with the new cached payment
-    const result = await retryFn();
-    return { handled: true, result };
+    // Retry once with payment attached to the MCP request metadata. The SDK
+    // transport can use a non-string request body, so fetch-level body
+    // injection is not reliable for this path.
+    try {
+      const result = await retryFn(paymentPayload);
+      return { handled: true, result };
+    } finally {
+      this.x402PaymentCache.signature = null;
+    }
   }
 
   /**
@@ -1266,14 +1277,23 @@ class BridgeProcess {
           // Helper to execute the tool call (used for initial attempt and 402 retry)
           // Capture client ref — guaranteed non-null by check at top of handleMcpRequest
           const client = this.client;
-          const executeToolCall = async (): Promise<unknown> => {
+          const executeToolCall = async (
+            paymentPayload?: Record<string, unknown>
+          ): Promise<unknown> => {
+            const requestMeta = paymentPayload
+              ? {
+                  ...params._meta,
+                  ['x402/payment']: paymentPayload,
+                }
+              : params._meta;
+
             if (params.useTask && client.supportsTasksForToolCall()) {
               if (params.detach) {
                 // Detached execution: start task and return task ID immediately
                 const taskUpdate = await client.callToolDetached(
                   params.name,
                   params.arguments,
-                  params._meta
+                  requestMeta
                 );
                 this.activeTasks.set(taskUpdate.taskId, {
                   taskId: taskUpdate.taskId,
@@ -1313,7 +1333,7 @@ class BridgeProcess {
                   params.name,
                   params.arguments,
                   wrappedOnUpdate,
-                  params._meta
+                  requestMeta
                 );
               } finally {
                 for (const [tid, task] of this.activeTasks) {
@@ -1332,7 +1352,7 @@ class BridgeProcess {
               }
             }
 
-            return client.callTool(params.name, params.arguments, params._meta);
+            return client.callTool(params.name, params.arguments, requestMeta);
           };
 
           // Execute with automatic x402 payment retry on payment-required tool results

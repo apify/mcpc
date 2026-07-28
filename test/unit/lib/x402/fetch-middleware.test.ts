@@ -11,6 +11,7 @@ import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 
 import {
   createX402FetchMiddleware,
+  decodePaymentPayload,
   extractAcceptFromPaymentRequired,
   type X402PaymentCache,
 } from '../../../../src/lib/x402/fetch-middleware.js';
@@ -222,5 +223,26 @@ describe('extractAcceptFromPaymentRequired', () => {
     const uptoOnly = { x402Version: 2, accepts: [UPTO_ACCEPT] };
     const result = extractAcceptFromPaymentRequired(uptoOnly, 'exact');
     expect(result).toBeUndefined();
+  });
+});
+
+describe('decodePaymentPayload', () => {
+  it('decodes an object payload for MCP request metadata', () => {
+    const payload = {
+      x402Version: 2,
+      accepted: EXACT_ACCEPT,
+      payload: { authorization: { nonce: '0x1234' } },
+    };
+    const encoded = Buffer.from(JSON.stringify(payload)).toString('base64');
+
+    expect(decodePaymentPayload(encoded)).toEqual(payload);
+  });
+
+  it('rejects decoded values that are not objects', () => {
+    const encoded = Buffer.from(JSON.stringify(['not-an-object'])).toString('base64');
+
+    expect(() => decodePaymentPayload(encoded)).toThrow(
+      'Decoded x402 payment payload must be an object'
+    );
   });
 });

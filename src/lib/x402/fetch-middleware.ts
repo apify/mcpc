@@ -36,6 +36,20 @@ const logger = createLogger('x402-middleware');
 const MCP_PAYMENT_META_KEY = 'x402/payment';
 
 /**
+ * Decode a base64-encoded x402 payment signature into the payload expected by
+ * the MCP transport metadata field.
+ */
+export function decodePaymentPayload(paymentSignatureBase64: string): Record<string, unknown> {
+  const parsed: unknown = JSON.parse(
+    Buffer.from(paymentSignatureBase64, 'base64').toString('utf-8')
+  );
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('Decoded x402 payment payload must be an object');
+  }
+  return parsed as Record<string, unknown>;
+}
+
+/**
  * Payment information from tool's `_meta.x402`.
  *
  * Apify exposes two shapes side-by-side:
@@ -473,9 +487,7 @@ function injectPayment(init: RequestInit | undefined, paymentSignatureBase64: st
   // 2. JSON-RPC body _meta (x402 MCP spec mechanism)
   if (init?.body && typeof init.body === 'string') {
     try {
-      const paymentPayload = JSON.parse(
-        Buffer.from(paymentSignatureBase64, 'base64').toString('utf-8')
-      ) as Record<string, unknown>;
+      const paymentPayload = decodePaymentPayload(paymentSignatureBase64);
       result.body = injectPaymentMeta(init.body, paymentPayload);
     } catch (error) {
       logger.debug('Failed to inject payment into body _meta:', error);
