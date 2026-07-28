@@ -13,6 +13,7 @@ import chalk from 'chalk';
 import { formatJson, formatJsonError, jsonHelp, rainbow, theme } from './output.js';
 import {
   SCHEMA_BASE,
+  LEGACY_SCHEMA_BASE,
   SERVER_DETAILS_JSON_HELP_INLINE,
   serverDetailsJsonHelp,
 } from './help-text.js';
@@ -1124,7 +1125,7 @@ ${chalk.bold('JSON output (--json):')}
 
   With \`--detach\`: \`CreateTaskResult\` object:
   \`{ taskId: string, status: string }\`
-  Schema: ${SCHEMA_BASE}#createtaskresult
+  Schema: ${LEGACY_SCHEMA_BASE}#createtaskresult
 `;
 
   program
@@ -1186,7 +1187,7 @@ ${toolsCallCombinedJsonHelp}`
       jsonHelp(
         '`{ tasks: Task[] }`',
         '`{ tasks: [{ taskId, status, ttl, createdAt, lastUpdatedAt, statusMessage?, pollInterval? }] }`',
-        `${SCHEMA_BASE}#task`
+        `${LEGACY_SCHEMA_BASE}#task`
       )
     )
     .action(async (_options, command) => {
@@ -1201,7 +1202,7 @@ ${toolsCallCombinedJsonHelp}`
       jsonHelp(
         '`Task` object',
         '`{ taskId, status, ttl, createdAt, lastUpdatedAt, statusMessage?, pollInterval? }`',
-        `${SCHEMA_BASE}#task`
+        `${LEGACY_SCHEMA_BASE}#task`
       )
     )
     .action(async (taskId, _options, command) => {
@@ -1224,7 +1225,7 @@ ${toolsCallCombinedJsonHelp}`
       jsonHelp(
         '`Task` object',
         '`{ taskId, status, ttl, createdAt, lastUpdatedAt, statusMessage?, pollInterval? }`',
-        `${SCHEMA_BASE}#task`
+        `${LEGACY_SCHEMA_BASE}#task`
       )
     )
     .action(async (taskId, _options, command) => {

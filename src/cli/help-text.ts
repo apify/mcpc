@@ -12,6 +12,15 @@ import { jsonHelp } from './output.js';
 export const SCHEMA_BASE = 'https://modelcontextprotocol.io/specification/2026-07-28/schema';
 
 /**
+ * `InitializeResult`, `CreateTaskResult`, and `Task` are 2025-11-25-only concepts: the
+ * 2026-07-28 stateless era dropped the `initialize` handshake in favor of `server/discover`
+ * (returning `DiscoverResult`, not `InitializeResult`), and moved tasks out to the
+ * `io.modelcontextprotocol/tasks` extension, which no longer appears in the core schema.
+ * Those anchors only resolve on the legacy schema page, so link there instead of SCHEMA_BASE.
+ */
+export const LEGACY_SCHEMA_BASE = 'https://modelcontextprotocol.io/specification/2025-11-25/schema';
+
+/**
  * The one JSON shape every server-details command returns: MCP `InitializeResult`
  * extended with `toolNames` and an `_mcpc` metadata block. `connect` returns an array
  * of these (one per session), the session details screens return a single one.
@@ -44,7 +53,7 @@ export function serverDetailsJsonHelp(returns: 'object' | 'array'): string {
   return jsonHelp(
     `${subject} ${SERVER_DETAILS_JSON_META}`,
     shape,
-    `${SCHEMA_BASE}#initializeresult`
+    `${LEGACY_SCHEMA_BASE}#initializeresult`
   );
 }
 
@@ -57,6 +66,6 @@ export const SERVER_DETAILS_JSON_HELP_INLINE = ((): string => {
   const { subject, shape } = serverDetailsJson('object');
   return `With --json, returns the ${subject} ${SERVER_DETAILS_JSON_META}:
 ${shape}
-Schema: ${SCHEMA_BASE}#initializeresult
+Schema: ${LEGACY_SCHEMA_BASE}#initializeresult
 `;
 })();
