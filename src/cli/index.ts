@@ -168,12 +168,15 @@ const SCHEMA_BASE = 'https://modelcontextprotocol.io/specification/2025-11-25/sc
 /**
  * JSON help shared by every command that prints a session's server details:
  * `mcpc @session` (no command) and `restart`, which shows the details again.
+ *
+ * Deliberately not the `jsonHelp()` block: a "JSON output (--json):" heading under
+ * the session help would read as if it described every subcommand listed above it,
+ * while it only applies to the details output itself. One inline sentence instead,
+ * matching how `connect` documents the same shape.
  */
-const SERVER_DETAILS_JSON_HELP = `${jsonHelp(
-  '`InitializeResult` object, extended with `toolNames` and `_mcpc` metadata',
-  '`{ protocolVersion?, capabilities?, serverInfo?, instructions?, toolNames?, _mcpc: {...} }`',
-  `${SCHEMA_BASE}#initializeresult`
-)}  \`_mcpc\`: \`{ sessionName, profileName?, server, transport, stateless, logPath?, ... }\`
+const SERVER_DETAILS_JSON_HELP = `With --json, returns the \`InitializeResult\` object extended with \`toolNames\` and \`_mcpc\` metadata:
+\`{ protocolVersion?, capabilities?, serverInfo?, instructions?, toolNames?, _mcpc: { sessionName, server?, ... } }\`
+Schema: ${SCHEMA_BASE}#initializeresult
 `;
 
 async function main(): Promise<void> {
