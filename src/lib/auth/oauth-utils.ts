@@ -117,21 +117,104 @@ export async function discoverAuthServerMetadata(
   }
 
   for (const url of discoveryUrls) {
-    try {
-      logger.debug(`Trying OAuth discovery at: ${url}`);
-      const response = await proxyFetch(url, {
-        headers: { Accept: 'application/json' },
-      });
+    const metadata = await fetchAuthServerMetadata(url);
+    if (metadata) return metadata;
+  }
 
-      if (response.ok) {
-        const metadata = (await response.json()) as AuthServerMetadata;
-        if (metadata.token_endpoint) {
-          logger.debug(`Found token endpoint: ${metadata.token_endpoint}`);
-          return metadata;
-        }
-      }
+  return undefined;
+}
+
+/**
+ * Fetch RFC 8414 / OIDC metadata from one candidate URL.
+ * Returns undefined unless the response is a JSON document with a token endpoint.
+ */
+async function fetchAuthServerMetadata(url: string): Promise<AuthServerMetadata | undefined> {
+  try {
+    logger.debug(`Trying OAuth discovery at: ${url}`);
+    const response = await proxyFetch(url, { headers: { Accept: 'application/json' } });
+    if (!response.ok) return undefined;
+
+    const metadata = (await response.json()) as AuthServerMetadata;
+    if (metadata.token_endpoint) {
+      logger.debug(`Found token endpoint: ${metadata.token_endpoint}`);
+      return metadata;
+    }
+  } catch {
+    // Unreachable or non-JSON: treat as "not here" and let the caller try the
+    // next candidate.
+  }
+  return undefined;
+}
+
+/**
+ * Candidate metadata URLs for an authorization server issuer.
+ *
+ * RFC 8414 §3.1 inserts the well-known segment between host and issuer path
+ * (`https://host/.well-known/oauth-authorization-server/tenant1`), while OIDC
+ * Discovery appends it (`https://host/tenant1/.well-known/openid-configuration`).
+ * Issuers in the wild use either, so try both.
+ */
+function authServerMetadataUrls(issuer: string): string[] {
+  const url = new URL(issuer);
+  const base = `${url.protocol}//${url.host}`;
+  const path = url.pathname.replace(/\/+$/, '');
+
+  if (!path) {
+    return [
+      `${base}/.well-known/oauth-authorization-server`,
+      `${base}/.well-known/openid-configuration`,
+    ];
+  }
+  return [
+    `${base}/.well-known/oauth-authorization-server${path}`,
+    `${base}/.well-known/openid-configuration${path}`,
+    `${base}${path}/.well-known/openid-configuration`,
+  ];
+}
+
+/**
+ * Discover the authorization server for an MCP server via RFC 9728 protected
+ * resource metadata: fetch the PRM document, then read its metadata from the
+ * first `authorization_servers` entry.
+ *
+ * This is the mechanism the MCP spec prescribes, and the only one that works
+ * when the authorization server lives on a different origin than the MCP
+ * server (`mcp.example.com` protected by `auth.example.com`) — direct
+ * well-known probes against the MCP origin cannot find it.
+ */
+export async function discoverAuthServerViaProtectedResource(
+  serverUrl: string
+): Promise<AuthServerMetadata | undefined> {
+  const normalized = getOAuthServerUrl(serverUrl).replace(/\/+$/, '');
+  const url = new URL(normalized);
+  const base = `${url.protocol}//${url.host}`;
+  const path = url.pathname.replace(/\/+$/, '');
+
+  // Path-scoped document first (RFC 9728 §3.1), then the origin-wide one.
+  const prmUrls = [`${base}/.well-known/oauth-protected-resource${path}`];
+  if (path) prmUrls.push(`${base}/.well-known/oauth-protected-resource`);
+
+  for (const prmUrl of prmUrls) {
+    let issuers: unknown;
+    try {
+      logger.debug(`Trying protected resource metadata at: ${prmUrl}`);
+      const response = await proxyFetch(prmUrl, { headers: { Accept: 'application/json' } });
+      if (!response.ok) continue;
+      ({ authorization_servers: issuers } = (await response.json()) as {
+        authorization_servers?: unknown;
+      });
     } catch {
-      // Continue to next URL
+      continue;
+    }
+
+    if (!Array.isArray(issuers)) continue;
+    for (const issuer of issuers) {
+      if (typeof issuer !== 'string' || issuer === '') continue;
+      logger.debug(`Protected resource metadata points at issuer: ${issuer}`);
+      for (const candidate of authServerMetadataUrls(issuer)) {
+        const metadata = await fetchAuthServerMetadata(candidate);
+        if (metadata) return metadata;
+      }
     }
   }
 

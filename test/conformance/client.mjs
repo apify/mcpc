@@ -19,18 +19,37 @@
 // as best-effort and their failures are swallowed so a missing capability on
 // the server side does not mask real client-side issues.
 //
+// The `auth/*` scenarios additionally hand the adapter throwaway credentials
+// in `MCP_CONFORMANCE_CONTEXT` and stand up their own authorization server,
+// so the checks they record are about mcpc's OAuth behaviour rather than its
+// MCP request encoding.
+//
 // Unsupported scenarios exit non-zero so the framework records them as
-// failures (track them in `test/conformance/expected-failures.yml` to keep
-// CI green until coverage grows).
+// failures.  The scenarios the adapter does not implement yet are listed in
+// `test/conformance/README.md`.
 
 import { spawn } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 const scenario = process.env.MCP_CONFORMANCE_SCENARIO;
 const serverUrl = process.argv[process.argv.length - 1];
+
+// Scenario-supplied data (credentials, keys, ...).  Absent for scenarios that
+// need no client-side setup, so an unparseable or missing value is not fatal
+// here — the individual cases validate the fields they actually need.
+const context = (() => {
+    const raw = process.env.MCP_CONFORMANCE_CONTEXT;
+    if (!raw) return {};
+    try {
+        return JSON.parse(raw);
+    } catch {
+        console.error('[mcpc-conformance] ignoring unparseable MCP_CONFORMANCE_CONTEXT');
+        return {};
+    }
+})();
 
 if (!scenario) {
     console.error('MCP_CONFORMANCE_SCENARIO environment variable is not set');
@@ -93,6 +112,31 @@ async function tryMcpc(args) {
             }`
         );
     }
+}
+
+// Reads a field the scenario is contractually required to provide, so a
+// framework-side change surfaces as a clear adapter error rather than mcpc
+// being blamed for a malformed command line.
+function requireContext(field) {
+    const value = context[field];
+    if (typeof value !== 'string' || value === '') {
+        throw new Error(
+            `Scenario ${scenario} did not provide "${field}" in MCP_CONFORMANCE_CONTEXT`
+        );
+    }
+    return value;
+}
+
+// Shared driver for the client-credentials scenarios (SEP-1046).  The
+// scenario's authorization server records its checks during the token
+// request, which `login` performs exactly once and up front; connecting
+// afterwards proves the stored profile really authenticates an MCP session
+// rather than just having survived the token exchange.
+async function runClientCredentialsLogin(loginFlags) {
+    await runMcpc(['login', serverUrl, '--grant', 'client-credentials', ...loginFlags]);
+    await runMcpc(['connect', serverUrl, sessionArg]);
+    await runMcpc([sessionArg, 'tools-list']);
+    await runMcpc([sessionArg, 'ping']);
 }
 
 async function cleanup() {
@@ -167,6 +211,32 @@ async function main() {
                 allowTimeout: true,
             });
             return;
+
+        case 'auth/client-credentials-basic':
+            // client_secret_basic: mcpc must send grant_type=client_credentials
+            // and authenticate with an HTTP Basic header.
+            await runClientCredentialsLogin([
+                '--client-id',
+                requireContext('client_id'),
+                '--client-secret',
+                requireContext('client_secret'),
+            ]);
+            return;
+
+        case 'auth/client-credentials-jwt': {
+            // private_key_jwt: mcpc must sign a client assertion with the
+            // scenario's key.  Write the PEM to the throwaway home dir rather
+            // than passing it on the command line — both because mcpc supports
+            // a key path and because argv is world-readable via `ps`.
+            const keyPath = join(homeDir, 'client-key.pem');
+            await writeFile(keyPath, requireContext('private_key_pem'), { mode: 0o600 });
+            const flags = ['--client-id', requireContext('client_id'), '--client-key', keyPath];
+            if (context.signing_algorithm) {
+                flags.push('--client-key-alg', context.signing_algorithm);
+            }
+            await runClientCredentialsLogin(flags);
+            return;
+        }
 
         default:
             console.error(`Scenario not implemented by mcpc conformance adapter: ${scenario}`);
