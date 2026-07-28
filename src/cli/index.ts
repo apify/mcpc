@@ -166,18 +166,38 @@ function getOptionsFromCommand(command: Command): HandlerOptions {
 const SCHEMA_BASE = 'https://modelcontextprotocol.io/specification/2025-11-25/schema';
 
 /**
- * JSON help shared by every command that prints a session's server details:
- * `mcpc @session` (no command) and `restart`, which shows the details again.
- *
- * Deliberately not the `jsonHelp()` block: a "JSON output (--json):" heading under
- * the session help would read as if it described every subcommand listed above it,
- * while it only applies to the details output itself. One inline sentence instead,
- * matching how `connect` documents the same shape.
+ * The one JSON shape every server-details command returns: MCP `InitializeResult`
+ * extended with `toolNames` and an `_mcpc` metadata block. `connect` returns an array
+ * of these (one per session), the session details screens return a single one.
  */
-const SERVER_DETAILS_JSON_HELP = `With --json, returns the \`InitializeResult\` object extended with \`toolNames\` and \`_mcpc\` metadata:
-\`{ protocolVersion?, capabilities?, serverInfo?, instructions?, toolNames?, _mcpc: { sessionName, server?, ... } }\`
+const SERVER_DETAILS_JSON_SHAPE =
+  '{ protocolVersion?, capabilities?, serverInfo?, instructions?, toolNames?, _mcpc: { sessionName, server?, ... } }';
+
+/**
+ * JSON help shared by `connect` and by every command that prints a session's server
+ * details: `mcpc @session` (no command) and `restart`, which shows the details again.
+ *
+ * Deliberately not the `jsonHelp()` block: a "JSON output (--json):" heading under the
+ * session help would read as if it described every subcommand listed above it, while it
+ * only applies to the details output itself. One inline sentence instead, same wording
+ * and same shape example on all three screens.
+ */
+function serverDetailsJsonHelp(returns: 'object' | 'array'): string {
+  // The array intro is broken over two lines to stay inside the 100-column help width
+  const intro =
+    returns === 'array'
+      ? `With --json, returns an array of \`InitializeResult\` objects (one per session), each
+extended with \`toolNames\` and \`_mcpc\` metadata:`
+      : `With --json, returns the \`InitializeResult\` object extended with \`toolNames\` and \`_mcpc\` metadata:`;
+  const shape = returns === 'array' ? `[${SERVER_DETAILS_JSON_SHAPE}]` : SERVER_DETAILS_JSON_SHAPE;
+
+  return `${intro}
+\`${shape}\`
 Schema: ${SCHEMA_BASE}#initializeresult
 `;
+}
+
+const SERVER_DETAILS_JSON_HELP = serverDetailsJsonHelp('object');
 
 async function main(): Promise<void> {
   // Disambiguate `--x402 <non-scheme>` (URL, @session, etc.) so Commander's
@@ -526,11 +546,8 @@ ${chalk.bold('Protocol version:')}
 ${chalk.bold('x402 payments (experimental):')}
   --x402 pays for paid tool calls from the wallet set up with mcpc x402.
   Schemes: auto (default, prefers upto), upto, exact.
-${jsonHelp(
-  'Array of `InitializeResult` objects (one per session), extended with `toolNames` and `_mcpc` metadata',
-  '`[{ protocolVersion?, capabilities?, serverInfo?, instructions?, toolNames?, _mcpc: { sessionName, server?, ... }]`',
-  `${SCHEMA_BASE}#initializeresult`
-)}`
+
+${serverDetailsJsonHelp('array')}`
     )
     .action(async (server, sessionName, opts, command) => {
       const globalOpts = getOptionsFromCommand(command);
