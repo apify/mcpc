@@ -1117,6 +1117,10 @@ ${jsonHelp(
     `${SCHEMA_BASE}#calltoolresult`
   );
 
+  // TODO: CreateTaskResult/Task only exist on the 2025-11-25 schema page — tasks moved to the
+  // io.modelcontextprotocol/tasks extension for 2026-07-28, which the SDK doesn't implement yet
+  // (see CLAUDE.md). Once the SDK adds it, point this (and the #task links on tasks-list/
+  // tasks-get/tasks-result) at wherever that extension's schema ends up living.
   const toolsCallCombinedJsonHelp = `
 ${chalk.bold('JSON output (--json):')}
   \`CallToolResult\` object:
