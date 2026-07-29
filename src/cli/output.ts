@@ -1614,15 +1614,8 @@ export function formatServerDetails(
   const bullet = chalk.dim('*');
   const bt = chalk.gray('`'); // backtick
 
-  const {
-    serverInfo,
-    capabilities,
-    instructions,
-    protocolVersion,
-    supportedVersions,
-    connectionMode,
-    transport,
-  } = details;
+  const { serverInfo, capabilities, instructions, protocolVersion, connectionMode, transport } =
+    details;
 
   // One line for how mcpc is talking to the server: the negotiated protocol version
   // ("(pinned)" when --protocol-version fixed it), the transport, and whether that
@@ -1630,19 +1623,12 @@ export function formatServerDetails(
   // to the version: a 2025-11-25 HTTP server that issues no session id is stateless too,
   // while stdio is always stateful. Mirrored in `--json` as `_mcpc.transport`/`stateless`.
   // Comes first: the connection is what the rest of the screen is reported over.
+  // The server's other supported versions stay a `--json`-only detail (supportedVersions).
   if (protocolVersion) {
     const pinned = pinnedProtocolVersion ? ` ${chalk.gray('(pinned)')}` : '';
     const mode = connectionMode && connectionMode !== 'unknown' ? ` (${connectionMode})` : '';
     const via = transport ? chalk.gray(' / ') + `${formatTransportKind(transport)}${mode}` : '';
-    // `server/discover` (2026-07-28) reports every version the server offers — worth a
-    // note when it can speak more than the one in use, since --protocol-version can pin
-    // any of them. The legacy handshake reports only the version it agreed on.
-    const otherVersions = (supportedVersions ?? []).filter((v) => v !== protocolVersion);
-    const alsoSupported =
-      otherVersions.length > 0
-        ? chalk.gray(` (server also offers ${otherVersions.join(', ')})`)
-        : '';
-    lines.push(chalk.bold('MCP:') + ` version ${protocolVersion}${pinned}${alsoSupported}${via}`);
+    lines.push(chalk.bold('MCP:') + ` version ${protocolVersion}${pinned}${via}`);
     lines.push('');
   }
 

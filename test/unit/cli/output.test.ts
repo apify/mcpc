@@ -1074,7 +1074,7 @@ describe('formatServerDetails', () => {
     expect(output).toContain('MCP: version 2026-07-28 / Streamable HTTP (stateless)');
   });
 
-  it('notes the other protocol versions a 2026-07-28 server offers', () => {
+  it('keeps supportedVersions out of the human-mode version line (a --json-only detail)', () => {
     const details: ServerDetails = {
       protocolVersion: '2026-07-28',
       supportedVersions: ['2026-07-28', '2025-11-25'],
@@ -1086,24 +1086,8 @@ describe('formatServerDetails', () => {
 
     const output = formatServerDetails(details, '@s');
 
-    expect(output).toContain(
-      'MCP: version 2026-07-28 (server also offers 2025-11-25) / Streamable HTTP (stateless)'
-    );
-  });
-
-  it('omits the note when the server offers only the version in use', () => {
-    const details: ServerDetails = {
-      protocolVersion: '2026-07-28',
-      supportedVersions: ['2026-07-28'],
-      capabilities: {},
-      serverInfo: { name: 'Single Server', version: '1.0.0' },
-      transport: 'streamable-http',
-    };
-
-    const output = formatServerDetails(details, '@s');
-
-    expect(output).toContain('MCP: version 2026-07-28 / Streamable HTTP');
-    expect(output).not.toContain('also offers');
+    expect(output).toContain('MCP: version 2026-07-28 / Streamable HTTP (stateless)');
+    expect(output).not.toContain('2025-11-25');
   });
 
   it('names the stdio transport', () => {
