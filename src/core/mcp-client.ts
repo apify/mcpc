@@ -6,6 +6,7 @@
 import {
   Client as SDKClient,
   MAX_CACHE_TTL_MS,
+  SERVER_INFO_META_KEY,
   SdkHttpError,
   type ClientOptions,
 } from '@modelcontextprotocol/client';
@@ -435,14 +436,21 @@ export class McpClient implements IMcpClient {
    * `InitializeResult` and `DiscoverResult` come from the SDK's accessors, which are
    * populated by whichever handshake ran, and the discover-only `supportedVersions` /
    * `_meta` are read off the `server/discover` result on modern connections.
+   *
+   * 2026-07-28 moved the server identity out of the handshake into a `_meta` key that
+   * servers SHOULD stamp on every response, so the latest discover result is the freshest
+   * identity we hold: a modern connection reads `serverInfo` from there, and only falls
+   * back to the SDK accessor (frozen at connect) when the server sent none. Both fields
+   * then come from the same snapshot — `ping` re-runs `server/discover` on modern
+   * connections, which refreshes `_meta` but not the accessor.
    */
   getServerDetails(): Promise<ServerDetails> {
     const details: ServerDetails = {};
-    const serverInfo = this.client.getServerVersion();
     const capabilities = this.client.getServerCapabilities();
     const instructions = this.client.getInstructions();
     // Undefined on legacy connections — there is no DiscoverResult on that path.
     const discovered = this.client.getDiscoverResult();
+    const serverInfo = discovered?._meta?.[SERVER_INFO_META_KEY] ?? this.client.getServerVersion();
 
     if (this.negotiatedProtocolVersion) details.protocolVersion = this.negotiatedProtocolVersion;
     if (discovered?.supportedVersions) details.supportedVersions = discovered.supportedVersions;

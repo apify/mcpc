@@ -511,8 +511,9 @@ export interface ServerDetails {
   /**
    * `_meta` of the server's `server/discover` result, verbatim. 2026-07-28 connections
    * only (the SDK does not surface the legacy `initialize` result's `_meta`). Holds the
-   * spec's `io.modelcontextprotocol/serverInfo` — already lifted into `serverInfo` — and
-   * any extension metadata the server attached to it.
+   * spec's `io.modelcontextprotocol/serverInfo` — the identity 2026-07-28 servers stamp on
+   * every response, lifted into `serverInfo` above — plus any extension metadata the
+   * server attached to it.
    */
   _meta?: Record<string, unknown>;
   /** Whether the connection carries server-side session state (derived from transport + session id) */

@@ -28,35 +28,36 @@ export const LEGACY_SCHEMA_BASE = 'https://modelcontextprotocol.io/specification
  *
  * `supportedVersions` and `_meta` only appear on 2026-07-28 connections (the legacy
  * handshake carries neither); `protocolVersion` is always the version actually in use.
+ * `_mcpc` is abbreviated here — `mcpc @session --json` shows the block in full.
  */
 const SERVER_DETAILS_JSON_SHAPE =
-  '{ protocolVersion?, supportedVersions?, capabilities?, serverInfo?, instructions?, _meta?, toolNames?, _mcpc: { sessionName, server?, ... } }';
+  '{ protocolVersion?, supportedVersions?, capabilities?, serverInfo?, instructions?, _meta?, toolNames?, _mcpc: { sessionName, ... } }';
 
 const SERVER_DETAILS_JSON_META = 'extended with `toolNames` and `_mcpc` metadata';
-
-/** Which MCP result the shape mirrors, per protocol era. */
-const SERVER_DETAILS_JSON_ERAS =
-  '`InitializeResult` on MCP 2025-11-25, `DiscoverResult` on 2026-07-28';
 
 /**
  * The shared description of that output: what a command returns and the shape example
  * for it. Rendered two ways below — as the standard `jsonHelp()` block, or as one inline
  * sentence — so the wording and the example never drift between the two.
+ *
+ * Which of the two results it is follows from `protocolVersion`, so the eras are named
+ * once here and not spelled out per field — help output has to stay skimmable.
  */
 function serverDetailsJson(returns: 'object' | 'array'): { subject: string; shape: string } {
   return returns === 'array'
     ? {
-        subject: `array of server details objects, one per session (${SERVER_DETAILS_JSON_ERAS}),`,
+        subject:
+          'server details, one per session (`InitializeResult` or `DiscoverResult` objects),',
         shape: `\`[${SERVER_DETAILS_JSON_SHAPE}]\``,
       }
     : {
-        subject: `server details object (${SERVER_DETAILS_JSON_ERAS})`,
+        subject: 'server details (`InitializeResult` or `DiscoverResult` object)',
         shape: `\`${SERVER_DETAILS_JSON_SHAPE}\``,
       };
 }
 
 /** Both handshake-result schemas, each on the spec page whose anchor resolves. */
-const SERVER_DETAILS_SCHEMA_URLS = `${LEGACY_SCHEMA_BASE}#initializeresult (2025-11-25), ${SCHEMA_BASE}#discoverresult (2026-07-28)`;
+const SERVER_DETAILS_SCHEMA_URLS = `${LEGACY_SCHEMA_BASE}#initializeresult, ${SCHEMA_BASE}#discoverresult`;
 
 /**
  * Standard "JSON output (--json):" block for the commands that print server details:

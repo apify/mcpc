@@ -175,6 +175,30 @@ describe('server details', () => {
     });
   });
 
+  it('takes the server identity from the discover result, not the connect-time accessor', async () => {
+    // `ping` re-runs server/discover on a modern connection, which refreshes the discover
+    // result but not the SDK's connect-time accessor — so `serverInfo` and `_meta` would
+    // otherwise disagree after a server redeploy.
+    discoverResult = {
+      supportedVersions: ['2026-07-28'],
+      capabilities: {},
+      _meta: { 'io.modelcontextprotocol/serverInfo': { name: 'stub', version: '2.0.0' } },
+    };
+    const client = await connectClient({ era: 'modern' });
+
+    const details = await client.getServerDetails();
+    expect(details.serverInfo).toEqual({ name: 'stub', version: '2.0.0' });
+  });
+
+  it('falls back to the accessor when a modern server sends no identity', async () => {
+    // Sending it is only a SHOULD, so a modern connect can leave the identity unset.
+    discoverResult = { supportedVersions: ['2026-07-28'], capabilities: {} };
+    const client = await connectClient({ era: 'modern' });
+
+    const details = await client.getServerDetails();
+    expect(details.serverInfo).toEqual({ name: 'stub', version: '1.0.0' });
+  });
+
   it('omits them on a legacy connection, which has no discover result', async () => {
     const client = await connectClient({ era: 'legacy' });
 
