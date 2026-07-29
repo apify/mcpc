@@ -29,11 +29,10 @@ export const LEGACY_SCHEMA_BASE = 'https://modelcontextprotocol.io/specification
  *
  * `supportedVersions` and `_meta` only appear on 2026-07-28 connections (the legacy
  * handshake carries neither); `protocolVersion` is always the version actually in use.
- * `_mcpc` is abbreviated here — `mcpc @session --json` shows the block in full.
+ * `_mcpc` is abbreviated to keep the line short — run the command to see the block.
  */
-function serverDetailsJsonShape(mcpcFields: string): string {
-  return `{ protocolVersion?, supportedVersions?, capabilities?, serverInfo?, instructions?, _meta?, toolNames?, _mcpc: { ${mcpcFields} } }`;
-}
+const SERVER_DETAILS_JSON_SHAPE =
+  '{ protocolVersion?, supportedVersions?, capabilities?, serverInfo?, instructions?, _meta?, toolNames?, _mcpc: { ... } }';
 
 const SERVER_DETAILS_JSON_META = 'extended with `toolNames` and `_mcpc`';
 
@@ -52,16 +51,12 @@ const SERVER_DETAILS_SCHEMA_URLS = [
  * named once — not per field and not per schema link. Help output has to stay skimmable.
  */
 export function serverDetailsJsonHelp(returns: 'object' | 'array'): string {
-  // One entry per session in the array form, so its `_mcpc` block stays abbreviated —
-  // `mcpc @session --json` documents the block itself.
   const subject =
     returns === 'array'
       ? 'Array of `InitializeResult` or `DiscoverResult` objects'
       : '`InitializeResult` or `DiscoverResult` object';
   const shape =
-    returns === 'array'
-      ? `\`[${serverDetailsJsonShape('...')}]\``
-      : `\`${serverDetailsJsonShape('sessionName, ...')}\``;
+    returns === 'array' ? `\`[${SERVER_DETAILS_JSON_SHAPE}]\`` : `\`${SERVER_DETAILS_JSON_SHAPE}\``;
   return jsonHelp(`${subject} ${SERVER_DETAILS_JSON_META}`, shape, SERVER_DETAILS_SCHEMA_URLS);
 }
 
