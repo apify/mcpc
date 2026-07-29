@@ -31,8 +31,9 @@ export const LEGACY_SCHEMA_BASE = 'https://modelcontextprotocol.io/specification
  * handshake carries neither); `protocolVersion` is always the version actually in use.
  * `_mcpc` is abbreviated here — `mcpc @session --json` shows the block in full.
  */
-const SERVER_DETAILS_JSON_SHAPE =
-  '{ protocolVersion?, supportedVersions?, capabilities?, serverInfo?, instructions?, _meta?, toolNames?, _mcpc: { sessionName, ... } }';
+function serverDetailsJsonShape(mcpcFields: string): string {
+  return `{ protocolVersion?, supportedVersions?, capabilities?, serverInfo?, instructions?, _meta?, toolNames?, _mcpc: { ${mcpcFields} } }`;
+}
 
 const SERVER_DETAILS_JSON_META = 'extended with `toolNames` and `_mcpc`';
 
@@ -51,22 +52,26 @@ const SERVER_DETAILS_SCHEMA_URLS = [
  * named once — not per field and not per schema link. Help output has to stay skimmable.
  */
 export function serverDetailsJsonHelp(returns: 'object' | 'array'): string {
+  // One entry per session in the array form, so its `_mcpc` block stays abbreviated —
+  // `mcpc @session --json` documents the block itself.
   const subject =
     returns === 'array'
-      ? '`InitializeResult` or `DiscoverResult` objects, one per session,'
+      ? 'Array of `InitializeResult` or `DiscoverResult` objects'
       : '`InitializeResult` or `DiscoverResult` object';
   const shape =
-    returns === 'array' ? `\`[${SERVER_DETAILS_JSON_SHAPE}]\`` : `\`${SERVER_DETAILS_JSON_SHAPE}\``;
+    returns === 'array'
+      ? `\`[${serverDetailsJsonShape('...')}]\``
+      : `\`${serverDetailsJsonShape('sessionName, ...')}\``;
   return jsonHelp(`${subject} ${SERVER_DETAILS_JSON_META}`, shape, SERVER_DETAILS_SCHEMA_URLS);
 }
 
 /**
  * Titled "Output:" section describing what a command prints in human mode. Pairs with the
  * "JSON output (--json):" block below it — a loose sentence hanging off the command list
- * reads like a footnote next to a titled section.
+ * reads like a footnote next to a titled section. Pass several lines as an array.
  */
-export function outputHelp(text: string): string {
-  return `\n${chalk.bold('Output:')}\n  ${text}\n`;
+export function outputHelp(text: string | string[]): string {
+  return `\n${chalk.bold('Output:')}\n  ${[text].flat().join('\n  ')}\n`;
 }
 
 /**
