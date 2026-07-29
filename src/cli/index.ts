@@ -637,7 +637,7 @@ ${serverDetailsJsonHelp('array')}`
     .description('Restart a session (losing all state)')
     .addHelpText(
       'after',
-      outputHelp('After restarting, the session details are shown again.') +
+      outputHelp('After restarting, shows session, server info, capabilities, and tools.') +
         serverDetailsJsonHelp('object')
     )
     .action(async (sessionName, _opts, command) => {
@@ -1024,7 +1024,7 @@ function registerSessionCommands(program: Command, session: string): void {
     .description('Restart MCP session (losing all state).')
     .addHelpText(
       'after',
-      outputHelp('After restarting, the session details are shown again.') +
+      outputHelp('After restarting, shows session, server info, capabilities, and tools.') +
         serverDetailsJsonHelp('object')
     )
     .action(async (_options, command) => {
