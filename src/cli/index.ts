@@ -636,7 +636,7 @@ ${serverDetailsJsonHelp('array')}`
     .description('Restart a session (losing all state)')
     .addHelpText(
       'after',
-      `\nAfter restarting, the session details are shown again.\n${serverDetailsJsonHelp('object')}`
+      `\nAfter restarting, shows session, server info, capabilities, and tools.\n${serverDetailsJsonHelp('object')}`
     )
     .action(async (sessionName, _opts, command) => {
       if (!sessionName) {
@@ -1022,7 +1022,7 @@ function registerSessionCommands(program: Command, session: string): void {
     .description('Restart MCP session (losing all state).')
     .addHelpText(
       'after',
-      `\nAfter restarting, the session details are shown again.\n${serverDetailsJsonHelp('object')}`
+      `\nAfter restarting, shows session, server info, capabilities, and tools.\n${serverDetailsJsonHelp('object')}`
     )
     .action(async (_options, command) => {
       await sessions.restartSession(session, getOptionsFromCommand(command));
