@@ -6,6 +6,7 @@
  * instead of being repeated — or drifting — across command definitions.
  */
 
+import chalk from 'chalk';
 import { jsonHelp } from './output.js';
 
 /** Base URL of the MCP schema reference the `--json` help sections link to */
@@ -33,54 +34,45 @@ export const LEGACY_SCHEMA_BASE = 'https://modelcontextprotocol.io/specification
 const SERVER_DETAILS_JSON_SHAPE =
   '{ protocolVersion?, supportedVersions?, capabilities?, serverInfo?, instructions?, _meta?, toolNames?, _mcpc: { sessionName, ... } }';
 
-const SERVER_DETAILS_JSON_META = 'extended with `toolNames` and `_mcpc` metadata';
-
-/**
- * The shared description of that output: what a command returns and the shape example
- * for it. Rendered two ways below — as the standard `jsonHelp()` block, or as one inline
- * sentence — so the wording and the example never drift between the two.
- *
- * Which of the two results it is follows from `protocolVersion`, so the eras are named
- * once here and not spelled out per field — help output has to stay skimmable.
- */
-function serverDetailsJson(returns: 'object' | 'array'): { subject: string; shape: string } {
-  return returns === 'array'
-    ? {
-        subject:
-          'server details, one per session (`InitializeResult` or `DiscoverResult` objects),',
-        shape: `\`[${SERVER_DETAILS_JSON_SHAPE}]\``,
-      }
-    : {
-        subject: 'server details (`InitializeResult` or `DiscoverResult` object)',
-        shape: `\`${SERVER_DETAILS_JSON_SHAPE}\``,
-      };
-}
+const SERVER_DETAILS_JSON_META = 'extended with `toolNames` and `_mcpc`';
 
 /** Both handshake-result schemas, each on the spec page whose anchor resolves. */
-const SERVER_DETAILS_SCHEMA_URLS = `${LEGACY_SCHEMA_BASE}#initializeresult, ${SCHEMA_BASE}#discoverresult`;
+const SERVER_DETAILS_SCHEMA_URLS = [
+  `${LEGACY_SCHEMA_BASE}#initializeresult`,
+  `${SCHEMA_BASE}#discoverresult`,
+];
 
 /**
- * Standard "JSON output (--json):" block for the commands that print server details:
- * `connect` (an array of entries) and `restart` (the details of the restarted session).
+ * Standard "JSON output (--json):" block for every command that prints server details:
+ * `connect` (an array of entries), `restart` (the restarted session), and the `mcpc
+ * @session` screen below.
+ *
+ * Which of the two results a caller gets follows from `protocolVersion`, so the eras are
+ * named once — not per field and not per schema link. Help output has to stay skimmable.
  */
 export function serverDetailsJsonHelp(returns: 'object' | 'array'): string {
-  const { subject, shape } = serverDetailsJson(returns);
-  return jsonHelp(
-    `${subject.charAt(0).toUpperCase()}${subject.slice(1)} ${SERVER_DETAILS_JSON_META}`,
-    shape,
-    SERVER_DETAILS_SCHEMA_URLS
-  );
+  const subject =
+    returns === 'array'
+      ? '`InitializeResult` or `DiscoverResult` objects, one per session,'
+      : '`InitializeResult` or `DiscoverResult` object';
+  const shape =
+    returns === 'array' ? `\`[${SERVER_DETAILS_JSON_SHAPE}]\`` : `\`${SERVER_DETAILS_JSON_SHAPE}\``;
+  return jsonHelp(`${subject} ${SERVER_DETAILS_JSON_META}`, shape, SERVER_DETAILS_SCHEMA_URLS);
 }
 
 /**
- * Same content as one inline sentence, for the `mcpc @session` help screen. A
- * "JSON output (--json):" heading there would read as if it described every subcommand
- * listed above it, while it only applies to the no-command details output.
+ * Titled "Output:" section describing what a command prints in human mode. Pairs with the
+ * "JSON output (--json):" block below it — a loose sentence hanging off the command list
+ * reads like a footnote next to a titled section.
  */
-export const SERVER_DETAILS_JSON_HELP_INLINE = ((): string => {
-  const { subject, shape } = serverDetailsJson('object');
-  return `With --json, returns the ${subject} ${SERVER_DETAILS_JSON_META}:
-${shape}
-Schema: ${SERVER_DETAILS_SCHEMA_URLS}
-`;
-})();
+export function outputHelp(text: string): string {
+  return `\n${chalk.bold('Output:')}\n  ${text}\n`;
+}
+
+/**
+ * Trailing help for the `mcpc @session` screen: what the no-command invocation prints,
+ * then the same JSON block every other server-details command shows.
+ */
+export const SESSION_DETAILS_HELP =
+  outputHelp('When no command is given, shows session, server info, capabilities, and tools.') +
+  serverDetailsJsonHelp('object');

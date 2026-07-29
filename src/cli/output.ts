@@ -1827,10 +1827,17 @@ export function formatServerDetails(
 
 /**
  * Format a JSON output help line with backtick-style Markdown formatting.
- * Optional schemaUrl adds a "Schema:" link for AI agents.
+ * Optional schemaUrl adds a "Schema:" link for AI agents — pass several (e.g. one per
+ * protocol era) to get one per line, each aligned under the first.
  */
-export function jsonHelp(description: string, shape?: string, schemaUrl?: string): string {
+export function jsonHelp(
+  description: string,
+  shape?: string,
+  schemaUrl?: string | string[]
+): string {
   const line = shape ? `  ${description}:\n  ${shape}` : `  ${description}`;
-  const link = schemaUrl ? `\n  Schema: ${schemaUrl}` : '';
+  const urls = schemaUrl === undefined ? [] : [schemaUrl].flat();
+  const schemaIndent = '\n' + ' '.repeat('  Schema: '.length);
+  const link = urls.length > 0 ? `\n  Schema: ${urls.join(schemaIndent)}` : '';
   return `\n${chalk.bold('JSON output (--json):')}\n${line}${link}\n`;
 }
