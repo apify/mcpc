@@ -174,6 +174,7 @@ MCP session commands (after connecting):
   <@session> skills-get <name> [--raw]
   <@session> logging-set-level <level>
   <@session> ping
+  <@session> server-discover
   <@session> logs [-n N] [--follow] [--since 1h]
 
 Run "mcpc" without arguments to show active sessions and OAuth profiles.
@@ -854,6 +855,7 @@ Where `mcpc` stands on each part of the MCP specification:
 | 🔔 [**Notifications**](#list-change-notifications)   | ✅ Supported                                                      |
 | 📄 [**Pagination**](#pagination)                     | ✅ Supported                                                      |
 | 🏓 [**Ping**](#ping)                                 | ✅ Supported                                                      |
+| 🔍 [**Server discovery**](#server-discovery)          | ✅ Supported (`server/discover`, 2026-07-28 servers)               |
 | 📁 **Roots**                                         | ❌ Not planned (deprecated by MCP)                                |
 | ❓ **Elicitation**                                   | 🚧 Planned                                                       |
 | 🔤 **Completion**                                    | 🚧 Planned                                                       |
@@ -1127,7 +1129,24 @@ mcpc @apify ping --json
 
 Protocol version `2026-07-28` removed the `ping` request, so on servers using it `mcpc`
 sends a `server/discover` probe instead — same round trip, same liveness signal, and the
-command works identically on both protocol versions.
+command works identically on both protocol versions. The human-readable output says so,
+so a `server/discover` entry in the server's access log is not a surprise.
+
+#### Server discovery
+
+On `2026-07-28` connections you can also send that request yourself and see what the server
+answers right now — every protocol version it supports, its capabilities, its instructions,
+and its `_meta`:
+
+```bash
+mcpc @apify server-discover
+mcpc @apify server-discover --json    # DiscoverResult, verbatim
+```
+
+Unlike [`mcpc @apify`](#server-instructions), which reports what the connection settled on
+when it was created, this is a live request. Protocol `2026-07-28` introduced
+`server/discover`, so the command fails on `2025-11-25` (and older) connections, where the
+`initialize` handshake carries the same information — run `mcpc @apify` there instead.
 
 #### Async tasks
 

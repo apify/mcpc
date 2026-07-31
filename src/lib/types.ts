@@ -10,6 +10,7 @@ import type {
   Prompt,
   PromptArgument,
   Implementation,
+  DiscoverResult,
   ClientCapabilities,
   ServerCapabilities,
   InitializeRequest,
@@ -49,6 +50,7 @@ export type {
   Prompt,
   PromptArgument,
   Implementation,
+  DiscoverResult,
   ClientCapabilities,
   ServerCapabilities,
   InitializeRequest,
@@ -539,6 +541,11 @@ export interface IMcpClient {
 
   // MCP operations
   ping(): Promise<void>;
+  /**
+   * Live `server/discover` request (2026-07-28+ only — throws on legacy connections).
+   * Unlike getServerDetails(), which reports the connection's handshake snapshot.
+   */
+  discover(): Promise<DiscoverResult>;
   listTools(cursor?: string): Promise<ListToolsResult>;
   listAllTools(options?: { refreshCache?: boolean }): Promise<ListToolsResult>;
   callTool(

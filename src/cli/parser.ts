@@ -141,6 +141,7 @@ export const KNOWN_SESSION_COMMANDS = [
   'prompts-get',
   'logging-set-level',
   'ping',
+  'server-discover',
   'logs',
   'tasks-list',
   'tasks-get',

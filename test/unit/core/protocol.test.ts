@@ -2,13 +2,18 @@
  * Unit tests for MCP protocol version constants and the --protocol-version pin mapping
  */
 
-import { SUPPORTED_PROTOCOL_VERSIONS as SDK_SUPPORTED_PROTOCOL_VERSIONS } from '@modelcontextprotocol/client';
+import {
+  SUPPORTED_PROTOCOL_VERSIONS as SDK_SUPPORTED_PROTOCOL_VERSIONS,
+  SERVER_INFO_META_KEY as SDK_SERVER_INFO_META_KEY,
+} from '@modelcontextprotocol/client';
 import {
   MODERN_PROTOCOL_VERSIONS,
   LEGACY_PROTOCOL_VERSIONS,
   SUPPORTED_PROTOCOL_VERSIONS,
+  SERVER_INFO_META_KEY,
   isModernProtocolVersion,
   isSupportedProtocolVersion,
+  discoverUnavailableMessage,
   tasksUnavailableMessage,
   tasksUnsupportedByServerMessage,
 } from '../../../src/core/protocol.js';
@@ -20,6 +25,11 @@ describe('protocol version constants', () => {
     // protocol.ts hardcodes the list so the CLI never loads the SDK at startup;
     // this test catches drift when the SDK is upgraded.
     expect(LEGACY_PROTOCOL_VERSIONS).toEqual(SDK_SUPPORTED_PROTOCOL_VERSIONS);
+  });
+
+  it('server-info meta key stays in sync with the SDK (drift guard)', () => {
+    // Spelled out in protocol.ts so the CLI can read it without loading the SDK.
+    expect(SERVER_INFO_META_KEY).toEqual(SDK_SERVER_INFO_META_KEY);
   });
 
   it('supported list is modern versions followed by legacy versions', () => {
@@ -75,6 +85,28 @@ describe('tasksUnsupportedByServerMessage', () => {
 
   it('is distinct from the protocol-era reason', () => {
     expect(tasksUnsupportedByServerMessage()).not.toEqual(tasksUnavailableMessage('2026-07-28'));
+  });
+});
+
+describe('discoverUnavailableMessage', () => {
+  // Shared by the CLI (which gates `server-discover` before sending anything) and
+  // McpClient (the backstop), so both report the identical reason.
+  it('names both eras and where the same information lives', () => {
+    const message = discoverUnavailableMessage('2025-11-25', '@test');
+    expect(message).toContain('server/discover');
+    expect(message).toContain('2026-07-28');
+    expect(message).toContain('2025-11-25');
+    expect(message).toContain('initialize handshake');
+  });
+
+  it('points at the given session, or a placeholder when the bridge reports it', () => {
+    expect(discoverUnavailableMessage('2025-11-25', '@test')).toContain('mcpc @test');
+    expect(discoverUnavailableMessage('2025-11-25')).toContain('mcpc @session');
+  });
+
+  it('has no trailing period, so the bridge\'s ". For details, run: ..." never doubles up', () => {
+    expect(discoverUnavailableMessage('2025-11-25', '@test')).not.toMatch(/\.$/);
+    expect(discoverUnavailableMessage(undefined)).not.toMatch(/\.$/);
   });
 });
 

@@ -6,7 +6,6 @@
 import {
   Client as SDKClient,
   MAX_CACHE_TTL_MS,
-  SERVER_INFO_META_KEY,
   SdkHttpError,
   type ClientOptions,
 } from '@modelcontextprotocol/client';
@@ -18,6 +17,7 @@ import type {
 } from '@modelcontextprotocol/client';
 import type {
   Implementation,
+  DiscoverResult,
   ListToolsResult,
   CallToolResult,
   ListResourcesResult,
@@ -44,7 +44,9 @@ import { fetchAllPages } from '../lib/utils.js';
 import {
   isModernProtocolVersion,
   isSupportedProtocolVersion,
+  discoverUnavailableMessage,
   tasksUnavailableMessage,
+  SERVER_INFO_META_KEY,
   SUPPORTED_PROTOCOL_VERSIONS,
 } from './protocol.js';
 import type {
@@ -509,6 +511,33 @@ export class McpClient implements IMcpClient {
   private deriveTransportKind(): TransportKind | undefined {
     if (!this.hasConnected) return undefined;
     return typeof this.transport?.terminateSession === 'function' ? 'streamable-http' : 'stdio';
+  }
+
+  /**
+   * Send `server/discover` and return the server's advertisement verbatim: every protocol
+   * version it supports, its capabilities, its instructions, and the `_meta` that carries
+   * its identity. Unlike `getServerDetails()` (which reports what the connection settled
+   * on, from the handshake snapshot) this is a live request answered right now.
+   *
+   * 2026-07-28 introduced the method, so legacy connections have nothing to send — the
+   * `initialize` result is their equivalent. Refuse there instead of silently reporting
+   * handshake data as if the server had answered a discover request.
+   */
+  async discover(): Promise<DiscoverResult> {
+    if (this.getProtocolEra() !== 'modern') {
+      throw new ServerError(discoverUnavailableMessage(this.negotiatedProtocolVersion));
+    }
+    try {
+      this.logger.debug('Sending server/discover...');
+      const result = await this.client.discover(this.getRequestOptions());
+      this.logger.debug('server/discover successful');
+      return result;
+    } catch (error) {
+      this.logger.error('server/discover failed:', error);
+      throw new ServerError(`server/discover failed: ${(error as Error).message}`, {
+        originalError: error,
+      });
+    }
   }
 
   /**

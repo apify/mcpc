@@ -142,6 +142,12 @@ export interface McpClientContext {
   sessionName?: string | undefined;
   profileName?: string | undefined;
   serverConfig?: ServerConfig | undefined;
+  /**
+   * Protocol version negotiated by the session's bridge, as persisted in sessions.json.
+   * Lets a command adapt its output to the protocol era without an extra IPC round-trip;
+   * commands that must be authoritative should call `getServerDetails()` instead.
+   */
+  protocolVersion?: string | undefined;
 }
 
 /**
@@ -185,6 +191,7 @@ export async function withMcpClient<T>(
     sessionName: session?.name,
     profileName: session?.profileName,
     serverConfig: session?.server,
+    protocolVersion: session?.protocolVersion,
   };
 
   // Log target prefix (unless hidden)

@@ -13,6 +13,7 @@
  */
 
 import type {
+  DiscoverResult,
   ListToolsResult,
   CallToolResult,
   ListResourcesResult,
@@ -159,6 +160,18 @@ export class SessionClient implements IMcpClient {
       () =>
         this.bridgeClient.request('ping', undefined, this.requestTimeoutSecs).then(() => undefined),
       'ping'
+    );
+  }
+
+  async discover(): Promise<DiscoverResult> {
+    return this.withRetry(
+      () =>
+        this.bridgeClient.request(
+          'discover',
+          undefined,
+          this.requestTimeoutSecs
+        ) as Promise<DiscoverResult>,
+      'discover'
     );
   }
 
