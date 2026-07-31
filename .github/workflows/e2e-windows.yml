@@ -30,15 +30,7 @@ jobs:
         run: pnpm run build
 
       - name: E2E tests
-        # windows-latest runners have 4 vCPUs, so run 4 tests at a time (same as
-        # macOS). Process spawning is far more expensive on Windows than on Linux
-        # and the suite is spawn-bound, so it was previously run sequentially and
-        # took ~21 min — by far the slowest job in CI.
-        env:
-          # Individual tests slow down under parallel contention; the watchdog only
-          # needs to catch genuine hangs, so give it headroom over the 180s default.
-          E2E_PER_TEST_TIMEOUT: 300
-        run: ./test/e2e/run.sh --no-build --parallel 4
+        run: ./test/e2e/run.sh --no-build --parallel 1
 
   e2e-windows-bun:
     name: E2E tests (Windows, Bun)
@@ -66,10 +58,4 @@ jobs:
         run: pnpm run build
 
       - name: E2E tests
-        # Bun on Windows is less tolerant of contention than Node: at --parallel 4
-        # it intermittently failed with bridge startup errors on tests that passed
-        # in other runs, so this job uses 2. Still roughly half the previous
-        # sequential runtime. See the note in e2e-windows-node above.
-        env:
-          E2E_PER_TEST_TIMEOUT: 300
-        run: ./test/e2e/run.sh --no-build --runtime bun --parallel 2
+        run: ./test/e2e/run.sh --no-build --runtime bun --parallel 1
