@@ -114,6 +114,16 @@ if [[ -n "$REMOTE" && "$LOCAL" != "$REMOTE" ]]; then
 fi
 echo -e "${GREEN}✓ Branch is up-to-date with remote${NC}"
 
+# Check dependency age (same gate the release workflow runs, failed early here so a
+# too-young dependency is caught before burning a full CI matrix on the release run)
+echo ""
+echo "Checking dependency age..."
+if ! node "$(dirname "$0")/check-dependency-age.mjs"; then
+  echo -e "${RED}❌ Dependency age check failed. See above.${NC}"
+  exit 1
+fi
+echo -e "${GREEN}✓ All dependencies are old enough to publish${NC}"
+
 # Trigger the workflow
 echo ""
 echo "Triggering release.yml workflow..."

@@ -43,6 +43,7 @@
     "test:e2e:modern": "./test/e2e/run.sh --keep --server-protocol modern",
     "test:e2e:bun": "./test/e2e/run.sh --no-build --runtime bun",
     "test:conformance": "pnpm run build && npx -y @modelcontextprotocol/conformance client --command \"node test/conformance/client.mjs\" --scenario initialize",
+    "check:deps-age": "node scripts/check-dependency-age.mjs",
     "lint": "eslint src && prettier --check \"src/**/*.ts\" \"test/**/*.ts\"",
     "lint:fix": "eslint src --fix && prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",

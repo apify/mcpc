@@ -60,7 +60,14 @@ function delta(previous, current) {
 function measureInstall(workDir, label, spec, packageName) {
   const projectDir = join(workDir, label);
   mkdirSync(projectDir);
-  run('npm', ['install', '--no-audit', '--no-fund', '--loglevel=error', spec], { cwd: projectDir });
+  // --ignore-scripts: this install exists only to measure bytes on disk, so there is no
+  // reason to execute freshly-resolved lifecycle scripts — least of all in the release
+  // job, which holds NPM_TOKEN and a push-capable PAT. npm resolves the `^` ranges live
+  // here and honours no release-age gate, so those scripts are exactly the code the
+  // supply-chain quarantine is meant to keep out.
+  run('npm', ['install', '--no-audit', '--no-fund', '--ignore-scripts', '--loglevel=error', spec], {
+    cwd: projectDir,
+  });
   const nodeModules = join(projectDir, 'node_modules');
   return {
     installBytes: dirSize(nodeModules),

@@ -37,6 +37,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The `logging-set-level` command is deprecated and will be removed in a future release: MCP 2026-07-28 removed the underlying `logging/setLevel` request. It keeps working on 2025-11-25 servers during the deprecation window.
 
+### Security
+
+- Releases now verify that every dependency in the lockfile has been published long enough to clear the supply-chain quarantine, and fail if anything is too young. pnpm applied that policy only when resolving new versions, so nothing previously checked it at release time.
+
 ## [0.5.1] - 2026-07-28
 
 ### Changed

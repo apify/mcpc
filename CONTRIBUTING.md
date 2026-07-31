@@ -53,10 +53,22 @@ pnpm link --global
 mcpc --help
 ```
 
-As a supply-chain hardening measure, `pnpm-workspace.yaml` sets `minimumReleaseAge: 1440`, so newly
-published third-party packages aren't installed until they're at least 24 hours old. If a fresh
+As a supply-chain hardening measure, `pnpm-workspace.yaml` sets `minimumReleaseAge: 7200`, so newly
+published third-party packages aren't installed until they're at least 5 days old. If a fresh
 dependency bump seems "stuck," that's why — wait it out, or add a targeted exclusion in
 `minimumReleaseAgeExclude` if you have a justified reason.
+
+pnpm 10 applies that setting only when resolving new versions, not when installing an existing
+lockfile, so the policy is enforced over the committed `pnpm-lock.yaml` by a release gate:
+
+```bash
+pnpm run check:deps-age              # every locked version
+pnpm run check:deps-age -- --prod-only   # only what ships to users
+```
+
+It runs automatically during a release and fails it if anything is too young. Packages listed in
+`minimumReleaseAgeExclude` are not waved through — they get a shorter 48-hour floor, so an
+exemption never lets a same-day publish reach a release.
 
 ## Testing
 
@@ -101,8 +113,8 @@ pnpm run release:minor    # minor version bump (0.1.2 → 0.2.0)
 pnpm run release:major    # major version bump (0.1.2 → 1.0.0)
 ```
 
-The script validates preconditions locally (clean branch, up-to-date with `origin/main`, CI green),
-then triggers the `release.yml` GitHub Actions workflow which handles lint, build, test, version
+The script validates preconditions locally (clean branch, up-to-date with `origin/main`, dependency
+age), then triggers the `release.yml` GitHub Actions workflow which handles lint, build, test, version
 bump, changelog update, README update, git commit/tag/push, npm publish (with provenance), and
 GitHub release creation.
 
