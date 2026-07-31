@@ -1623,6 +1623,7 @@ export function formatServerDetails(
   // to the version: a 2025-11-25 HTTP server that issues no session id is stateless too,
   // while stdio is always stateful. Mirrored in `--json` as `_mcpc.transport`/`stateless`.
   // Comes first: the connection is what the rest of the screen is reported over.
+  // The server's other supported versions stay a `--json`-only detail (supportedVersions).
   if (protocolVersion) {
     const pinned = pinnedProtocolVersion ? ` ${chalk.gray('(pinned)')}` : '';
     const mode = connectionMode && connectionMode !== 'unknown' ? ` (${connectionMode})` : '';
@@ -1812,10 +1813,17 @@ export function formatServerDetails(
 
 /**
  * Format a JSON output help line with backtick-style Markdown formatting.
- * Optional schemaUrl adds a "Schema:" link for AI agents.
+ * Optional schemaUrl adds a "Schema:" link for AI agents — pass several (e.g. one per
+ * protocol era) to get one per line, each aligned under the first.
  */
-export function jsonHelp(description: string, shape?: string, schemaUrl?: string): string {
+export function jsonHelp(
+  description: string,
+  shape?: string,
+  schemaUrl?: string | string[]
+): string {
   const line = shape ? `  ${description}:\n  ${shape}` : `  ${description}`;
-  const link = schemaUrl ? `\n  Schema: ${schemaUrl}` : '';
+  const urls = schemaUrl === undefined ? [] : [schemaUrl].flat();
+  const schemaIndent = '\n' + ' '.repeat('  Schema: '.length);
+  const link = urls.length > 0 ? `\n  Schema: ${urls.join(schemaIndent)}` : '';
   return `\n${chalk.bold('JSON output (--json):')}\n${line}${link}\n`;
 }

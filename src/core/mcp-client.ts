@@ -5,6 +5,8 @@
 
 import {
   Client as SDKClient,
+  MAX_CACHE_TTL_MS,
+  SERVER_INFO_META_KEY,
   SdkHttpError,
   type ClientOptions,
 } from '@modelcontextprotocol/client';
@@ -89,7 +91,8 @@ interface TransportWithProtocolVersion extends Transport {
 }
 
 /**
- * Fallback freshness window for the in-memory tools cache on stateless connections.
+ * Fallback freshness window for the in-memory tools cache on stateless connections, used
+ * when the server sends no `ttlMs` cache hint (see deriveToolsCacheExpiry).
  * Stateless servers (2026-07-28) may not push tools/list_changed (no standing stream), so the
  * cache would otherwise go stale silently. Stateful connections rely on notification-driven
  * invalidation and use no expiry.
@@ -428,18 +431,33 @@ export class McpClient implements IMcpClient {
   /**
    * Get all server information in a single call
    * Returns a Promise for interface compatibility with SessionClient
-   * Structure matches MCP InitializeResult for consistency
+   *
+   * Era-neutral by construction (see ServerDetails): the fields common to
+   * `InitializeResult` and `DiscoverResult` come from the SDK's accessors, which are
+   * populated by whichever handshake ran, and the discover-only `supportedVersions` /
+   * `_meta` are read off the `server/discover` result on modern connections.
+   *
+   * 2026-07-28 moved the server identity out of the handshake into a `_meta` key that
+   * servers SHOULD stamp on every response, so the latest discover result is the freshest
+   * identity we hold: a modern connection reads `serverInfo` from there, and only falls
+   * back to the SDK accessor (frozen at connect) when the server sent none. Both fields
+   * then come from the same snapshot — `ping` re-runs `server/discover` on modern
+   * connections, which refreshes `_meta` but not the accessor.
    */
   getServerDetails(): Promise<ServerDetails> {
     const details: ServerDetails = {};
-    const serverInfo = this.client.getServerVersion();
     const capabilities = this.client.getServerCapabilities();
     const instructions = this.client.getInstructions();
+    // Undefined on legacy connections — there is no DiscoverResult on that path.
+    const discovered = this.client.getDiscoverResult();
+    const serverInfo = discovered?._meta?.[SERVER_INFO_META_KEY] ?? this.client.getServerVersion();
 
     if (this.negotiatedProtocolVersion) details.protocolVersion = this.negotiatedProtocolVersion;
+    if (discovered?.supportedVersions) details.supportedVersions = discovered.supportedVersions;
     if (capabilities) details.capabilities = capabilities;
     if (serverInfo) details.serverInfo = serverInfo;
     if (instructions) details.instructions = instructions;
+    if (discovered?._meta) details._meta = discovered._meta;
     details.connectionMode = this.deriveConnectionMode();
     const transport = this.deriveTransportKind();
     if (transport) details.transport = transport;
@@ -515,12 +533,16 @@ export class McpClient implements IMcpClient {
   }
 
   /**
-   * List available tools (single page)
+   * List available tools (single page).
+   * `refresh` forces a wire request, bypassing the SDK's own response cache.
    */
-  async listTools(cursor?: string): Promise<ListToolsResult> {
+  async listTools(cursor?: string, refresh?: boolean): Promise<ListToolsResult> {
     try {
       this.logger.debug('Listing tools...', cursor ? { cursor } : {});
-      const result = await this.client.listTools({ cursor }, this.getRequestOptions());
+      const result = await this.client.listTools(
+        { cursor },
+        { ...this.getRequestOptions(), ...(refresh && { cacheMode: 'refresh' as const }) }
+      );
       this.logger.debug(`Found ${result.tools.length} tools`);
       return result;
     } catch (error) {
@@ -540,19 +562,44 @@ export class McpClient implements IMcpClient {
       return { tools: this.cachedTools };
     }
 
+    let firstPage: ListToolsResult | undefined;
     const allTools: Tool[] = await fetchAllPages(
-      (cursor) => this.listTools(cursor),
+      async (cursor) => {
+        const page = await this.listTools(cursor, options?.refreshCache);
+        firstPage ??= page;
+        return page;
+      },
       (page) => page.tools
     );
 
     this.cachedTools = allTools;
-    // Stateless connections get a time-based expiry as a fallback for absent list_changed
-    // pushes; stateful connections keep no expiry (notifications/explicit invalidation drive it).
-    this.cachedToolsExpiresAt =
-      this.deriveConnectionMode() === 'stateless'
-        ? Date.now() + STATELESS_TOOLS_CACHE_TTL_MILLIS
-        : null;
+    this.cachedToolsExpiresAt = this.deriveToolsCacheExpiry(firstPage);
     return { tools: allTools };
+  }
+
+  /**
+   * When the cached tools list goes stale, as an absolute timestamp (`null` = never).
+   *
+   * A 2026-07-28 server MAY attach the `ttlMs` cache hint to `tools/list` (SEP-2549);
+   * it wins when present, clamped to the same 24h ceiling the SDK applies, with `0`
+   * meaning "immediately stale". Without a hint, stateless connections fall back to a
+   * fixed window (they may not push `tools/list_changed`, so the cache would otherwise go
+   * stale silently) and stateful connections keep no expiry at all — notification-driven
+   * and explicit invalidation drive those.
+   *
+   * The companion `cacheScope` hint needs no handling: every cache here lives inside one
+   * bridge process serving exactly one session, i.e. one authorization context, so a
+   * `private` result is never shared with another principal.
+   */
+  private deriveToolsCacheExpiry(firstPage: ListToolsResult | undefined): number | null {
+    // Typed `unknown` — the hint rides the result's loose passthrough fields.
+    const ttlMillis = firstPage?.ttlMs;
+    if (typeof ttlMillis === 'number') {
+      return Date.now() + Math.min(Math.max(0, ttlMillis), MAX_CACHE_TTL_MS);
+    }
+    return this.deriveConnectionMode() === 'stateless'
+      ? Date.now() + STATELESS_TOOLS_CACHE_TTL_MILLIS
+      : null;
   }
 
   private isToolsCacheExpired(): boolean {

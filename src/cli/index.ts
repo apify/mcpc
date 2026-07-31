@@ -14,7 +14,8 @@ import { formatJson, formatJsonError, jsonHelp, rainbow, theme } from './output.
 import {
   SCHEMA_BASE,
   LEGACY_SCHEMA_BASE,
-  SERVER_DETAILS_JSON_HELP_INLINE,
+  SESSION_DETAILS_HELP,
+  outputHelp,
   serverDetailsJsonHelp,
 } from './help-text.js';
 import * as tools from './commands/tools.js';
@@ -516,7 +517,10 @@ ${chalk.bold('Protocol version:')}
 ${chalk.bold('x402 payments (experimental):')}
   --x402 pays for paid tool calls from the wallet set up with mcpc x402.
   Schemes: auto (default, prefers upto), upto, exact.
-${serverDetailsJsonHelp('array')}`
+${outputHelp([
+  'For a single server, shows session, server info, capabilities, and tools.',
+  'Bulk connects list every session with its state, then a summary.',
+])}${serverDetailsJsonHelp('array')}`
     )
     .action(async (server, sessionName, opts, command) => {
       const globalOpts = getOptionsFromCommand(command);
@@ -636,7 +640,8 @@ ${serverDetailsJsonHelp('array')}`
     .description('Restart a session (losing all state)')
     .addHelpText(
       'after',
-      `\nAfter restarting, the session details are shown again.\n${serverDetailsJsonHelp('object')}`
+      outputHelp('After restarting, shows session, server info, capabilities, and tools.') +
+        serverDetailsJsonHelp('object')
     )
     .action(async (sessionName, _opts, command) => {
       if (!sessionName) {
@@ -1022,7 +1027,8 @@ function registerSessionCommands(program: Command, session: string): void {
     .description('Restart MCP session (losing all state).')
     .addHelpText(
       'after',
-      `\nAfter restarting, the session details are shown again.\n${serverDetailsJsonHelp('object')}`
+      outputHelp('After restarting, shows session, server info, capabilities, and tools.') +
+        serverDetailsJsonHelp('object')
     )
     .action(async (_options, command) => {
       await sessions.restartSession(session, getOptionsFromCommand(command));
@@ -1523,12 +1529,7 @@ function createSessionProgram(): Command {
     .option('--timeout <seconds>', 'Request timeout in seconds (default: 60)')
     .option('--max-chars <n>', 'Truncate output to n characters (ignored in --json mode)')
     .option('--insecure', 'Skip TLS certificate verification (for self-signed certs)')
-    .addHelpText(
-      'after',
-      `
-When no command is given, shows server info, capabilities, and tools.
-${SERVER_DETAILS_JSON_HELP_INLINE}`
-    );
+    .addHelpText('after', SESSION_DETAILS_HELP);
 
   return program;
 }

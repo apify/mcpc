@@ -331,6 +331,8 @@ When making changes, follow these rules to maintain the security posture:
 
 **Era-dependent behavior in mcpc:** `ping` maps to `server/discover` on modern connections; `logging-set-level` and the task commands are 2025-11-25-only (tasks moved to the `io.modelcontextprotocol/tasks` extension, which the SDK does not implement yet); `resources-subscribe` uses `subscriptions/listen` on modern connections and `resources/subscribe` on legacy ones.
 
+**One server-details shape for both eras:** `ServerDetails` (`src/lib/types.ts`) reconciles `InitializeResult` and `DiscoverResult` — the fields both carry (`protocolVersion`, `capabilities`, `serverInfo`, `instructions`) plus the discover-only `supportedVersions` and `_meta`, which are absent on legacy connections. It is what `mcpc connect --json`, `mcpc @session --json` and `restart --json` print, and what the bridge persists in `sessions.json` (so a resumed session, which skips the handshake, can still report all of it). Never fabricate an era's missing field — a legacy connection has no `supportedVersions` because the server never advertised one.
+
 **MCP Primitives:**
 
 - **Instructions**: Server-provided instructions fetched and stored
@@ -722,7 +724,7 @@ Bridge logs location: `~/.mcpc/logs/bridge-<session>.log`
 - **IPC Layer**: Unix socket communication between CLI and bridge (BridgeClient, SessionClient)
 - **Target Resolution**: URL/session/config resolution logic (sessions and HTTP servers working)
 - **CLI-to-MCP Integration**: Full integration via direct connection and session bridge
-- **Caching**: In-memory tools cache in the bridge, invalidated by `tools/list_changed` notifications (no TTL on stateful connections; 60s TTL fallback for stateless connections that can't push notifications)
+- **Caching**: In-memory tools cache in the bridge, invalidated by `tools/list_changed` notifications (a server-sent `ttlMs` cache hint wins when present; otherwise no TTL on stateful connections and a 60s TTL fallback for stateless connections that can't push notifications)
 - **Notification Handling**: Full notification support in the bridge process
   - `tools/list_changed`, `resources/list_changed`, `prompts/list_changed` notifications
   - Automatic cache invalidation on list changes, timestamps tracked in `sessions.json`

@@ -96,10 +96,11 @@ async function checkPortAvailable(host: string, port: number): Promise<boolean> 
 
 /**
  * One entry in the unified JSON array returned by `mcpc connect`.
- * Mirrors MCP `InitializeResult` (protocolVersion/capabilities/serverInfo/instructions),
- * extended with `toolNames` and an `_mcpc` metadata block. The same shape is used for
- * both single-server and multi-server connects so consumers can always treat the output
- * as an array.
+ * Mirrors the server's handshake result — MCP `InitializeResult` on 2025-11-25
+ * connections, `DiscoverResult` on 2026-07-28 ones (see `ServerDetails`) — extended with
+ * `toolNames` and an `_mcpc` metadata block. The same shape is used for both
+ * single-server and multi-server connects so consumers can always treat the output as an
+ * array.
  *
  * For failed/skipped entries only the `_mcpc` block is populated.
  */
@@ -116,7 +117,15 @@ export type ConnectResultEntry = {
     stateless?: boolean | null; // true=stateless, false=stateful, null=not yet determined
   };
 } & Partial<
-  Pick<ServerDetails, 'protocolVersion' | 'capabilities' | 'serverInfo' | 'instructions'>
+  Pick<
+    ServerDetails,
+    | 'protocolVersion'
+    | 'supportedVersions'
+    | 'capabilities'
+    | 'serverInfo'
+    | 'instructions'
+    | '_meta'
+  >
 > & {
     toolNames?: string[];
   };
@@ -142,8 +151,8 @@ type ConnectSessionOptions = {
 };
 
 /**
- * Connect to a session via the bridge and build a populated ConnectResultEntry from
- * its InitializeResult and tools list. The entry's `_mcpc.server` headers are redacted.
+ * Connect to a session via the bridge and build a populated ConnectResultEntry from its
+ * server details and tools list. The entry's `_mcpc.server` headers are redacted.
  */
 async function buildConnectResultEntry(
   sessionName: string,
@@ -188,9 +197,13 @@ async function buildConnectResultEntry(
           ...statelessField(serverDetails.connectionMode),
         },
         ...(serverDetails.protocolVersion && { protocolVersion: serverDetails.protocolVersion }),
+        ...(serverDetails.supportedVersions && {
+          supportedVersions: serverDetails.supportedVersions,
+        }),
         ...(serverDetails.capabilities && { capabilities: serverDetails.capabilities }),
         ...(serverDetails.serverInfo && { serverInfo: serverDetails.serverInfo }),
         ...(serverDetails.instructions && { instructions: serverDetails.instructions }),
+        ...(serverDetails._meta && { _meta: serverDetails._meta }),
         ...(tools.length > 0 && { toolNames: tools.map((t) => t.name) }),
       };
     }

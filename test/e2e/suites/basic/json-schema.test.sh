@@ -21,7 +21,9 @@ test_pass
 
 # =============================================================================
 # Test: mcpc @session --json (server details / handshake result)
-# MCP spec: InitializeResult contains protocolVersion, capabilities, serverInfo
+# MCP spec: InitializeResult (2025-11-25) contains protocolVersion, capabilities,
+# serverInfo; DiscoverResult (2026-07-28) replaces it and adds supportedVersions
+# plus a `_meta` block carrying the server identity.
 # =============================================================================
 
 test_case "server details JSON has protocolVersion"
@@ -64,11 +66,40 @@ assert_success
 assert_json "$STDOUT" '.instructions' "should have instructions field (check for typos)"
 test_pass
 
+test_case "server details JSON reports the discover-only fields per era"
+run_mcpc "$SESSION" --json
+assert_success
+if [[ "$E2E_SERVER_PROTOCOL" == "modern" ]]; then
+  # DiscoverResult.supportedVersions must list the version actually negotiated
+  assert_json "$STDOUT" '.supportedVersions' "should have supportedVersions field"
+  negotiated=$(json_get '.protocolVersion')
+  if ! echo "$STDOUT" | jq -e --arg v "$negotiated" '.supportedVersions | index($v)' >/dev/null; then
+    test_fail "supportedVersions should contain the negotiated version $negotiated"
+  fi
+  # `_meta` is passed through verbatim, including the server identity the SDK lifts
+  # into serverInfo
+  assert_json "$STDOUT" '._meta' "should have the discover result's _meta"
+  assert_json "$STDOUT" '._meta."io.modelcontextprotocol/serverInfo".name' "_meta should carry serverInfo"
+else
+  # The legacy initialize handshake carries neither field
+  if echo "$STDOUT" | jq -e 'has("supportedVersions")' >/dev/null; then
+    test_fail "supportedVersions must not appear on a 2025-11-25 connection"
+  fi
+  if echo "$STDOUT" | jq -e 'has("_meta")' >/dev/null; then
+    test_fail "_meta must not appear on a 2025-11-25 connection"
+  fi
+fi
+test_pass
+
 test_case "server details JSON has exact expected fields"
 run_mcpc "$SESSION" --json
 assert_success
-# MCP InitializeResult - validate exact top-level fields (no more, no less)
+# Validate exact top-level fields (no more, no less). The 2026-07-28 handshake result
+# carries two fields the 2025-11-25 one does not: supportedVersions and _meta.
 expected_fields="_mcpc,capabilities,instructions,protocolVersion,serverInfo,toolNames"
+if [[ "$E2E_SERVER_PROTOCOL" == "modern" ]]; then
+  expected_fields="_mcpc,_meta,capabilities,instructions,protocolVersion,serverInfo,supportedVersions,toolNames"
+fi
 actual_fields=$(echo "$STDOUT" | jq -r 'keys | sort | join(",")')
 if [[ "$actual_fields" != "$expected_fields" ]]; then
   test_fail "unexpected top-level fields: expected [$expected_fields], got [$actual_fields]"

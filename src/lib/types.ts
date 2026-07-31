@@ -181,12 +181,15 @@ export interface SessionData {
   insecure?: boolean; // Skip TLS certificate verification
   pid?: number; // Bridge process PID
   protocolVersion?: string; // Negotiated MCP version
+  /**
+   * Every protocol version the server advertised in its `server/discover` result
+   * (2026-07-28 connections only — see `ServerDetails.supportedVersions`).
+   */
+  supportedVersions?: string[];
   mcpSessionId?: string; // Server-assigned MCP session ID for resumption (stateful Streamable HTTP only)
   connectionMode?: ConnectionMode; // Whether the connection carries server-side session state (derived at connect)
-  serverInfo?: {
-    name: string;
-    version: string;
-  };
+  /** Server identity, as reported by the handshake (`initialize`) or `server/discover`. */
+  serverInfo?: Implementation;
   /**
    * Server capabilities reported by the initialize handshake. Persisted because a
    * resumed session reuses the server-side session and therefore skips the handshake,
@@ -199,6 +202,12 @@ export interface SessionData {
    * read on every command), and omitted when the server sends none.
    */
   instructions?: string | undefined;
+  /**
+   * `_meta` of the server's `server/discover` result, verbatim (2026-07-28 connections
+   * only — see `ServerDetails._meta`). Persisted alongside `capabilities` so a resumed
+   * session can still report it.
+   */
+  _meta?: Record<string, unknown>;
   status?: SessionStatus; // Session health status (default: active)
   proxy?: ProxyConfig; // Proxy server configuration (if enabled)
   notifications?: SessionNotifications; // Last list change notification timestamps
@@ -473,18 +482,40 @@ export interface WalletsStorage {
 
 /**
  * Combined server details returned by getServerDetails()
- * Structure matches MCP InitializeResult for consistency
+ *
+ * One era-neutral shape for both handshakes: the fields that MCP `InitializeResult`
+ * (2025-11-25 `initialize`) and `DiscoverResult` (2026-07-28 `server/discover`) have in
+ * common, plus the discover-only `supportedVersions` and `_meta`, plus two fields mcpc
+ * derives itself (`connectionMode`, `transport`). On a 2026-07-28 connection the result
+ * satisfies both schemas: `serverInfo` is lifted out of the discover result's `_meta`, and
+ * `protocolVersion` is the version actually negotiated (the discover result only lists the
+ * versions on offer).
+ *
  * Fetched once during initialization, cached locally
  */
 export interface ServerDetails {
   /** Negotiated protocol version */
   protocolVersion?: string;
+  /**
+   * Every protocol version the server advertises (`DiscoverResult.supportedVersions`).
+   * 2026-07-28 connections only: the legacy `initialize` handshake reports nothing but the
+   * single version it agreed on.
+   */
+  supportedVersions?: string[];
   /** Server capabilities */
   capabilities?: ServerCapabilities;
   /** Server implementation details (name, version, etc.) - matches MCP serverInfo field */
   serverInfo?: Implementation;
   /** Server-provided instructions for the client */
   instructions?: string;
+  /**
+   * `_meta` of the server's `server/discover` result, verbatim. 2026-07-28 connections
+   * only (the SDK does not surface the legacy `initialize` result's `_meta`). Holds the
+   * spec's `io.modelcontextprotocol/serverInfo` — the identity 2026-07-28 servers stamp on
+   * every response, lifted into `serverInfo` above — plus any extension metadata the
+   * server attached to it.
+   */
+  _meta?: Record<string, unknown>;
   /** Whether the connection carries server-side session state (derived from transport + session id) */
   connectionMode?: ConnectionMode;
   /** Transport carrying the connection (derived from the live transport) */

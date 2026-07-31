@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for MCP protocol version 2026-07-28: mcpc now probes each server with `server/discover` and talks the new stateless protocol when supported, falling back to older protocol versions (2025-11-25 down to 2024-10-07) automatically. Resource subscriptions use the new `subscriptions/listen` stream (with automatic re-listen on drops), and `ping` transparently uses `server/discover` on 2026-07-28 servers. mcpc now uses the official TypeScript SDK v2 (`@modelcontextprotocol/client`).
 - `mcpc --json` now reports each session's server `capabilities`, plus `hasInstructions` to tell whether the server provided instructions (read them with `mcpc --json @<session>`).
 - New `--protocol-version` option for `mcpc connect` to pin the MCP protocol version (e.g. `--protocol-version 2025-11-25`) instead of auto-negotiating; the connection fails if the server does not support the pinned version. Also supported as a `protocolVersion` field in mcp.json config entries.
+- Server details from 2026-07-28 servers now include everything their `server/discover` result carries: `supportedVersions` (every protocol version the server offers) and the result's `_meta`. Reported by `connect`, `restart` and `mcpc @session` in `--json`, and kept in `sessions.json`.
 
 ### Changed
 
@@ -29,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Resumed sessions also keep their server capabilities and instructions, which previously vanished after a bridge restart: `mcpc @session` showed no capabilities, `grep` no longer found the server instructions, and `resources-subscribe` wrongly refused with "server does not support resource subscriptions".
 - `mcpc login` no longer prints the SDK warning about a missing `discoveryState()` implementation. The OAuth provider now records the discovered authorization server between the redirect and the code exchange, enabling the SEP-2352 mix-up attack check (the code is only redeemed at the server that minted it).
 - Bridge logs no longer report the spurious `authProvider.tokens() is NOT a function - this is a bug!` error when connecting with OAuth — a stale debug check left over from the SDK v1 era; authentication itself was unaffected.
+- `tools-list` now always refetches from the server: against a 2026-07-28 server that sends caching hints, the SDK's response cache could serve a stale tools list. The cached list also honors the server's `ttlMs` hint now, instead of always using mcpc's own freshness window.
 - Bridge logs no longer show a scary `Transport error: ... Bad Request: No valid session ID provided` stack trace when connecting to a server without 2026-07-28 support. That HTTP 400 is the server declining the `server/discover` version probe — the expected signal to fall back to the older protocol — and is now logged as a single debug line.
 
 ### Deprecated

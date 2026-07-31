@@ -196,7 +196,7 @@ test_pass
 # Test: JSON output is structured and lists discovered/results/skipped
 # =============================================================================
 
-test_case "--json output is an array of InitializeResult entries with _mcpc metadata"
+test_case "--json output is an array of server-details entries with _mcpc metadata"
 run_mcpc_discover --json connect
 assert_success "json discovery should succeed"
 
@@ -217,12 +217,12 @@ skipped_reason=$(echo "$STDOUT" | jq -r '[.[] | select(._mcpc.status == "skipped
 assert_eq "$skipped_name" "@shared"
 assert_eq "$skipped_reason" "duplicate"
 
-# Connected entry should expose InitializeResult fields (serverInfo at minimum)
+# Connected entry should expose the handshake-result fields (serverInfo at minimum)
 connected_name=$(echo "$STDOUT" | jq -r '[.[] | select(._mcpc.status == "active" or ._mcpc.status == "created")][0]._mcpc.sessionName')
 connected_server=$(echo "$STDOUT" | jq -r '[.[] | select(._mcpc.status == "active" or ._mcpc.status == "created")][0].serverInfo.name // empty')
 assert_eq "$connected_name" "@shared"
 if [[ -z "$connected_server" ]]; then
-  test_fail "connected entry should include serverInfo.name from InitializeResult"
+  test_fail "connected entry should include serverInfo.name from the handshake result"
   exit 1
 fi
 test_pass

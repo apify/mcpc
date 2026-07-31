@@ -153,7 +153,7 @@ class BridgeProcess {
   // reports no serverInfo/capabilities/instructions of its own (see #325).
   private resumedHandshakeDetails: Pick<
     ServerDetails,
-    'serverInfo' | 'capabilities' | 'instructions'
+    'serverInfo' | 'capabilities' | 'instructions' | 'supportedVersions' | '_meta'
   > | null = null;
 
   // Promise to track when auth credentials are received (for startup sequencing)
@@ -795,6 +795,10 @@ class BridgeProcess {
         ...(sessionData.serverInfo && { serverInfo: sessionData.serverInfo }),
         ...(sessionData.capabilities && { capabilities: sessionData.capabilities }),
         ...(sessionData.instructions && { instructions: sessionData.instructions }),
+        ...(sessionData.supportedVersions && {
+          supportedVersions: sessionData.supportedVersions,
+        }),
+        ...(sessionData._meta && { _meta: sessionData._meta }),
       };
     }
 
@@ -843,6 +847,14 @@ class BridgeProcess {
     }
     if (serverDetails.serverInfo) {
       sessionUpdate.serverInfo = serverDetails.serverInfo;
+    }
+    // Every version the server offered, and the discover result's `_meta` — 2026-07-28
+    // connections only, so absent on legacy ones (see ServerDetails).
+    if (serverDetails.supportedVersions) {
+      sessionUpdate.supportedVersions = serverDetails.supportedVersions;
+    }
+    if (serverDetails._meta) {
+      sessionUpdate._meta = serverDetails._meta;
     }
     // Capabilities and instructions come from the handshake only, so persist them for
     // future resumptions. They travel together: writing instructions unconditionally
@@ -905,6 +917,12 @@ class BridgeProcess {
     }
     if (!details.instructions && persisted.instructions) {
       details.instructions = persisted.instructions;
+    }
+    if (!details.supportedVersions && persisted.supportedVersions) {
+      details.supportedVersions = persisted.supportedVersions;
+    }
+    if (!details._meta && persisted._meta) {
+      details._meta = persisted._meta;
     }
     return details;
   }
