@@ -51,9 +51,19 @@ test_pass
 
 # Test: session shows as crashed or reconnecting
 test_case "session shows as crashed or reconnecting after bridge kill"
-run_mcpc --json
-session_status=$(json_get ".sessions[] | select(.name == \"$SESSION\") | .status")
+# Poll rather than assert once: the status is derived from the bridge process
+# being gone, and the OS does not necessarily reap it the instant the kill
+# returns (slower on Windows and under parallel load).
 # Session may show as "crashed" (bridge dead) or "reconnecting" (auto-reconnect in progress)
+session_status=""
+for _ in $(seq 1 15); do
+  run_mcpc --json
+  session_status=$(json_get ".sessions[] | select(.name == \"$SESSION\") | .status")
+  if [[ "$session_status" == "crashed" || "$session_status" == "reconnecting" ]]; then
+    break
+  fi
+  sleep 0.3
+done
 if [[ "$session_status" != "crashed" && "$session_status" != "reconnecting" ]]; then
   test_fail "session should show as crashed or reconnecting, got: $session_status"
   exit 1

@@ -114,14 +114,30 @@ _wait_killed() {
 }
 
 # Check whether a process is currently running
+#
+# On Windows, `tasklist` can fail transiently (it is comparatively heavy and the
+# suite runs several tests at once), so an unreadable result must not be reported
+# as "exited" — that would make a polling caller stop waiting while the process is
+# still alive. Only a successful query that does not list the pid means gone.
 # Usage: process_is_running <pid>
 process_is_running() {
   local pid="$1"
-  if is_windows; then
-    tasklist //FI "PID eq $pid" //NH 2>/dev/null | grep -q "$pid"
-  else
+
+  if ! is_windows; then
     kill -0 "$pid" 2>/dev/null
+    return
   fi
+
+  local out
+  if ! out=$(tasklist //FI "PID eq $pid" //NH 2>/dev/null); then
+    return 0  # query failed — cannot tell, assume still running
+  fi
+  if [[ -z "${out//[[:space:]]/}" ]]; then
+    return 0  # no output at all — cannot tell, assume still running
+  fi
+  # Non-empty output: the pid is listed if running, otherwise tasklist printed an
+  # informational "no tasks match" line (whose wording varies by locale).
+  [[ "$out" == *"$pid"* ]]
 }
 
 # Wait until a process has exited. Returns 0 once it is gone, 1 if it is still
