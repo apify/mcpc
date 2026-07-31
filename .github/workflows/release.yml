@@ -100,6 +100,14 @@ jobs:
       - name: Install pnpm and dependencies
         uses: apify/actions/pnpm-install@v1.1.2
 
+      - name: Check dependency age
+        # Supply-chain gate: pnpm's `minimumReleaseAge` only applies when resolving new
+        # versions, and pnpm 10 does not re-check an existing lockfile on a
+        # --frozen-lockfile install, so without this nothing enforces the quarantine at
+        # release time. Runs before the version bump, tag, push and publish steps, so a
+        # failure costs nothing and leaves no partial release behind.
+        run: pnpm run check:deps-age
+
       - name: Lint
         run: pnpm run lint
 
