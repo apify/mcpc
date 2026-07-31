@@ -109,6 +109,22 @@ assert_contains "$STDERR" "Missing session target for command: tools-list"
 assert_contains "$STDERR" "Did you mean: mcpc <@session> tools-list"
 test_pass
 
+# Test: MCP JSON-RPC-style method name without @session is recognized (silent alias)
+# and hints the hyphenated form, not the raw method name.
+test_case "slash-style method name without @session suggests hyphenated form"
+run_mcpc tools/list
+assert_failure
+assert_contains "$STDERR" "Missing session target for command: tools/list"
+assert_contains "$STDERR" "Did you mean: mcpc <@session> tools-list"
+test_pass
+
+# Test: unmatched slash-style token is still reported as unknown (no false alias)
+test_case "unmatched slash-style token stays unknown"
+run_mcpc @test foo/bar
+assert_failure
+assert_contains "$STDERR" "Unknown command: foo/bar"
+test_pass
+
 # Test: bare "tools" without @session suggests session subcommand
 test_case "top-level bare tools suggests session subcommand"
 run_mcpc tools

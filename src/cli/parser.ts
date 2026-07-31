@@ -223,6 +223,59 @@ export function suggestCommand(
 }
 
 /**
+ * Normalize an MCP JSON-RPC-style method name (e.g. "tools/list",
+ * "logging/setLevel", "resources/templates/list") into mcpc's hyphenated
+ * command form ("tools-list", "logging-set-level", "resources-templates-list").
+ * Returns the input unchanged if it contains no '/'.
+ *
+ * Undocumented convenience: accepted silently as an alias wherever a command
+ * name is expected, for users who reach for the raw protocol method name out
+ * of habit. Never advertised in --help or "Did you mean?" suggestions.
+ */
+export function normalizeSlashCommand(token: string): string {
+  if (!token.includes('/')) return token;
+  return token
+    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+    .toLowerCase()
+    .replace(/\//g, '-');
+}
+
+/**
+ * Rewrite the first positional command token in `args` if it's a slash-style
+ * MCP method name (see normalizeSlashCommand) that maps to a known hyphenated
+ * command. Only the command-name slot is touched — later positional args
+ * (tool names, resource URIs, etc.) are left untouched even if they contain '/'.
+ *
+ * @param startIndex where to start scanning for the first positional token
+ *   (2 when `args` mirrors process.argv with its [node, script] prefix, 0 when
+ *   `args` is already a bare argument list).
+ */
+export function normalizeSlashCommandArgs(
+  args: string[],
+  knownCommands: string[],
+  startIndex: number
+): string[] {
+  for (let i = startIndex; i < args.length; i++) {
+    const arg = args[i];
+    if (!arg) continue;
+    if (arg.startsWith('-')) {
+      if (optionTakesValue(arg) && !arg.includes('=')) i++; // skip option value
+      continue;
+    }
+    if (arg.includes('/')) {
+      const normalized = normalizeSlashCommand(arg);
+      if (knownCommands.includes(normalized)) {
+        const result = [...args];
+        result[i] = normalized;
+        return result;
+      }
+    }
+    return args;
+  }
+  return args;
+}
+
+/**
  * Check if an option always takes a value
  */
 export function optionTakesValue(arg: string): boolean {

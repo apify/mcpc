@@ -11,6 +11,8 @@ import {
   optionTakesValue,
   hasSubcommand,
   suggestCommand,
+  normalizeSlashCommand,
+  normalizeSlashCommandArgs,
   preProcessX402Argv,
 } from '../../../src/cli/parser.js';
 import { ClientError } from '../../../src/lib/errors.js';
@@ -590,6 +592,74 @@ describe('suggestCommand', () => {
     expect(suggestCommand('tools-lst', commands, 0)).toBeUndefined();
     // With higher maxDistance, more distant matches are accepted
     expect(suggestCommand('tools-lst', commands, 1)).toBe('tools-list');
+  });
+});
+
+describe('normalizeSlashCommand', () => {
+  it('returns the input unchanged when there is no slash', () => {
+    expect(normalizeSlashCommand('tools-list')).toBe('tools-list');
+    expect(normalizeSlashCommand('connect')).toBe('connect');
+  });
+
+  it('converts simple slash method names to hyphenated form', () => {
+    expect(normalizeSlashCommand('tools/list')).toBe('tools-list');
+    expect(normalizeSlashCommand('tools/call')).toBe('tools-call');
+    expect(normalizeSlashCommand('resources/read')).toBe('resources-read');
+    expect(normalizeSlashCommand('prompts/get')).toBe('prompts-get');
+    expect(normalizeSlashCommand('server/discover')).toBe('server-discover');
+  });
+
+  it('converts multi-segment slash method names', () => {
+    expect(normalizeSlashCommand('resources/templates/list')).toBe('resources-templates-list');
+  });
+
+  it('splits camelCase segments into kebab-case', () => {
+    expect(normalizeSlashCommand('logging/setLevel')).toBe('logging-set-level');
+  });
+});
+
+describe('normalizeSlashCommandArgs', () => {
+  const commands = ['tools-list', 'tools-call', 'resources-read', 'logging-set-level'];
+
+  it('rewrites the first positional token when it maps to a known command', () => {
+    expect(normalizeSlashCommandArgs(['node', 'script', 'tools/list'], commands, 2)).toEqual([
+      'node',
+      'script',
+      'tools-list',
+    ]);
+  });
+
+  it('skips leading global options (and their values) before the command token', () => {
+    expect(
+      normalizeSlashCommandArgs(['node', 'script', '--json', 'tools/call', 'my-tool'], commands, 2)
+    ).toEqual(['node', 'script', '--json', 'tools-call', 'my-tool']);
+    expect(
+      normalizeSlashCommandArgs(
+        ['node', 'script', '--timeout', '30', 'logging/setLevel', 'debug'],
+        commands,
+        2
+      )
+    ).toEqual(['node', 'script', '--timeout', '30', 'logging-set-level', 'debug']);
+  });
+
+  it('leaves the args unchanged when the slash token has no known mapping', () => {
+    const args = ['node', 'script', 'foo/bar'];
+    expect(normalizeSlashCommandArgs(args, commands, 2)).toBe(args);
+  });
+
+  it('leaves already-hyphenated commands unchanged', () => {
+    const args = ['node', 'script', 'tools-list'];
+    expect(normalizeSlashCommandArgs(args, commands, 2)).toBe(args);
+  });
+
+  it('does not touch positional args after the command token even if they contain a slash', () => {
+    expect(
+      normalizeSlashCommandArgs(['node', 'script', 'resources-read', 'file:///tmp/x'], commands, 2)
+    ).toEqual(['node', 'script', 'resources-read', 'file:///tmp/x']);
+  });
+
+  it('respects a bare (no node/script prefix) argument list via startIndex 0', () => {
+    expect(normalizeSlashCommandArgs(['tools/list'], commands, 0)).toEqual(['tools-list']);
   });
 });
 
