@@ -787,7 +787,14 @@ Before releasing:
 
 The script validates preconditions locally, then triggers the `release.yml` GitHub Actions workflow which handles: lint, build, test, version bump, changelog update, README update, git commit/tag/push, npm publish (with provenance), and GitHub release creation.
 
-A full release also dispatches the `update_formula.yaml` workflow in [apify/homebrew-tap](https://github.com/apify/homebrew-tap), which points `Formula/mcpc.rb` at the new npm tarball, installs and `brew test`s it on Linux and macOS, and merges the bump. The formula itself lives in the tap repository, not here; a failed dispatch only warns (the release is already published) and can be re-run from the tap's Actions tab.
+The Homebrew formula lives in [apify/homebrew-tap](https://github.com/apify/homebrew-tap), not here, and its bump is **started manually for now** — the release workflow only prints the command in its run summary:
+
+```bash
+gh workflow run update_formula.yaml --repo apify/homebrew-tap \
+  --field package=mcpc --field npm_package=@apify/mcpc --field version=<version>
+```
+
+That workflow points `Formula/mcpc.rb` at the new npm tarball, installs and `brew test`s it on Linux and macOS, and merges the bump. Skipping it only leaves Homebrew users on the previous version; npm and Bun installs are unaffected.
 
 For pre-releases: `pnpm run release:pre` (or `pnpm run release:pre -- minor`)
 
