@@ -785,7 +785,11 @@ Before releasing:
 2. Ensure your branch is clean, up-to-date with `origin/main`, and all CI checks pass
 3. Run `pnpm run release` (or `pnpm run release:minor` / `pnpm run release:major`)
 
-The script validates preconditions locally, then triggers the `release.yml` GitHub Actions workflow which handles: lint, build, test, version bump, changelog update, README update, git commit/tag/push, npm publish (with provenance), and GitHub release creation.
+The script validates preconditions locally (including `pnpm run check:deps-age`, see below), then triggers the `release.yml` GitHub Actions workflow which handles: dependency-age gate, lint, build, test, version bump, changelog update, README update, git commit/tag/push, npm publish (with provenance), and GitHub release creation.
+
+### Dependency-age gate
+
+`pnpm-workspace.yaml` sets `minimumReleaseAge` to keep freshly-published (potentially compromised) packages out of the tree, but pnpm applies it only when *resolving* new versions — pnpm 10 does not re-check an existing lockfile on a `--frozen-lockfile` install (that landed in pnpm 11). `scripts/check-dependency-age.mjs` closes that gap: it reads the publish time of every version pinned in `pnpm-lock.yaml` and fails the release if anything is too young. Packages listed in `minimumReleaseAgeExclude` get a shorter 48-hour floor instead of a free pass. The check fails closed — a registry error is a failure, never a skip. Remove the script once the repo moves to pnpm ≥ 11 and native lockfile age verification covers it.
 
 For pre-releases: `pnpm run release:pre` (or `pnpm run release:pre -- minor`)
 
