@@ -1393,6 +1393,10 @@ class BridgeProcess {
           result = await this.client.ping();
           break;
 
+        case 'discover':
+          result = await this.client.discover();
+          break;
+
         case 'listTools': {
           const cursor = message.params as string | undefined;
           result = await this.client.listTools(cursor);

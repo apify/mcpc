@@ -460,6 +460,7 @@ ${chalk.bold('MCP session commands (after connecting):')}
   <@session> ${theme.cyan('skills-get')} <name> [--raw]
   <@session> ${theme.cyan('logging-set-level')} <level>
   <@session> ${theme.cyan('ping')}
+  <@session> ${theme.cyan('server-discover')}
   <@session> ${theme.cyan('logs')} [-n N] [--follow] [--since 1h]
 
 Run "mcpc" without arguments to show active sessions and OAuth profiles.
@@ -1445,11 +1446,36 @@ ${jsonHelp('`{ level: string }`')}`
       `
 ${chalk.bold('Notes:')}
   Measures the request roundtrip. MCP 2026-07-28 removed \`ping\`, so on modern
-  connections the liveness probe is \`server/discover\` instead.
+  connections the liveness probe is \`server/discover\` instead — run
+  \`mcpc ${session} server-discover\` to see what that request returns.
 ${jsonHelp('`{ success: true, durationMs: number }`')}`
     )
     .action(async (_options, command) => {
       await utilities.ping(session, getOptionsFromCommand(command));
+    });
+
+  program
+    .command('server-discover')
+    .description('Ask the server what it supports (MCP 2026-07-28+).')
+    .addHelpText(
+      'after',
+      `
+${chalk.bold('Notes:')}
+  Sends \`server/discover\` and reports the answer: every protocol version the
+  server supports, its capabilities, instructions, and \`_meta\`. Unlike
+  \`mcpc ${session}\`, which shows what the connection settled on at connect time,
+  this is a live request.
+  MCP 2026-07-28 introduced the method, so the command fails on 2025-11-25 (and
+  older) connections, where \`initialize\` carries the same data — run
+  \`mcpc ${session}\` there instead.
+${jsonHelp(
+  '`DiscoverResult` object, verbatim',
+  '`{ supportedVersions: [...], capabilities: { ... }, instructions?, _meta? }`',
+  `${SCHEMA_BASE}#discoverresult`
+)}`
+    )
+    .action(async (_options, command) => {
+      await utilities.serverDiscover(session, getOptionsFromCommand(command));
     });
 
   // Logs command

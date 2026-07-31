@@ -251,6 +251,8 @@ mcpc @apify skills-get <name> --raw    # print the SKILL.md markdown (pipe to a 
 mcpc --verbose @apify tools-call <tool>   # protocol-level detail (JSON-RPC, transport)
 mcpc @apify logs                          # bridge log; -n <N>, --follow, --since 1h
 mcpc @apify ping                          # round-trip health check
+mcpc @apify server-discover               # what the server advertises now (2026-07-28 only;
+                                          # on older servers use mcpc @apify instead)
 mcpc @apify logging-set-level debug       # deprecated; 2025-11-25 servers only, will be removed
 mcpc clean                                # tidy stale sessions/logs (also: mcpc clean all)
 ```

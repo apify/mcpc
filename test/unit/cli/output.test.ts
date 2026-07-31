@@ -40,6 +40,7 @@ import {
   formatTools,
   formatToolDetail,
   formatServerDetails,
+  formatDiscoverResult,
   formatResources,
   formatResourceDetail,
   formatResourceContents,
@@ -1410,6 +1411,71 @@ describe('formatServerDetails', () => {
 
     expect(output).toContain('skills (experimental extension)');
     expect(output).toContain('mcpc @exp skills-list');
+  });
+});
+
+describe('formatDiscoverResult', () => {
+  const result = {
+    supportedVersions: ['2026-07-28', '2025-11-25'],
+    capabilities: { tools: { listChanged: true }, logging: {} },
+    instructions: 'Server instructions.',
+    _meta: {
+      'io.modelcontextprotocol/serverInfo': { name: 'Modern Server', version: '2.0.0' },
+    },
+  } as Parameters<typeof formatDiscoverResult>[0];
+
+  it('reports identity, every advertised version, capabilities and instructions', () => {
+    const output = formatDiscoverResult(result, '@m', '2026-07-28');
+
+    // Identity comes from the discover result's `_meta`, not from the handshake
+    expect(output).toContain('Modern Server (version: 2.0.0)');
+    expect(output).toContain('Supported protocol versions:');
+    expect(output).toContain('2026-07-28');
+    expect(output).toContain('2025-11-25');
+    expect(output).toContain('tools (dynamic)');
+    expect(output).toContain('Server instructions.');
+    // Points at the session screen for the connection state and command inventory
+    expect(output).toContain('mcpc @m');
+  });
+
+  it('marks the version this session negotiated', () => {
+    const output = formatDiscoverResult(result, '@m', '2026-07-28');
+    expect(output).toMatch(/2026-07-28 \(negotiated\)/);
+    expect(output).not.toMatch(/2025-11-25 \(negotiated\)/);
+  });
+
+  it('annotates logging as notifications-only on a modern connection', () => {
+    // logging/setLevel is gone in 2026-07-28, so the capability must not read as usable
+    const output = formatDiscoverResult(result, '@m', '2026-07-28');
+    expect(output).toContain('logging (notifications only)');
+  });
+
+  it('shows extension metadata beyond the server identity', () => {
+    const withMeta = {
+      ...result,
+      _meta: { ...result._meta, 'com.example/region': 'eu-central-1' },
+    } as Parameters<typeof formatDiscoverResult>[0];
+
+    const output = formatDiscoverResult(withMeta, '@m', '2026-07-28');
+
+    expect(output).toContain('Metadata:');
+    expect(output).toContain('com.example/region');
+    expect(output).toContain('eu-central-1');
+    // The identity is already shown as "Server:", so it is not repeated as metadata
+    expect(output).not.toContain('io.modelcontextprotocol/serverInfo');
+  });
+
+  it('handles a server that advertises no capabilities and no instructions', () => {
+    const bare = { supportedVersions: ['2026-07-28'], capabilities: {} } as Parameters<
+      typeof formatDiscoverResult
+    >[0];
+
+    const output = formatDiscoverResult(bare, '@bare', '2026-07-28');
+
+    expect(output).toContain('Capabilities:');
+    expect(output).toContain('(none)');
+    expect(output).not.toContain('Instructions:');
+    expect(output).not.toContain('Metadata:');
   });
 });
 

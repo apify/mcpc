@@ -5,10 +5,13 @@
 
 import chalk from 'chalk';
 import type {
+  DiscoverResult,
   GetPromptResult,
+  Implementation,
   PromptMessage,
   ContentBlock,
   ReadResourceResult,
+  ServerCapabilities,
 } from '@modelcontextprotocol/client';
 import type { OutputMode } from '../lib/index.js';
 import type {
@@ -26,7 +29,7 @@ import type {
 import { extractAllTextContent } from './tool-result.js';
 import { getSession } from '../lib/sessions.js';
 import { getBridgeLogPath } from '../lib/log-reader.js';
-import { isModernProtocolVersion } from '../core/protocol.js';
+import { isModernProtocolVersion, SERVER_INFO_META_KEY } from '../core/protocol.js';
 
 // Re-export for external use
 export { extractAllTextContent } from './tool-result.js';
@@ -1601,6 +1604,138 @@ function formatTransportKind(transport: TransportKind): string {
 }
 
 /**
+ * Whether the server advertises the experimental skills extension (SEP-2640).
+ *
+ * The spec advertises it under `capabilities.extensions`, but the current MCP SDK strips
+ * unknown capability fields. The SDK does preserve `capabilities.experimental` — the
+ * long-standing escape hatch for non-standard capabilities — so both locations are
+ * checked, to support today's servers and forward-compatible SDKs.
+ */
+function hasSkillsExtension(capabilities?: ServerCapabilities): boolean {
+  const caps = capabilities as
+    { extensions?: Record<string, unknown>; experimental?: Record<string, unknown> } | undefined;
+  const SKILLS_KEY = 'io.modelcontextprotocol/skills';
+  return (
+    (!!caps?.extensions && Object.prototype.hasOwnProperty.call(caps.extensions, SKILLS_KEY)) ||
+    (!!caps?.experimental && Object.prototype.hasOwnProperty.call(caps.experimental, SKILLS_KEY))
+  );
+}
+
+/**
+ * Bullet list of the capabilities a server actually exposes (empty when it exposes none).
+ *
+ * Some capabilities are era-dependent: a 2026-07-28 server may still advertise `logging`
+ * (log notifications survived) or `tasks`, but the matching mcpc commands don't work there
+ * — `logging/setLevel` was removed from the protocol and tasks moved to an extension mcpc
+ * doesn't support yet. Annotate those instead of advertising something that only errors out.
+ */
+function formatCapabilityList(
+  capabilities: ServerCapabilities | undefined,
+  protocolVersion?: string
+): string[] {
+  const bullet = chalk.dim('*');
+  const isModern = !!protocolVersion && isModernProtocolVersion(protocolVersion);
+  const list: string[] = [];
+
+  if (capabilities?.tools) {
+    list.push(`${bullet} tools ${capabilities.tools.listChanged ? '(dynamic)' : '(static)'}`);
+  }
+
+  if (capabilities?.resources) {
+    const features: string[] = [];
+    if (capabilities.resources.subscribe) features.push('subscribe');
+    if (capabilities.resources.listChanged) features.push('dynamic list');
+    const featureStr = features.length > 0 ? ` (supports ${features.join(', ')})` : '';
+    list.push(`${bullet} resources${featureStr}`);
+  }
+
+  if (capabilities?.prompts) {
+    list.push(`${bullet} prompts${capabilities.prompts.listChanged ? ' (dynamic list)' : ''}`);
+  }
+
+  if (capabilities?.logging) {
+    // Modern era: log notifications still arrive, but logging-set-level is gone
+    list.push(`${bullet} logging${isModern ? ` ${chalk.gray('(notifications only)')}` : ''}`);
+  }
+
+  if (capabilities?.completions) {
+    list.push(`${bullet} completions`);
+  }
+
+  if (capabilities?.tasks) {
+    const featureStr = capabilities.tasks.requests?.tools?.call ? ' (tools)' : '';
+    const note = isModern ? ` ${chalk.gray(`(not usable on MCP ${protocolVersion})`)}` : '';
+    list.push(`${bullet} tasks${featureStr}${note}`);
+  }
+
+  if (hasSkillsExtension(capabilities)) {
+    list.push(`${bullet} skills ${chalk.gray('(experimental extension)')}`);
+  }
+
+  return list;
+}
+
+/**
+ * Format the result of a live `server/discover` request (2026-07-28+).
+ *
+ * Deliberately narrower than {@link formatServerDetails}: it reports what the server just
+ * advertised — every protocol version it supports, its capabilities, its instructions —
+ * and leaves the connection state and command inventory to `mcpc @session`.
+ */
+export function formatDiscoverResult(
+  result: DiscoverResult,
+  target: string,
+  negotiatedVersion?: string
+): string {
+  const lines: string[] = [];
+  const bullet = chalk.dim('*');
+  const serverInfo = result._meta?.[SERVER_INFO_META_KEY] as Implementation | undefined;
+
+  if (serverInfo) {
+    lines.push(
+      chalk.bold('Server:') + ` ${serverInfo.name} (version: ${serverInfo.version || 'N/A'})`
+    );
+    lines.push('');
+  }
+
+  // Every version on offer, with the one this session negotiated marked — the reason to
+  // run this command over reading the cached session info.
+  const versions = result.supportedVersions.map((version) =>
+    version === negotiatedVersion ? `${version} ${chalk.gray('(negotiated)')}` : version
+  );
+  lines.push(chalk.bold('Supported protocol versions:') + ` ${versions.join(', ')}`);
+  lines.push('');
+
+  lines.push(chalk.bold('Capabilities:'));
+  const capabilityList = formatCapabilityList(result.capabilities, negotiatedVersion);
+  lines.push(capabilityList.length > 0 ? capabilityList.join('\n') : `${bullet} (none)`);
+  lines.push('');
+
+  const instructions = result.instructions?.trim();
+  if (instructions) {
+    lines.push(chalk.bold('Instructions:'));
+    lines.push(chalk.gray('````'));
+    lines.push(instructions);
+    lines.push(chalk.gray('````'));
+    lines.push('');
+  }
+
+  // Extension metadata the server attached to its advertisement, beyond its identity
+  const extraMeta = Object.entries(result._meta ?? {}).filter(
+    ([key]) => key !== SERVER_INFO_META_KEY
+  );
+  if (extraMeta.length > 0) {
+    lines.push(chalk.bold('Metadata:'));
+    lines.push(formatObject(Object.fromEntries(extraMeta)));
+    lines.push('');
+  }
+
+  lines.push(chalk.dim(`  ↳ session info and available commands: mcpc ${target}`));
+
+  return lines.join('\n');
+}
+
+/**
  * Format server details for human-readable output
  */
 export function formatServerDetails(
@@ -1640,79 +1775,13 @@ export function formatServerDetails(
     lines.push('');
   }
 
-  // Capabilities - only show what the server actually exposes.
-  // Some capabilities are era-dependent: a 2026-07-28 server may still advertise
-  // `logging` (log notifications survived) or `tasks`, but the matching mcpc commands
-  // don't work there — `logging/setLevel` was removed from the protocol and tasks moved
-  // to an extension mcpc doesn't support yet. Annotate those and drop the commands,
-  // instead of advertising something that only errors out.
+  // Capabilities - only show what the server actually exposes, annotated for the era
   const isModern = !!protocolVersion && isModernProtocolVersion(protocolVersion);
-  const unusableOnModern = chalk.gray(`(not usable on MCP ${protocolVersion})`);
+  const hasSkills = hasSkillsExtension(capabilities);
 
   lines.push(chalk.bold('Capabilities:'));
-
-  const capabilityList: string[] = [];
-
-  if (capabilities?.tools) {
-    capabilityList.push(
-      `${bullet} tools ${capabilities.tools.listChanged ? '(dynamic)' : '(static)'}`
-    );
-  }
-
-  if (capabilities?.resources) {
-    const features: string[] = [];
-    if (capabilities.resources.subscribe) features.push('subscribe');
-    if (capabilities.resources.listChanged) features.push('dynamic list');
-    const featureStr = features.length > 0 ? ` (supports ${features.join(', ')})` : '';
-    capabilityList.push(`${bullet} resources${featureStr}`);
-  }
-
-  if (capabilities?.prompts) {
-    const featureStr = capabilities.prompts.listChanged ? ' (dynamic list)' : '';
-    capabilityList.push(`${bullet} prompts${featureStr}`);
-  }
-
-  if (capabilities?.logging) {
-    // Modern era: log notifications still arrive, but logging-set-level is gone
-    const note = isModern ? ` ${chalk.gray('(notifications only)')}` : '';
-    capabilityList.push(`${bullet} logging${note}`);
-  }
-
-  if (capabilities?.completions) {
-    capabilityList.push(`${bullet} completions`);
-  }
-
-  if (capabilities?.tasks) {
-    const features: string[] = [];
-    if (capabilities.tasks.requests?.tools?.call) features.push('tools');
-    const featureStr = features.length > 0 ? ` (${features.join(', ')})` : '';
-    const note = isModern ? ` ${unusableOnModern}` : '';
-    capabilityList.push(`${bullet} tasks${featureStr}${note}`);
-  }
-
-  // Experimental extension: io.modelcontextprotocol/skills (SEP-2640).
-  // The spec advertises under `capabilities.extensions`, but the current MCP
-  // SDK strips unknown capability fields. The SDK does preserve
-  // `capabilities.experimental` — the long-standing escape hatch for
-  // non-standard capabilities — so we check both locations to support
-  // today's servers and forward-compatible SDKs.
-  const capsAny = capabilities as
-    { extensions?: Record<string, unknown>; experimental?: Record<string, unknown> } | undefined;
-  const SKILLS_KEY = 'io.modelcontextprotocol/skills';
-  const hasSkillsExtension =
-    (!!capsAny?.extensions &&
-      Object.prototype.hasOwnProperty.call(capsAny.extensions, SKILLS_KEY)) ||
-    (!!capsAny?.experimental &&
-      Object.prototype.hasOwnProperty.call(capsAny.experimental, SKILLS_KEY));
-  if (hasSkillsExtension) {
-    capabilityList.push(`${bullet} skills ${chalk.gray('(experimental extension)')}`);
-  }
-
-  if (capabilityList.length > 0) {
-    lines.push(capabilityList.join('\n'));
-  } else {
-    lines.push(`${bullet} (none)`);
-  }
+  const capabilityList = formatCapabilityList(capabilities, protocolVersion);
+  lines.push(capabilityList.length > 0 ? capabilityList.join('\n') : `${bullet} (none)`);
   lines.push('');
 
   // Instructions in code block
@@ -1767,7 +1836,7 @@ export function formatServerDetails(
   // Surface skills commands when the server advertises the extension, OR
   // unconditionally as a hint when resources are supported (the spec lets a
   // server expose `skill://*` resources without advertising the extension).
-  if (hasSkillsExtension) {
+  if (hasSkills) {
     commands.push(`${bullet} ${bt}mcpc ${target} skills-list${bt}`);
     commands.push(`${bullet} ${bt}mcpc ${target} skills-get <name> [--raw]${bt}`);
   }

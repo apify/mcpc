@@ -27,6 +27,13 @@ export const SUPPORTED_PROTOCOL_VERSIONS: readonly string[] = [
   ...LEGACY_PROTOCOL_VERSIONS,
 ];
 
+/**
+ * `_meta` key under which 2026-07-28 servers stamp their identity on every response.
+ * Mirrors the SDK's `SERVER_INFO_META_KEY` — spelled out here so the CLI can read it
+ * without loading the SDK (a unit test guards against drift).
+ */
+export const SERVER_INFO_META_KEY = 'io.modelcontextprotocol/serverInfo';
+
 /** Whether a protocol revision belongs to the modern (2026-07-28+) era. */
 export function isModernProtocolVersion(version: string): boolean {
   return MODERN_PROTOCOL_VERSIONS.includes(version);
@@ -68,5 +75,22 @@ export function tasksUnsupportedByServerMessage(): string {
     `This server does not support task-augmented tool calls ` +
     `(no tasks.requests.tools.call capability), so --task/--detach cannot be used. ` +
     `Re-run the command without them to call the tool synchronously`
+  );
+}
+
+/**
+ * Explain why `server-discover` does not work on a legacy connection. `server/discover`
+ * was introduced by 2026-07-28; the 2025-era handshake carries the same information in its
+ * `initialize` result, which mcpc already keeps for the session.
+ *
+ * Same no-trailing-period convention as the task messages above.
+ */
+export function discoverUnavailableMessage(protocolVersion?: string, sessionName?: string): string {
+  const session = sessionName ?? '@session';
+  return (
+    `server/discover is not available on this connection: it was introduced in MCP ` +
+    `${MODERN_PROTOCOL_VERSIONS[0]}, and this connection negotiated ` +
+    `${protocolVersion ?? 'an older version'}, where the initialize handshake carries the same ` +
+    `information. Run "mcpc ${session}" to see it, or "mcpc ${session} ping" to check liveness`
   );
 }
