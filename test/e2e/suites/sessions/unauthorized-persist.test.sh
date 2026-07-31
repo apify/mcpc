@@ -64,12 +64,9 @@ assert_file_exists "$sessions_file"
 # original failed connect. Leaving pid set would short-circuit the retry path
 # via `!session.pid`, hiding the bug we are trying to catch.
 old_iso="2000-01-01T00:00:00.000Z"
-tmp_file="$TEST_TMP/sessions.json.$$"
-jq --arg name "$SESSION" --arg when "$old_iso" \
+edit_sessions_json --arg name "$SESSION" --arg when "$old_iso" \
   '.sessions[$name].lastConnectionAttemptAt = $when
-   | del(.sessions[$name].pid)' \
-  "$sessions_file" > "$tmp_file"
-mv "$tmp_file" "$sessions_file"
+   | del(.sessions[$name].pid)'
 
 # Re-run the list command — consolidateSessions() runs on every list.
 run_mcpc --json
