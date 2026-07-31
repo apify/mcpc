@@ -322,3 +322,31 @@ jobs:
             ${{ steps.install-size.outputs.report }}
         env:
           GITHUB_TOKEN: ${{ secrets.APIFY_SERVICE_ACCOUNT_GITHUB_TOKEN }}
+
+      # ── Homebrew tap ───────────────────────────────────────────────
+      - name: Homebrew formula update instructions
+        if: inputs.type == 'release'
+        # The formula bump in apify/homebrew-tap is started by hand for now, so
+        # this step only prints the command — it deliberately does not dispatch
+        # anything. To automate it later, run the printed command in this step
+        # (with GH_TOKEN: secrets.APIFY_SERVICE_ACCOUNT_GITHUB_TOKEN) and keep it
+        # last and continue-on-error, so a Homebrew hiccup can never fail a
+        # release that is already tagged, published to npm and announced.
+        #
+        # The dispatched workflow points Formula/mcpc.rb at the new npm tarball,
+        # installs and `brew test`s it on Linux and macOS, then merges the bump.
+        # It polls the registry itself, so it tolerates publish propagation.
+        continue-on-error: true
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          {
+            echo "### Homebrew"
+            echo ""
+            echo "The formula bump is manual for now. To ship \`${VERSION}\` to \`brew\`, run:"
+            echo ""
+            echo '```bash'
+            echo "gh workflow run update_formula.yaml --repo apify/homebrew-tap \\"
+            echo "  --field package=mcpc --field npm_package=@apify/mcpc --field version=${VERSION}"
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
