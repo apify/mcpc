@@ -430,6 +430,59 @@ create_session() {
   echo "$session"
 }
 
+# Edit sessions.json through a jq filter, holding the same lock mcpc uses.
+# Usage: edit_sessions_json <jq-arg>... '<jq-filter>'
+#
+# A live bridge rewrites sessions.json on every keepalive ping (load, merge,
+# save — all under a lock). A plain `jq ... > tmp && mv` from a test is not
+# locked, so a bridge that loads the file before the mv and saves after it
+# silently drops whatever the test just injected, and the next mcpc command
+# fails with "Session not found".
+#
+# proper-lockfile's lock is simply the directory "<file>.lock", created with
+# mkdir, so bash can take the very same lock. It is treated as stale after
+# 10s — never hold it across anything slower than a jq run.
+edit_sessions_json() {
+  local sessions_file="$MCPC_HOME_DIR/sessions.json"
+  local lock_dir="${sessions_file}.lock"
+  local tmp_file="${sessions_file}.e2e.$$"
+
+  if [[ ! -f "$sessions_file" ]]; then
+    echo '{"sessions":{}}' > "$sessions_file"
+  fi
+
+  local waited=0 steals=0
+  until mkdir "$lock_dir" 2>/dev/null; do
+    sleep 0.1
+    ((waited++)) || true
+    if [[ $waited -ge 100 ]]; then
+      if [[ $steals -ge 1 ]]; then
+        test_fail "timed out acquiring lock on $sessions_file"
+        return 1
+      fi
+      # Held (or leaked by a SIGKILLed bridge) for longer than the 10s
+      # staleness window — mcpc breaks the lock here too, so do the same.
+      rmdir "$lock_dir" 2>/dev/null || true
+      waited=0
+      ((steals++)) || true
+    fi
+  done
+
+  local status=0
+  if jq "$@" "$sessions_file" > "$tmp_file"; then
+    mv "$tmp_file" "$sessions_file" || status=1
+  else
+    status=1
+  fi
+  rm -f "$tmp_file"
+  rmdir "$lock_dir" 2>/dev/null || true
+
+  if [[ $status -ne 0 ]]; then
+    test_fail "failed to edit $sessions_file"
+    return 1
+  fi
+}
+
 # ============================================================================
 # Test Case Management
 # ============================================================================
