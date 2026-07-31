@@ -39,14 +39,27 @@ jobs:
       fail-fast: false
       matrix:
         # All client-side scenarios the adapter in
-        # `test/conformance/client.mjs` understands.  `sse-retry` is opt-in
-        # only — it surfaces a known mcpc SSE-reconnect timing issue, so the
-        # `if:` guards below keep it out of default runs and only execute it
-        # when the workflow is dispatched with `scenario: sse-retry`.
-        scenario:
-          - initialize
-          - tools_call
-          - sse-retry
+        # `test/conformance/client.mjs` understands; see
+        # `test/conformance/README.md` for what is covered and what is not.
+        # `sse-retry` is opt-in only — it surfaces a known mcpc SSE-reconnect
+        # timing issue, so the `if:` guards below keep it out of default runs
+        # and only execute it when the workflow is dispatched with
+        # `scenario: sse-retry`.
+        #
+        # `slug` is the scenario name made filesystem- and artifact-safe:
+        # scenario names may contain `/`, which is not allowed in an artifact
+        # name and would create nested output directories.
+        include:
+          - scenario: initialize
+            slug: initialize
+          - scenario: tools_call
+            slug: tools_call
+          - scenario: auth/client-credentials-basic
+            slug: auth-client-credentials-basic
+          - scenario: auth/client-credentials-jwt
+            slug: auth-client-credentials-jwt
+          - scenario: sse-retry
+            slug: sse-retry
 
     steps:
       - uses: actions/checkout@v6
@@ -77,19 +90,20 @@ jobs:
             --command "node test/conformance/client.mjs"
             --scenario "${SCENARIO}"
             --timeout 180000
-            --output-dir "results/${SCENARIO}")
+            --output-dir "results/${SLUG}")
           if [ "${VERBOSE}" = "true" ]; then
             CMD+=(--verbose)
           fi
           "${CMD[@]}"
         env:
           SCENARIO: ${{ matrix.scenario }}
+          SLUG: ${{ matrix.slug }}
           VERBOSE: ${{ inputs.verbose }}
 
       - name: Upload conformance results
         if: ${{ always() && ((inputs.scenario == '' && matrix.scenario != 'sse-retry') || inputs.scenario == matrix.scenario) }}
         uses: actions/upload-artifact@v5
         with:
-          name: conformance-results-${{ matrix.scenario }}
+          name: conformance-results-${{ matrix.slug }}
           path: results/
           if-no-files-found: ignore

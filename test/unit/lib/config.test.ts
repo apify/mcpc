@@ -15,6 +15,7 @@ import {
   scanMcpConfigFiles,
 } from '../../../src/lib/config.js';
 import { ClientError } from '../../../src/lib/errors.js';
+import type { McpConfig } from '../../../src/lib/types.js';
 
 const TEST_DIR = join(process.cwd(), 'test-tmp-config');
 
@@ -133,6 +134,28 @@ describe('getServerConfig', () => {
     expect(() => getServerConfig(config, 'unknown')).toThrow(
       'Available servers: http-server, stdio-server'
     );
+  });
+
+  it('should preserve protocolVersion from the config entry', () => {
+    const pinned = {
+      mcpServers: {
+        pinned: { url: 'https://api.example.com', protocolVersion: '2024-10-07' },
+      },
+    };
+    expect(getServerConfig(pinned, 'pinned').protocolVersion).toBe('2024-10-07');
+  });
+
+  it('should pass through fields it does not substitute', () => {
+    // Guards against the copier silently dropping fields it does not know about
+    // (both future ServerConfig fields and keys used by other MCP clients).
+    const extra = {
+      mcpServers: {
+        server: { url: 'https://api.example.com', type: 'http', futureField: 42 },
+      },
+    } as unknown as McpConfig;
+    const serverConfig = getServerConfig(extra, 'server') as Record<string, unknown>;
+    expect(serverConfig.type).toBe('http');
+    expect(serverConfig.futureField).toBe(42);
   });
 });
 

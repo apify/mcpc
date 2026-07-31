@@ -2,9 +2,12 @@
  * Factory functions for creating MCP clients with transports
  */
 
-import type { ClientCapabilities, ListChangedHandlers } from '@modelcontextprotocol/sdk/types.js';
-import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
-import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js';
+import type {
+  ClientCapabilities,
+  ListChangedHandlers,
+  OAuthClientProvider,
+  FetchLike,
+} from '@modelcontextprotocol/client';
 import { McpClient, type McpClientOptions } from './mcp-client.js';
 import { createTransportFromConfig } from './transports.js';
 import { type ServerConfig } from '../lib/types.js';
@@ -51,6 +54,14 @@ export interface CreateMcpClientOptions {
    * MCP-Session-Id for resuming a previous session (HTTP transport only)
    */
   mcpSessionId?: string;
+
+  /**
+   * Protocol version negotiated by the session being resumed (HTTP transport only,
+   * pass together with mcpSessionId). The SDK skips the handshake when resuming, so
+   * the transport needs the original version to keep sending the required
+   * MCP-Protocol-Version header.
+   */
+  protocolVersion?: string;
 
   /**
    * Custom fetch function for the transport (HTTP transport only)
@@ -127,7 +138,22 @@ export async function createMcpClient(options: CreateMcpClientOptions): Promise<
     ...(options.serverConfig.timeout && {
       requestTimeoutMillis: options.serverConfig.timeout * 1000,
     }),
+    // Cap the version-negotiation probe timeout on stdio (local servers answer fast;
+    // some legacy ones never answer pre-initialize requests at all)
+    ...(options.serverConfig.command && { stdioTransport: true }),
+    // Pin the MCP protocol version when requested (strict, no fallback)
+    ...(options.serverConfig.protocolVersion && {
+      protocolVersion: options.serverConfig.protocolVersion,
+    }),
   };
+
+  // Tolerate tool schemas stamped with pre-2020-12 dialects (draft-07 etc.), which the
+  // SDK's default validator rejects outright — most 2025-era servers emit them.
+  // Loaded dynamically so the bundled AJV engine is only paid for when a client is created.
+  if (!clientOptions.jsonSchemaValidator) {
+    const { DialectAwareJsonSchemaValidator } = await import('./json-schema-validator.js');
+    clientOptions.jsonSchemaValidator = new DialectAwareJsonSchemaValidator();
+  }
 
   const client = new McpClient(options.clientInfo, clientOptions);
 
@@ -139,6 +165,7 @@ export async function createMcpClient(options: CreateMcpClientOptions): Promise<
     const transportOptions: {
       authProvider?: OAuthClientProvider;
       mcpSessionId?: string;
+      protocolVersion?: string;
       customFetch?: FetchLike;
       onStderrLine?: (line: string) => void;
     } = {};
@@ -147,6 +174,9 @@ export async function createMcpClient(options: CreateMcpClientOptions): Promise<
     }
     if (options.mcpSessionId) {
       transportOptions.mcpSessionId = options.mcpSessionId;
+      if (options.protocolVersion) {
+        transportOptions.protocolVersion = options.protocolVersion;
+      }
     }
     if (options.customFetch) {
       transportOptions.customFetch = options.customFetch;

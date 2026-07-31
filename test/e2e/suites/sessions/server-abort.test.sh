@@ -4,6 +4,10 @@
 source "$(dirname "$0")/../../lib/framework.sh"
 test_init "sessions/server-abort" --isolated
 
+# Server-side session expiry is a 2025-era concept (404 on a known session ID);
+# 2026-07-28 connections are stateless and have nothing to expire.
+require_server_protocol legacy
+
 # Start test server
 start_test_server
 

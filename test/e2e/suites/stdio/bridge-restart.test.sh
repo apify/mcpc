@@ -45,7 +45,9 @@ test_pass
 # Test: kill the bridge process
 test_case "kill bridge process"
 _kill_tree "$original_pid"
-# Poll until it is gone: a graceful stdio shutdown can take over a second
+# Wait for the process to actually die. The SIGTERM shutdown is graceful (the
+# stdio child gets close-stdin → SIGTERM → SIGKILL escalation with timeouts),
+# so poll rather than using a fixed sleep — 1s is flaky on slow machines.
 if ! wait_for_process_exit "$original_pid"; then
   test_fail "bridge process should have been killed"
   exit 1

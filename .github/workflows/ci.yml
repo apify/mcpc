@@ -63,6 +63,31 @@ jobs:
         # specific storage backend.
         run: ./test/e2e/run.sh --no-build --parallel 6
 
+  e2e-node-modern:
+    name: E2E tests (Node.js, MCP 2026-07-28 server)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Install pnpm and dependencies
+        uses: apify/actions/pnpm-install@v1.1.2
+
+      - name: Build
+        run: pnpm run build
+
+      - name: E2E tests (modern-protocol test server)
+        # Protocol-version matrix column: the same suites against the SDK v2
+        # test server speaking pure MCP 2026-07-28 (legacy requests rejected).
+        # Era-specific suites skip themselves via require_server_protocol.
+        run: ./test/e2e/run.sh --no-build --parallel 6 --server-protocol modern
+
   e2e-bun:
     name: E2E tests (Bun)
     runs-on: ubuntu-latest

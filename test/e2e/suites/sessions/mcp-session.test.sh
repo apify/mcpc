@@ -4,6 +4,10 @@
 source "$(dirname "$0")/../../lib/framework.sh"
 test_init "sessions/mcp-session"
 
+# MCP session IDs (and their expiry/DELETE lifecycle) exist only in the
+# 2025-era protocol; 2026-07-28 connections are stateless.
+require_server_protocol legacy
+
 # Start test server
 start_test_server
 

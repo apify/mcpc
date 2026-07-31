@@ -3,7 +3,7 @@
  */
 
 import type { LoggingLevel, CommandOptions } from '../../lib/types.js';
-import { formatOutput, formatSuccess } from '../output.js';
+import { formatOutput, formatSuccess, formatWarning } from '../output.js';
 import { ClientError } from '../../lib/errors.js';
 import { withMcpClient } from '../helpers.js';
 
@@ -39,6 +39,12 @@ export async function setLogLevel(
 
     if (options.outputMode === 'human') {
       console.log(formatSuccess(`Server log level set to: ${level}`));
+      console.error(
+        formatWarning(
+          'logging-set-level is deprecated (MCP removed logging/setLevel in 2026-07-28) ' +
+            'and will be removed in a future mcpc release.'
+        )
+      );
     } else {
       console.log(formatOutput({ level }, 'json'));
     }

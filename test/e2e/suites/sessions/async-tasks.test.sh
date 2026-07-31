@@ -4,6 +4,10 @@
 source "$(dirname "$0")/../../lib/framework.sh"
 test_init "sessions/async-tasks"
 
+# Tasks are a 2025-11-25 experimental feature; 2026-07-28 moved them to the
+# io.modelcontextprotocol/tasks extension, which the SDK does not support yet.
+require_server_protocol legacy
+
 # Start test server
 start_test_server
 

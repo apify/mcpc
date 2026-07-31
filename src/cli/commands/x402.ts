@@ -377,6 +377,12 @@ export async function handleX402Command(args: string[]): Promise<void> {
     .name('mcpc x402')
     .description('x402 wallet management and payment signing (EXPERIMENTAL)');
 
+  // Match the help width of the other mcpc programs, so descriptions stay on one line
+  program.configureOutput({
+    getOutHelpWidth: () => 100,
+    getErrHelpWidth: () => 100,
+  });
+
   program.configureHelp({
     styleTitle: (str) => chalk.bold(str),
     styleSubcommandText: (str) => theme.cyan(str),
@@ -457,20 +463,13 @@ ${jsonHelp('`{ address, createdAt, balances: { eth, usdc } | null }` (null if no
 
   program
     .command('sign <payment-required>')
-    .description(
-      'Sign a payment from a base64 PAYMENT-REQUIRED header and print the PAYMENT-SIGNATURE header to stdout'
-    )
+    .description('Sign a payment from a base64 PAYMENT-REQUIRED header')
     .helpOption('-h, --help', 'Display help')
-    .option(
-      '--amount <usd>',
-      'Override amount in USD (for upto this sets the max authorization cap)'
-    )
+    .option('--amount <usd>', 'Override amount in USD (for upto: max authorization cap)')
     .option('--expiry <seconds>', 'Override expiry in seconds')
-    .option('--scheme <auto|upto|exact>', 'Payment scheme preference (default: auto)', 'auto')
-    .option(
-      '--no-approve',
-      'For the upto scheme: skip the on-chain Permit2 allowance check & auto-approval'
-    )
+    // No "(default: auto)" in the text — Commander appends the default value itself
+    .option('--scheme <auto|upto|exact>', 'Payment scheme preference', 'auto')
+    .option('--no-approve', 'Skip the upto Permit2 allowance check & auto-approval')
     .addHelpText(
       'after',
       `

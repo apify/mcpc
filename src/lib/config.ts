@@ -103,11 +103,16 @@ export function getServerConfig(config: McpConfig, serverName: string): ServerCo
  * Substitute environment variables in a server configuration
  * Supports ${VAR_NAME} syntax
  *
+ * All fields are copied through and only the ones that can contain `${VAR_NAME}` (or need
+ * normalizing) are rewritten. Keep it that way rather than reverting to a per-field allowlist,
+ * which silently dropped every field it forgot — that is how a config entry's `protocolVersion`
+ * came to be ignored, and the next new `ServerConfig` field would meet the same fate.
+ *
  * @param config - Server configuration
  * @returns Configuration with environment variables substituted
  */
 function substituteEnvVars(config: ServerConfig): ServerConfig {
-  const result: ServerConfig = {};
+  const result: ServerConfig = { ...config };
 
   if (config.url !== undefined) {
     // Substitute environment variables and normalize URL
@@ -135,10 +140,6 @@ function substituteEnvVars(config: ServerConfig): ServerConfig {
 
   if (config.headers !== undefined) {
     result.headers = substituteEnvObject(config.headers);
-  }
-
-  if (config.timeout !== undefined) {
-    result.timeout = config.timeout;
   }
 
   return result;

@@ -1,10 +1,21 @@
 /**
  * MCP Client wrapper
- * Wraps the @modelcontextprotocol/sdk Client class with additional functionality
+ * Wraps the @modelcontextprotocol/client (SDK v2) Client class with additional functionality
  */
 
-import { Client as SDKClient, type ClientOptions } from '@modelcontextprotocol/sdk/client/index.js';
-import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
+import {
+  Client as SDKClient,
+  MAX_CACHE_TTL_MS,
+  SERVER_INFO_META_KEY,
+  SdkHttpError,
+  type ClientOptions,
+} from '@modelcontextprotocol/client';
+import type {
+  Transport,
+  McpSubscription,
+  ProtocolEra,
+  SubscriptionFilter,
+} from '@modelcontextprotocol/client';
 import type {
   Implementation,
   ListToolsResult,
@@ -19,11 +30,31 @@ import type {
   ListTasksResult,
   CancelTaskResult,
   Tool,
-} from '@modelcontextprotocol/sdk/types.js';
-import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
+} from '@modelcontextprotocol/client';
+import {
+  CallToolResultSchema,
+  CreateTaskResultSchema,
+  ListTasksResultSchema,
+  GetTaskResultSchema,
+  CancelTaskResultSchema,
+} from '@modelcontextprotocol/core';
 import { createNoOpLogger, type Logger } from '../lib/logger.js';
-import { ServerError, NetworkError, isShutdownError } from '../lib/errors.js';
+import { ClientError, ServerError, NetworkError, isShutdownError } from '../lib/errors.js';
 import { fetchAllPages } from '../lib/utils.js';
+import {
+  isModernProtocolVersion,
+  isSupportedProtocolVersion,
+  tasksUnavailableMessage,
+  SUPPORTED_PROTOCOL_VERSIONS,
+} from './protocol.js';
+import type {
+  IMcpClient,
+  ServerDetails,
+  ConnectionMode,
+  TransportKind,
+  TaskUpdate,
+} from '../lib/types.js';
+import type { Task } from '@modelcontextprotocol/client';
 
 /**
  * Traverse the .cause chain to find the deepest (most specific) error message
@@ -35,8 +66,6 @@ function getRootCauseMessage(error: Error): string {
   }
   return current.message;
 }
-import type { IMcpClient, ServerDetails, ConnectionMode, TaskUpdate } from '../lib/types.js';
-import type { Task } from '@modelcontextprotocol/sdk/types.js';
 
 /**
  * Convert an SDK Task to a TaskUpdate, handling exactOptionalPropertyTypes
@@ -62,11 +91,11 @@ interface TransportWithProtocolVersion extends Transport {
 }
 
 /**
- * Fallback freshness window for the in-memory tools cache on stateless connections.
+ * Fallback freshness window for the in-memory tools cache on stateless connections, used
+ * when the server sends no `ttlMs` cache hint (see deriveToolsCacheExpiry).
  * Stateless servers (2026-07-28) may not push tools/list_changed (no standing stream), so the
  * cache would otherwise go stale silently. Stateful connections rely on notification-driven
- * invalidation and use no expiry. Phase 1 will replace this fixed value with the server's
- * ttlMs/cacheScope hint.
+ * invalidation and use no expiry.
  */
 const STATELESS_TOOLS_CACHE_TTL_MILLIS = 60_000;
 
@@ -84,6 +113,19 @@ export interface McpClientOptions extends ClientOptions {
    * Defaults to DEFAULT_REQUEST_TIMEOUT_MILLIS (60 seconds) when not specified.
    */
   requestTimeoutMillis?: number;
+
+  /**
+   * Set when the client will connect over a stdio transport. Caps the
+   * version-negotiation probe timeout (see STDIO_PROBE_TIMEOUT_MILLIS).
+   */
+  stdioTransport?: boolean;
+
+  /**
+   * Pin the MCP protocol version instead of auto-negotiating (strict: the
+   * connection fails unless the server agrees to exactly this version).
+   * Must be one of SUPPORTED_PROTOCOL_VERSIONS.
+   */
+  protocolVersion?: string;
 }
 
 /**
@@ -104,6 +146,74 @@ interface TransportWithTermination extends Transport {
 const DEFAULT_REQUEST_TIMEOUT_MILLIS = 60_000;
 
 /**
+ * Backoff bounds for re-opening the `subscriptions/listen` stream (2026-07-28 connections)
+ * after an unexpected remote drop. Mirrors the Streamable HTTP reconnection policy (1s → 30s).
+ */
+const RELISTEN_INITIAL_DELAY_MILLIS = 1_000;
+const RELISTEN_MAX_DELAY_MILLIS = 30_000;
+
+/**
+ * Timeout for the connect-time `server/discover` version-negotiation probe on stdio
+ * transports. Some stdio servers never answer unknown pre-`initialize` requests; the SDK
+ * treats a probe timeout on a local pipe as "legacy server" and falls back to `initialize`
+ * on the same stream, so a short timeout keeps connecting to such servers fast instead of
+ * waiting out the full request timeout. Not applied to HTTP, where probe silence means an
+ * outage and the SDK rejects instead of falling back.
+ */
+const STDIO_PROBE_TIMEOUT_MILLIS = 5_000;
+
+/**
+ * Compute the SDK version-negotiation options for an optional `--protocol-version` pin.
+ *
+ * - No pin: probe with `server/discover` and talk 2026-07-28 when the server supports
+ *   it, falling back to the legacy `initialize` handshake on the same connection.
+ * - Modern pin (2026-07-28+): the SDK's `{ pin }` mode — the server must offer exactly
+ *   that revision, no fallback.
+ * - Legacy pin: plain `initialize` handshake (no probe) offering only the pinned
+ *   version; the SDK rejects the connection if the server counter-offers anything else.
+ *
+ * Exported for unit tests.
+ */
+export function resolveVersionOptions(
+  protocolVersion: string | undefined,
+  stdioTransport: boolean | undefined
+): Pick<ClientOptions, 'versionNegotiation' | 'supportedProtocolVersions'> {
+  const probe = stdioTransport ? { probe: { timeoutMs: STDIO_PROBE_TIMEOUT_MILLIS } } : {};
+  if (protocolVersion === undefined) {
+    return { versionNegotiation: { mode: 'auto', ...probe } };
+  }
+  if (!isSupportedProtocolVersion(protocolVersion)) {
+    throw new ClientError(
+      `Unsupported MCP protocol version: ${protocolVersion}\n` +
+        `Supported versions: ${SUPPORTED_PROTOCOL_VERSIONS.join(', ')}`
+    );
+  }
+  if (isModernProtocolVersion(protocolVersion)) {
+    return { versionNegotiation: { mode: { pin: protocolVersion }, ...probe } };
+  }
+  return {
+    versionNegotiation: { mode: 'legacy' },
+    supportedProtocolVersions: [protocolVersion],
+  };
+}
+
+/**
+ * True for the expected HTTP rejection of the connect-time `server/discover` version
+ * probe: servers that don't speak 2026-07-28 answer the probe POST with a 4xx
+ * (typically 400 "no valid session ID", 404, or 405), the transport surfaces it via
+ * `onerror`, and the SDK then falls back to the legacy `initialize` handshake on the
+ * same connection. 401/403 are excluded — those mean the server wants authentication,
+ * which the negotiation reports as a real error.
+ *
+ * Exported for unit tests.
+ */
+export function isExpectedProbeRejection(error: unknown): error is SdkHttpError {
+  if (!(error instanceof SdkHttpError)) return false;
+  const { status } = error;
+  return status >= 400 && status < 500 && status !== 401 && status !== 403;
+}
+
+/**
  * MCP Client wrapper class
  * Provides a convenient interface to the MCP SDK Client with error handling and logging
  * Implements IMcpClient interface for compatibility with SessionClient
@@ -120,6 +230,18 @@ export class McpClient implements IMcpClient {
   private readonly configuredRequestTimeoutMillis: number;
   private cachedTools: Tool[] | null = null;
   private cachedToolsExpiresAt: number | null = null;
+  private isClosing = false;
+  /**
+   * Whether the connection auto-negotiates the protocol version, i.e. a declined
+   * `server/discover` probe falls back to the legacy `initialize` handshake instead of
+   * failing. Pinned connections either skip the probe (legacy pin) or treat a declined
+   * probe as a real failure (modern pin), so their errors are never rewritten.
+   */
+  private readonly autoNegotiates: boolean;
+  /** Resource URIs subscribed on a 2026-07-28 connection (served by one listen stream). */
+  private modernSubscribedUris = new Set<string>();
+  /** The open `subscriptions/listen` stream backing modernSubscribedUris, if any. */
+  private modernListen: McpSubscription | undefined;
 
   constructor(clientInfo: Implementation, options: McpClientOptions = {}) {
     this.logger = options.logger || createNoOpLogger();
@@ -127,10 +249,14 @@ export class McpClient implements IMcpClient {
       this.requestTimeoutMillis = options.requestTimeoutMillis;
     }
     this.configuredRequestTimeoutMillis = this.requestTimeoutMillis;
+    this.autoNegotiates = options.protocolVersion === undefined;
 
     this.client = new SDKClient(clientInfo, {
       capabilities: options.capabilities || {},
       ...options,
+      // Placed after the spread so a caller-supplied versionNegotiation never
+      // overrides the protocolVersion pin (or the default auto negotiation).
+      ...resolveVersionOptions(options.protocolVersion, options.stdioTransport),
     });
 
     // Set up error handling
@@ -188,6 +314,16 @@ export class McpClient implements IMcpClient {
           this.logger.debug('Transport aborted (expected during close)');
           return;
         }
+        // A 4xx answer to the connect-time server/discover probe is how servers
+        // without 2026-07-28 support decline it — the SDK falls back to the legacy
+        // initialize handshake, so don't log it as a transport error.
+        if (!this.hasConnected && this.autoNegotiates && isExpectedProbeRejection(error)) {
+          this.logger.debug(
+            `Server declined the server/discover version probe (HTTP ${error.status}), ` +
+              'falling back to the legacy initialize handshake'
+          );
+          return;
+        }
         // Don't duplicate logging of errors on initial connection
         this.logger.log(this.hasConnected ? 'error' : 'debug', 'Transport error:', error);
       };
@@ -200,12 +336,16 @@ export class McpClient implements IMcpClient {
 
       this.hasConnected = true;
 
-      // Capture negotiated protocol version from transport if available
-      // StreamableHTTPClientTransport exposes protocolVersion after initialization
+      // Capture the negotiated protocol version (the client knows it for both eras;
+      // fall back to the transport for safety).
       const transportWithVersion = transport as TransportWithProtocolVersion;
-      if (transportWithVersion.protocolVersion) {
-        this.negotiatedProtocolVersion = transportWithVersion.protocolVersion;
-        this.logger.debug(`Negotiated protocol version: ${this.negotiatedProtocolVersion}`);
+      const negotiatedVersion =
+        this.client.getNegotiatedProtocolVersion() ?? transportWithVersion.protocolVersion;
+      if (negotiatedVersion) {
+        this.negotiatedProtocolVersion = negotiatedVersion;
+        this.logger.debug(
+          `Negotiated protocol version: ${this.negotiatedProtocolVersion} (${this.getProtocolEra() ?? 'unknown'} era)`
+        );
       }
 
       // Capture MCP session ID from transport if available (for session resumption)
@@ -214,6 +354,11 @@ export class McpClient implements IMcpClient {
         this.mcpSessionId = transport.sessionId;
         this.logger.debug(`MCP session ID: ${this.mcpSessionId}`);
       }
+
+      // On 2026-07-28 connections the SDK auto-opens a subscriptions/listen stream for
+      // the configured listChanged handlers, but never re-opens it after a drop —
+      // without this watch, list-change notifications would silently stop.
+      this.watchListChangedStream(this.client.autoOpenedSubscription);
 
       const serverVersion = this.client.getServerVersion();
       const serverCapabilities = this.client.getServerCapabilities();
@@ -239,8 +384,18 @@ export class McpClient implements IMcpClient {
    */
   async close(): Promise<void> {
     this.logger.debug('Closing connection...');
+    this.isClosing = true;
 
     try {
+      // Tear down the listen stream first on 2026-07-28 connections so its
+      // closed promise resolves 'local' and no re-listen is attempted.
+      if (this.modernListen) {
+        const listen = this.modernListen;
+        this.modernListen = undefined;
+        await listen.close().catch((error) => {
+          this.logger.debug('Error closing listen stream (ignored):', error);
+        });
+      }
       // For HTTP transport, terminate the session first (sends HTTP DELETE)
       // This is separate from close() in the SDK - terminateSession() sends the DELETE,
       // while close() just cleans up the client without notifying the server
@@ -276,21 +431,53 @@ export class McpClient implements IMcpClient {
   /**
    * Get all server information in a single call
    * Returns a Promise for interface compatibility with SessionClient
-   * Structure matches MCP InitializeResult for consistency
+   *
+   * Era-neutral by construction (see ServerDetails): the fields common to
+   * `InitializeResult` and `DiscoverResult` come from the SDK's accessors, which are
+   * populated by whichever handshake ran, and the discover-only `supportedVersions` /
+   * `_meta` are read off the `server/discover` result on modern connections.
+   *
+   * 2026-07-28 moved the server identity out of the handshake into a `_meta` key that
+   * servers SHOULD stamp on every response, so the latest discover result is the freshest
+   * identity we hold: a modern connection reads `serverInfo` from there, and only falls
+   * back to the SDK accessor (frozen at connect) when the server sent none. Both fields
+   * then come from the same snapshot — `ping` re-runs `server/discover` on modern
+   * connections, which refreshes `_meta` but not the accessor.
    */
   getServerDetails(): Promise<ServerDetails> {
     const details: ServerDetails = {};
-    const serverInfo = this.client.getServerVersion();
     const capabilities = this.client.getServerCapabilities();
     const instructions = this.client.getInstructions();
+    // Undefined on legacy connections — there is no DiscoverResult on that path.
+    const discovered = this.client.getDiscoverResult();
+    const serverInfo = discovered?._meta?.[SERVER_INFO_META_KEY] ?? this.client.getServerVersion();
 
     if (this.negotiatedProtocolVersion) details.protocolVersion = this.negotiatedProtocolVersion;
+    if (discovered?.supportedVersions) details.supportedVersions = discovered.supportedVersions;
     if (capabilities) details.capabilities = capabilities;
     if (serverInfo) details.serverInfo = serverInfo;
     if (instructions) details.instructions = instructions;
+    if (discovered?._meta) details._meta = discovered._meta;
     details.connectionMode = this.deriveConnectionMode();
+    const transport = this.deriveTransportKind();
+    if (transport) details.transport = transport;
 
     return Promise.resolve(details);
+  }
+
+  /**
+   * Protocol era of the connection: 'modern' for 2026-07-28+ (negotiated via
+   * server/discover), 'legacy' for the 2025-era initialize handshake.
+   * A resumed HTTP session skips the handshake, so the SDK client never learns
+   * the era; derive it from the restored protocol version instead.
+   */
+  getProtocolEra(): ProtocolEra | undefined {
+    const sdkEra = this.client.getProtocolEra();
+    if (sdkEra) return sdkEra;
+    if (this.negotiatedProtocolVersion) {
+      return isModernProtocolVersion(this.negotiatedProtocolVersion) ? 'modern' : 'legacy';
+    }
+    return undefined;
   }
 
   /**
@@ -309,21 +496,35 @@ export class McpClient implements IMcpClient {
    */
   private deriveConnectionMode(): ConnectionMode {
     if (!this.hasConnected) return 'unknown';
-    // Only the Streamable HTTP transport exposes terminateSession() (it sends an HTTP DELETE);
-    // its absence indicates a stdio transport. The method exists on the HTTP transport
-    // regardless of whether a session id was issued, so it reliably distinguishes the two.
-    const isHttpTransport = typeof this.transport?.terminateSession === 'function';
-    if (!isHttpTransport) return 'stateful';
+    if (this.deriveTransportKind() !== 'streamable-http') return 'stateful';
     return this.mcpSessionId ? 'stateful' : 'stateless';
   }
 
   /**
-   * Ping the server
+   * Derive which transport carries this connection (undefined before the first connect).
+   * Only the Streamable HTTP transport exposes terminateSession() (it sends an HTTP DELETE);
+   * its absence indicates a stdio transport. The method exists on the HTTP transport
+   * regardless of whether a session id was issued, so it reliably distinguishes the two.
+   */
+  private deriveTransportKind(): TransportKind | undefined {
+    if (!this.hasConnected) return undefined;
+    return typeof this.transport?.terminateSession === 'function' ? 'streamable-http' : 'stdio';
+  }
+
+  /**
+   * Ping the server.
+   * The `ping` method was removed in protocol 2026-07-28, so on modern connections the
+   * liveness probe is a `server/discover` request instead (same round-trip semantics).
    */
   async ping(): Promise<void> {
     try {
-      this.logger.debug('Sending ping...');
-      await this.client.ping(this.getRequestOptions());
+      if (this.getProtocolEra() === 'modern') {
+        this.logger.debug('Sending server/discover (2026-07-28 liveness probe)...');
+        await this.client.discover(this.getRequestOptions());
+      } else {
+        this.logger.debug('Sending ping...');
+        await this.client.ping(this.getRequestOptions());
+      }
       this.logger.debug('Ping successful');
     } catch (error) {
       this.logger.error('Ping failed:', error);
@@ -332,12 +533,16 @@ export class McpClient implements IMcpClient {
   }
 
   /**
-   * List available tools (single page)
+   * List available tools (single page).
+   * `refresh` forces a wire request, bypassing the SDK's own response cache.
    */
-  async listTools(cursor?: string): Promise<ListToolsResult> {
+  async listTools(cursor?: string, refresh?: boolean): Promise<ListToolsResult> {
     try {
       this.logger.debug('Listing tools...', cursor ? { cursor } : {});
-      const result = await this.client.listTools({ cursor }, this.getRequestOptions());
+      const result = await this.client.listTools(
+        { cursor },
+        { ...this.getRequestOptions(), ...(refresh && { cacheMode: 'refresh' as const }) }
+      );
       this.logger.debug(`Found ${result.tools.length} tools`);
       return result;
     } catch (error) {
@@ -357,19 +562,44 @@ export class McpClient implements IMcpClient {
       return { tools: this.cachedTools };
     }
 
+    let firstPage: ListToolsResult | undefined;
     const allTools: Tool[] = await fetchAllPages(
-      (cursor) => this.listTools(cursor),
+      async (cursor) => {
+        const page = await this.listTools(cursor, options?.refreshCache);
+        firstPage ??= page;
+        return page;
+      },
       (page) => page.tools
     );
 
     this.cachedTools = allTools;
-    // Stateless connections get a time-based expiry as a fallback for absent list_changed
-    // pushes; stateful connections keep no expiry (notifications/explicit invalidation drive it).
-    this.cachedToolsExpiresAt =
-      this.deriveConnectionMode() === 'stateless'
-        ? Date.now() + STATELESS_TOOLS_CACHE_TTL_MILLIS
-        : null;
+    this.cachedToolsExpiresAt = this.deriveToolsCacheExpiry(firstPage);
     return { tools: allTools };
+  }
+
+  /**
+   * When the cached tools list goes stale, as an absolute timestamp (`null` = never).
+   *
+   * A 2026-07-28 server MAY attach the `ttlMs` cache hint to `tools/list` (SEP-2549);
+   * it wins when present, clamped to the same 24h ceiling the SDK applies, with `0`
+   * meaning "immediately stale". Without a hint, stateless connections fall back to a
+   * fixed window (they may not push `tools/list_changed`, so the cache would otherwise go
+   * stale silently) and stateful connections keep no expiry at all — notification-driven
+   * and explicit invalidation drive those.
+   *
+   * The companion `cacheScope` hint needs no handling: every cache here lives inside one
+   * bridge process serving exactly one session, i.e. one authorization context, so a
+   * `private` result is never shared with another principal.
+   */
+  private deriveToolsCacheExpiry(firstPage: ListToolsResult | undefined): number | null {
+    // Typed `unknown` — the hint rides the result's loose passthrough fields.
+    const ttlMillis = firstPage?.ttlMs;
+    if (typeof ttlMillis === 'number') {
+      return Date.now() + Math.min(Math.max(0, ttlMillis), MAX_CACHE_TTL_MS);
+    }
+    return this.deriveConnectionMode() === 'stateless'
+      ? Date.now() + STATELESS_TOOLS_CACHE_TTL_MILLIS
+      : null;
   }
 
   private isToolsCacheExpired(): boolean {
@@ -412,11 +642,7 @@ export class McpClient implements IMcpClient {
       if (meta) {
         callParams._meta = meta;
       }
-      const result = (await this.client.callTool(
-        callParams,
-        undefined, // resultSchema - use default
-        this.getRequestOptions()
-      )) as CallToolResult;
+      const result = await this.client.callTool(callParams, this.getRequestOptions());
       this.logger.debug(`Tool ${name} completed`);
       return result;
     } catch (error) {
@@ -479,12 +705,32 @@ export class McpClient implements IMcpClient {
   }
 
   /**
-   * Subscribe to resource updates
+   * Subscribe to resource updates.
+   * On 2025-era connections this issues `resources/subscribe`; protocol 2026-07-28 replaced
+   * that with a `subscriptions/listen` stream, so on modern connections one listen stream
+   * is maintained carrying all subscribed URIs (re-opened whenever the set changes).
    */
   async subscribeResource(uri: string): Promise<void> {
     try {
       this.logger.debug(`Subscribing to resource: ${uri}`);
-      await this.client.subscribeResource({ uri }, this.getRequestOptions());
+      if (this.getProtocolEra() === 'modern') {
+        this.modernSubscribedUris.add(uri);
+        try {
+          await this.reopenModernListen();
+        } catch (error) {
+          // Roll back so re-listen attempts don't keep requesting the rejected URI,
+          // and restore the stream for any previously honored subscriptions.
+          this.modernSubscribedUris.delete(uri);
+          if (this.modernSubscribedUris.size > 0) {
+            await this.reopenModernListen().catch((reopenError) => {
+              this.logger.warn('Failed to restore listen stream after rollback:', reopenError);
+            });
+          }
+          throw error;
+        }
+      } else {
+        await this.client.subscribeResource({ uri }, this.getRequestOptions());
+      }
       this.logger.debug(`Subscribed to resource ${uri}`);
     } catch (error) {
       this.logger.error(`Failed to subscribe to resource ${uri}:`, error);
@@ -495,12 +741,17 @@ export class McpClient implements IMcpClient {
   }
 
   /**
-   * Unsubscribe from resource updates
+   * Unsubscribe from resource updates (see subscribeResource for the per-era mechanics)
    */
   async unsubscribeResource(uri: string): Promise<void> {
     try {
       this.logger.debug(`Unsubscribing from resource: ${uri}`);
-      await this.client.unsubscribeResource({ uri }, this.getRequestOptions());
+      if (this.getProtocolEra() === 'modern') {
+        this.modernSubscribedUris.delete(uri);
+        await this.reopenModernListen();
+      } else {
+        await this.client.unsubscribeResource({ uri }, this.getRequestOptions());
+      }
       this.logger.debug(`Unsubscribed from resource ${uri}`);
     } catch (error) {
       this.logger.error(`Failed to unsubscribe from resource ${uri}:`, error);
@@ -508,6 +759,97 @@ export class McpClient implements IMcpClient {
         `Failed to unsubscribe from resource ${uri}: ${(error as Error).message}`,
         { originalError: error }
       );
+    }
+  }
+
+  /**
+   * (Re-)open the `subscriptions/listen` stream so it carries exactly the current
+   * modernSubscribedUris set. Notifications delivered on the stream dispatch to the
+   * handlers registered via setNotificationHandler, same as 2025-era unsolicited ones.
+   */
+  private async reopenModernListen(): Promise<void> {
+    const previous = this.modernListen;
+    this.modernListen = undefined;
+    if (previous) {
+      await previous.close().catch((error) => {
+        this.logger.debug('Error closing previous listen stream (ignored):', error);
+      });
+    }
+    if (this.modernSubscribedUris.size === 0 || this.isClosing) return;
+
+    const subscription = await this.client.listen(
+      { resourceSubscriptions: [...this.modernSubscribedUris] },
+      this.getRequestOptions()
+    );
+
+    // The listen acknowledgment is the 2026-07-28 signal for subscription support
+    // (there is no resources.subscribe capability flag anymore) — fail loudly when
+    // the server did not agree to deliver updates for a requested URI.
+    const honoredUris = new Set(subscription.honoredFilter.resourceSubscriptions ?? []);
+    const unhonoredUris = [...this.modernSubscribedUris].filter((uri) => !honoredUris.has(uri));
+    if (unhonoredUris.length > 0) {
+      await subscription.close().catch((error) => {
+        this.logger.debug('Error closing unhonored listen stream (ignored):', error);
+      });
+      throw new ServerError(
+        `Server does not support subscriptions for ${unhonoredUris.join(', ')} ` +
+          `(not honored in the subscriptions/listen acknowledgment)`
+      );
+    }
+
+    this.modernListen = subscription;
+
+    // Re-listen only on unexpected drops; 'local' and 'graceful' closes are deliberate.
+    void subscription.closed.then((reason) => {
+      if (reason !== 'remote' || this.modernListen !== subscription || this.isClosing) return;
+      this.modernListen = undefined;
+      void this.relistenWithBackoff('Resource subscription', async () => {
+        // Another subscribe/unsubscribe may have rebuilt the stream while we backed
+        // off, or dropped the last URI — either way there is nothing left to retry.
+        if (this.modernListen || this.modernSubscribedUris.size === 0) return;
+        await this.reopenModernListen();
+      });
+    });
+  }
+
+  /**
+   * Re-open the listChanged `subscriptions/listen` stream when it drops unexpectedly
+   * (2026-07-28 connections). Notifications on the new stream dispatch to the handlers
+   * the SDK registered at connect, so delivery resumes transparently.
+   */
+  private watchListChangedStream(subscription: McpSubscription | undefined): void {
+    if (!subscription) return;
+    void subscription.closed.then((reason) => {
+      if (reason !== 'remote' || this.isClosing) return;
+      void this.relistenWithBackoff('listChanged', () =>
+        this.reopenListChanged(subscription.honoredFilter)
+      );
+    });
+  }
+
+  /** Re-open the listChanged stream with the same filter and keep watching the new one. */
+  private async reopenListChanged(filter: SubscriptionFilter): Promise<void> {
+    const subscription = await this.client.listen(filter, this.getRequestOptions());
+    this.watchListChangedStream(subscription);
+  }
+
+  /**
+   * Retry `reopen` until it succeeds, backing off 1s → 30s. Retries indefinitely
+   * (until close): a bridge session may outlive any outage, and giving up would
+   * silently stop delivering notifications for the rest of its life.
+   */
+  private async relistenWithBackoff(label: string, reopen: () => Promise<void>): Promise<void> {
+    let delayMillis = RELISTEN_INITIAL_DELAY_MILLIS;
+    while (!this.isClosing) {
+      await new Promise((resolve) => setTimeout(resolve, delayMillis));
+      try {
+        await reopen();
+        this.logger.debug(`${label} listen stream re-established`);
+        return;
+      } catch (error) {
+        delayMillis = Math.min(delayMillis * 2, RELISTEN_MAX_DELAY_MILLIS);
+        this.logger.debug(`${label} re-listen failed, retrying in ${delayMillis}ms:`, error);
+      }
     }
   }
 
@@ -552,9 +894,18 @@ export class McpClient implements IMcpClient {
   }
 
   /**
-   * Set the logging level on the server
+   * Set the logging level on the server.
+   * Protocol 2026-07-28 removed `logging/setLevel` (log level is per-request `_meta` there),
+   * so this only works on 2025-era connections.
    */
   async setLoggingLevel(level: LoggingLevel): Promise<void> {
+    if (this.getProtocolEra() === 'modern') {
+      throw new ServerError(
+        `logging/setLevel was removed in MCP ${this.negotiatedProtocolVersion}; ` +
+          `this server no longer supports a session-wide log level. ` +
+          `Use --verbose for client-side logging instead`
+      );
+    }
     try {
       this.logger.debug(`Setting log level to: ${level}`);
       await this.client.setLoggingLevel(level, this.getRequestOptions());
@@ -571,25 +922,61 @@ export class McpClient implements IMcpClient {
    * Check if the server supports task-augmented tool calls
    */
   supportsTasksForToolCall(): boolean {
+    if (this.getProtocolEra() === 'modern') return false;
     const capabilities = this.client.getServerCapabilities();
     return !!capabilities?.tasks?.requests?.tools?.call;
   }
 
   /**
-   * Single access point for the SDK's task API. The `2025-11-25` experimental Tasks API
-   * (`experimental.tasks`) is superseded by the `2026-07-28` Tasks extension (SEP-2663:
-   * `tasks/get` polling, `tasks/update`, returnless `tasks/cancel`, and removal of
-   * `tasks/list`). Keeping every task call funnelled through here means that migration is a
-   * change to this one accessor rather than scattered across the file.
+   * Tasks were an experimental core feature in `2025-11-25` and moved to the
+   * `io.modelcontextprotocol/tasks` extension in `2026-07-28` (SEP-2663). The v2 SDK
+   * dropped the v1 experimental client API and does not implement the extension yet, so
+   * mcpc issues the `2025-11-25` task requests directly via `client.request()` — the wire
+   * vocabulary is still part of the SDK's legacy-era schema set. All task traffic is
+   * funnelled through the few methods below, so adopting the SDK's tasks extension API
+   * once it ships is a change to these methods only.
+   *
+   * Public so the bridge can reject `tools-call --task/--detach` up front: without that
+   * check a detached call on a modern connection would silently return a tool result
+   * where the caller expects a task ID. Always call this *outside* the try blocks below,
+   * so its message reaches the user as-is instead of nested in a "Failed to ..." wrapper.
    */
-  private get tasksApi(): SDKClient['experimental']['tasks'] {
-    return this.client.experimental.tasks;
+  assertTasksAvailable(): void {
+    if (this.getProtocolEra() === 'modern') {
+      throw new ServerError(tasksUnavailableMessage(this.negotiatedProtocolVersion));
+    }
   }
 
   /**
-   * Call a tool with task-augmented execution
-   * Uses the SDK's experimental callToolStream which handles task creation,
-   * polling, and result retrieval automatically via an AsyncGenerator.
+   * Issue a task-augmented `tools/call` and return the created task.
+   * The tool keeps running on the server after this returns.
+   */
+  private async createToolTask(
+    name: string,
+    args?: Record<string, unknown>,
+    meta?: Record<string, unknown>
+  ): Promise<TaskUpdate> {
+    this.assertTasksAvailable();
+    const params: Record<string, unknown> = {
+      name,
+      arguments: args || {},
+      task: {},
+    };
+    if (meta) {
+      params._meta = meta;
+    }
+    const result = await this.client.request(
+      { method: 'tools/call', params },
+      CreateTaskResultSchema,
+      this.getRequestOptions()
+    );
+    this.logger.debug(`Task created: ${result.task.taskId}`);
+    return taskToUpdate(result.task);
+  }
+
+  /**
+   * Call a tool with task-augmented execution: create the task, poll its status until it
+   * reaches a terminal state, then fetch the tool result.
    */
   async callToolWithTask(
     name: string,
@@ -599,91 +986,9 @@ export class McpClient implements IMcpClient {
   ): Promise<CallToolResult> {
     try {
       this.logger.debug(`Calling tool with task: ${name}`, args);
-
-      // Track latest task info so progress notifications can reference it
-      let currentTaskId: string | undefined;
-      let currentStatus: TaskUpdate['status'] = 'working';
-
-      const onprogress = onUpdate
-        ? (progress: {
-            progress: number;
-            total?: number | undefined;
-            message?: string | undefined;
-          }): void => {
-            if (!currentTaskId) return;
-            this.logger.debug(
-              `Task ${currentTaskId} progress: ${progress.progress}/${progress.total ?? '?'}${progress.message ? ` - ${progress.message}` : ''}`
-            );
-            const update: TaskUpdate = {
-              taskId: currentTaskId,
-              status: currentStatus,
-            };
-            if (progress.message) {
-              update.progressMessage = progress.message;
-            }
-            update.progress = progress.progress;
-            if (progress.total !== undefined) {
-              update.progressTotal = progress.total;
-            }
-            onUpdate(update);
-          }
-        : undefined;
-
-      const requestOptions = { ...this.getRequestOptions(), task: {} };
-      if (onprogress) {
-        (requestOptions as Record<string, unknown>).onprogress = onprogress;
-      }
-
-      const callParams: {
-        name: string;
-        arguments: Record<string, unknown>;
-        _meta?: Record<string, unknown>;
-      } = {
-        name,
-        arguments: args || {},
-      };
-      if (meta) {
-        callParams._meta = meta;
-      }
-
-      const stream = this.tasksApi.callToolStream(callParams, CallToolResultSchema, requestOptions);
-
-      let result: CallToolResult | undefined;
-
-      for await (const message of stream) {
-        switch (message.type) {
-          case 'taskCreated':
-            this.logger.debug(`Task created: ${message.task.taskId}`);
-            currentTaskId = message.task.taskId;
-            currentStatus = message.task.status;
-            onUpdate?.(taskToUpdate(message.task));
-            break;
-
-          case 'taskStatus':
-            this.logger.debug(`Task ${message.task.taskId} status: ${message.task.status}`);
-            currentTaskId = message.task.taskId;
-            currentStatus = message.task.status;
-            onUpdate?.(taskToUpdate(message.task));
-            break;
-
-          case 'result':
-            this.logger.debug(`Task completed with result for tool ${name}`);
-            result = message.result;
-            break;
-
-          case 'error':
-            this.logger.error(`Task error for tool ${name}:`, message.error);
-            throw new ServerError(`Tool ${name} task failed: ${message.error.message}`, {
-              originalError: message.error,
-            });
-        }
-      }
-
-      if (!result) {
-        throw new ServerError(`Tool ${name} task completed without a result`);
-      }
-
-      return result;
+      const created = await this.createToolTask(name, args, meta);
+      onUpdate?.(created);
+      return await this.pollTask(created.taskId, onUpdate);
     } catch (error) {
       if (error instanceof ServerError) throw error;
       this.logger.error(`Failed to call tool ${name} with task:`, error);
@@ -704,38 +1009,7 @@ export class McpClient implements IMcpClient {
   ): Promise<TaskUpdate> {
     try {
       this.logger.debug(`Calling tool detached: ${name}`, args);
-      const callParams: {
-        name: string;
-        arguments: Record<string, unknown>;
-        _meta?: Record<string, unknown>;
-      } = {
-        name,
-        arguments: args || {},
-      };
-      if (meta) {
-        callParams._meta = meta;
-      }
-      const stream = this.tasksApi.callToolStream(callParams, CallToolResultSchema, {
-        ...this.getRequestOptions(),
-        task: {},
-      });
-
-      for await (const message of stream) {
-        if (message.type === 'taskCreated') {
-          this.logger.debug(`Task created (detached): ${message.task.taskId}`);
-          const update = taskToUpdate(message.task);
-          // Break out of the generator — this closes the stream
-          // The task continues running on the server
-          return update;
-        }
-        if (message.type === 'error') {
-          throw new ServerError(`Tool ${name} task failed: ${message.error.message}`, {
-            originalError: message.error,
-          });
-        }
-      }
-
-      throw new ServerError(`Tool ${name} task stream ended without creating a task`);
+      return await this.createToolTask(name, args, meta);
     } catch (error) {
       if (error instanceof ServerError) throw error;
       this.logger.error(`Failed to call tool ${name} detached:`, error);
@@ -781,6 +1055,12 @@ export class McpClient implements IMcpClient {
           );
         }
 
+        // input_required: tasks/result delivers the queued server messages and
+        // blocks until the task reaches a terminal state.
+        if (task.status === 'input_required') {
+          return await this.getTaskResult(taskId);
+        }
+
         await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MILLIS));
       }
     } catch (error) {
@@ -796,9 +1076,14 @@ export class McpClient implements IMcpClient {
    * List tasks on the server
    */
   async listTasks(cursor?: string): Promise<ListTasksResult> {
+    this.assertTasksAvailable();
     try {
       this.logger.debug('Listing tasks...', cursor ? { cursor } : {});
-      const result = await this.tasksApi.listTasks(cursor, this.getRequestOptions());
+      const result = await this.client.request(
+        { method: 'tasks/list', ...(cursor ? { params: { cursor } } : {}) },
+        ListTasksResultSchema,
+        this.getRequestOptions()
+      );
       this.logger.debug(`Found ${result.tasks.length} tasks`);
       return result;
     } catch (error) {
@@ -813,9 +1098,14 @@ export class McpClient implements IMcpClient {
    * Get a task's current status
    */
   async getTask(taskId: string): Promise<GetTaskResult> {
+    this.assertTasksAvailable();
     try {
       this.logger.debug(`Getting task: ${taskId}`);
-      const result = await this.tasksApi.getTask(taskId, this.getRequestOptions());
+      const result = await this.client.request(
+        { method: 'tasks/get', params: { taskId } },
+        GetTaskResultSchema,
+        this.getRequestOptions()
+      );
       this.logger.debug(`Task ${taskId} status: ${result.status}`);
       return result;
     } catch (error) {
@@ -832,10 +1122,11 @@ export class McpClient implements IMcpClient {
    * the MCP `tasks/result` protocol method.
    */
   async getTaskResult(taskId: string): Promise<CallToolResult> {
+    this.assertTasksAvailable();
     try {
       this.logger.debug(`Getting task result: ${taskId}`);
-      const result = await this.tasksApi.getTaskResult(
-        taskId,
+      const result = await this.client.request(
+        { method: 'tasks/result', params: { taskId } },
         CallToolResultSchema,
         this.getRequestOptions()
       );
@@ -853,9 +1144,14 @@ export class McpClient implements IMcpClient {
    * Cancel a running task
    */
   async cancelTask(taskId: string): Promise<CancelTaskResult> {
+    this.assertTasksAvailable();
     try {
       this.logger.debug(`Cancelling task: ${taskId}`);
-      const result = await this.tasksApi.cancelTask(taskId, this.getRequestOptions());
+      const result = await this.client.request(
+        { method: 'tasks/cancel', params: { taskId } },
+        CancelTaskResultSchema,
+        this.getRequestOptions()
+      );
       this.logger.debug(`Task ${taskId} cancelled`);
       return result;
     } catch (error) {

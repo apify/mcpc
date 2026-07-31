@@ -7,7 +7,6 @@
 import type {
   Tool,
   Resource,
-  ResourceTemplate,
   Prompt,
   PromptArgument,
   Implementation,
@@ -35,13 +34,18 @@ import type {
   GetTaskResult,
   ListTasksResult,
   CancelTaskResult,
-} from '@modelcontextprotocol/sdk/types.js';
+} from '@modelcontextprotocol/client';
+
+/**
+ * A single resource template entry. The SDK v2 does not export this type directly,
+ * so it is derived from the list result it appears in.
+ */
+export type ResourceTemplate = ListResourceTemplatesResult['resourceTemplates'][number];
 
 // Re-export core MCP types for external use
 export type {
   Tool,
   Resource,
-  ResourceTemplate,
   Prompt,
   PromptArgument,
   Implementation,
@@ -76,6 +80,16 @@ export const KEEPALIVE_INTERVAL_MILLIS = 30_000;
 /** Threshold for considering a session disconnected (bridge alive but server unreachable) */
 export const DISCONNECTED_THRESHOLD_MILLIS = 2 * KEEPALIVE_INTERVAL_MILLIS + 5000; // ~2 missed pings + 5s buffer
 
+/**
+ * Upper bound on server instructions persisted in sessions.json (see `SessionData.instructions`).
+ * The file is read by every mcpc command, so oversized instructions are trimmed rather than
+ * slowing down the whole CLI.
+ */
+export const MAX_PERSISTED_INSTRUCTIONS_CHARS = 32_768;
+
+/** Marks the end of server instructions trimmed to MAX_PERSISTED_INSTRUCTIONS_CHARS. */
+export const TRIMMED_INSTRUCTIONS_NOTICE = '\n\n[... trimmed excessive length]';
+
 /** Valid x402 scheme preferences. Canonical source for CLI validation and type-narrowing. */
 export const X402_SCHEME_PREFERENCES = ['auto', 'upto', 'exact'] as const;
 export type X402SchemePreference = (typeof X402_SCHEME_PREFERENCES)[number];
@@ -91,6 +105,7 @@ export interface ServerConfig {
   args?: string[]; // For stdio transport
   env?: Record<string, string>; // Environment variables for stdio transport
   timeout?: number; // Request timeout in SECONDS (field name kept as `timeout` for mcp.json / sessions.json compatibility)
+  protocolVersion?: string; // Pin the MCP protocol version (strict, no fallback; absent = auto-negotiate)
 }
 
 /**
@@ -128,6 +143,13 @@ export type SessionStatus =
 export type ConnectionMode = 'stateful' | 'stateless' | 'unknown';
 
 /**
+ * Transport carrying the MCP connection: a local child process speaking over stdin/stdout,
+ * or Streamable HTTP. Derived from the live transport, so it reflects what is actually in
+ * use rather than what the config asked for.
+ */
+export type TransportKind = 'stdio' | 'streamable-http';
+
+/**
  * Notification timestamps for list change events
  * Tracks when the server last notified about changes to tools, prompts, or resources
  */
@@ -159,12 +181,33 @@ export interface SessionData {
   insecure?: boolean; // Skip TLS certificate verification
   pid?: number; // Bridge process PID
   protocolVersion?: string; // Negotiated MCP version
+  /**
+   * Every protocol version the server advertised in its `server/discover` result
+   * (2026-07-28 connections only — see `ServerDetails.supportedVersions`).
+   */
+  supportedVersions?: string[];
   mcpSessionId?: string; // Server-assigned MCP session ID for resumption (stateful Streamable HTTP only)
   connectionMode?: ConnectionMode; // Whether the connection carries server-side session state (derived at connect)
-  serverInfo?: {
-    name: string;
-    version: string;
-  };
+  /** Server identity, as reported by the handshake (`initialize`) or `server/discover`. */
+  serverInfo?: Implementation;
+  /**
+   * Server capabilities reported by the initialize handshake. Persisted because a
+   * resumed session reuses the server-side session and therefore skips the handshake,
+   * leaving the client with no capabilities of its own.
+   */
+  capabilities?: ServerCapabilities;
+  /**
+   * Server instructions reported by the initialize handshake, persisted alongside
+   * `capabilities`. Trimmed to {@link MAX_PERSISTED_INSTRUCTIONS_CHARS} (sessions.json is
+   * read on every command), and omitted when the server sends none.
+   */
+  instructions?: string | undefined;
+  /**
+   * `_meta` of the server's `server/discover` result, verbatim (2026-07-28 connections
+   * only — see `ServerDetails._meta`). Persisted alongside `capabilities` so a resumed
+   * session can still report it.
+   */
+  _meta?: Record<string, unknown>;
   status?: SessionStatus; // Session health status (default: active)
   proxy?: ProxyConfig; // Proxy server configuration (if enabled)
   notifications?: SessionNotifications; // Last list change notification timestamps
@@ -229,8 +272,11 @@ export interface SessionsStorage {
  * - authorization_code: interactive, browser-based flow (the default; assumed when absent)
  * - client_credentials: machine-to-machine flow (no user), per the MCP extension
  *   `io.modelcontextprotocol/oauth-client-credentials`
+ * - id_jag: enterprise-managed authorization (SEP-990): SSO at the enterprise IdP,
+ *   then identity-assertion JWT authorization grants (ID-JAG) for the MCP server,
+ *   per the MCP extension `io.modelcontextprotocol/enterprise-managed-authorization`
  */
-export type OAuthGrant = 'authorization_code' | 'client_credentials';
+export type OAuthGrant = 'authorization_code' | 'client_credentials' | 'id_jag';
 
 /**
  * Authentication profile data stored in ~/.mcpc/profiles.json
@@ -249,6 +295,8 @@ export interface AuthProfile {
   oauthGrant?: OAuthGrant;
   // OAuth metadata
   oauthIssuer: string;
+  /** Enterprise IdP issuer URL (id_jag grant only). */
+  idpIssuer?: string;
   scopes?: string[];
   // User info (from OIDC id_token, if available)
   userEmail?: string;
@@ -265,6 +313,36 @@ export interface AuthProfile {
  */
 export interface AuthProfilesStorage {
   profiles: Record<string, Record<string, AuthProfile>>; // serverUrl -> profileName -> AuthProfile
+}
+
+/**
+ * Enterprise-managed authorization (SEP-990) material for the `id_jag` grant.
+ * Stored as one keychain blob per profile and delivered to the bridge via IPC.
+ * The bridge exchanges `idToken` at the IdP for an ID-JAG (RFC 8693 token
+ * exchange) and the ID-JAG at the MCP authorization server for an access token
+ * (RFC 7523 jwt-bearer) — both handled by the MCP SDK.
+ */
+export interface IdJagCredentials {
+  /** Enterprise IdP issuer URL. */
+  idpIssuer: string;
+  /** IdP token endpoint, discovered and pinned at login so the bridge never re-discovers. */
+  idpTokenEndpoint: string;
+  /** Client pre-registered at the enterprise IdP. */
+  idpClientId: string;
+  /** IdP client secret (absent for public IdP clients). */
+  idpClientSecret?: string;
+  /** Current OIDC ID token from the IdP — the subject of the RFC 8693 exchange. */
+  idToken: string;
+  /** ID token expiry (`exp` claim, unix seconds). */
+  idTokenExpiresAt?: number;
+  /** IdP refresh token; renews the ID token when the IdP granted offline access. */
+  idpRefreshToken?: string;
+  /** Client registered at the MCP authorization server. */
+  mcpClientId: string;
+  /** Secret for the MCP authorization server client (required by the SDK provider). */
+  mcpClientSecret: string;
+  /** Space-separated scopes requested for the MCP server. */
+  scope?: string;
 }
 
 /**
@@ -297,6 +375,8 @@ export interface AuthCredentials {
   keyAlg?: string; // JWT signing algorithm for the private_key_jwt variant (e.g. RS256)
   scope?: string; // space-separated scopes requested by the client-credentials grant
   tokenEndpoint?: string; // explicit token endpoint (--token-endpoint); bypasses discovery
+  // Enterprise-managed authorization material (id_jag grant; sent via IPC, never CLI args)
+  idJag?: IdJagCredentials;
   // HTTP headers (from --header flags, stored in keychain)
   headers?: Record<string, string>;
   // Bearer token the bridge's proxy server requires (from --proxy-bearer-token).
@@ -402,20 +482,44 @@ export interface WalletsStorage {
 
 /**
  * Combined server details returned by getServerDetails()
- * Structure matches MCP InitializeResult for consistency
+ *
+ * One era-neutral shape for both handshakes: the fields that MCP `InitializeResult`
+ * (2025-11-25 `initialize`) and `DiscoverResult` (2026-07-28 `server/discover`) have in
+ * common, plus the discover-only `supportedVersions` and `_meta`, plus two fields mcpc
+ * derives itself (`connectionMode`, `transport`). On a 2026-07-28 connection the result
+ * satisfies both schemas: `serverInfo` is lifted out of the discover result's `_meta`, and
+ * `protocolVersion` is the version actually negotiated (the discover result only lists the
+ * versions on offer).
+ *
  * Fetched once during initialization, cached locally
  */
 export interface ServerDetails {
   /** Negotiated protocol version */
   protocolVersion?: string;
+  /**
+   * Every protocol version the server advertises (`DiscoverResult.supportedVersions`).
+   * 2026-07-28 connections only: the legacy `initialize` handshake reports nothing but the
+   * single version it agreed on.
+   */
+  supportedVersions?: string[];
   /** Server capabilities */
   capabilities?: ServerCapabilities;
   /** Server implementation details (name, version, etc.) - matches MCP serverInfo field */
   serverInfo?: Implementation;
   /** Server-provided instructions for the client */
   instructions?: string;
+  /**
+   * `_meta` of the server's `server/discover` result, verbatim. 2026-07-28 connections
+   * only (the SDK does not surface the legacy `initialize` result's `_meta`). Holds the
+   * spec's `io.modelcontextprotocol/serverInfo` — the identity 2026-07-28 servers stamp on
+   * every response, lifted into `serverInfo` above — plus any extension metadata the
+   * server attached to it.
+   */
+  _meta?: Record<string, unknown>;
   /** Whether the connection carries server-side session state (derived from transport + session id) */
   connectionMode?: ConnectionMode;
+  /** Transport carrying the connection (derived from the live transport) */
+  transport?: TransportKind;
 }
 
 /**

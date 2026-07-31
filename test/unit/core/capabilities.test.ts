@@ -5,6 +5,7 @@
 import {
   buildClientCapabilities,
   CLIENT_CREDENTIALS_EXTENSION_KEY,
+  ENTERPRISE_MANAGED_AUTH_EXTENSION_KEY,
 } from '../../../src/core/capabilities.js';
 
 describe('buildClientCapabilities', () => {
@@ -38,5 +39,25 @@ describe('buildClientCapabilities', () => {
     };
     expect(caps.extensions).toBeDefined();
     expect(caps.extensions).toHaveProperty(CLIENT_CREDENTIALS_EXTENSION_KEY);
+    expect(caps.extensions).not.toHaveProperty(ENTERPRISE_MANAGED_AUTH_EXTENSION_KEY);
+  });
+
+  it('declares the enterprise-managed-authorization extension when requested', () => {
+    expect(ENTERPRISE_MANAGED_AUTH_EXTENSION_KEY).toBe(
+      'io.modelcontextprotocol/enterprise-managed-authorization'
+    );
+    const caps = buildClientCapabilities({ enterpriseManagedAuth: true }) as {
+      extensions?: Record<string, unknown>;
+    };
+    expect(caps.extensions).toBeDefined();
+    expect(caps.extensions).toHaveProperty(ENTERPRISE_MANAGED_AUTH_EXTENSION_KEY);
+    expect(caps.extensions).not.toHaveProperty(CLIENT_CREDENTIALS_EXTENSION_KEY);
+  });
+
+  it('omits the enterprise-managed-authorization extension when false', () => {
+    const caps = buildClientCapabilities({ enterpriseManagedAuth: false }) as {
+      extensions?: Record<string, unknown>;
+    };
+    expect(caps.extensions).toBeUndefined();
   });
 });

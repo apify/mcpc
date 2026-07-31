@@ -18,9 +18,15 @@ import {
   formatInfo,
   formatTaskCommandsHint,
 } from '../output.js';
-import { ClientError } from '../../lib/errors.js';
+import { ClientError, ServerError } from '../../lib/errors.js';
 import type { CallToolResult, CommandOptions, TaskUpdate } from '../../lib/types.js';
 import { withMcpClient } from '../helpers.js';
+// Imported directly (not via the core barrel) so the CLI doesn't eagerly load the MCP SDK
+import {
+  isModernProtocolVersion,
+  tasksUnavailableMessage,
+  tasksUnsupportedByServerMessage,
+} from '../../core/protocol.js';
 import { parseCommandArgs, hasStdinData, readStdinArgs } from '../parser.js';
 import {
   loadSchemaFromFile,
@@ -181,8 +187,15 @@ function formatElapsed(millis: number): string {
 }
 
 /**
- * Check if task-augmented execution should be used for a tool call.
- * Tasks are opt-in via --task or --detach flags.
+ * Decide whether task-augmented execution applies to a tool call, and fail when the
+ * caller asked for it but this connection cannot deliver it.
+ *
+ * `--task`/`--detach` change the shape of the output — `--detach` returns
+ * `{ taskId, status }` instead of a `CallToolResult` — so quietly running the tool
+ * synchronously instead would leave callers parsing a `taskId` that is not there, with
+ * exit code 0. Either reason to fail gets its own message: the protocol has no tasks at
+ * all (2026-07-28 moved them to an extension mcpc does not support yet), or the server
+ * does not advertise the capability.
  */
 async function shouldUseTask(
   client: import('../../lib/types.js').IMcpClient,
@@ -190,7 +203,13 @@ async function shouldUseTask(
 ): Promise<boolean> {
   if (!async_) return false;
   const details = await client.getServerDetails();
-  return !!details.capabilities?.tasks?.requests?.tools?.call;
+  if (details.protocolVersion && isModernProtocolVersion(details.protocolVersion)) {
+    throw new ServerError(tasksUnavailableMessage(details.protocolVersion));
+  }
+  if (!details.capabilities?.tasks?.requests?.tools?.call) {
+    throw new ServerError(tasksUnsupportedByServerMessage());
+  }
+  return true;
 }
 
 /**
@@ -303,19 +322,9 @@ export async function callTool(
       }
     }
 
-    // --detach implies --task
-    const taskRequested = options.detach || options.task;
-    // Check if we should use task-augmented execution
-    const useTask = await shouldUseTask(client, taskRequested);
-
-    // Warn if --task/--detach was requested but server doesn't support tasks
-    if (taskRequested && !useTask) {
-      if (options.outputMode === 'human') {
-        console.log(
-          formatWarning('Server does not support tasks, falling back to synchronous execution')
-        );
-      }
-    }
+    // --detach implies --task. Throws when this connection cannot run tasks — the flags
+    // change the output shape, so falling back silently is never the right answer.
+    const useTask = await shouldUseTask(client, options.detach || options.task);
 
     let result;
 

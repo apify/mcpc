@@ -58,6 +58,9 @@ mcpc connect                             # discover standard configs + connect e
   (`mcp.apify.com` → `@apify`). A matching session (same server + auth) is reused.
 - **Stdio (command-based) entries launch a local process on connect** — only connect
   to configs you trust. Bulk connects skip stdio entries unless you pass `--stdio`.
+- The MCP protocol version is negotiated automatically. Pass
+  `--protocol-version <version>` (e.g. `--protocol-version 2025-11-25`) to pin
+  one exact version — the connection fails if the server does not support it.
 - `login` / `logout` only accept an MCP server URL (a bare host or full
   `http(s)://` URL) — not config files or auto-discovery.
 
@@ -66,7 +69,7 @@ mcpc connect                             # discover standard configs + connect e
 ```bash
 mcpc                     # list all sessions and their state
 mcpc @apify              # session details, capabilities, tools (also reports the
-                         # negotiated protocol version and stateful vs stateless)
+                         # negotiated MCP version and the transport carrying it)
 mcpc restart @apify      # restart (after server updates, or to recover an 'expired' session)
 mcpc close @apify        # tear the session down
 ```
@@ -165,6 +168,13 @@ mcpc @apify tasks-result <taskId>               # block until the final result i
 mcpc @apify tasks-cancel <taskId>
 ```
 
+Task commands need a server on MCP protocol 2025-11-25 that advertises the tasks
+capability (`tools-list` flags it per tool as `[task:optional|required|forbidden]`).
+Otherwise `--task`/`--detach` and the `tasks-*` commands fail with an error — they
+never silently fall back to a synchronous call, so `--detach` output always has a
+`taskId` or a non-zero exit code. On 2026-07-28 servers tasks are an extension mcpc
+does not support yet.
+
 ## Authentication
 
 ```bash
@@ -180,6 +190,11 @@ mcpc @s tools-list
 
 # Machine-to-machine (CI/CD, daemons) — client-credentials grant, no browser needed
 mcpc login mcp.example.com --grant client-credentials --client-id my-svc --client-secret s3cr3t
+
+# Enterprise-managed authorization — SSO once at the corporate IdP (e.g. Okta),
+# then identity assertion grants (ID-JAG); clients are pre-registered by IT
+mcpc login mcp.example.com --grant id-jag --idp https://acme.okta.com \
+  --idp-client-id idp-client --client-id mcp-client --client-secret s3cr3t
 ```
 
 With no auth flags, mcpc uses the `default` profile if one exists, otherwise it
@@ -236,7 +251,7 @@ mcpc @apify skills-get <name> --raw    # print the SKILL.md markdown (pipe to a 
 mcpc --verbose @apify tools-call <tool>   # protocol-level detail (JSON-RPC, transport)
 mcpc @apify logs                          # bridge log; -n <N>, --follow, --since 1h
 mcpc @apify ping                          # round-trip health check
-mcpc @apify logging-set-level debug       # ask the server to log more (server-side level)
+mcpc @apify logging-set-level debug       # deprecated; 2025-11-25 servers only, will be removed
 mcpc clean                                # tidy stale sessions/logs (also: mcpc clean all)
 ```
 

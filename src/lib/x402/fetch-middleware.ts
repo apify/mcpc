@@ -16,8 +16,7 @@
  * This middleware is injected into the transport via the SDK's `fetch` option.
  */
 
-import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js';
-import type { Tool } from '@modelcontextprotocol/sdk/types.js';
+import type { FetchLike, Tool } from '@modelcontextprotocol/client';
 import {
   signPayment,
   parsePaymentRequired,

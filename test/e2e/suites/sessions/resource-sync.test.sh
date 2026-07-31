@@ -67,11 +67,16 @@ assert_eq "$(cat "$SYNC_FILE")" "counter=0" "initial sync should download curren
 test_pass
 
 test_case "server records the subscription"
-if ! wait_for_server_subscription "$COUNTER_URI" 5; then
+if [[ "$E2E_SERVER_PROTOCOL" == "modern" ]]; then
+  # 2026-07-28 subscriptions live in the client's subscriptions/listen stream;
+  # the server keeps no per-session subscription registry to inspect.
+  test_skip "server-side subscription registry is a 2025-era concept"
+elif ! wait_for_server_subscription "$COUNTER_URI" 5; then
   test_fail "server should track the subscription: $(server_get_subscriptions)"
   exit 1
+else
+  test_pass
 fi
-test_pass
 
 test_case "session info shows the subscription"
 run_mcpc --json "$SESSION"
@@ -121,8 +126,12 @@ test_pass
 test_case "subscription survives session restart"
 run_mcpc "$SESSION" restart
 assert_success
-# The bridge re-subscribes and re-syncs in the background after reconnecting
-if ! wait_for_server_subscription "$COUNTER_URI" 10; then
+# The bridge re-subscribes and re-syncs in the background after reconnecting.
+# On the modern server there is no registry to poll, so give the re-opened
+# subscriptions/listen stream a moment to be established instead.
+if [[ "$E2E_SERVER_PROTOCOL" == "modern" ]]; then
+  sleep 2
+elif ! wait_for_server_subscription "$COUNTER_URI" 10; then
   test_fail "subscription should be re-established on the server after restart"
   exit 1
 fi
@@ -146,12 +155,16 @@ assert_file_exists "$SYNC_FILE"
 test_pass
 
 test_case "server subscription is removed"
-SUBS_JSON=$(server_get_subscriptions)
-if [[ "$SUBS_JSON" == *"$COUNTER_URI"* ]]; then
-  test_fail "server should no longer track the subscription: $SUBS_JSON"
-  exit 1
+if [[ "$E2E_SERVER_PROTOCOL" == "modern" ]]; then
+  test_skip "server-side subscription registry is a 2025-era concept"
+else
+  SUBS_JSON=$(server_get_subscriptions)
+  if [[ "$SUBS_JSON" == *"$COUNTER_URI"* ]]; then
+    test_fail "server should no longer track the subscription: $SUBS_JSON"
+    exit 1
+  fi
+  test_pass
 fi
-test_pass
 
 test_case "no more syncing after unsubscribe"
 server_bump_counter >/dev/null
