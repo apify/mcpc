@@ -43,31 +43,35 @@ test_case "kill bridge process"
 _kill_tree "$bridge_pid"
 
 # Verify it's no longer running. The SIGTERM shutdown is graceful (session
-# DELETE + client close, each with its own timeout budget), so allow up to 10s
-# instead of a fixed sleep — on slow machines 1s is not enough (flaky).
+# DELETE + client close, each with its own timeout budget), so poll rather than
+# using a fixed sleep — on slow machines 1s is not enough (flaky).
+if ! wait_for_process_exit "$bridge_pid"; then
+  test_fail "bridge should not be running"
+  exit 1
+fi
 if is_windows; then
-  sleep 1
-  if tasklist //FI "PID eq $bridge_pid" //NH 2>/dev/null | grep -q "$bridge_pid"; then
-    test_fail "bridge should not be running"
-    exit 1
-  fi
   # On Windows, force-kill doesn't allow graceful shutdown (no HTTP DELETE),
   # so the server still has the session active. Expire it via control API
   # to simulate the session being invalidated.
   curl -s -X POST "$TEST_SERVER_URL/control/expire-session" >/dev/null
-else
-  if ! wait_for "! kill -0 $bridge_pid 2>/dev/null" 10; then
-    test_fail "bridge should not be running"
-    exit 1
-  fi
 fi
 test_pass
 
 # Test: session shows as crashed or reconnecting
 test_case "session shows as crashed or reconnecting after bridge kill"
-run_mcpc --json
-session_status=$(json_get ".sessions[] | select(.name == \"$SESSION\") | .status")
+# Poll rather than assert once: the status is derived from the bridge process
+# being gone, and the OS does not necessarily reap it the instant the kill
+# returns (slower on Windows and under parallel load).
 # Session may show as "crashed" (bridge dead) or "reconnecting" (auto-reconnect in progress)
+session_status=""
+for _ in $(seq 1 15); do
+  run_mcpc --json
+  session_status=$(json_get ".sessions[] | select(.name == \"$SESSION\") | .status")
+  if [[ "$session_status" == "crashed" || "$session_status" == "reconnecting" ]]; then
+    break
+  fi
+  sleep 0.3
+done
 if [[ "$session_status" != "crashed" && "$session_status" != "reconnecting" ]]; then
   test_fail "session should show as crashed or reconnecting, got: $session_status"
   exit 1

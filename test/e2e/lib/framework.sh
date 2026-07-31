@@ -113,6 +113,57 @@ _wait_killed() {
   fi
 }
 
+# Check whether a process is currently running
+#
+# On Windows, `tasklist` can fail transiently (it is comparatively heavy and the
+# suite runs several tests at once), so an unreadable result must not be reported
+# as "exited" — that would make a polling caller stop waiting while the process is
+# still alive. Only a successful query that does not list the pid means gone.
+# Usage: process_is_running <pid>
+process_is_running() {
+  local pid="$1"
+
+  if ! is_windows; then
+    kill -0 "$pid" 2>/dev/null
+    return
+  fi
+
+  local out
+  if ! out=$(tasklist //FI "PID eq $pid" //NH 2>/dev/null); then
+    return 0  # query failed — cannot tell, assume still running
+  fi
+  if [[ -z "${out//[[:space:]]/}" ]]; then
+    return 0  # no output at all — cannot tell, assume still running
+  fi
+  # Non-empty output: the pid is listed if running, otherwise tasklist printed an
+  # informational "no tasks match" line (whose wording varies by locale).
+  [[ "$out" == *"$pid"* ]]
+}
+
+# Wait until a process has exited. Returns 0 once it is gone, 1 if it is still
+# running at the deadline.
+#
+# A fixed `sleep` is not enough: a bridge shutting down gracefully closes its
+# stdio child first and can take well over a second, and process teardown is
+# slower on Windows and under parallel load. Polling also returns as soon as the
+# process is actually gone instead of always paying the worst case.
+# Usage: wait_for_process_exit <pid> [timeout_secs]
+wait_for_process_exit() {
+  local pid="$1"
+  local timeout_secs="${2:-15}"
+  local max_iterations=$(( timeout_secs * 10 ))  # 0.1s intervals
+  local waited=0
+
+  while process_is_running "$pid"; do
+    sleep 0.1
+    ((waited++)) || true
+    if [[ $waited -ge $max_iterations ]]; then
+      return 1
+    fi
+  done
+  return 0
+}
+
 # Find a Python interpreter
 _find_python() {
   if command -v python3 &>/dev/null; then
@@ -129,6 +180,24 @@ _find_python() {
 _md5_short() {
   echo "$1" | md5sum 2>/dev/null | cut -c1-8 || echo "$1" | md5 -q -s 2>/dev/null | cut -c1-8
 }
+
+# Command that runs a TypeScript entrypoint with tsx.
+#
+# `npx tsx` re-resolves the package on every call, which costs ~0.5s on Linux and
+# several seconds on Windows, and the e2e suite starts ~40 helper servers this way.
+# Invoking tsx's CLI entrypoint through node directly skips that resolution
+# entirely and is portable (no .bin shell/CMD wrapper involved).
+_resolve_tsx() {
+  local cli="$PROJECT_ROOT/node_modules/tsx/dist/cli.mjs"
+  if [[ -f "$cli" ]]; then
+    echo "node $(to_native_path "$cli")"
+  else
+    # Fall back to npx when tsx is not installed locally (e.g. partial install)
+    echo "npx tsx"
+  fi
+}
+export TSX
+TSX="$(_resolve_tsx)"
 
 # Test state
 _TEST_NAME=""
@@ -304,31 +373,57 @@ run_xmcpc() {
   local caller_stderr="$STDERR"
   local caller_exit="$EXIT_CODE"
 
-  # Strip --json and --verbose from args to get bare args
+  # Strip --json and --verbose from args to get bare args, and note which of the
+  # four variants the caller's own invocation already is: that result is reused
+  # instead of spawning a duplicate mcpc process. Every mcpc spawn costs ~0.3s on
+  # Linux and ~1s on Windows, and the suite makes ~90 run_xmcpc calls, so dropping
+  # one of five runs is worth it — no invariant coverage is lost.
   local bare_args=()
+  local caller_json=false
+  local caller_verbose=false
   for arg in "$@"; do
     case "$arg" in
-      --json|-j|--verbose|-v) ;;
+      --json|-j) caller_json=true ;;
+      --verbose|-v) caller_verbose=true ;;
       *) bare_args+=("$arg") ;;
     esac
   done
 
-  # Run all 4 variants for invariant checking
+  # Run the remaining variants for invariant checking
   # Use ${bare_args[@]+"${bare_args[@]}"} to handle empty array with nounset
-  run_mcpc ${bare_args[@]+"${bare_args[@]}"}
-  local bare_stdout="$STDOUT"
+  local bare_stdout verbose_stdout json_stdout json_stderr json_exit json_verbose_stdout
 
-  run_mcpc --verbose ${bare_args[@]+"${bare_args[@]}"}
-  local verbose_stdout="$STDOUT"
+  if [[ "$caller_json" == false && "$caller_verbose" == false ]]; then
+    bare_stdout="$caller_stdout"
+  else
+    run_mcpc ${bare_args[@]+"${bare_args[@]}"}
+    bare_stdout="$STDOUT"
+  fi
 
-  run_mcpc --json ${bare_args[@]+"${bare_args[@]}"}
-  local json_stdout="$STDOUT"
-  local json_stderr="$STDERR"
-  local json_exit="$EXIT_CODE"
+  if [[ "$caller_json" == false && "$caller_verbose" == true ]]; then
+    verbose_stdout="$caller_stdout"
+  else
+    run_mcpc --verbose ${bare_args[@]+"${bare_args[@]}"}
+    verbose_stdout="$STDOUT"
+  fi
 
-  run_mcpc --json --verbose ${bare_args[@]+"${bare_args[@]}"}
-  local json_verbose_stdout="$STDOUT"
-  local json_verbose_stderr="$STDERR"
+  if [[ "$caller_json" == true && "$caller_verbose" == false ]]; then
+    json_stdout="$caller_stdout"
+    json_stderr="$caller_stderr"
+    json_exit="$caller_exit"
+  else
+    run_mcpc --json ${bare_args[@]+"${bare_args[@]}"}
+    json_stdout="$STDOUT"
+    json_stderr="$STDERR"
+    json_exit="$EXIT_CODE"
+  fi
+
+  if [[ "$caller_json" == true && "$caller_verbose" == true ]]; then
+    json_verbose_stdout="$caller_stdout"
+  else
+    run_mcpc --json --verbose ${bare_args[@]+"${bare_args[@]}"}
+    json_verbose_stdout="$STDOUT"
+  fi
 
   # Check --verbose invariant: stdout should be identical with or without --verbose
   if [[ "$verbose_stdout" != "$bare_stdout" ]]; then
@@ -738,7 +833,7 @@ start_test_server() {
 
   # Start server
   cd "$PROJECT_ROOT"
-  env $env_str npx tsx "$server_script" >"$_TEST_RUN_DIR/server.log" 2>&1 &
+  env $env_str $TSX "$server_script" >"$_TEST_RUN_DIR/server.log" 2>&1 &
   _TEST_SERVER_PID=$!
 
   # Wait for server to be ready
@@ -845,7 +940,7 @@ EOF
 start_proxy_server() {
   local log="$_TEST_RUN_DIR/proxy-server.log"
   cd "$PROJECT_ROOT"
-  npx tsx test/e2e/server/proxy-server.ts >"$log" 2>&1 &
+  $TSX test/e2e/server/proxy-server.ts >"$log" 2>&1 &
   _PROXY_SERVER_PID=$!
 
   # Wait for PROXY_CONTROL_PORT= line in log (up to 10 seconds)
@@ -889,7 +984,7 @@ proxy_reset_count() {
 start_https_test_server() {
   local log="$_TEST_RUN_DIR/https-wrapper.log"
   cd "$PROJECT_ROOT"
-  env TARGET_URL="$TEST_SERVER_URL" npx tsx test/e2e/server/https-wrapper.ts >"$log" 2>&1 &
+  env TARGET_URL="$TEST_SERVER_URL" $TSX test/e2e/server/https-wrapper.ts >"$log" 2>&1 &
   _HTTPS_WRAPPER_PID=$!
 
   # Wait for HTTPS_PORT= line in log (up to 10 seconds)

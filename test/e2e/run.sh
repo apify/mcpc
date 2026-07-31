@@ -8,7 +8,7 @@
 #   ./run.sh -p 1 basic/        # Run sequentially (parallel=1)
 #
 # Options:
-#   -p, --parallel N   Max parallel tests (default: 8)
+#   -p, --parallel N   Max parallel tests (default: 16)
 #   -s, --server-protocol <p>  Test server protocol era: legacy (default) or modern
 #   -i, --isolated     Force all tests to use isolated home directories
 #   -c, --coverage     Collect code coverage
@@ -57,6 +57,20 @@ _is_windows() {
   [[ "$_UNAME_S" == MINGW* || "$_UNAME_S" == MSYS* ]]
 }
 _TMPDIR="${TMPDIR:-${TEMP:-/tmp}}"
+
+# Current time in milliseconds. Used to report per-test durations, which are the
+# only way to see which tests dominate a run (results are printed after all tests
+# finish, so the log order says nothing about cost).
+_now_millis() {
+  local ns
+  ns=$(date +%s%N 2>/dev/null)
+  # `date +%N` is a GNU extension; fall back to second resolution elsewhere.
+  if [[ "$ns" == *N* || -z "$ns" ]]; then
+    echo $(( $(date +%s) * 1000 ))
+  else
+    echo $(( ns / 1000000 ))
+  fi
+}
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -352,6 +366,9 @@ run_test() {
   # Ensure test directory exists (framework.sh creates it, but be safe)
   mkdir -p "$test_dir"
 
+  local started_at
+  started_at=$(_now_millis)
+
   # Run the test in the background so a watchdog can enforce PER_TEST_TIMEOUT.
   # A hung test would otherwise block the parallel runner forever; this guarantees
   # the run always terminates and the failure log points at the culprit.
@@ -402,6 +419,7 @@ run_test() {
   fi
 
   echo "$result" > "$test_dir/result"
+  echo "$(( $(_now_millis) - started_at ))" > "$test_dir/duration_millis"
 }
 
 export SCRIPT_DIR SUITES_DIR E2E_RUN_ID E2E_RUNS_DIR E2E_SHARED_HOME E2E_ISOLATED_ALL E2E_RUNTIME E2E_SERVER_PROTOCOL PROJECT_ROOT NODE_V8_COVERAGE PER_TEST_TIMEOUT
@@ -418,6 +436,7 @@ if [[ "$VERBOSE" == "true" ]]; then
     mkdir -p "$test_dir"
 
     echo -e "${DIM}Running: $name${NC}"
+    _started_at=$(_now_millis)
     # Run test, show output in real-time, and save to file
     if bash "$test" 2>&1 | tee "$test_dir/output.log"; then
       echo "0" > "$test_dir/result"
@@ -426,6 +445,7 @@ if [[ "$VERBOSE" == "true" ]]; then
       echo "${PIPESTATUS[0]}" > "$test_dir/result"
       echo -e "${RED}✗${NC} $name"
     fi
+    echo "$(( $(_now_millis) - _started_at ))" > "$test_dir/duration_millis"
   done
 elif _is_windows; then
   # On Windows, export -f is unreliable in Git Bash, so use background jobs.
@@ -437,6 +457,7 @@ elif _is_windows; then
     test_dir="$E2E_RUNS_DIR/$E2E_RUN_ID/$test_id"
     mkdir -p "$test_dir"
     (
+      _started_at=$(_now_millis)
       # Run test with a timeout: start test in background, kill if it exceeds limit
       bash "$test" > "$test_dir/output.log" 2>&1 &
       _test_pid=$!
@@ -453,6 +474,7 @@ elif _is_windows; then
       fi
       kill "$_watchdog_pid" 2>/dev/null || true
       wait "$_watchdog_pid" 2>/dev/null || true
+      echo "$(( $(_now_millis) - _started_at ))" > "$test_dir/duration_millis"
     ) &
     ((_running++)) || true
     if [[ $_running -ge $PARALLEL ]]; then
@@ -463,7 +485,7 @@ elif _is_windows; then
   wait
 else
   # Parallel execution via xargs (Unix)
-  export -f run_test test_name _capture_timeout_diagnostics _descendant_pids
+  export -f run_test test_name _capture_timeout_diagnostics _descendant_pids _now_millis
   printf '%s\n' "${TESTS[@]}" | xargs -P "$PARALLEL" -I {} bash -c 'run_test "$@"' _ {}
 fi
 
@@ -478,11 +500,30 @@ PASSED=0
 FAILED=0
 SKIPPED=0
 FAILED_TESTS=()
+DURATIONS=()
+
+# Format a duration in milliseconds as a compact human string (e.g. "1.4s")
+_format_millis() {
+  local ms="$1"
+  if [[ $ms -lt 1000 ]]; then
+    echo "${ms}ms"
+  else
+    echo "$((ms / 1000)).$(( (ms % 1000) / 100 ))s"
+  fi
+}
 
 for test in "${TESTS[@]}"; do
   test_id=$(test_name "$test")
   test_dir="$RUN_DIR/$test_id"
   result_file="$test_dir/result"
+
+  duration_millis=""
+  [[ -f "$test_dir/duration_millis" ]] && duration_millis=$(cat "$test_dir/duration_millis")
+  duration_label=""
+  if [[ -n "$duration_millis" ]]; then
+    duration_label=" ${DIM}($(_format_millis "$duration_millis"))${NC}"
+    DURATIONS+=("$duration_millis $test_id")
+  fi
 
   if [[ -f "$result_file" ]]; then
     result=$(cat "$result_file")
@@ -492,10 +533,10 @@ for test in "${TESTS[@]}"; do
       echo -e "${YELLOW}⊘${NC} $test_id ${DIM}($(cat "$test_dir/.skipped"))${NC}"
       ((SKIPPED++)) || true
     elif [[ "$result" == "0" ]]; then
-      echo -e "${GREEN}✓${NC} $test_id"
+      echo -e "${GREEN}✓${NC} $test_id$duration_label"
       ((PASSED++)) || true
     else
-      echo -e "${RED}✗${NC} $test_id (exit code: $result)"
+      echo -e "${RED}✗${NC} $test_id (exit code: $result)$duration_label"
       ((FAILED++)) || true
       FAILED_TESTS+=("$test_id")
     fi
@@ -513,6 +554,15 @@ echo "Total:   $((PASSED + FAILED + SKIPPED))"
 echo -e "Passed:  ${GREEN}$PASSED${NC}"
 echo -e "Skipped: ${YELLOW}$SKIPPED${NC}"
 echo -e "Failed:  ${RED}$FAILED${NC}"
+
+# Slowest tests, so a slowdown is visible in the CI log without extra tooling
+if [[ ${#DURATIONS[@]} -gt 0 ]]; then
+  echo ""
+  echo "Slowest tests:"
+  printf '%s\n' "${DURATIONS[@]}" | sort -rn | head -10 | while read -r ms id; do
+    echo -e "  ${DIM}$(_format_millis "$ms")\t$id${NC}"
+  done
+fi
 
 # Show failed test logs
 if [[ ${#FAILED_TESTS[@]} -gt 0 ]]; then
