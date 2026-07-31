@@ -787,6 +787,8 @@ Before releasing:
 
 The script validates preconditions locally, then triggers the `release.yml` GitHub Actions workflow which handles: lint, build, test, version bump, changelog update, README update, git commit/tag/push, npm publish (with provenance), and GitHub release creation.
 
+A full release also dispatches the `update_formula.yaml` workflow in [apify/homebrew-tap](https://github.com/apify/homebrew-tap), which points `Formula/mcpc.rb` at the new npm tarball, installs and `brew test`s it on Linux and macOS, and merges the bump. The formula itself lives in the tap repository, not here; a failed dispatch only warns (the release is already published) and can be re-run from the tap's Actions tab.
+
 For pre-releases: `pnpm run release:pre` (or `pnpm run release:pre -- minor`)
 
 Monitor the release progress at the GitHub Actions URL that opens automatically.
