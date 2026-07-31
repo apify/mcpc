@@ -66,6 +66,10 @@ jobs:
         run: pnpm run build
 
       - name: E2E tests
+        # Bun on Windows is less tolerant of contention than Node: at --parallel 4
+        # it intermittently failed with bridge startup errors on tests that passed
+        # in other runs, so this job uses 2. Still roughly half the previous
+        # sequential runtime. See the note in e2e-windows-node above.
         env:
           E2E_PER_TEST_TIMEOUT: 300
-        run: ./test/e2e/run.sh --no-build --runtime bun --parallel 4
+        run: ./test/e2e/run.sh --no-build --runtime bun --parallel 2
