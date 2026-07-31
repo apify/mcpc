@@ -292,26 +292,6 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Update Homebrew tap
-        if: inputs.type == 'release'
-        # apify/homebrew-tap owns the formula and its update flow: the dispatched
-        # workflow points Formula/mcpc.rb at the new npm tarball, installs and
-        # `brew test`s it on Linux and macOS, then merges the bump. It polls the
-        # registry itself, so it tolerates npm publish propagation.
-        #
-        # A failure here must not fail an already-published release — the bump can
-        # be re-run from the tap's Actions tab with the same inputs.
-        env:
-          GH_TOKEN: ${{ secrets.APIFY_SERVICE_ACCOUNT_GITHUB_TOKEN }}
-          VERSION: ${{ steps.release.outputs.version }}
-        run: |
-          DISPATCH=(gh workflow run update_formula.yaml --repo apify/homebrew-tap
-            --field package=mcpc --field npm_package=@apify/mcpc --field version="$VERSION")
-          if ! "${DISPATCH[@]}"; then
-            echo "::warning::Could not dispatch the Homebrew formula update for ${VERSION}. \
-            Re-run it manually: ${DISPATCH[*]}"
-          fi
-
       - name: Create GitHub release
         if: inputs.type == 'release'
         uses: softprops/action-gh-release@v2
@@ -334,3 +314,31 @@ jobs:
             ${{ steps.install-size.outputs.report }}
         env:
           GITHUB_TOKEN: ${{ secrets.APIFY_SERVICE_ACCOUNT_GITHUB_TOKEN }}
+
+      # ── Homebrew tap (must never affect the release itself) ────────
+      - name: Update Homebrew tap
+        if: inputs.type == 'release'
+        # apify/homebrew-tap owns the formula and its update flow: the dispatched
+        # workflow points Formula/mcpc.rb at the new npm tarball, installs and
+        # `brew test`s it on Linux and macOS, then merges the bump. It polls the
+        # registry itself, so it tolerates npm publish propagation.
+        #
+        # Deliberately the last step, and continue-on-error: by this point the
+        # version is tagged, published to npm and has a GitHub release, so a
+        # Homebrew hiccup (tap not reachable, workflow renamed, missing token, no
+        # `gh` on the runner) must not fail the release or hide what did succeed.
+        # Homebrew users keep the previous version until the bump is re-run from
+        # the tap's Actions tab; npm and Bun users are unaffected.
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.APIFY_SERVICE_ACCOUNT_GITHUB_TOKEN }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          DISPATCH=(gh workflow run update_formula.yaml --repo apify/homebrew-tap
+            --field package=mcpc --field npm_package=@apify/mcpc --field version="$VERSION")
+          if "${DISPATCH[@]}"; then
+            echo "Dispatched the Homebrew formula update for ${VERSION}."
+          else
+            echo "::warning::Could not dispatch the Homebrew formula update for ${VERSION}. \
+            The npm release is unaffected — re-run the bump manually: ${DISPATCH[*]}"
+          fi
