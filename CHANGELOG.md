@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Session commands now also accept MCP's JSON-RPC method names (e.g. `tools/list`, `logging/setLevel`) as aliases for the hyphenated CLI form (`tools-list`, `logging-set-level`).
 - On servers using MCP 2026-07-28, `logging-set-level` returns an error (the protocol removed `logging/setLevel`) and the task commands (`tasks-list`, `tasks-get`, `tasks-result`, `tasks-cancel`, `tools-call --task/--detach`) report that the new tasks extension is not supported yet — they keep working unchanged on 2025-11-25 servers.
 - `mcpc @session` now reports the connection on one line — `MCP: version 2025-11-25 / Streamable HTTP (stateless)` — naming the protocol (the label was just `Protocol:`) and the transport carrying it. `--json` gained the matching `_mcpc.transport` field next to `_mcpc.stateless`.
 - `mcpc @session` no longer suggests commands that cannot work on a 2026-07-28 connection: the `logging` and `tasks` capabilities are flagged as era-limited, and `logging-set-level` / `tasks-*` are left out of the suggested commands.

@@ -48,6 +48,8 @@ import {
   hasSubcommand,
   optionTakesValue,
   suggestCommand,
+  normalizeSlashCommand,
+  normalizeSlashCommandArgs,
   KNOWN_COMMANDS,
   KNOWN_SESSION_COMMANDS,
 } from './parser.js';
@@ -346,7 +348,11 @@ async function main(): Promise<void> {
   const outputMode: OutputMode = opts.json ? 'json' : 'human';
 
   const allCommands = [...KNOWN_COMMANDS, ...KNOWN_SESSION_COMMANDS];
-  if (allCommands.includes(firstNonOption)) {
+  // Accept MCP JSON-RPC-style method names (e.g. "tools/list") silently, in case
+  // this is a session subcommand typed without a session target — undocumented,
+  // never advertised in the message itself.
+  const normalizedFirstNonOption = normalizeSlashCommand(firstNonOption);
+  if (allCommands.includes(normalizedFirstNonOption)) {
     // It's a session subcommand used without @session
     if (outputMode === 'json') {
       console.error(
@@ -354,12 +360,12 @@ async function main(): Promise<void> {
       );
     } else {
       console.error(`Error: Missing session target for command: ${firstNonOption}`);
-      console.error(`\nDid you mean: mcpc <@session> ${firstNonOption}`);
+      console.error(`\nDid you mean: mcpc <@session> ${normalizedFirstNonOption}`);
       console.error(`Run "mcpc --help" for usage information.\n`);
     }
   } else {
     // Try to suggest the closest matching command
-    const suggestion = suggestCommand(firstNonOption, allCommands);
+    const suggestion = suggestCommand(normalizedFirstNonOption, allCommands);
     if (outputMode === 'json') {
       console.error(formatJsonError(new Error(`Unknown command: ${firstNonOption}`), 1));
     } else {
@@ -1583,7 +1589,13 @@ function extractToolsCallHelpTarget(args: string[]): string | undefined {
 /**
  * Handle commands for a session target (@name)
  */
-async function handleSessionCommands(session: string, args: string[]): Promise<void> {
+async function handleSessionCommands(session: string, rawArgs: string[]): Promise<void> {
+  // Accept MCP JSON-RPC-style method names (e.g. "tools/list", "logging/setLevel")
+  // as silent aliases for the hyphenated command form — undocumented, never
+  // advertised in help or suggestions. Must happen before any other parsing below
+  // so hasSubcommand/extractToolsCallHelpTarget/Commander all see the normalized form.
+  const args = normalizeSlashCommandArgs(rawArgs, KNOWN_SESSION_COMMANDS, 2);
+
   // Check if no subcommand provided - show server info (unless --help is requested)
   const argsSlice = args.slice(2);
   if (!hasSubcommand(args) && !argsSlice.includes('--help') && !argsSlice.includes('-h')) {

@@ -28,6 +28,16 @@ assert_success
 assert_contains "$STDOUT" "Tools ("
 test_pass
 
+# MCP JSON-RPC-style method names (e.g. "tools/list") are silently accepted as
+# aliases for the hyphenated CLI commands — undocumented convenience, not shown
+# in --help or "Did you mean?" suggestions.
+test_case "tools/list (slash-style alias) behaves like tools-list"
+run_mcpc "$SESSION" tools/list
+assert_success
+assert_contains "$STDOUT" "Tools ("
+assert_contains "$STDOUT" "\`echo ("
+test_pass
+
 test_case "tools-list contains tool names in backticks"
 run_mcpc "$SESSION" tools-list
 assert_success
