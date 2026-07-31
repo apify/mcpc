@@ -18,19 +18,25 @@ vi.mock('../../../src/core/transports', () => ({
 }));
 
 // Mock the SDK Client
-vi.mock('@modelcontextprotocol/sdk/client/index.js', () => ({
-  Client: vi.fn(function () {
-    return {
-      connect: vi.fn().mockResolvedValue(undefined),
-      close: vi.fn().mockResolvedValue(undefined),
-      getServerVersion: vi.fn().mockReturnValue({ name: 'test-server', version: '1.0.0' }),
-      getServerCapabilities: vi.fn().mockReturnValue({}),
-      getInstructions: vi.fn().mockReturnValue(undefined),
-      ping: vi.fn().mockResolvedValue(undefined),
-      onerror: undefined,
-    };
-  }),
-}));
+vi.mock('@modelcontextprotocol/client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@modelcontextprotocol/client')>();
+  return {
+    ...actual,
+    Client: vi.fn(function () {
+      return {
+        connect: vi.fn().mockResolvedValue(undefined),
+        close: vi.fn().mockResolvedValue(undefined),
+        getServerVersion: vi.fn().mockReturnValue({ name: 'test-server', version: '1.0.0' }),
+        getServerCapabilities: vi.fn().mockReturnValue({}),
+        getInstructions: vi.fn().mockReturnValue(undefined),
+        getNegotiatedProtocolVersion: vi.fn().mockReturnValue('2025-11-25'),
+        getProtocolEra: vi.fn().mockReturnValue('legacy'),
+        ping: vi.fn().mockResolvedValue(undefined),
+        onerror: undefined,
+      };
+    }),
+  };
+});
 
 describe('createMcpClient', () => {
   it('should create a client with stdio transport', async () => {

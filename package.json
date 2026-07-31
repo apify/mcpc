@@ -1,6 +1,6 @@
 {
   "name": "@apify/mcpc",
-  "version": "0.5.1",
+  "version": "0.5.0",
   "description": "Universal command-line client for the Model Context Protocol (MCP).",
   "type": "module",
   "keywords": [
@@ -32,7 +32,7 @@
     "build": "tsc && node scripts/bundle-viem.mjs",
     "build:watch": "tsc --watch",
     "build:readme": "./scripts/update-readme.sh",
-    "test": "pnpm run build && pnpm run test:unit && ./test/e2e/run.sh --no-build --parallel 8 && ./test/e2e/run.sh --no-build --parallel 8 --runtime bun",
+    "test": "pnpm run build && pnpm run test:unit && ./test/e2e/run.sh --no-build --parallel 8 && ./test/e2e/run.sh --no-build --parallel 8 --server-protocol modern && ./test/e2e/run.sh --no-build --parallel 8 --runtime bun",
     "test:unit": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "pnpm run test:coverage:unit && pnpm run test:coverage:e2e && pnpm run test:coverage:merge",
@@ -40,6 +40,7 @@
     "test:coverage:e2e": "./test/e2e/run.sh --coverage",
     "test:coverage:merge": "test/coverage/coverage-merge.sh",
     "test:e2e": "./test/e2e/run.sh --keep",
+    "test:e2e:modern": "./test/e2e/run.sh --keep --server-protocol modern",
     "test:e2e:bun": "./test/e2e/run.sh --no-build --runtime bun",
     "test:conformance": "pnpm run build && npx -y @modelcontextprotocol/conformance client --command \"node test/conformance/client.mjs\" --scenario initialize",
     "lint": "eslint src && prettier --check \"src/**/*.ts\" \"test/**/*.ts\"",
@@ -55,6 +56,8 @@
     "release:pre": "bash scripts/publish.sh --pre-release"
   },
   "dependencies": {
+    "@modelcontextprotocol/client": "2.0.0",
+    "@modelcontextprotocol/core": "2.0.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@napi-rs/keyring": "^1.3.0",
     "chalk": "^5.6.2",
@@ -66,13 +69,16 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "esbuild": "^0.28.1",
+    "@modelcontextprotocol/node": "2.0.0",
+    "@modelcontextprotocol/server": "2.0.0",
+    "@modelcontextprotocol/server-filesystem": "2026.7.10",
     "@types/node": "^26.1.1",
     "@types/proper-lockfile": "^4.1.4",
     "@types/qrcode-terminal": "^0.12.2",
     "@vitest/coverage-v8": "4.1.10",
     "c8": "^12.0.0",
     "doctoc": "^2.5.0",
+    "esbuild": "^0.28.1",
     "eslint": "^10.7.0",
     "globals": "^17.7.0",
     "markdown-link-check": "^3.14.2",

@@ -7,12 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- New `mcpc login <server> --grant id-jag` for MCP's [Enterprise-Managed Authorization](https://modelcontextprotocol.io/extensions/auth/enterprise-managed-authorization) extension: sign in once with your corporate SSO (`--idp <issuer>`), and mcpc obtains MCP server tokens via identity assertion grants (ID-JAG) without per-server consent screens.
+- Support for MCP protocol version 2026-07-28: mcpc now probes each server with `server/discover` and talks the new stateless protocol when supported, falling back to older protocol versions (2025-11-25 down to 2024-10-07) automatically. Resource subscriptions use the new `subscriptions/listen` stream (with automatic re-listen on drops), and `ping` transparently uses `server/discover` on 2026-07-28 servers. mcpc now uses the official TypeScript SDK v2 (`@modelcontextprotocol/client`).
+- `mcpc --json` now reports each session's server `capabilities`, plus `hasInstructions` to tell whether the server provided instructions (read them with `mcpc --json @<session>`).
+- New `--protocol-version` option for `mcpc connect` to pin the MCP protocol version (e.g. `--protocol-version 2025-11-25`) instead of auto-negotiating; the connection fails if the server does not support the pinned version. Also supported as a `protocolVersion` field in mcp.json config entries.
+- Server details from 2026-07-28 servers now include everything their `server/discover` result carries: `supportedVersions` (every protocol version the server offers) and the result's `_meta`. Reported by `connect`, `restart` and `mcpc @session` in `--json`, and kept in `sessions.json`.
+
+### Changed
+
+- On servers using MCP 2026-07-28, `logging-set-level` returns an error (the protocol removed `logging/setLevel`) and the task commands (`tasks-list`, `tasks-get`, `tasks-result`, `tasks-cancel`, `tools-call --task/--detach`) report that the new tasks extension is not supported yet — they keep working unchanged on 2025-11-25 servers.
+- `mcpc @session` now reports the connection on one line — `MCP: version 2025-11-25 / Streamable HTTP (stateless)` — naming the protocol (the label was just `Protocol:`) and the transport carrying it. `--json` gained the matching `_mcpc.transport` field next to `_mcpc.stateless`.
+- `mcpc @session` no longer suggests commands that cannot work on a 2026-07-28 connection: the `logging` and `tasks` capabilities are flagged as era-limited, and `logging-set-level` / `tasks-*` are left out of the suggested commands.
+- `tools-call --task/--detach` against a server that does not support task-augmented tool calls now fails instead of printing a warning and running the tool synchronously. The flags change the shape of the output, so the fallback left `--detach` callers parsing a `taskId` that was never there, with exit code 0.
+- Updated the MCP TypeScript SDK v2 to the stable `2.0.0` release, which fixes interoperability with 2026-07-28 servers built on the latest SDK (they require the new `Mcp-Method` request header that older clients did not send, and move `serverInfo` into response metadata).
+
+### Fixed
+
+- `mcpc login --grant client-credentials` now finds the authorization server via protected resource metadata (RFC 9728), so it works against servers whose authorization server lives on a different origin. Previously discovery only probed the MCP server's own origin and failed with "Could not find an OAuth token endpoint", forcing you to pass `--token-endpoint` by hand.
+- Sessions resumed after a bridge restart (e.g. crash recovery) no longer lose their negotiated protocol version: session details showed `Protocol: unknown` and, worse, requests were sent without the required `MCP-Protocol-Version` header. The stored version is now restored on resumption, and the server name is shown again in session details.
+- Resumed sessions also keep their server capabilities and instructions, which previously vanished after a bridge restart: `mcpc @session` showed no capabilities, `grep` no longer found the server instructions, and `resources-subscribe` wrongly refused with "server does not support resource subscriptions".
+- `mcpc login` no longer prints the SDK warning about a missing `discoveryState()` implementation. The OAuth provider now records the discovered authorization server between the redirect and the code exchange, enabling the SEP-2352 mix-up attack check (the code is only redeemed at the server that minted it).
+- Bridge logs no longer report the spurious `authProvider.tokens() is NOT a function - this is a bug!` error when connecting with OAuth — a stale debug check left over from the SDK v1 era; authentication itself was unaffected.
+- `tools-list` now always refetches from the server: against a 2026-07-28 server that sends caching hints, the SDK's response cache could serve a stale tools list. The cached list also honors the server's `ttlMs` hint now, instead of always using mcpc's own freshness window.
+- Bridge logs no longer show a scary `Transport error: ... Bad Request: No valid session ID provided` stack trace when connecting to a server without 2026-07-28 support. That HTTP 400 is the server declining the `server/discover` version probe — the expected signal to fall back to the older protocol — and is now logged as a single debug line.
+
+### Deprecated
+
+- The `logging-set-level` command is deprecated and will be removed in a future release: MCP 2026-07-28 removed the underlying `logging/setLevel` request. It keeps working on 2025-11-25 servers during the deprecation window.
+
 ## [0.5.1] - 2026-07-28
 
 ### Changed
 
 - Updated dependencies, including the MCP TypeScript SDK to 1.30.0.
-
 ## [0.5.0] - 2026-07-21
 
 ### Changed

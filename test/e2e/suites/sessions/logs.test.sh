@@ -170,14 +170,8 @@ test_pass
 
 FOLD_SESSION="@fold-$(date +%s)"
 _SESSIONS_CREATED+=("$FOLD_SESSION")
-fold_sessions_file="$MCPC_HOME_DIR/sessions.json"
-if [[ ! -f "$fold_sessions_file" ]]; then
-  echo '{"sessions":{}}' > "$fold_sessions_file"
-fi
-jq --arg name "$FOLD_SESSION" --arg url "$TEST_SERVER_URL" \
-  '.sessions[$name] = { name: $name, server: { url: $url }, transport: "http", status: "live", createdAt: "2026-04-28T00:00:00.000Z" }' \
-  "$fold_sessions_file" > "$fold_sessions_file.tmp"
-mv "$fold_sessions_file.tmp" "$fold_sessions_file"
+edit_sessions_json --arg name "$FOLD_SESSION" --arg url "$TEST_SERVER_URL" \
+  '.sessions[$name] = { name: $name, server: { url: $url }, transport: "http", status: "live", createdAt: "2026-04-28T00:00:00.000Z" }'
 
 mkdir -p "$MCPC_HOME_DIR/logs"
 cat > "$MCPC_HOME_DIR/logs/bridge-${FOLD_SESSION}.log" <<'FOLDLOG'
@@ -214,19 +208,14 @@ ROTATION_SESSION="@rot-$(date +%s)"
 _SESSIONS_CREATED+=("$ROTATION_SESSION")
 
 # Add a synthetic session entry so `mcpc logs` accepts the target.
-sessions_file="$MCPC_HOME_DIR/sessions.json"
-if [[ ! -f "$sessions_file" ]]; then
-  echo '{"sessions":{}}' > "$sessions_file"
-fi
-jq --arg name "$ROTATION_SESSION" --arg url "$TEST_SERVER_URL" \
+edit_sessions_json --arg name "$ROTATION_SESSION" --arg url "$TEST_SERVER_URL" \
   '.sessions[$name] = {
      name: $name,
      server: { url: $url },
      transport: "http",
      status: "live",
      createdAt: "2026-04-28T00:00:00.000Z"
-   }' "$sessions_file" > "$sessions_file.tmp"
-mv "$sessions_file.tmp" "$sessions_file"
+   }'
 
 ROT_LOG_DIR="$MCPC_HOME_DIR/logs"
 ROT_LOG_FILE="$ROT_LOG_DIR/bridge-${ROTATION_SESSION}.log"
@@ -329,15 +318,14 @@ test_case "error from broken session points to 'mcpc <session> logs'"
 # already has an @) since session names can only contain one @ at the start.
 BROKEN="@broken-$(date +%s)-$$"
 # Add a manually-crafted session entry pointing at a server that 401s.
-jq --arg name "$BROKEN" --arg url "$TEST_SERVER_URL" \
+edit_sessions_json --arg name "$BROKEN" --arg url "$TEST_SERVER_URL" \
   '.sessions[$name] = {
      name: $name,
      server: { url: $url, headers: { "Authorization": "InvalidScheme bogus" } },
      transport: "http",
      status: "unauthorized",
      createdAt: "2026-04-28T00:00:00.000Z"
-   }' "$sessions_file" > "$sessions_file.tmp"
-mv "$sessions_file.tmp" "$sessions_file"
+   }'
 _SESSIONS_CREATED+=("$BROKEN")
 
 run_mcpc "$BROKEN" tools-list

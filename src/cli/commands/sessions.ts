@@ -138,10 +138,15 @@ export async function listSessionsAndAuthProfiles(options: {
     // Add bridge status to JSON output. The persisted `connectionMode` enum (stored in
     // sessions.json) is mapped to the public `stateless` field here so the list output
     // matches `mcpc @<session>` and `mcpc connect` (null until the mode is known).
-    const sessionsWithStatus = sessions.map(({ connectionMode, ...session }) => ({
+    // Server instructions are persisted for session resumption but kept out of the list —
+    // they can be kilobytes per session. Only their presence is reported, as
+    // `hasInstructions` (they are not part of the advertised capabilities); read the text
+    // itself with `mcpc --json @<session>`.
+    const sessionsWithStatus = sessions.map(({ connectionMode, instructions, ...session }) => ({
       ...session,
       status: getBridgeStatus(session),
       ...statelessField(connectionMode),
+      hasInstructions: !!instructions,
     }));
     console.log(
       formatOutput(
@@ -204,10 +209,15 @@ export async function listSessionsAndAuthProfiles(options: {
         const hostStr = getServerHost(profile.serverUrl);
         const nameStr = theme.magenta(profile.name);
         // Client-credentials profiles have no user identity; label the grant instead.
-        const annotation =
+        // Enterprise (id_jag) profiles carry the user identity from the IdP SSO —
+        // append "enterprise" so they are distinguishable from plain OAuth logins.
+        let annotation =
           profile.userEmail ||
           profile.userName ||
           (profile.oauthGrant === 'client_credentials' ? 'client credentials' : '');
+        if (profile.oauthGrant === 'id_jag') {
+          annotation = annotation ? `${annotation}, enterprise` : 'enterprise';
+        }
         // Show refreshedAt if available, otherwise createdAt
         const timeAgo = formatTimeAgo(profile.refreshedAt || profile.createdAt);
         const timeLabel = profile.refreshedAt ? 'refreshed' : 'created';
@@ -281,8 +291,15 @@ export async function showServerDetails(
 ): Promise<void> {
   await withMcpClient(target, options, async (client, context) => {
     const serverDetails = await client.getServerDetails();
-    const { serverInfo, capabilities, instructions, protocolVersion, connectionMode } =
-      serverDetails;
+    const {
+      serverInfo,
+      capabilities,
+      instructions,
+      protocolVersion,
+      supportedVersions,
+      connectionMode,
+      _meta,
+    } = serverDetails;
 
     // Get tools list (uses bridge cache when available, no extra server call)
     const cachedToolsResult = await client.listAllTools();
@@ -294,10 +311,21 @@ export async function showServerDetails(
     const resourceSubscriptions = Object.values(sessionData?.resourceSubscriptions ?? {});
 
     if (options.outputMode === 'human') {
-      console.log(formatServerDetails(serverDetails, target, tools, resourceSubscriptions));
+      console.log(
+        formatServerDetails(
+          serverDetails,
+          target,
+          tools,
+          resourceSubscriptions,
+          context.serverConfig?.protocolVersion
+        )
+      );
     } else {
-      // JSON output MUST match MCP InitializeResult structure!
-      // See https://modelcontextprotocol.io/specification/2025-11-25/schema#initializeresult
+      // JSON output MUST match the server's handshake result: MCP `InitializeResult` on
+      // 2025-11-25 connections, `DiscoverResult` (`supportedVersions`, `_meta`) on
+      // 2026-07-28 ones. `ServerDetails` reconciles the two — see its doc comment.
+      // https://modelcontextprotocol.io/specification/2025-11-25/schema#initializeresult
+      // https://modelcontextprotocol.io/specification/2026-07-28/schema#discoverresult
       // Build _mcpc.server with redacted headers for security
       const server: ServerConfig = {
         ...context.serverConfig,
@@ -323,14 +351,17 @@ export async function showServerDetails(
               sessionName: context.sessionName,
               profileName: context.profileName,
               server,
+              ...(serverDetails.transport && { transport: serverDetails.transport }),
               ...statelessField(connectionMode),
               ...(logPath && { logPath }),
               ...(resourceSubscriptions.length > 0 && { resourceSubscriptions }),
             },
             protocolVersion,
+            ...(supportedVersions && { supportedVersions }),
             capabilities,
             serverInfo,
             instructions,
+            ...(_meta && { _meta }),
             ...(tools.length > 0 && { toolNames: tools.map((t) => t.name) }),
           },
           'json'

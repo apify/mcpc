@@ -32,24 +32,30 @@ mcp_session_id=$(echo "$STDOUT" | jq -r '.mcpSessionId // empty')
 run_mcpc "$SESSION" close
 assert_success
 
-# Check that the server received a DELETE for this session
-deleted_sessions=$(curl -s "$TEST_SERVER_URL/control/get-deleted-sessions" | jq -r '.deletedSessions[]')
-
-# If we had an MCP session ID, verify it was deleted
-if [[ -n "$mcp_session_id" ]]; then
-  if echo "$deleted_sessions" | grep -q "$mcp_session_id"; then
-    test_pass
-  else
-    test_fail "Server did not receive DELETE for MCP session ID: $mcp_session_id (deleted: $deleted_sessions)"
-    exit 1
-  fi
+if [[ "$E2E_SERVER_PROTOCOL" == "modern" ]]; then
+  # Stateless 2026-07-28 connections carry no MCP session ID, so there is no
+  # session for close to DELETE on the server — only the local teardown applies.
+  test_skip "HTTP DELETE applies only to 2025-era sessions"
 else
-  # If no MCP session ID was captured, at least verify some DELETE was sent
-  if [[ -n "$deleted_sessions" ]]; then
-    test_pass
+  # Check that the server received a DELETE for this session
+  deleted_sessions=$(curl -s "$TEST_SERVER_URL/control/get-deleted-sessions" | jq -r '.deletedSessions[]')
+
+  # If we had an MCP session ID, verify it was deleted
+  if [[ -n "$mcp_session_id" ]]; then
+    if echo "$deleted_sessions" | grep -q "$mcp_session_id"; then
+      test_pass
+    else
+      test_fail "Server did not receive DELETE for MCP session ID: $mcp_session_id (deleted: $deleted_sessions)"
+      exit 1
+    fi
   else
-    test_fail "Server did not receive any DELETE requests"
-    exit 1
+    # If no MCP session ID was captured, at least verify some DELETE was sent
+    if [[ -n "$deleted_sessions" ]]; then
+      test_pass
+    else
+      test_fail "Server did not receive any DELETE requests"
+      exit 1
+    fi
   fi
 fi
 

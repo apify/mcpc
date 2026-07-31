@@ -1,41 +1,36 @@
 /**
  * MCP Transport implementations
- * Re-exports and wraps transports from @modelcontextprotocol/sdk
+ * Re-exports and wraps transports from the @modelcontextprotocol/client SDK (v2)
  */
 
 // Re-export transport types and classes from SDK
-export type {
-  Transport,
-  TransportSendOptions,
-  FetchLike,
-} from '@modelcontextprotocol/sdk/shared/transport.js';
+export type { Transport, TransportSendOptions, FetchLike } from '@modelcontextprotocol/client';
 
 export {
   StdioClientTransport,
   type StdioServerParameters,
   getDefaultEnvironment,
-} from '@modelcontextprotocol/sdk/client/stdio.js';
+} from '@modelcontextprotocol/client/stdio';
 
 export {
   StreamableHTTPClientTransport,
   type StreamableHTTPClientTransportOptions,
   type StreamableHTTPReconnectionOptions,
-  StreamableHTTPError,
-} from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+  SdkHttpError,
+} from '@modelcontextprotocol/client';
 
 // Re-export auth-related types if needed
-export type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
+export type { OAuthClientProvider } from '@modelcontextprotocol/client';
 
-import type { Transport, FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js';
-import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
+import type { Transport, FetchLike, OAuthClientProvider } from '@modelcontextprotocol/client';
 import {
   StdioClientTransport,
   type StdioServerParameters,
-} from '@modelcontextprotocol/sdk/client/stdio.js';
+} from '@modelcontextprotocol/client/stdio';
 import {
   StreamableHTTPClientTransport,
   type StreamableHTTPClientTransportOptions,
-} from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+} from '@modelcontextprotocol/client';
 import { createLogger, getVerbose } from '../lib/logger.js';
 import type { ServerConfig } from '../lib/types.js';
 import { ClientError } from '../lib/errors.js';
@@ -134,24 +129,6 @@ export function createStreamableHttpTransport(
     fetch: fetchFn,
   });
 
-  // Verify authProvider is correctly attached
-  // @ts-expect-error accessing private property for debugging
-  const hasAuthProvider = !!transport._authProvider;
-  logger.debug('Transport created, authProvider attached:', hasAuthProvider);
-
-  // Verification: Test that tokens() is actually callable
-  // Note: This is a non-blocking test - the actual tokens() call during requests
-  // is what matters. This just verifies the authProvider is correctly attached.
-  if (hasAuthProvider) {
-    // @ts-expect-error accessing private property for debugging
-    const authProvider = transport._authProvider as OAuthClientProvider;
-    if (typeof authProvider.tokens === 'function') {
-      logger.debug('authProvider.tokens() is a function - verification passed');
-    } else {
-      logger.error('authProvider.tokens() is NOT a function - this is a bug!');
-    }
-  }
-
   return transport as Transport;
 }
 
@@ -169,6 +146,14 @@ export interface CreateTransportOptions {
    * If provided, the transport will include this in the MCP-Session-Id header
    */
   mcpSessionId?: string;
+
+  /**
+   * Protocol version negotiated by the session being resumed (HTTP transport only).
+   * The SDK skips the initialize handshake when mcpSessionId is provided, so the
+   * transport must be seeded with the original version to keep sending the
+   * required MCP-Protocol-Version header on all requests.
+   */
+  protocolVersion?: string;
 
   /**
    * Custom fetch function (HTTP transport only)
@@ -225,10 +210,16 @@ export function createTransportFromConfig(
       logger.debug('No authProvider provided for HTTP transport');
     }
 
-    // Set session ID for resuming a previous MCP session
+    // Set session ID for resuming a previous MCP session, restoring the protocol
+    // version negotiated by the original handshake (the SDK skips the handshake on
+    // resumption, so the version cannot be re-negotiated)
     if (options.mcpSessionId) {
       transportOptions.sessionId = options.mcpSessionId;
       logger.debug(`Setting mcpSessionId for session resumption: ${options.mcpSessionId}`);
+      if (options.protocolVersion) {
+        transportOptions.protocolVersion = options.protocolVersion;
+        logger.debug(`Restoring negotiated protocol version: ${options.protocolVersion}`);
+      }
     }
 
     if (config.headers !== undefined) {

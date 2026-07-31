@@ -46,9 +46,7 @@ assert_success
 # - status: 'crashed' (no pid alive)
 # - lastConnectionAttemptAt aged past the 10s auto-retry cooldown
 # - bad Authorization header so the auto-restart hits 401
-sessions_file="$MCPC_HOME_DIR/sessions.json"
 old_iso="2000-01-01T00:00:00.000Z"
-tmp_file="$TEST_TMP/sessions.json.$$"
 
 # Save bad headers to the keychain used by restartBridge on auto-reconnect
 # (headers are loaded from the keychain, not sessions.json, on restart).
@@ -71,7 +69,7 @@ NATIVE_MCPC_HOME="$(to_native_path "$MCPC_HOME_DIR")"
 
 # Reconstruct the session entry: crashed state, no pid, old attempt timestamp,
 # headers placeholder so the restart path knows to load headers from keychain.
-jq --arg name "$SESSION" \
+edit_sessions_json --arg name "$SESSION" \
    --arg url "$TEST_SERVER_URL" \
    --arg when "$old_iso" \
    '.sessions[$name] = {
@@ -84,9 +82,7 @@ jq --arg name "$SESSION" \
       "createdAt": $when,
       "lastConnectionAttemptAt": $when,
       "status": "crashed"
-    }' \
-  "$sessions_file" > "$tmp_file"
-mv "$tmp_file" "$sessions_file"
+    }'
 
 test_pass
 

@@ -2,13 +2,20 @@
  * Client capabilities advertised by mcpc during connection.
  */
 
-import type { ClientCapabilities } from '@modelcontextprotocol/sdk/types.js';
+import type { ClientCapabilities } from '@modelcontextprotocol/client';
 
 /**
  * Capability key advertising client-credentials auth support, per the MCP extension
  * `io.modelcontextprotocol/oauth-client-credentials`.
  */
 export const CLIENT_CREDENTIALS_EXTENSION_KEY = 'io.modelcontextprotocol/oauth-client-credentials';
+
+/**
+ * Capability key advertising enterprise-managed authorization support (SEP-990,
+ * ID-JAG), per the MCP extension `io.modelcontextprotocol/enterprise-managed-authorization`.
+ */
+export const ENTERPRISE_MANAGED_AUTH_EXTENSION_KEY =
+  'io.modelcontextprotocol/enterprise-managed-authorization';
 
 /** Options influencing the advertised client capabilities for a given connection. */
 export interface BuildClientCapabilitiesOptions {
@@ -18,6 +25,11 @@ export interface BuildClientCapabilitiesOptions {
    * don't claim machine-to-machine auth on connections that don't use it.
    */
   clientCredentials?: boolean;
+  /**
+   * Declare the `io.modelcontextprotocol/enterprise-managed-authorization` extension.
+   * Set only for connections that authenticate with the id_jag grant.
+   */
+  enterpriseManagedAuth?: boolean;
 }
 
 /**
@@ -38,13 +50,15 @@ export interface BuildClientCapabilitiesOptions {
 export function buildClientCapabilities(
   options: BuildClientCapabilitiesOptions = {}
 ): ClientCapabilities {
+  const extensions: NonNullable<ClientCapabilities['extensions']> = {
+    ...(options.clientCredentials ? { [CLIENT_CREDENTIALS_EXTENSION_KEY]: {} } : {}),
+    ...(options.enterpriseManagedAuth ? { [ENTERPRISE_MANAGED_AUTH_EXTENSION_KEY]: {} } : {}),
+  };
   return {
     tasks: {
       list: {},
       cancel: {},
     },
-    ...(options.clientCredentials
-      ? { extensions: { [CLIENT_CREDENTIALS_EXTENSION_KEY]: {} } }
-      : {}),
+    ...(Object.keys(extensions).length > 0 ? { extensions } : {}),
   };
 }

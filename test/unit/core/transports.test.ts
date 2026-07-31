@@ -9,7 +9,7 @@ import { ClientError } from '../../../src/lib/errors.js';
 import { proxyFetch } from '../../../src/lib/proxy.js';
 
 // Mock the SDK transports
-vi.mock('@modelcontextprotocol/sdk/client/stdio.js', () => ({
+vi.mock('@modelcontextprotocol/client/stdio', () => ({
   StdioClientTransport: vi.fn(function () {
     return {
       start: vi.fn().mockResolvedValue(undefined),
@@ -20,16 +20,19 @@ vi.mock('@modelcontextprotocol/sdk/client/stdio.js', () => ({
   getDefaultEnvironment: vi.fn().mockReturnValue({}),
 }));
 
-vi.mock('@modelcontextprotocol/sdk/client/streamableHttp.js', () => ({
-  StreamableHTTPClientTransport: vi.fn(function () {
-    return {
-      start: vi.fn().mockResolvedValue(undefined),
-      send: vi.fn().mockResolvedValue(undefined),
-      close: vi.fn().mockResolvedValue(undefined),
-    };
-  }),
-  StreamableHTTPError: class StreamableHTTPError extends Error {},
-}));
+vi.mock('@modelcontextprotocol/client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@modelcontextprotocol/client')>();
+  return {
+    ...actual,
+    StreamableHTTPClientTransport: vi.fn(function () {
+      return {
+        start: vi.fn().mockResolvedValue(undefined),
+        send: vi.fn().mockResolvedValue(undefined),
+        close: vi.fn().mockResolvedValue(undefined),
+      };
+    }),
+  };
+});
 
 describe('createTransportFromConfig', () => {
   it('should create stdio transport from config', () => {

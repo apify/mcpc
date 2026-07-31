@@ -35,6 +35,8 @@ import {
   theme,
 } from '../output.js';
 import { withMcpClient, resolveTarget, resolveAuthProfile } from '../helpers.js';
+// Imported directly (not via the core barrel) so the CLI doesn't eagerly load the MCP SDK
+import { isSupportedProtocolVersion, SUPPORTED_PROTOCOL_VERSIONS } from '../../core/protocol.js';
 import {
   deleteSession,
   saveSession,
@@ -94,10 +96,11 @@ async function checkPortAvailable(host: string, port: number): Promise<boolean> 
 
 /**
  * One entry in the unified JSON array returned by `mcpc connect`.
- * Mirrors MCP `InitializeResult` (protocolVersion/capabilities/serverInfo/instructions),
- * extended with `toolNames` and an `_mcpc` metadata block. The same shape is used for
- * both single-server and multi-server connects so consumers can always treat the output
- * as an array.
+ * Mirrors the server's handshake result — MCP `InitializeResult` on 2025-11-25
+ * connections, `DiscoverResult` on 2026-07-28 ones (see `ServerDetails`) — extended with
+ * `toolNames` and an `_mcpc` metadata block. The same shape is used for both
+ * single-server and multi-server connects so consumers can always treat the output as an
+ * array.
  *
  * For failed/skipped entries only the `_mcpc` block is populated.
  */
@@ -114,7 +117,15 @@ export type ConnectResultEntry = {
     stateless?: boolean | null; // true=stateless, false=stateful, null=not yet determined
   };
 } & Partial<
-  Pick<ServerDetails, 'protocolVersion' | 'capabilities' | 'serverInfo' | 'instructions'>
+  Pick<
+    ServerDetails,
+    | 'protocolVersion'
+    | 'supportedVersions'
+    | 'capabilities'
+    | 'serverInfo'
+    | 'instructions'
+    | '_meta'
+  >
 > & {
     toolNames?: string[];
   };
@@ -132,6 +143,7 @@ type ConnectSessionOptions = {
   noProfile?: boolean;
   proxy?: string;
   proxyBearerToken?: string;
+  protocolVersion?: string;
   x402?: X402SchemePreference;
   insecure?: boolean;
   skipDetails?: boolean;
@@ -139,8 +151,8 @@ type ConnectSessionOptions = {
 };
 
 /**
- * Connect to a session via the bridge and build a populated ConnectResultEntry from
- * its InitializeResult and tools list. The entry's `_mcpc.server` headers are redacted.
+ * Connect to a session via the bridge and build a populated ConnectResultEntry from its
+ * server details and tools list. The entry's `_mcpc.server` headers are redacted.
  */
 async function buildConnectResultEntry(
   sessionName: string,
@@ -181,12 +193,17 @@ async function buildConnectResultEntry(
           ...(options.configFile && { configFile: options.configFile }),
           ...(options.entry && { entry: options.entry }),
           status,
+          ...(serverDetails.transport && { transport: serverDetails.transport }),
           ...statelessField(serverDetails.connectionMode),
         },
         ...(serverDetails.protocolVersion && { protocolVersion: serverDetails.protocolVersion }),
+        ...(serverDetails.supportedVersions && {
+          supportedVersions: serverDetails.supportedVersions,
+        }),
         ...(serverDetails.capabilities && { capabilities: serverDetails.capabilities }),
         ...(serverDetails.serverInfo && { serverInfo: serverDetails.serverInfo }),
         ...(serverDetails.instructions && { instructions: serverDetails.instructions }),
+        ...(serverDetails._meta && { _meta: serverDetails._meta }),
         ...(tools.length > 0 && { toolNames: tools.map((t) => t.name) }),
       };
     }
@@ -212,6 +229,20 @@ async function renderConnectedSession(
     console.log(formatOutput([entry], 'json'));
   } else {
     await showServerDetails(name, { ...options, hideTarget: false });
+  }
+}
+
+/**
+ * Reject a pinned protocol version that mcpc cannot speak, before any connection is attempted.
+ * A pin can come from `--protocol-version` or from a config entry's `protocolVersion` field,
+ * so both are checked and get the same error.
+ */
+function assertSupportedProtocolVersion(version: string | undefined): void {
+  if (version && !isSupportedProtocolVersion(version)) {
+    throw new ClientError(
+      `Unsupported MCP protocol version: ${version}\n` +
+        `Supported versions: ${SUPPORTED_PROTOCOL_VERSIONS.join(', ')}`
+    );
   }
 }
 
@@ -258,6 +289,9 @@ export async function connectSession(
     throw new ClientError('--proxy-bearer-token requires --proxy to be specified');
   }
 
+  // Validate --protocol-version (if provided)
+  assertSupportedProtocolVersion(options.protocolVersion);
+
   // Check if session already exists
   const existingSession = await getSession(name);
   if (existingSession) {
@@ -291,6 +325,9 @@ export async function connectSession(
 
   // Resolve target to transport config
   const serverConfig = await resolveTarget(target, options);
+
+  // Re-check the effective pin, which may come from a config entry's `protocolVersion`
+  assertSupportedProtocolVersion(serverConfig.protocolVersion);
 
   // Detect conflicting auth flags: --profile and --header "Authorization: ..." are mutually exclusive
   const hasExplicitAuthHeader = serverConfig.headers?.Authorization !== undefined;
@@ -460,9 +497,14 @@ export async function connectSession(
       };
       console.log(formatOutput([failed], 'json'));
     } else {
+      const pinHint = serverConfig.protocolVersion
+        ? `  The session is pinned to MCP ${serverConfig.protocolVersion}. If the server does not\n` +
+          `  support that version, reconnect without --protocol-version to auto-negotiate.\n`
+        : '';
       console.log(
         formatWarning(
           `Session ${name} created but server is not responding: ${errorMsg}\n` +
+            pinHint +
             `  The session will auto-recover when the server becomes available.\n` +
             `  Check status with: mcpc ${name}`
         )
@@ -602,6 +644,7 @@ type BulkConnectOptions = {
   proxy?: string;
   proxyBearerToken?: string;
   stdio?: boolean;
+  protocolVersion?: string;
   x402?: X402SchemePreference;
   insecure?: boolean;
 };

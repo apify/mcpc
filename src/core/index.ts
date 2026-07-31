@@ -14,3 +14,6 @@ export * from './factory.js';
 
 // Export client capabilities builder
 export * from './capabilities.js';
+
+// Export protocol version constants and helpers
+export * from './protocol.js';

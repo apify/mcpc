@@ -18,14 +18,12 @@ import { readFile } from 'fs/promises';
 import {
   ClientCredentialsProvider,
   PrivateKeyJwtProvider,
-} from '@modelcontextprotocol/sdk/client/auth-extensions.js';
-import {
   fetchToken,
   type OAuthClientProvider,
   type OAuthDiscoveryState,
-} from '@modelcontextprotocol/sdk/client/auth.js';
-import type { AuthorizationServerMetadata } from '@modelcontextprotocol/sdk/shared/auth.js';
-import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js';
+  type AuthorizationServerMetadata,
+  type FetchLike,
+} from '@modelcontextprotocol/client';
 import type { AuthProfile } from '../types.js';
 import { AuthError, ClientError } from '../errors.js';
 import { proxyFetch } from '../proxy.js';
@@ -34,7 +32,11 @@ import { createLogger } from '../logger.js';
 import type { OAuthClientCredentialsInfo } from './keychain.js';
 import { storeKeychainClientCredentials } from './keychain.js';
 import { getAuthProfile, saveAuthProfile } from './profiles.js';
-import { discoverAuthServerMetadata, type AuthServerMetadata } from './oauth-utils.js';
+import {
+  discoverAuthServerMetadata,
+  discoverAuthServerViaProtectedResource,
+  type AuthServerMetadata,
+} from './oauth-utils.js';
 
 const logger = createLogger('client-credentials');
 
@@ -156,10 +158,11 @@ function buildPinnedDiscoveryState(tokenEndpoint: string): OAuthDiscoveryState {
  * Build a human-readable reason from an error thrown by the SDK's token request.
  *
  * OAuth failures from the authorization server (e.g. a wrong client secret) arrive
- * as an OAuthError subclass carrying a machine-readable `errorCode` such as
- * `invalid_client`. When the server omits `error_description` the SDK leaves
- * `error.message` empty, so fall back to that code rather than reporting a bare,
- * empty reason. Non-OAuth errors fall back to their message or string form.
+ * as an OAuthError carrying a machine-readable `code` such as `invalid_client`
+ * (named `errorCode` in SDK v1, still checked for compatibility). When the server
+ * omits `error_description` the SDK leaves `error.message` empty, so fall back to
+ * that code rather than reporting a bare, empty reason. Non-OAuth errors fall back
+ * to their message or string form.
  */
 export function describeAuthError(error: unknown): string {
   if (error instanceof Error) {
@@ -167,7 +170,7 @@ export function describeAuthError(error: unknown): string {
     if (message) {
       return message;
     }
-    const code = (error as { errorCode?: unknown }).errorCode;
+    const code = (error as { code?: unknown }).code ?? (error as { errorCode?: unknown }).errorCode;
     if (typeof code === 'string' && code) {
       return code;
     }
@@ -190,7 +193,14 @@ async function validateClientCredentials(
     // Token endpoint pinned via --token-endpoint: skip discovery entirely.
     metadata = { token_endpoint: info.tokenEndpoint };
   } else {
-    metadata = await discoverAuthServerMetadata(serverUrl);
+    // RFC 9728 first: it is the mechanism the MCP spec prescribes and the only
+    // one that finds an authorization server hosted on a different origin than
+    // the MCP server. Fall back to probing the MCP origin directly for servers
+    // that publish authorization-server metadata but no protected-resource
+    // document.
+    metadata =
+      (await discoverAuthServerViaProtectedResource(serverUrl)) ??
+      (await discoverAuthServerMetadata(serverUrl));
     if (!metadata?.token_endpoint) {
       throw new AuthError(
         `Could not find an OAuth token endpoint for ${serverUrl}. ` +

@@ -430,6 +430,59 @@ create_session() {
   echo "$session"
 }
 
+# Edit sessions.json through a jq filter, holding the same lock mcpc uses.
+# Usage: edit_sessions_json <jq-arg>... '<jq-filter>'
+#
+# A live bridge rewrites sessions.json on every keepalive ping (load, merge,
+# save — all under a lock). A plain `jq ... > tmp && mv` from a test is not
+# locked, so a bridge that loads the file before the mv and saves after it
+# silently drops whatever the test just injected, and the next mcpc command
+# fails with "Session not found".
+#
+# proper-lockfile's lock is simply the directory "<file>.lock", created with
+# mkdir, so bash can take the very same lock. It is treated as stale after
+# 10s — never hold it across anything slower than a jq run.
+edit_sessions_json() {
+  local sessions_file="$MCPC_HOME_DIR/sessions.json"
+  local lock_dir="${sessions_file}.lock"
+  local tmp_file="${sessions_file}.e2e.$$"
+
+  if [[ ! -f "$sessions_file" ]]; then
+    echo '{"sessions":{}}' > "$sessions_file"
+  fi
+
+  local waited=0 steals=0
+  until mkdir "$lock_dir" 2>/dev/null; do
+    sleep 0.1
+    ((waited++)) || true
+    if [[ $waited -ge 100 ]]; then
+      if [[ $steals -ge 1 ]]; then
+        test_fail "timed out acquiring lock on $sessions_file"
+        return 1
+      fi
+      # Held (or leaked by a SIGKILLed bridge) for longer than the 10s
+      # staleness window — mcpc breaks the lock here too, so do the same.
+      rmdir "$lock_dir" 2>/dev/null || true
+      waited=0
+      ((steals++)) || true
+    fi
+  done
+
+  local status=0
+  if jq "$@" "$sessions_file" > "$tmp_file"; then
+    mv "$tmp_file" "$sessions_file" || status=1
+  else
+    status=1
+  fi
+  rm -f "$tmp_file"
+  rmdir "$lock_dir" 2>/dev/null || true
+
+  if [[ $status -ne 0 ]]; then
+    test_fail "failed to edit $sessions_file"
+    return 1
+  fi
+}
+
 # ============================================================================
 # Test Case Management
 # ============================================================================
@@ -633,6 +686,35 @@ _TEST_SERVER_PID=""
 _PROXY_SERVER_PID=""
 _HTTPS_WRAPPER_PID=""
 
+# Protocol era served by the test server (the protocol-version test matrix):
+#   legacy - test/e2e/server/index.ts (MCP SDK v1, protocol 2025-11-25)
+#   modern - test/e2e/server/index-v2.ts (MCP SDK v2, protocol 2026-07-28)
+# Set by run.sh --server-protocol; defaults to legacy.
+E2E_SERVER_PROTOCOL="${E2E_SERVER_PROTOCOL:-legacy}"
+
+# Skip the whole test suite with a reason and exit successfully.
+# Writes a `.skipped` marker into the test's run dir so run.sh can report the suite
+# as skipped instead of passed — a silent `✓` would hide a whole missing matrix column.
+skip_suite() {
+  local reason="${1:-no reason given}"
+  echo "# SKIP: $reason"
+  if [[ -n "${_TEST_RUN_DIR:-}" ]]; then
+    echo "$reason" > "$_TEST_RUN_DIR/.skipped"
+  fi
+  exit 0
+}
+
+# Skip the whole test unless the active test-server protocol era matches.
+# Call right after test_init in era-specific tests:
+#   require_server_protocol legacy   # e.g. sessions, tasks, logging-set-level
+#   require_server_protocol modern   # e.g. pure-2026-07-28 behaviors
+require_server_protocol() {
+  local required="$1"
+  if [[ "$E2E_SERVER_PROTOCOL" != "$required" ]]; then
+    skip_suite "test requires the $required-protocol test server (active: $E2E_SERVER_PROTOCOL)"
+  fi
+}
+
 # Start test MCP server
 # Usage: start_test_server [env_vars...]
 # Example: start_test_server PAGINATION_SIZE=2 LATENCY_MS=100
@@ -648,9 +730,15 @@ start_test_server() {
     env_str+=" $var"
   done
 
+  # Pick the server implementation for the active protocol era
+  local server_script="test/e2e/server/index.ts"
+  if [[ "$E2E_SERVER_PROTOCOL" == "modern" ]]; then
+    server_script="test/e2e/server/index-v2.ts"
+  fi
+
   # Start server
   cd "$PROJECT_ROOT"
-  env $env_str npx tsx test/e2e/server/index.ts >"$_TEST_RUN_DIR/server.log" 2>&1 &
+  env $env_str npx tsx "$server_script" >"$_TEST_RUN_DIR/server.log" 2>&1 &
   _TEST_SERVER_PID=$!
 
   # Wait for server to be ready
@@ -923,12 +1011,20 @@ create_stdio_config() {
   local config_file="$TEST_TMP/config-$name.json"
   local args_json=$(printf '%s\n' "${native_args[@]}" | jq -R . | jq -s .)
 
+  # Forward proxy/TLS settings to the spawned server. The MCP SDK gives stdio
+  # children a minimal env whitelist (HOME, PATH, ...) that drops proxy and CA
+  # vars, so in proxied/TLS-intercepted environments an `npx`-launched server
+  # would stall retrying npm registry requests. Empty when none are set.
+  local env_json
+  env_json=$(jq -n 'env | {HTTP_PROXY, HTTPS_PROXY, NO_PROXY, http_proxy, https_proxy, no_proxy, NODE_EXTRA_CA_CERTS, SSL_CERT_FILE} | with_entries(select(.value != null))')
+
   cat > "$config_file" <<EOF
 {
   "mcpServers": {
     "$name": {
       "command": "$command",
-      "args": $args_json
+      "args": $args_json,
+      "env": $env_json
     }
   }
 }
@@ -939,9 +1035,13 @@ EOF
 
 # Create config for filesystem server
 # Usage: create_fs_config [path]
+# Runs the pnpm-pinned copy from node_modules instead of `npx -y` so tests
+# never hit the npm registry at runtime — a fresh npx install of the latest
+# version is slow and occasionally lands a broken dependency tree in CI.
 create_fs_config() {
   local path="${1:-$TEST_TMP}"
-  create_stdio_config "fs" "npx" "-y" "@modelcontextprotocol/server-filesystem" "$path"
+  create_stdio_config "fs" "node" \
+    "$PROJECT_ROOT/node_modules/@modelcontextprotocol/server-filesystem/dist/index.js" "$path"
 }
 
 # ============================================================================

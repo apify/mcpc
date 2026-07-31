@@ -9,10 +9,26 @@ import { initProxy, proxyFetch } from '../lib/proxy.js';
 import { createServer, type Server as NetServer, type Socket } from 'net';
 import { unlink } from 'fs/promises';
 import { dirname } from 'path';
-import { createMcpClient, CreateMcpClientOptions, buildClientCapabilities } from '../core/index.js';
+import {
+  createMcpClient,
+  CreateMcpClientOptions,
+  buildClientCapabilities,
+  tasksUnsupportedByServerMessage,
+} from '../core/index.js';
 import type { McpClient } from '../core/index.js';
-import type { ServerConfig, IpcMessage, LoggingLevel, X402SchemePreference } from '../lib/index.js';
-import { KEEPALIVE_INTERVAL_MILLIS, X402_SCHEME_PREFERENCES } from '../lib/types.js';
+import type {
+  ServerConfig,
+  IpcMessage,
+  LoggingLevel,
+  X402SchemePreference,
+  ServerDetails,
+} from '../lib/index.js';
+import {
+  KEEPALIVE_INTERVAL_MILLIS,
+  MAX_PERSISTED_INSTRUCTIONS_CHARS,
+  TRIMMED_INSTRUCTIONS_NOTICE,
+  X402_SCHEME_PREFERENCES,
+} from '../lib/types.js';
 import { createLogger, setVerbose, initFileLogger, closeFileLogger } from '../lib/index.js';
 import {
   fileExists,
@@ -22,6 +38,7 @@ import {
   ensureSecureTempDir,
   cleanupOrphanedLogFiles,
   isSessionExpiredError,
+  truncate,
   StderrTail,
 } from '../lib/index.js';
 import {
@@ -35,18 +52,17 @@ import { getSession, loadSessions, updateSession } from '../lib/sessions.js';
 import type { AuthCredentials, X402WalletCredentials } from '../lib/types.js';
 import { OAuthTokenManager } from '../lib/auth/oauth-token-manager.js';
 import { OAuthProvider } from '../lib/auth/oauth-provider.js';
-import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
-import { storeKeychainOAuthTokenInfo, readKeychainOAuthTokenInfo } from '../lib/auth/keychain.js';
+import type { OAuthClientProvider } from '@modelcontextprotocol/client';
+import {
+  storeKeychainOAuthTokenInfo,
+  readKeychainOAuthTokenInfo,
+  storeKeychainIdJagCredentials,
+  readKeychainIdJagCredentials,
+} from '../lib/auth/keychain.js';
 import { updateAuthProfileRefreshedAt } from '../lib/auth/profiles.js';
 import { createClientCredentialsProvider } from '../lib/auth/client-credentials.js';
-import {
-  LoggingMessageNotificationSchema,
-  ResourceUpdatedNotificationSchema,
-  type Tool,
-  type Resource,
-  type Prompt,
-  type Task,
-} from '@modelcontextprotocol/sdk/types.js';
+import { createIdJagProvider } from '../lib/auth/id-jag.js';
+import type { Tool, Resource, Prompt, Task } from '@modelcontextprotocol/client';
 import { ResourceSyncManager } from './resource-sync.js';
 import type { TaskUpdate } from '../lib/types.js';
 import { createRequire } from 'module';
@@ -59,7 +75,7 @@ import type { ProxyConfig } from '../lib/types.js';
 // only here and load the implementations lazily at the x402-gated call sites.
 import type { X402PaymentCache } from '../lib/x402/fetch-middleware.js';
 import type { SignerWallet } from '../lib/x402/signer.js';
-import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js';
+import type { FetchLike } from '@modelcontextprotocol/client';
 
 // HTTP proxy and TLS settings are configured in main() after parsing --insecure flag
 
@@ -77,6 +93,7 @@ interface BridgeOptions {
   profileName?: string; // Auth profile name for token refresh
   proxyConfig?: ProxyConfig; // Proxy server configuration
   mcpSessionId?: string; // MCP session ID for resumption (Streamable HTTP only)
+  protocolVersion?: string; // Protocol version negotiated by the resumed session (only set with mcpSessionId)
   /** x402 scheme preference; presence enables x402 auto-payment, absence disables. */
   x402?: X402SchemePreference;
   insecure?: boolean; // Skip TLS certificate verification
@@ -107,6 +124,10 @@ class BridgeProcess {
   // `oauth-client-credentials` extension capability declaration on initialize.
   private usesClientCredentials = false;
 
+  // True when authProvider is an enterprise-managed-authorization (id_jag) provider —
+  // drives the `enterprise-managed-authorization` extension capability declaration.
+  private usesIdJag = false;
+
   // HTTP headers (received via IPC, stored in memory only)
   private headers: Record<string, string> | null = null;
 
@@ -126,6 +147,14 @@ class BridgeProcess {
 
   // Resource→file sync for resources-subscribe (created once the MCP client connects)
   private resourceSync: ResourceSyncManager | null = null;
+
+  // Handshake results persisted at the original connect, used only when this bridge
+  // resumed a server-side session: resumption skips `initialize`, so the SDK client
+  // reports no serverInfo/capabilities/instructions of its own (see #325).
+  private resumedHandshakeDetails: Pick<
+    ServerDetails,
+    'serverInfo' | 'capabilities' | 'instructions' | 'supportedVersions' | '_meta'
+  > | null = null;
 
   // Promise to track when auth credentials are received (for startup sequencing)
   private authCredentialsReceived: Promise<void> | null = null;
@@ -183,10 +212,45 @@ class BridgeProcess {
     logger.debug(`  privateKey: ${credentials.privateKeyPem ? 'present' : 'absent'}`);
     logger.debug(`  headers: ${credentials.headers ? Object.keys(credentials.headers).length : 0}`);
     logger.debug(`  proxyBearerToken: ${credentials.proxyBearerToken ? 'present' : 'absent'}`);
+    logger.debug(`  idJag: ${credentials.idJag ? 'present' : 'absent'}`);
 
-    // Client-credentials grant: build the SDK provider that fetches + refreshes
-    // tokens itself. No token manager / no static header — the SDK transport drives it.
-    if (credentials.oauthGrant === 'client_credentials' && credentials.clientId) {
+    // Enterprise-managed authorization (id_jag): build the SDK cross-app-access
+    // provider. It exchanges the stored IdP ID token for an ID-JAG and the ID-JAG
+    // for an MCP access token — the SDK transport drives it, like client-credentials.
+    if (credentials.oauthGrant === 'id_jag' && credentials.idJag) {
+      const idJag = credentials.idJag;
+      logger.debug(`  idToken: ${idJag.idToken ? 'present' : 'MISSING'}`);
+      logger.debug(`  idpRefreshToken: ${idJag.idpRefreshToken ? 'present' : 'absent'}`);
+      this.authProvider = createIdJagProvider(idJag, {
+        serverUrl: credentials.serverUrl,
+        profileName: credentials.profileName,
+        callbacks: {
+          // Reload the material before each exchange (another process may have
+          // rotated the IdP refresh token). Keychain reads/writes here are the
+          // sanctioned OAuth token refresh path (see #55) — the initial material
+          // was still loaded CLI-side pre-spawn and delivered via IPC.
+          reloadCredentials: async () => {
+            logger.debug('Reloading id-jag material from keychain before exchange...');
+            return readKeychainIdJagCredentials(credentials.serverUrl, credentials.profileName);
+          },
+          // Persist rotated IdP tokens after an ID token refresh.
+          onIdTokenRefresh: async (updated) => {
+            logger.debug('IdP ID token refreshed, persisting to keychain');
+            await storeKeychainIdJagCredentials(
+              credentials.serverUrl,
+              credentials.profileName,
+              updated
+            );
+            await updateAuthProfileRefreshedAt(credentials.serverUrl, credentials.profileName);
+            logger.debug('Profile refreshedAt timestamp updated');
+          },
+        },
+      });
+      this.usesIdJag = true;
+      logger.debug('Enterprise-managed authorization (id-jag) provider created for SDK transport');
+    } else if (credentials.oauthGrant === 'client_credentials' && credentials.clientId) {
+      // Client-credentials grant: build the SDK provider that fetches + refreshes
+      // tokens itself. No token manager / no static header — the SDK transport drives it.
       this.authProvider = createClientCredentialsProvider({
         clientId: credentials.clientId,
         ...(credentials.clientSecret ? { clientSecret: credentials.clientSecret } : {}),
@@ -625,11 +689,19 @@ class BridgeProcess {
     const clientConfig: CreateMcpClientOptions = {
       clientInfo: { name: 'mcpc', version: mcpcVersion },
       serverConfig,
-      capabilities: buildClientCapabilities({ clientCredentials: this.usesClientCredentials }),
+      capabilities: buildClientCapabilities({
+        clientCredentials: this.usesClientCredentials,
+        enterpriseManagedAuth: this.usesIdJag,
+      }),
       // Pass auth provider for automatic token refresh (HTTP transport only)
       ...(this.authProvider && { authProvider: this.authProvider }),
       // Pass session ID for resumption (HTTP transport only)
       ...(this.options.mcpSessionId && { mcpSessionId: this.options.mcpSessionId }),
+      // Restore the previously negotiated protocol version on resumption: the SDK skips
+      // the handshake when a session ID is supplied, so without this the reconnected
+      // transport would not know which MCP-Protocol-Version header to send
+      ...(this.options.mcpSessionId &&
+        this.options.protocolVersion && { protocolVersion: this.options.protocolVersion }),
       // Pass x402 fetch middleware (HTTP transport only)
       ...(customFetch && { customFetch }),
       // Route stdio server stderr into the bridge log + tail buffer
@@ -692,11 +764,9 @@ class BridgeProcess {
     logger.debug('MCP client created successfully, authProvider was:', !!clientConfig.authProvider);
 
     // Record server logging messages in the bridge log (viewable via `mcpc @session logs`)
-    this.client
-      .getSDKClient()
-      .setNotificationHandler(LoggingMessageNotificationSchema, (notification) => {
-        logger.info('[server log]', notification.params);
-      });
+    this.client.getSDKClient().setNotificationHandler('notifications/message', (notification) => {
+      logger.info('[server log]', notification.params);
+    });
 
     // Resource→file sync (resources-subscribe): load persisted subscriptions and
     // re-sync local files when the server announces a resource changed. Per the MCP
@@ -712,13 +782,28 @@ class BridgeProcess {
     this.resourceSync.load(sessionData?.resourceSubscriptions);
     this.client
       .getSDKClient()
-      .setNotificationHandler(ResourceUpdatedNotificationSchema, (notification) => {
+      .setNotificationHandler('notifications/resources/updated', (notification) => {
         logger.debug(`Resource updated notification: ${notification.params.uri}`);
         this.resourceSync?.handleUpdated(notification.params.uri);
       });
 
+    // Resuming a server-side session skips the initialize handshake, so remember the
+    // values persisted by the connect that did perform it — they are the only source
+    // of server capabilities and instructions for the rest of this bridge's life.
+    if (this.options.mcpSessionId && sessionData) {
+      this.resumedHandshakeDetails = {
+        ...(sessionData.serverInfo && { serverInfo: sessionData.serverInfo }),
+        ...(sessionData.capabilities && { capabilities: sessionData.capabilities }),
+        ...(sessionData.instructions && { instructions: sessionData.instructions }),
+        ...(sessionData.supportedVersions && {
+          supportedVersions: sessionData.supportedVersions,
+        }),
+        ...(sessionData._meta && { _meta: sessionData._meta }),
+      };
+    }
+
     // Update session with protocol version, MCP session ID, and lastSeenAt
-    const serverDetails = await this.client.getServerDetails();
+    const serverDetails = await this.getServerDetails();
     const newMcpSessionId = this.client.getMcpSessionId();
 
     // Detect session ID mismatch: we tried to resume but server did not return the
@@ -763,6 +848,30 @@ class BridgeProcess {
     if (serverDetails.serverInfo) {
       sessionUpdate.serverInfo = serverDetails.serverInfo;
     }
+    // Every version the server offered, and the discover result's `_meta` — 2026-07-28
+    // connections only, so absent on legacy ones (see ServerDetails).
+    if (serverDetails.supportedVersions) {
+      sessionUpdate.supportedVersions = serverDetails.supportedVersions;
+    }
+    if (serverDetails._meta) {
+      sessionUpdate._meta = serverDetails._meta;
+    }
+    // Capabilities and instructions come from the handshake only, so persist them for
+    // future resumptions. They travel together: writing instructions unconditionally
+    // here also clears stale text when a reconnect finds the server no longer sends any.
+    if (serverDetails.capabilities) {
+      sessionUpdate.capabilities = serverDetails.capabilities;
+      const instructions = serverDetails.instructions;
+      if (instructions && instructions.length > MAX_PERSISTED_INSTRUCTIONS_CHARS) {
+        logger.debug(
+          `Trimming server instructions before persisting them (${instructions.length} chars, ` +
+            `limit ${MAX_PERSISTED_INSTRUCTIONS_CHARS})`
+        );
+      }
+      sessionUpdate.instructions = instructions
+        ? truncate(instructions, MAX_PERSISTED_INSTRUCTIONS_CHARS, TRIMMED_INSTRUCTIONS_NOTICE)
+        : instructions;
+    }
     if (newMcpSessionId) {
       sessionUpdate.mcpSessionId = newMcpSessionId;
       logger.info(`MCP-Session-Id saved for resumption: ${newMcpSessionId}`);
@@ -784,6 +893,38 @@ class BridgeProcess {
         logger.warn('Failed to pre-populate tools cache:', err);
       });
     }
+  }
+
+  /**
+   * Server details for this connection, with the handshake-only fields restored from
+   * sessions.json when the bridge resumed an existing server-side session. Resumption
+   * reuses the session and skips `initialize`, so the SDK client would otherwise report
+   * no server name, no capabilities and no instructions at all (see #325).
+   *
+   * Always use this instead of `client.getServerDetails()` inside the bridge.
+   */
+  private async getServerDetails(): Promise<ServerDetails> {
+    if (!this.client) {
+      throw new NetworkError('MCP client not connected');
+    }
+    const details = await this.client.getServerDetails();
+    const persisted = this.resumedHandshakeDetails;
+    if (!persisted) return details;
+
+    if (!details.serverInfo && persisted.serverInfo) details.serverInfo = persisted.serverInfo;
+    if (!details.capabilities && persisted.capabilities) {
+      details.capabilities = persisted.capabilities;
+    }
+    if (!details.instructions && persisted.instructions) {
+      details.instructions = persisted.instructions;
+    }
+    if (!details.supportedVersions && persisted.supportedVersions) {
+      details.supportedVersions = persisted.supportedVersions;
+    }
+    if (!details._meta && persisted._meta) {
+      details._meta = persisted._meta;
+    }
+    return details;
   }
 
   /**
@@ -836,7 +977,7 @@ class BridgeProcess {
     }
 
     // Get upstream server instructions to pass to proxy clients
-    const serverDetails = await this.client.getServerDetails();
+    const serverDetails = await this.getServerDetails();
     const instructions = serverDetails.instructions;
 
     const proxyOptions: ConstructorParameters<typeof ProxyServer>[0] = {
@@ -933,11 +1074,15 @@ class BridgeProcess {
   private async handlePossibleExpiration(error: Error): Promise<void> {
     // ServerError wraps errors from mcp-client.ts methods. Check the original error
     // to distinguish application-level JSON-RPC errors (tool not found, etc.) from
-    // transport-level errors (HTTP 401/403/404). The SDK's McpError class (name: 'McpError')
-    // indicates a JSON-RPC error response — these are application-level and should be skipped.
+    // transport-level errors (HTTP 401/403/404). The SDK's ProtocolError class (named
+    // 'McpError' in SDK v1) indicates a JSON-RPC error response — these are
+    // application-level and should be skipped.
     if (error instanceof ServerError) {
       const originalError = (error.details as { originalError?: Error } | undefined)?.originalError;
-      if (originalError && originalError.name === 'McpError') {
+      if (
+        originalError &&
+        (originalError.name === 'ProtocolError' || originalError.name === 'McpError')
+      ) {
         return;
       }
     }
@@ -1266,8 +1411,21 @@ class BridgeProcess {
           // Helper to execute the tool call (used for initial attempt and 402 retry)
           // Capture client ref — guaranteed non-null by check at top of handleMcpRequest
           const client = this.client;
+
+          // Refuse --task/--detach unless this connection can really run tasks. The CLI
+          // checks first and reports the same reason; this is the backstop for direct
+          // callers and for a capability that changed since that check. Falling through
+          // to a plain tools/call would run the tool synchronously and hand --detach
+          // callers a tool result where they expect a task ID.
+          if (params.useTask) {
+            client.assertTasksAvailable();
+            if (!client.supportsTasksForToolCall()) {
+              throw new ClientError(tasksUnsupportedByServerMessage());
+            }
+          }
+
           const executeToolCall = async (): Promise<unknown> => {
-            if (params.useTask && client.supportsTasksForToolCall()) {
+            if (params.useTask) {
               if (params.detach) {
                 // Detached execution: start task and return task ID immediately
                 const taskUpdate = await client.callToolDetached(
@@ -1373,13 +1531,19 @@ class BridgeProcess {
           if (!this.resourceSync) {
             throw new NetworkError('MCP client not connected');
           }
-          const details = await this.client.getServerDetails();
-          if (!details.capabilities?.resources?.subscribe) {
-            throw new ClientError(
-              `Server does not support resource subscriptions (no resources.subscribe capability).\n` +
-                `To download the resource once instead, run:\n` +
-                `  mcpc ${this.options.sessionName} resources-read ${params.uri} -o <file>`
-            );
+          // The resources.subscribe capability flag exists only in the 2025-era protocol.
+          // On 2026-07-28 connections subscription support is signalled by the
+          // subscriptions/listen acknowledgment instead, so let the subscribe attempt
+          // decide there — it fails loudly when the server does not honor the URI.
+          if (this.client.getProtocolEra() !== 'modern') {
+            const details = await this.getServerDetails();
+            if (!details.capabilities?.resources?.subscribe) {
+              throw new ClientError(
+                `Server does not support resource subscriptions (no resources.subscribe capability).\n` +
+                  `To download the resource once instead, run:\n` +
+                  `  mcpc ${this.options.sessionName} resources-read ${params.uri} -o <file>`
+              );
+            }
           }
           await this.client.subscribeResource(params.uri);
           try {
@@ -1432,7 +1596,7 @@ class BridgeProcess {
         }
 
         case 'getServerDetails':
-          result = await this.client.getServerDetails();
+          result = await this.getServerDetails();
           break;
 
         case 'listTasks': {
@@ -1723,7 +1887,7 @@ async function main(): Promise<void> {
 
   if (args.length < 2) {
     console.error(
-      'Usage: mcpc-bridge <sessionName> <transportConfigJson> [--verbose] [--profile <name>] [--proxy-host <host>] [--proxy-port <port>] [--mcp-session-id <id>] [--x402 <auto|upto|exact>] [--insecure]'
+      'Usage: mcpc-bridge <sessionName> <transportConfigJson> [--verbose] [--profile <name>] [--proxy-host <host>] [--proxy-port <port>] [--mcp-session-id <id>] [--protocol-version <version>] [--x402 <auto|upto|exact>] [--insecure]'
     );
     process.exit(1);
   }
@@ -1756,6 +1920,13 @@ async function main(): Promise<void> {
   const mcpSessionIdIndex = args.indexOf('--mcp-session-id');
   if (mcpSessionIdIndex !== -1 && args[mcpSessionIdIndex + 1]) {
     mcpSessionId = args[mcpSessionIdIndex + 1];
+  }
+
+  // Parse --protocol-version argument (protocol version negotiated by the resumed session)
+  let protocolVersion: string | undefined;
+  const protocolVersionIndex = args.indexOf('--protocol-version');
+  if (protocolVersionIndex !== -1 && args[protocolVersionIndex + 1]) {
+    protocolVersion = args[protocolVersionIndex + 1];
   }
 
   // Parse `--x402 <scheme>` (CLI always spawns the bridge with an explicit value).
@@ -1793,6 +1964,9 @@ async function main(): Promise<void> {
     }
     if (mcpSessionId) {
       bridgeOptions.mcpSessionId = mcpSessionId;
+    }
+    if (protocolVersion) {
+      bridgeOptions.protocolVersion = protocolVersion;
     }
     if (x402) {
       bridgeOptions.x402 = x402;

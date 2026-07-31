@@ -9,6 +9,7 @@
 #
 # Options:
 #   -p, --parallel N   Max parallel tests (default: 8)
+#   -s, --server-protocol <p>  Test server protocol era: legacy (default) or modern
 #   -i, --isolated     Force all tests to use isolated home directories
 #   -c, --coverage     Collect code coverage
 #   -k, --keep         Keep test run directory after tests
@@ -30,6 +31,7 @@ VERBOSE=false
 LIST_ONLY=false
 SKIP_BUILD=false
 RUNTIME="node"
+SERVER_PROTOCOL="${E2E_SERVER_PROTOCOL:-legacy}"
 PATTERNS=()
 
 # Per-test timeout (seconds). A single hung test (e.g. an mcpc invocation that
@@ -87,6 +89,10 @@ while [[ $# -gt 0 ]]; do
       RUNTIME="$2"
       shift 2
       ;;
+    -s|--server-protocol)
+      SERVER_PROTOCOL="$2"
+      shift 2
+      ;;
     -b|--no-build)
       SKIP_BUILD=true
       shift
@@ -97,6 +103,8 @@ while [[ $# -gt 0 ]]; do
       echo "Options:"
       echo "  -p, --parallel N   Max parallel tests (default: 16)"
       echo "  -r, --runtime <r>  Runtime for mcpc: node (default) or bun"
+      echo "  -s, --server-protocol <p>  Test server protocol era: legacy (default, MCP 2025-11-25)"
+      echo "                     or modern (MCP 2026-07-28); era-specific tests are skipped"
       echo "  -i, --isolated     Force all tests to use isolated home directories"
       echo "  -c, --coverage     Collect code coverage"
       echo "  -b, --no-build     Skip building mcpc (assumes dist/ is up to date)"
@@ -194,6 +202,16 @@ case "$RUNTIME" in
 esac
 export E2E_RUNTIME="$RUNTIME"
 
+# Validate test-server protocol era
+case "$SERVER_PROTOCOL" in
+  legacy|modern) ;;
+  *)
+    echo "Unknown server protocol: $SERVER_PROTOCOL (valid options: legacy, modern)" >&2
+    exit 1
+    ;;
+esac
+export E2E_SERVER_PROTOCOL="$SERVER_PROTOCOL"
+
 # List mode
 if [[ "$LIST_ONLY" == "true" ]]; then
   echo "Available tests:"
@@ -222,6 +240,7 @@ echo "Run dir:   $RUN_DIR"
 echo "Tests:     ${#TESTS[@]}"
 echo "Parallel:  $PARALLEL"
 echo "Runtime:   $RUNTIME_VERSION"
+echo "Server:    $SERVER_PROTOCOL protocol ($([[ "$SERVER_PROTOCOL" == "modern" ]] && echo "MCP 2026-07-28" || echo "MCP 2025-11-25"))"
 if [[ "$ISOLATED_ALL" == "true" ]]; then
   echo "Home dirs: isolated (per-test)"
 else
@@ -385,7 +404,7 @@ run_test() {
   echo "$result" > "$test_dir/result"
 }
 
-export SCRIPT_DIR SUITES_DIR E2E_RUN_ID E2E_RUNS_DIR E2E_SHARED_HOME E2E_ISOLATED_ALL E2E_RUNTIME PROJECT_ROOT NODE_V8_COVERAGE PER_TEST_TIMEOUT
+export SCRIPT_DIR SUITES_DIR E2E_RUN_ID E2E_RUNS_DIR E2E_SHARED_HOME E2E_ISOLATED_ALL E2E_RUNTIME E2E_SERVER_PROTOCOL PROJECT_ROOT NODE_V8_COVERAGE PER_TEST_TIMEOUT
 
 # Run tests
 echo -e "${BLUE}Running tests...${NC}"
@@ -457,6 +476,7 @@ echo ""
 
 PASSED=0
 FAILED=0
+SKIPPED=0
 FAILED_TESTS=()
 
 for test in "${TESTS[@]}"; do
@@ -466,7 +486,12 @@ for test in "${TESTS[@]}"; do
 
   if [[ -f "$result_file" ]]; then
     result=$(cat "$result_file")
-    if [[ "$result" == "0" ]]; then
+    # A suite that skipped itself (skip_suite / require_server_protocol) exits 0 but
+    # ran nothing — report it as skipped so a whole missing matrix column can't look green
+    if [[ "$result" == "0" && -f "$test_dir/.skipped" ]]; then
+      echo -e "${YELLOW}⊘${NC} $test_id ${DIM}($(cat "$test_dir/.skipped"))${NC}"
+      ((SKIPPED++)) || true
+    elif [[ "$result" == "0" ]]; then
       echo -e "${GREEN}✓${NC} $test_id"
       ((PASSED++)) || true
     else
@@ -484,9 +509,10 @@ done
 # Summary
 echo ""
 echo -e "${BLUE}────────────────────────────────────────${NC}"
-echo "Total:  $((PASSED + FAILED))"
-echo -e "Passed: ${GREEN}$PASSED${NC}"
-echo -e "Failed: ${RED}$FAILED${NC}"
+echo "Total:   $((PASSED + FAILED + SKIPPED))"
+echo -e "Passed:  ${GREEN}$PASSED${NC}"
+echo -e "Skipped: ${YELLOW}$SKIPPED${NC}"
+echo -e "Failed:  ${RED}$FAILED${NC}"
 
 # Show failed test logs
 if [[ ${#FAILED_TESTS[@]} -gt 0 ]]; then
@@ -591,6 +617,7 @@ cleanup_test_servers() {
     :
   else
     pkill -f "test/e2e/server/index.ts" 2>/dev/null || true
+    pkill -f "test/e2e/server/index-v2.ts" 2>/dev/null || true
   fi
   sleep 0.2
 }

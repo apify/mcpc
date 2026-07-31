@@ -11,6 +11,13 @@ import { setVerbose, setJsonMode, closeFileLogger } from '../lib/index.js';
 import { isMcpError, formatHumanError, ClientError } from '../lib/index.js';
 import chalk from 'chalk';
 import { formatJson, formatJsonError, jsonHelp, rainbow, theme } from './output.js';
+import {
+  SCHEMA_BASE,
+  LEGACY_SCHEMA_BASE,
+  SESSION_DETAILS_HELP,
+  outputHelp,
+  serverDetailsJsonHelp,
+} from './help-text.js';
 import * as tools from './commands/tools.js';
 import * as resources from './commands/resources.js';
 import * as skills from './commands/skills.js';
@@ -28,6 +35,8 @@ import { clean } from './commands/clean.js';
 import { MCPC_OAUTH_CALLBACK_HOSTS, MCPC_OAUTH_CALLBACK_PORTS } from '../lib/auth/oauth-utils.js';
 import type { OutputMode, X402SchemePreference } from '../lib/index.js';
 import { X402_SCHEME_PREFERENCES } from '../lib/index.js';
+// Imported directly (not via the core barrel) so the CLI doesn't eagerly load the MCP SDK
+import { SUPPORTED_PROTOCOL_VERSIONS } from '../core/protocol.js';
 import {
   extractOptions,
   preProcessX402Argv,
@@ -160,8 +169,6 @@ function getOptionsFromCommand(command: Command): HandlerOptions {
 
   return options;
 }
-
-const SCHEMA_BASE = 'https://modelcontextprotocol.io/specification/2025-11-25/schema';
 
 async function main(): Promise<void> {
   // Disambiguate `--x402 <non-scheme>` (URL, @session, etc.) so Commander's
@@ -473,10 +480,8 @@ Full docs: ${docsUrl}`
     .option('--proxy <[host:]port>', 'Start proxy MCP server for session')
     .option('--proxy-bearer-token <token>', 'Require authentication for access to proxy server')
     .option('--stdio', 'Launch all local stdio servers from selected config files')
-    .option(
-      '--x402 [scheme]',
-      'Enable x402 auto-payment using the configured wallet; optional scheme: auto (default, prefer upto), upto, or exact.'
-    )
+    .option('--protocol-version <version>', 'Pin the MCP protocol version (see below)')
+    .option('--x402 [scheme]', 'Enable x402 auto-payment (see below)')
     .addHelpText(
       'after',
       `
@@ -500,11 +505,22 @@ ${chalk.bold('Stdio servers (command-based, run locally):')}
   Config entries spawn the command on connect, even if the handshake
   later fails — only connect to configs you trust. Bulk connects skip
   stdio by default; pass --stdio to include them.
-${jsonHelp(
-  'Array of `InitializeResult` objects (one per session), extended with `toolNames` and `_mcpc` metadata',
-  '`[{ protocolVersion?, capabilities?, serverInfo?, instructions?, toolNames?, _mcpc: { sessionName, server?, ... }]`',
-  `${SCHEMA_BASE}#initializeresult`
-)}`
+
+${chalk.bold('Protocol version:')}
+  mcpc negotiates MCP 2026-07-28 with servers that support it and falls
+  back to older versions (2025-11-25 down to 2024-10-07) automatically.
+  Pass --protocol-version to pin one exact version instead — the connection
+  fails if the server does not support it. Supported values:
+  ${SUPPORTED_PROTOCOL_VERSIONS.join(', ')}.
+  Run mcpc @session to see the negotiated version.
+
+${chalk.bold('x402 payments (experimental):')}
+  --x402 pays for paid tool calls from the wallet set up with mcpc x402.
+  Schemes: auto (default, prefers upto), upto, exact.
+${outputHelp([
+  'For a single server, shows session, server info, capabilities, and tools.',
+  'Bulk connects list every session with its state, then a summary.',
+])}${serverDetailsJsonHelp('array')}`
     )
     .action(async (server, sessionName, opts, command) => {
       const globalOpts = getOptionsFromCommand(command);
@@ -530,6 +546,7 @@ ${jsonHelp(
           ...(opts.proxy && { proxy: opts.proxy as string }),
           ...(opts.proxyBearerToken && { proxyBearerToken: opts.proxyBearerToken as string }),
           ...(opts.stdio && { stdio: true }),
+          ...(opts.protocolVersion && { protocolVersion: opts.protocolVersion as string }),
           ...(globalOpts.x402 && { x402: globalOpts.x402 }),
           ...(globalOpts.insecure && { insecure: true }),
         });
@@ -561,6 +578,7 @@ ${jsonHelp(
           ...(opts.proxy && { proxy: opts.proxy as string }),
           ...(opts.proxyBearerToken && { proxyBearerToken: opts.proxyBearerToken as string }),
           ...(opts.stdio && { stdio: true }),
+          ...(opts.protocolVersion && { protocolVersion: opts.protocolVersion as string }),
           ...(globalOpts.x402 && { x402: globalOpts.x402 }),
           ...(globalOpts.insecure && { insecure: true }),
         });
@@ -585,6 +603,7 @@ ${jsonHelp(
           config: parsed.file,
           proxy: opts.proxy,
           proxyBearerToken: opts.proxyBearerToken,
+          ...(opts.protocolVersion && { protocolVersion: opts.protocolVersion as string }),
           ...(globalOpts.x402 && { x402: globalOpts.x402 }),
           ...(globalOpts.insecure && { insecure: true }),
         });
@@ -594,6 +613,7 @@ ${jsonHelp(
           ...(headers && { headers }),
           proxy: opts.proxy,
           proxyBearerToken: opts.proxyBearerToken,
+          ...(opts.protocolVersion && { protocolVersion: opts.protocolVersion as string }),
           ...(globalOpts.x402 && { x402: globalOpts.x402 }),
           ...(globalOpts.insecure && { insecure: true }),
         });
@@ -618,6 +638,11 @@ ${jsonHelp(
     .command('restart [@session]')
     .usage('<@session> [options]')
     .description('Restart a session (losing all state)')
+    .addHelpText(
+      'after',
+      outputHelp('After restarting, shows session, server info, capabilities, and tools.') +
+        serverDetailsJsonHelp('object')
+    )
     .action(async (sessionName, _opts, command) => {
       if (!sessionName) {
         throw new ClientError(
@@ -634,34 +659,29 @@ ${jsonHelp(
     .description('Log in to a server and save an OAuth profile')
     .option('--profile <name>', 'Profile name (default: "default")')
     .option('--scope <scopes>', 'OAuth scopes to request (e.g. --scope "read write")')
-    .option(
-      '--grant <type>',
-      'OAuth grant: authorization-code (default, interactive) or client-credentials (machine-to-machine)'
-    )
+    .option('--grant <type>', 'Grant: authorization-code (default), client-credentials, id-jag')
     .option('--client-id <id>', 'Pre-registered OAuth client ID (skips CIMD and DCR)')
     .option('--client-secret <secret>', 'Pre-registered OAuth client secret (requires --client-id)')
     .option(
       '--client-key <pem-or-path>',
-      'Private key (PEM file path or literal) for the private_key_jwt client-credentials variant'
+      'Private key (PEM path or literal) for private_key_jwt auth'
     )
     .option('--client-key-alg <alg>', 'JWT signing algorithm for --client-key (default: RS256)')
     .option(
       '--token-endpoint <url>',
-      'OAuth token endpoint (client-credentials only; auto-discovered if omitted)'
+      'OAuth token endpoint (client-credentials only, auto-discovered)'
     )
-    .option(
-      '--client-metadata-url <url>',
-      'HTTPS URL of an OAuth CIMD (default: https://apify.github.io/mcpc/client-metadata.json)'
-    )
+    .option('--idp <url>', 'Enterprise IdP issuer URL (id-jag only)')
+    .option('--idp-client-id <id>', 'Client ID pre-registered at the enterprise IdP (id-jag only)')
+    .option('--idp-client-secret <secret>', 'Client secret for the enterprise IdP (id-jag only)')
+    .option('--idp-scope <scopes>', 'OIDC scopes for the IdP SSO (id-jag only, see below)')
+    .option('--client-metadata-url <url>', 'HTTPS URL of an OAuth CIMD (default: mcpc CIMD)')
     .option('--no-client-metadata-url', 'Disable CIMD; force DCR on CIMD-capable servers')
     .option(
       '--callback-port <port>',
-      `Loopback port for OAuth callback (default: first free of ${MCPC_OAUTH_CALLBACK_PORTS.join(', ')})`
+      `Loopback port for OAuth callback (default: ${MCPC_OAUTH_CALLBACK_PORTS.join('/')})`
     )
-    .option(
-      '--callback-host <host>',
-      'Host in the OAuth callback redirect URI: 127.0.0.1 (default) or localhost'
-    )
+    .option('--callback-host <host>', 'OAuth callback host: 127.0.0.1 (default) or localhost')
     .addHelpText(
       'after',
       `
@@ -684,7 +704,7 @@ ${chalk.bold('Client registration (how mcpc identifies itself to the server):')}
   3. Dynamic Client Registration (DCR): fallback when CIMD is unsupported or
      disabled and the server exposes a registration_endpoint.
 
-  See https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization
+  See https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization
 
 ${chalk.bold('Machine-to-machine authentication (for CI/CD and daemons):')}
   Pass --grant client-credentials, --client-id, and one credential:
@@ -699,6 +719,24 @@ ${chalk.bold('Machine-to-machine authentication (for CI/CD and daemons):')}
   --token-endpoint <url> for servers without discoverable metadata.
 
   See https://modelcontextprotocol.io/extensions/auth/oauth-client-credentials
+
+${chalk.bold("Enterprise-managed authorization (SSO via your organization's IdP):")}
+  Pass --grant id-jag when your organization controls MCP server access
+  centrally through its identity provider (e.g. Okta). You sign in once with
+  your corporate SSO; mcpc then obtains MCP tokens via identity assertion
+  grants (ID-JAG) without any per-server consent screens:
+
+  mcpc login mcp.example.com --grant id-jag \\
+    --idp https://acme.okta.com --idp-client-id <idp-client> \\
+    --client-id <mcp-as-client> --client-secret <secret>
+
+  Both clients are pre-registered by your IT team: --idp-client-id at the
+  enterprise IdP (add --idp-client-secret if it is a confidential client),
+  --client-id/--client-secret at the MCP server's authorization server.
+  --scope requests MCP-server scopes; --idp-scope overrides the OIDC scopes
+  used for the SSO itself (default: "openid profile email offline_access").
+
+  See https://modelcontextprotocol.io/extensions/auth/enterprise-managed-authorization
 ${jsonHelp('Interactive prompts go to stderr; stdout is a clean JSON object', '`{ profile, serverUrl, scopes }`')}`
     )
     .action(async (server, opts, command) => {
@@ -741,6 +779,10 @@ ${jsonHelp('Interactive prompts go to stderr; stdout is a clean JSON object', '`
         clientKeyAlg: opts.clientKeyAlg,
         tokenEndpoint: opts.tokenEndpoint,
         clientMetadataUrl: opts.clientMetadataUrl,
+        idp: opts.idp,
+        idpClientId: opts.idpClientId,
+        idpClientSecret: opts.idpClientSecret,
+        idpScope: opts.idpScope,
         ...(callbackPort !== undefined ? { callbackPort } : {}),
         ...(callbackHost ? { callbackHost } : {}),
         ...getOptionsFromCommand(command),
@@ -974,6 +1016,7 @@ function registerSessionCommands(program: Command, session: string): void {
   program
     .command('close')
     .description('Close MCP session.')
+    .addHelpText('after', jsonHelp('`{ sessionName, closed: true }`'))
     .action(async (_options, command) => {
       await sessions.closeSession(session, getOptionsFromCommand(command));
     });
@@ -982,6 +1025,11 @@ function registerSessionCommands(program: Command, session: string): void {
   program
     .command('restart')
     .description('Restart MCP session (losing all state).')
+    .addHelpText(
+      'after',
+      outputHelp('After restarting, shows session, server info, capabilities, and tools.') +
+        serverDetailsJsonHelp('object')
+    )
     .action(async (_options, command) => {
       await sessions.restartSession(session, getOptionsFromCommand(command));
     });
@@ -1075,6 +1123,10 @@ ${jsonHelp(
     `${SCHEMA_BASE}#calltoolresult`
   );
 
+  // TODO: CreateTaskResult/Task only exist on the 2025-11-25 schema page — tasks moved to the
+  // io.modelcontextprotocol/tasks extension for 2026-07-28, which the SDK doesn't implement yet
+  // (see CLAUDE.md). Once the SDK adds it, point this (and the #task links on tasks-list/
+  // tasks-get/tasks-result) at wherever that extension's schema ends up living.
   const toolsCallCombinedJsonHelp = `
 ${chalk.bold('JSON output (--json):')}
   \`CallToolResult\` object:
@@ -1083,7 +1135,7 @@ ${chalk.bold('JSON output (--json):')}
 
   With \`--detach\`: \`CreateTaskResult\` object:
   \`{ taskId: string, status: string }\`
-  Schema: ${SCHEMA_BASE}#createtaskresult
+  Schema: ${LEGACY_SCHEMA_BASE}#createtaskresult
 `;
 
   program
@@ -1113,6 +1165,12 @@ ${chalk.bold('Async tasks (--task, --detach):')}
   If you press Ctrl+C, the task keeps running and a hint with the task ID
   is printed so you can fetch or cancel it later.
   --detach returns the task ID immediately without waiting.
+  Both flags require a server that advertises the tasks capability and uses
+  MCP protocol 2025-11-25 (on 2026-07-28 servers tasks are an extension not
+  yet supported by mcpc). If it does not, the command fails instead of
+  running the tool synchronously — the flags change the output shape, so the
+  fallback would silently return a result where a task ID is expected.
+  Check per-tool support in tools-list: [task:optional|required|forbidden].
 
 ${chalk.bold('Schema validation:')}
   --schema <file>       Validate tool schema before calling (save with tools-get --json)
@@ -1139,7 +1197,7 @@ ${toolsCallCombinedJsonHelp}`
       jsonHelp(
         '`{ tasks: Task[] }`',
         '`{ tasks: [{ taskId, status, ttl, createdAt, lastUpdatedAt, statusMessage?, pollInterval? }] }`',
-        `${SCHEMA_BASE}#task`
+        `${LEGACY_SCHEMA_BASE}#task`
       )
     )
     .action(async (_options, command) => {
@@ -1154,7 +1212,7 @@ ${toolsCallCombinedJsonHelp}`
       jsonHelp(
         '`Task` object',
         '`{ taskId, status, ttl, createdAt, lastUpdatedAt, statusMessage?, pollInterval? }`',
-        `${SCHEMA_BASE}#task`
+        `${LEGACY_SCHEMA_BASE}#task`
       )
     )
     .action(async (taskId, _options, command) => {
@@ -1177,7 +1235,7 @@ ${toolsCallCombinedJsonHelp}`
       jsonHelp(
         '`Task` object',
         '`{ taskId, status, ttl, createdAt, lastUpdatedAt, statusMessage?, pollInterval? }`',
-        `${SCHEMA_BASE}#task`
+        `${LEGACY_SCHEMA_BASE}#task`
       )
     )
     .action(async (taskId, _options, command) => {
@@ -1192,7 +1250,7 @@ ${toolsCallCombinedJsonHelp}`
       'after',
       jsonHelp(
         'Array of `Resource` objects',
-        '`[{ uri, name?, description?, mimeType? }, ...]`',
+        '`[{ uri, name, description?, mimeType? }, ...]`',
         `${SCHEMA_BASE}#resource`
       )
     )
@@ -1216,9 +1274,10 @@ ${chalk.bold('Output:')}
   matching <uri> (or the first one) — use --json to get all items.
 ${jsonHelp(
   '`ReadResourceResult` object',
-  '`{ contents: [{ uri, mimeType?, text? | blob? }] }`',
+  '`{ contents: [{ uri, mimeType?, text? | blob? }], ttlMs?, cacheScope? }`',
   `${SCHEMA_BASE}#readresourceresult`
 )}
+  \`ttlMs\`/\`cacheScope\` are caching hints only present on 2026-07-28 connections.
   With \`-o\`: \`{ uri, file, bytes, mimeType? }\` summary instead.
 `
     )
@@ -1267,7 +1326,7 @@ ${jsonHelp('`{ subscribed: true, uri, file, bytes, mimeType? }`')}`
       'after',
       jsonHelp(
         'Array of `ResourceTemplate` objects',
-        '`[{ uriTemplate, name?, description?, mimeType? }, ...]`',
+        '`[{ uriTemplate, name, description?, mimeType? }, ...]`',
         `${SCHEMA_BASE}#resourcetemplate`
       )
     )
@@ -1310,7 +1369,7 @@ ${chalk.bold('Names:')}
   \`name\`, \`nested/path\`, or \`skill://...\` URI. For \`archive\` skills, use
   \`resources-read <url>\`. With --json, --raw is ignored.
 ${jsonHelp(
-  '`ReadResourceResult`: `{ contents: [{ uri, mimeType?, text? | blob? }] }`',
+  '`ReadResourceResult`: `{ contents: [{ uri, mimeType?, text? | blob? }], ttlMs?, cacheScope? }`',
   undefined,
   `${SCHEMA_BASE}#readresourceresult`
 )}`
@@ -1363,8 +1422,16 @@ ${jsonHelp('`GetPromptResult` object', '`{ description?, messages: [{ role, cont
   // Logging commands
   program
     .command('logging-set-level <level>')
-    .description('Set MCP server logging level.')
-    .addHelpText('after', jsonHelp('`{ level: string }`'))
+    .description('Set MCP server logging level (deprecated).')
+    .addHelpText(
+      'after',
+      `
+${chalk.bold('Deprecated:')}
+  MCP 2026-07-28 removed logging/setLevel, so this works on 2025-11-25 (and older)
+  servers only and will be removed in a future mcpc release. Use --verbose for
+  client-side logging instead.
+${jsonHelp('`{ level: string }`')}`
+    )
     .action(async (level, _options, command) => {
       await logging.setLogLevel(session, level, getOptionsFromCommand(command));
     });
@@ -1373,7 +1440,14 @@ ${jsonHelp('`GetPromptResult` object', '`{ description?, messages: [{ role, cont
   program
     .command('ping')
     .description('Ping the MCP server.')
-    .addHelpText('after', jsonHelp('`{ success: true, durationMs: number }`'))
+    .addHelpText(
+      'after',
+      `
+${chalk.bold('Notes:')}
+  Measures the request roundtrip. MCP 2026-07-28 removed \`ping\`, so on modern
+  connections the liveness probe is \`server/discover\` instead.
+${jsonHelp('`{ success: true, durationMs: number }`')}`
+    )
     .action(async (_options, command) => {
       await utilities.ping(session, getOptionsFromCommand(command));
     });
@@ -1447,7 +1521,7 @@ function createSessionProgram(): Command {
 
   program
     .name('mcpc <@session>')
-    .description('Execute MCP commands on a connected session.')
+    .description('Show MCP session info or execute commands.')
     .helpOption('-h, --help', 'Display help')
     .option('--json', 'Output in JSON format for scripting and code mode')
     .option('--verbose', 'Enable debug logging')
@@ -1455,10 +1529,7 @@ function createSessionProgram(): Command {
     .option('--timeout <seconds>', 'Request timeout in seconds (default: 60)')
     .option('--max-chars <n>', 'Truncate output to n characters (ignored in --json mode)')
     .option('--insecure', 'Skip TLS certificate verification (for self-signed certs)')
-    .addHelpText(
-      'after',
-      `\nWhen no command is given, shows server info, capabilities, and tools.\n`
-    );
+    .addHelpText('after', SESSION_DETAILS_HELP);
 
   return program;
 }

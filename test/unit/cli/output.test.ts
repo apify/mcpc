@@ -1060,44 +1060,118 @@ describe('formatServerDetails', () => {
     expect(output).toContain('This is the server instructions.');
   });
 
-  it('shows protocol version with the stateless mode suffix', () => {
+  it('shows the MCP version with the transport and its connection mode', () => {
     const details: ServerDetails = {
       protocolVersion: '2026-07-28',
       capabilities: {},
       serverInfo: { name: 'Stateless Server', version: '1.0.0' },
       connectionMode: 'stateless',
+      transport: 'streamable-http',
     };
 
     const output = formatServerDetails(details, '@s');
 
-    expect(output).toContain('Protocol: 2026-07-28 (stateless)');
+    expect(output).toContain('MCP: version 2026-07-28 / Streamable HTTP (stateless)');
   });
 
-  it('shows protocol version with the stateful mode suffix', () => {
+  it('keeps supportedVersions out of the human-mode version line (a --json-only detail)', () => {
+    const details: ServerDetails = {
+      protocolVersion: '2026-07-28',
+      supportedVersions: ['2026-07-28', '2025-11-25'],
+      capabilities: {},
+      serverInfo: { name: 'Dual Server', version: '1.0.0' },
+      connectionMode: 'stateless',
+      transport: 'streamable-http',
+    };
+
+    const output = formatServerDetails(details, '@s');
+
+    expect(output).toContain('MCP: version 2026-07-28 / Streamable HTTP (stateless)');
+    expect(output).not.toContain('2025-11-25');
+  });
+
+  it('names the stdio transport', () => {
     const details: ServerDetails = {
       protocolVersion: '2025-11-25',
       capabilities: {},
-      serverInfo: { name: 'Stateful Server', version: '1.0.0' },
+      serverInfo: { name: 'Local Server', version: '1.0.0' },
       connectionMode: 'stateful',
+      transport: 'stdio',
     };
 
     const output = formatServerDetails(details, '@s');
 
-    expect(output).toContain('Protocol: 2025-11-25 (stateful)');
+    expect(output).toContain('MCP: version 2025-11-25 / stdio (stateful)');
   });
 
-  it('omits the connection mode suffix when it is unknown', () => {
+  it('marks a pinned MCP version and omits an unknown connection mode', () => {
+    const details: ServerDetails = {
+      protocolVersion: '2025-11-25',
+      capabilities: {},
+      serverInfo: { name: 'Pinned Server', version: '1.0.0' },
+      connectionMode: 'unknown',
+      transport: 'streamable-http',
+    };
+
+    const output = formatServerDetails(details, '@s', undefined, undefined, '2025-11-25');
+
+    expect(output).toContain('MCP: version 2025-11-25 (pinned) / Streamable HTTP');
+    expect(output).not.toContain('(unknown)');
+  });
+
+  it('shows the MCP version alone when the transport is not known yet', () => {
     const details: ServerDetails = {
       protocolVersion: '2025-11-25',
       capabilities: {},
       serverInfo: { name: 'S', version: '1.0.0' },
-      connectionMode: 'unknown',
     };
 
     const output = formatServerDetails(details, '@s');
 
-    expect(output).toContain('Protocol: 2025-11-25');
-    expect(output).not.toContain('(unknown)');
+    // No transport part, so no " / ..." suffix on the version line
+    expect(output).toContain('MCP: version 2025-11-25\n');
+  });
+
+  it('annotates logging and tasks as era-limited on a 2026-07-28 connection', () => {
+    const details: ServerDetails = {
+      protocolVersion: '2026-07-28',
+      capabilities: {
+        tools: { listChanged: false },
+        logging: {},
+        tasks: { requests: { tools: { call: true } } },
+      },
+      serverInfo: { name: 'Modern Server', version: '1.0.0' },
+      connectionMode: 'stateless',
+    };
+
+    const output = formatServerDetails(details, '@modern');
+
+    // Capabilities are still listed (the server advertises them), but flagged
+    expect(output).toContain('logging (notifications only)');
+    expect(output).toContain('tasks (tools) (not usable on MCP 2026-07-28)');
+
+    // ...and the commands that would only error out are not offered
+    expect(output).not.toContain('logging-set-level');
+    expect(output).not.toContain('tasks-list');
+    expect(output).toContain('mcpc @modern tools-list');
+  });
+
+  it('offers logging and tasks commands on a 2025-era connection', () => {
+    const details: ServerDetails = {
+      protocolVersion: '2025-11-25',
+      capabilities: {
+        logging: {},
+        tasks: { requests: { tools: { call: true } } },
+      },
+      serverInfo: { name: 'Legacy Server', version: '1.0.0' },
+    };
+
+    const output = formatServerDetails(details, '@legacy');
+
+    expect(output).toContain('* logging\n');
+    expect(output).not.toContain('not usable on MCP');
+    expect(output).toContain('mcpc @legacy logging-set-level');
+    expect(output).toContain('mcpc @legacy tasks-list');
   });
 
   it('should format server info with minimal features', () => {
@@ -1111,7 +1185,7 @@ describe('formatServerDetails', () => {
     // Should contain server version without protocol version
     expect(output).toContain('Server:');
     expect(output).toContain('Minimal Server (version: 0.1.0)');
-    expect(output).not.toContain('MCP version');
+    expect(output).not.toContain('MCP:');
 
     // Should show (none) for capabilities
     expect(output).toContain('Capabilities:');
@@ -2228,6 +2302,50 @@ describe('formatCallToolResultHuman', () => {
     };
     const output = formatCallToolResultHuman(result);
     expect(output).not.toContain('Structured content');
+  });
+
+  // Since protocol 2026-07-28 (SEP-2106), structuredContent may be any JSON value,
+  // not just an object — non-object values must render without key-based dedup logic.
+  it('should show an array structuredContent when content is empty (SEP-2106)', () => {
+    const result = {
+      content: [],
+      structuredContent: [1, 2, 3],
+    };
+    const output = formatCallToolResultHuman(result);
+    expect(output).toContain('Structured content:');
+    expect(output).toContain('1');
+    expect(output).toContain('3');
+  });
+
+  it('should show a primitive structuredContent when content is empty (SEP-2106)', () => {
+    const result = {
+      content: [],
+      structuredContent: 42,
+    };
+    const output = formatCallToolResultHuman(result);
+    expect(output).toContain('Structured content:');
+    expect(output).toContain('42');
+  });
+
+  it('should keep text content untouched alongside a non-object structuredContent', () => {
+    const result = {
+      content: [{ type: 'text' as const, text: 'summary' }],
+      structuredContent: ['a', 'b'],
+    };
+    const output = formatCallToolResultHuman(result);
+    expect(output).toContain('Content:');
+    expect(output).toContain('summary');
+    expect(output).not.toContain('Structured content');
+  });
+
+  it('should treat a null structuredContent as absent (SEP-2106)', () => {
+    const result = {
+      content: [],
+      structuredContent: null,
+    };
+    const output = formatCallToolResultHuman(result);
+    expect(output).not.toContain('Structured content');
+    expect(output).toContain('(no content)');
   });
 
   it('should skip the duplicate text block when it matches structuredContent', () => {

@@ -17,7 +17,7 @@ server and its latest capabilities using the most universal interface there is: 
 **Key features:**
 
 - 🔧 [**Full MCP support**](#mcp-support) - Tools, prompts, resources, async tasks, skills, notifications, and logging over stdio and Streamable HTTP.
-- 🔄 **Persistent sessions** - Keep multiple stateful connections to different servers alive in parallel.
+- 🔄 **Persistent sessions** - Keep connections to multiple servers alive in parallel, whether the server protocol is stateful or stateless.
 - 🗺️ **Progressive tool discovery** - Find relevant MCP tools on the fly to save tokens and increase accuracy.
 - 🔌 **Code mode** - JSON output composes with `jq`, `xargs`, and shell pipelines for MCP workflows as shell scripts.
 - 🔒 **Secure** - Full OAuth 2.1 support with CIMD and DCR, uses OS keychain for credentials storage.
@@ -328,11 +328,26 @@ Note that `--json` is not available for `mcpc --help`. For `login`, `--json` pri
 
 ## Sessions
 
-MCP is a [stateful protocol](https://modelcontextprotocol.io/specification/latest/basic/lifecycle):
-clients and servers negotiate protocol version and capabilities, and then communicate within a persistent session.
-To support these sessions, `mcpc` can start a lightweight **bridge process** that maintains the connection and state.
-This is more efficient than forcing every MCP command to reconnect and reinitialize,
-and enables long-term stateful sessions.
+Up to protocol version `2025-11-25`, MCP was a [stateful protocol](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle):
+clients and servers negotiate protocol version and capabilities in an `initialize` handshake,
+and then communicate within a persistent session. Protocol version `2026-07-28` made MCP
+stateless — there is no handshake or server-side session anymore, and every request stands on its own.
+
+`mcpc` keeps one session-based workflow on top of both: you first `connect` a named session,
+then interact with the server through it. On stateful servers the session maps directly to the
+protocol-level MCP session. On stateless (`2026-07-28`) servers the session abstracts the
+protocol away — a lightweight **bridge process** still holds the connection, the negotiated
+protocol version, and client-side state, so everything built on "connect first, then interact"
+keeps working the same: cached tool listings, [searching across sessions](#grep-search-across-sessions)
+with `grep`, server keepalive and status checks by [periodic probing](#ping), change
+notifications, resource-to-file syncs, and automatic OAuth token refresh. It is also more
+efficient than forcing every MCP command to rediscover the server and reauthenticate.
+
+The protocol version is negotiated automatically (`mcpc @session` shows the result). To pin
+one exact version instead, pass `--protocol-version` to `connect` (e.g.
+`mcpc connect mcp.apify.com --protocol-version 2025-11-25`) — the connection then fails if the
+server does not support that version. Config file entries can set the same via a
+`protocolVersion` field.
 
 Sessions are given names prefixed with `@` (e.g. `@apify`),
 which then serve as unique references in commands.
@@ -360,7 +375,8 @@ mcpc @apify close      # or: mcpc close @apify
 
 Session metadata is saved in `~/.mcpc/sessions.json`, [authentication tokens](#authentication)
 in the OS keychain. The bridge process keeps the session alive with periodic [pings](#ping)
-and auto-reconnects on network failures or its own crashes (10s cooldown on failed retries).
+(`server/discover` probes on `2026-07-28` servers) and auto-reconnects on network failures
+or its own crashes (10s cooldown on failed retries).
 
 **Session states:**
 
@@ -372,11 +388,12 @@ and auto-reconnects on network failures or its own crashes (10s cooldown on fail
 | 🟡`disconnected` | Bridge process running but server unreachable; auto-recovers when server responds               |
 | 🟡`crashed`      | Bridge process crashed or was killed; auto-reconnects in the background                         |
 | 🔴`unauthorized` | Server rejected authentication (401/403) or token refresh failed; re-run `login` then `restart` |
-| 🔴`expired`      | Server rejected session ID (404); requires `restart`                                            |
+| 🔴`expired`      | Server rejected session ID (404, stateful servers only); requires `restart`                     |
 
 `mcpc` never removes sessions automatically — failed ones stay flagged with a recovery hint
-in the error message. Use `mcpc @apify restart` to kill the bridge and open a fresh
-`MCP-Session-Id`, or `mcpc @apify close` to remove the session entirely.
+in the error message. Use `mcpc @apify restart` to kill the bridge and open a fresh connection
+(with a fresh `MCP-Session-Id` on stateful servers), or `mcpc @apify close` to remove the
+session entirely.
 You can also remove dead sessions by running `mcpc clean`,
 and all sessions by running `mcpc clean all` (see [Cleanup](#cleanup)).
 
@@ -412,7 +429,7 @@ mcpc @apify tools-list
 ### OAuth profiles
 
 For OAuth-enabled remote MCP servers, `mcpc` implements the full OAuth 2.1 flow with PKCE as
-mandated by the [MCP authorization spec](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization):
+mandated by the [MCP authorization spec](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization):
 `WWW-Authenticate` 401 challenges, Protected Resource Metadata and authorization server metadata
 discovery, all three [client registration approaches](#client-registration-approaches),
 [resource indicators (RFC 8707)](https://www.rfc-editor.org/rfc/rfc8707), and automatic
@@ -462,7 +479,7 @@ mcpc logout mcp.apify.com --profile work
 ### Client registration approaches
 
 When logging in, `mcpc` supports all three OAuth client registration approaches defined in the
-[MCP authorization spec](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization#client-registration-approaches),
+[MCP authorization spec](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization#client-registration-approaches),
 picking the one the authorization server advertises in its OAuth metadata:
 
 | **Approach**                            | **`mcpc login` flags**                              |
@@ -494,7 +511,7 @@ mcpc login mcp.example.com --client-metadata-url https://example.com/my-client.j
 mcpc login mcp.example.com --no-client-metadata-url
 ```
 
-See the [MCP authorization spec](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization#client-registration-approaches)
+See the [MCP authorization spec](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization#client-registration-approaches)
 for details on each approach and the format of Client ID Metadata Documents.
 
 ### Authentication precedence
@@ -536,7 +553,8 @@ mcpc connect mcp.apify.com @apify --x402
 For stronger isolation, `mcpc` can expose an MCP session as a new local proxy MCP server using the `--proxy` option.
 The proxy forwards all MCP requests to the upstream server but **never exposes the original authentication tokens** to the client.
 This is useful when you want to give someone or something MCP access without revealing your credentials.
-See also [AI sandboxes](#ai-sandboxes).
+The proxy itself serves protocol `2025-11-25` to its clients, regardless of the protocol
+version negotiated with the upstream server. See also [AI sandboxes](#ai-sandboxes).
 
 ```bash
 # Human authenticates to a remote server
@@ -822,16 +840,17 @@ Where `mcpc` stands on each part of the MCP specification:
 
 | **Feature**                                          | **Status**                                                       |
 |:-----------------------------------------------------|:-----------------------------------------------------------------|
+| 📜 **Protocol version**                              | ✅ 2026-07-28 (auto-negotiated), falls back to 2025-11-25 or older |
 | 🔌 **Transport**                                     | ✅ stdio and Streamable HTTP                                      |
 | 🔑 [**Authorization**](#authentication)              | ✅ Bearer + OAuth 2.1 (client credentials, DCR, CIMD, auth code)  |
 | 🔄 [**Sessions**](#sessions)                         | ✅ Supported (with automatic keepalive)                           |
 | 📖 [**Server instructions**](#server-instructions)   | ✅ Supported                                                      |
 | 🔧 [**Tools**](#tools)                               | ✅ Supported (incl. list changed notifications)                   |
-| ⏳ [**Async tasks**](#async-tasks)                   | ✅ Supported                                                      |
+| ⏳ [**Async tasks**](#async-tasks)                   | ✅ Supported (2025-11-25 servers; 2026-07-28 tasks extension planned) |
 | 💬 [**Prompts**](#prompts)                           | ✅ Supported (incl. list changed notifications)                   |
 | 📦 [**Resources**](#resources)                       | ✅ Supported (incl. subscriptions and list changed notifications) |
 | 🧠 [**Skills**](#skills)                             | 🧪 Experimental (SEP-2640)                                       |
-| 📝 [**Logging**](#server-logs)                       | ✅ Supported (deprecated by MCP)                                  |
+| 📝 [**Logging**](#server-logs)                       | ⚠️ Deprecated (removed by MCP 2026-07-28)                         |
 | 🔔 [**Notifications**](#list-change-notifications)   | ✅ Supported                                                      |
 | 📄 [**Pagination**](#pagination)                     | ✅ Supported                                                      |
 | 🏓 [**Ping**](#ping)                                 | ✅ Supported                                                      |
@@ -847,6 +866,23 @@ extension) for non-interactive, machine-to-machine use such as CI/CD and daemons
 (or a private-key JWT assertion via `--client-key`, RFC 7523). Access tokens are fetched and
 refreshed automatically; pin a non-discoverable token endpoint with `--token-endpoint <url>`.
 
+It also covers **enterprise-managed authorization** (the
+[`io.modelcontextprotocol/enterprise-managed-authorization`](https://modelcontextprotocol.io/extensions/auth/enterprise-managed-authorization)
+extension, SEP-990) for organizations that control MCP server access centrally through their
+identity provider (e.g. Okta). You sign in once with corporate SSO, and mcpc then obtains MCP
+server tokens via identity assertion grants (ID-JAG) — no per-server consent screens:
+
+```bash
+mcpc login mcp.example.com --grant id-jag \
+  --idp https://acme.okta.com --idp-client-id <idp-client> \
+  --client-id <mcp-as-client> --client-secret <secret>
+```
+
+Both clients are pre-registered by your IT team: `--idp-client-id` at the enterprise IdP
+(add `--idp-client-secret` for confidential clients), `--client-id`/`--client-secret` at the
+MCP server's authorization server. The SSO session is kept alive with the IdP's refresh token;
+when it expires, affected sessions turn `unauthorized` with a re-login hint.
+
 #### Server instructions
 
 MCP servers can provide instructions describing their capabilities and usage. These are displayed when you connect to a server or show its session overview:
@@ -859,9 +895,13 @@ mcpc @apify
 mcpc @apify --json
 ```
 
-In [JSON mode](#json-mode), the resulting object adheres
-to [`InitializeResult`](https://modelcontextprotocol.io/specification/latest/schema#initializeresult) object schema,
-and includes the `_mcpc` field with relevant server/session metadata.
+In [JSON mode](#json-mode), the resulting object adheres to the schema of the server's
+handshake result — [`InitializeResult`](https://modelcontextprotocol.io/specification/2025-11-25/schema#initializeresult)
+on `2025-11-25` connections, [`DiscoverResult`](https://modelcontextprotocol.io/specification/2026-07-28/schema#discoverresult)
+on `2026-07-28` ones — and includes the `_mcpc` field with relevant server/session metadata.
+`protocolVersion` is always the version actually in use, while `supportedVersions` (every
+version the server offers) and `_meta` come from `server/discover` and are therefore absent
+on `2025-11-25` connections.
 
 ```json
 {
@@ -875,7 +915,8 @@ and includes the `_mcpc` field with relevant server/session metadata.
       "tools": { "listChangedAt": "2026-01-01T00:42:58.049Z" }
     }
   },
-  "protocolVersion": "2025-06-18",
+  "protocolVersion": "2026-07-28",
+  "supportedVersions": ["2026-07-28", "2025-11-25"],
   "capabilities": {
     "logging": {},
     "prompts": {},
@@ -886,7 +927,13 @@ and includes the `_mcpc` field with relevant server/session metadata.
     "name": "apify-mcp-server",
     "version": "1.0.0"
   },
-  "instructions": "Apify is the largest marketplace of tools for web scraping..."
+  "instructions": "Apify is the largest marketplace of tools for web scraping...",
+  "_meta": {
+    "io.modelcontextprotocol/serverInfo": {
+      "name": "apify-mcp-server",
+      "version": "1.0.0"
+    }
+  }
 }
 ```
 
@@ -976,7 +1023,9 @@ the resource to the file; afterwards the session bridge rewrites the file whenev
 sends a `notifications/resources/updated` notification for the URI (the bridge re-reads the
 resource, as the notification carries no content). Requires the server capability
 `resources.subscribe`; subscriptions are re-established automatically when the session
-reconnects or restarts, and are listed in `mcpc @session` output.
+reconnects or restarts, and are listed in `mcpc @session` output. On the wire, mcpc uses
+`resources/subscribe` on `2025-11-25` servers and a `subscriptions/listen` stream on
+`2026-07-28` servers (re-opened automatically if it drops) — the commands are identical.
 
 ```bash
 # Keep ./config.json in sync with the server resource
@@ -1024,7 +1073,13 @@ never executes hooks, scripts, or other frontmatter-declared behavior.
 #### List change notifications
 
 When connected via a [session](#sessions), `mcpc` automatically handles `list_changed`
-notifications for tools, resources, and prompts.
+notifications for tools, resources, and prompts. On `2025-11-25` servers these arrive as
+unsolicited notifications; on `2026-07-28` servers (where unsolicited notifications no
+longer exist) the session bridge opts in by opening a `subscriptions/listen` stream at
+connect and re-opens it automatically if it drops — the behavior is identical from the
+outside. As a safety net on `2026-07-28` connections, the bridge's tools cache also
+expires after 60 seconds, so a missed notification can never leave `tools-list` or
+[`grep`](#grep-search-across-sessions) stale for long.
 The bridge process tracks when each notification type was last received.
 The timestamps are available in the JSON output of `mcpc @session --json` under the `_mcpc.notifications`
 field - see [Server instructions](#server-instructions).
@@ -1048,6 +1103,10 @@ mcpc @apify logging-set-level error
 Note that this sets the logging level on the **server side**.
 The actual log output depends on the server's implementation.
 
+> ⚠️ **Deprecated.** MCP `2026-07-28` removed `logging/setLevel`, so `logging-set-level` works
+> only on servers using protocol `2025-11-25` or older and will be removed in a future mcpc
+> release. Server log messages (`notifications/message`) are still recorded in the bridge log.
+
 #### Pagination
 
 MCP servers may return paginated results for list operations
@@ -1065,6 +1124,10 @@ Send a ping to check if a server connection is alive:
 mcpc @apify ping
 mcpc @apify ping --json
 ```
+
+Protocol version `2026-07-28` removed the `ping` request, so on servers using it `mcpc`
+sends a `server/discover` probe instead — same round trip, same liveness signal, and the
+command works identically on both protocol versions.
 
 #### Async tasks
 
@@ -1099,6 +1162,13 @@ completes.
 
 `tools-list` and `tools-get` show task support annotations per tool:
 `[task:optional]`, `[task:required]`, or `[task:forbidden]`.
+
+Task commands require a server that advertises the tasks capability and uses protocol
+`2025-11-25`. In `2026-07-28` tasks moved to the `io.modelcontextprotocol/tasks` extension,
+which `mcpc` does not support yet. When either is missing, `--task`/`--detach` and the
+`tasks-*` commands fail with an error explaining which of the two it is — they never fall
+back to a plain synchronous call, because the flags change the shape of the output and
+`--detach` callers would be left parsing a task ID that is not there.
 
 ## Configuration
 
