@@ -36,34 +36,19 @@ test_pass
 
 # Test: verify bridge process is running
 test_case "verify bridge process is running"
-if is_windows; then
-  if ! tasklist //FI "PID eq $original_pid" //NH 2>/dev/null | grep -q "$original_pid"; then
-    test_fail "bridge process should be running"
-    exit 1
-  fi
-else
-  if ! kill -0 "$original_pid" 2>/dev/null; then
-    test_fail "bridge process should be running"
-    exit 1
-  fi
+if ! process_is_running "$original_pid"; then
+  test_fail "bridge process should be running"
+  exit 1
 fi
 test_pass
 
 # Test: kill the bridge process
 test_case "kill bridge process"
 _kill_tree "$original_pid"
-# Wait for process to actually die
-sleep 1
-if is_windows; then
-  if tasklist //FI "PID eq $original_pid" //NH 2>/dev/null | grep -q "$original_pid"; then
-    test_fail "bridge process should have been killed"
-    exit 1
-  fi
-else
-  if kill -0 "$original_pid" 2>/dev/null; then
-    test_fail "bridge process should have been killed"
-    exit 1
-  fi
+# Poll until it is gone: a graceful stdio shutdown can take over a second
+if ! wait_for_process_exit "$original_pid"; then
+  test_fail "bridge process should have been killed"
+  exit 1
 fi
 test_pass
 

@@ -180,7 +180,7 @@ test_pass
 # Start a second server with no tools and no prompts
 MINIMAL_SERVER_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("",0)); print(s.getsockname()[1]); s.close()')
 cd "$PROJECT_ROOT"
-env PORT=$MINIMAL_SERVER_PORT NO_TOOLS=true NO_PROMPTS=true npx tsx test/e2e/server/index.ts >"$_TEST_RUN_DIR/minimal-server.log" 2>&1 &
+env PORT=$MINIMAL_SERVER_PORT NO_TOOLS=true NO_PROMPTS=true $TSX test/e2e/server/index.ts >"$_TEST_RUN_DIR/minimal-server.log" 2>&1 &
 _MINIMAL_SERVER_PID=$!
 # Wait for it to be ready
 waited=0
