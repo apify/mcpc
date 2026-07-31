@@ -35,8 +35,6 @@ import { clean } from './commands/clean.js';
 import { MCPC_OAUTH_CALLBACK_HOSTS, MCPC_OAUTH_CALLBACK_PORTS } from '../lib/auth/oauth-utils.js';
 import type { OutputMode, X402SchemePreference } from '../lib/index.js';
 import { X402_SCHEME_PREFERENCES } from '../lib/index.js';
-// Imported directly (not via the core barrel) so the CLI doesn't eagerly load the MCP SDK
-import { SUPPORTED_PROTOCOL_VERSIONS } from '../core/protocol.js';
 import {
   extractOptions,
   preProcessX402Argv,
@@ -514,11 +512,9 @@ ${chalk.bold('Stdio servers (command-based, run locally):')}
   stdio by default; pass --stdio to include them.
 
 ${chalk.bold('Protocol version:')}
-  mcpc negotiates MCP 2026-07-28 with servers that support it and falls
-  back to older versions (2025-11-25 down to 2024-10-07) automatically.
-  Pass --protocol-version to pin one exact version instead — the connection
-  fails if the server does not support it. Supported values:
-  ${SUPPORTED_PROTOCOL_VERSIONS.join(', ')}.
+  mcpc negotiates the newest MCP version both sides support, from
+  2026-07-28 down to 2024-10-07. Pass --protocol-version to pin one exact
+  version instead — the connection fails if the server does not offer it.
   Run mcpc @session to see the negotiated version.
 
 ${chalk.bold('x402 payments (experimental):')}
