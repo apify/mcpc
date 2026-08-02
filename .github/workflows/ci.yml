@@ -31,6 +31,13 @@ jobs:
       - name: Build
         run: pnpm run build
 
+      - name: Check REFERENCE.md is up to date
+        # REFERENCE.md is captured from the CLI's own --help output, so any change to
+        # help text has to be regenerated and committed with it. Node version does not
+        # affect the output, so one column of the matrix is enough.
+        if: matrix.node-version == 24
+        run: pnpm run check:reference
+
       - name: Unit tests
         run: pnpm run test:unit
 

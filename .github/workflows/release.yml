@@ -121,6 +121,10 @@ jobs:
         if: inputs.type == 'release'
         run: pnpm run build:readme
 
+      - name: Update REFERENCE.md
+        if: inputs.type == 'release'
+        run: pnpm run build:reference
+
       - name: Report install size
         id: install-size
         # Measures the tarball/unpacked/full-install size of what will be
@@ -288,7 +292,7 @@ jobs:
           NEW_VERSION="${{ steps.release.outputs.version }}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package.json pnpm-lock.yaml CHANGELOG.md README.md
+          git add package.json pnpm-lock.yaml CHANGELOG.md README.md REFERENCE.md
           git commit -m "v${NEW_VERSION}"
           git tag -a "v${NEW_VERSION}" -m "Release v${NEW_VERSION}"
           git push origin main
