@@ -162,6 +162,7 @@ JSON output (--json):
   `[{ protocolVersion?, supportedVersions?, capabilities?, serverInfo?, instructions?, _meta?, toolNames?, _mcpc: { ... } }]`
   Schema: https://modelcontextprotocol.io/specification/2025-11-25/schema#initializeresult
           https://modelcontextprotocol.io/specification/2026-07-28/schema#discoverresult
+  Secrets in `server` (`headers`, `env`) are always shown as "<redacted>".
 ```
 
 ## `mcpc close`
@@ -196,6 +197,7 @@ JSON output (--json):
   `{ protocolVersion?, supportedVersions?, capabilities?, serverInfo?, instructions?, _meta?, toolNames?, _mcpc: { ... } }`
   Schema: https://modelcontextprotocol.io/specification/2025-11-25/schema#initializeresult
           https://modelcontextprotocol.io/specification/2026-07-28/schema#discoverresult
+  Secrets in `server` (`headers`, `env`) are always shown as "<redacted>".
 ```
 
 ## `mcpc login`
@@ -510,6 +512,7 @@ JSON output (--json):
   `{ protocolVersion?, supportedVersions?, capabilities?, serverInfo?, instructions?, _meta?, toolNames?, _mcpc: { ... } }`
   Schema: https://modelcontextprotocol.io/specification/2025-11-25/schema#initializeresult
           https://modelcontextprotocol.io/specification/2026-07-28/schema#discoverresult
+  Secrets in `server` (`headers`, `env`) are always shown as "<redacted>".
 ```
 
 ### `mcpc @<session> close`
@@ -544,6 +547,7 @@ JSON output (--json):
   `{ protocolVersion?, supportedVersions?, capabilities?, serverInfo?, instructions?, _meta?, toolNames?, _mcpc: { ... } }`
   Schema: https://modelcontextprotocol.io/specification/2025-11-25/schema#initializeresult
           https://modelcontextprotocol.io/specification/2026-07-28/schema#discoverresult
+  Secrets in `server` (`headers`, `env`) are always shown as "<redacted>".
 ```
 
 ### `mcpc @<session> grep`

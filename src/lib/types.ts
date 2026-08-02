@@ -172,7 +172,7 @@ export interface SessionNotifications {
  */
 export interface SessionData {
   name: string;
-  server: ServerConfig; // Transport configuration (header values redacted to "<redacted>")
+  server: ServerConfig; // Transport configuration (header and env values redacted to "<redacted>")
   profileName?: string; // Name of auth profile (for OAuth servers)
   /**
    * x402 auto-payment scheme preference. Presence enables x402 for the session;
@@ -381,6 +381,10 @@ export interface AuthCredentials {
   idJag?: IdJagCredentials;
   // HTTP headers (from --header flags, stored in keychain)
   headers?: Record<string, string>;
+  // Environment variables for a stdio server (from the config entry's `env`, stored in
+  // keychain). Sent over IPC rather than on the bridge's command line so resolved
+  // secrets never show up in `ps` output — same treatment as headers.
+  env?: Record<string, string>;
   // Bearer token the bridge's proxy server requires (from --proxy-bearer-token).
   // Read by the CLI before spawn and delivered via IPC so the bridge never reads it
   // from the keychain itself — keeping the bridge's only keychain access on the

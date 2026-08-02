@@ -9,6 +9,7 @@ import { homedir, tmpdir } from 'os';
 import { join, resolve, isAbsolute } from 'path';
 import { mkdir, access, constants, rename, lstat, chmod } from 'fs/promises';
 import { ClientError, ServerError } from './errors.js';
+import type { ServerConfig } from './types.js';
 
 /**
  * Safety cap on pages fetched by fetchAllPages(). Generous — real servers
@@ -607,21 +608,35 @@ export function generateRequestId(): string {
 }
 
 /**
- * Sentinel value used to replace sensitive header values when storing in sessions.json
+ * Sentinel value used to replace sensitive values when storing in sessions.json
  */
-export const REDACTED_HEADER_VALUE = '<redacted>';
+export const REDACTED_VALUE = '<redacted>';
 
 /**
- * Redact header values for secure storage
- * Replaces all header values with "<redacted>" sentinel
+ * Redact a record of sensitive values for secure storage
+ * Replaces all values with the "<redacted>" sentinel, keeping the keys
  */
-export function redactHeaders(headers: Record<string, string>): Record<string, string> {
-  if (Object.keys(headers).length === 0) return headers;
+export function redactValues(record: Record<string, string>): Record<string, string> {
+  if (Object.keys(record).length === 0) return record;
   const redacted: Record<string, string> = {};
-  for (const key of Object.keys(headers)) {
-    redacted[key] = REDACTED_HEADER_VALUE;
+  for (const key of Object.keys(record)) {
+    redacted[key] = REDACTED_VALUE;
   }
   return redacted;
+}
+
+/**
+ * Redact every secret-bearing part of a server config: HTTP `headers` and stdio `env`.
+ * Both routinely carry credentials — `env` values come from `${VAR}` substitution in
+ * mcp.json — so neither is ever written to sessions.json or printed in `--json` output.
+ * The real values live in the OS keychain and reach the bridge over IPC.
+ */
+export function redactServerConfigSecrets<T extends ServerConfig>(config: T): T {
+  return {
+    ...config,
+    ...(config.headers && { headers: redactValues(config.headers) }),
+    ...(config.env && { env: redactValues(config.env) }),
+  };
 }
 
 /**

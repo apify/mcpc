@@ -233,6 +233,8 @@ const oauthIdJagAccount = (serverUrl: string, profileName: string): string =>
 
 const sessionHeadersAccount = (sessionName: string): string => `session:${sessionName}:headers`;
 
+const sessionEnvAccount = (sessionName: string): string => `session:${sessionName}:env`;
+
 const proxyBearerTokenAccount = (sessionName: string): string =>
   `session:${sessionName}:proxy-bearer-token`;
 
@@ -416,6 +418,35 @@ export async function readKeychainSessionHeaders(
 export async function removeKeychainSessionHeaders(sessionName: string): Promise<boolean> {
   logger.debug(`Deleting headers for session ${sessionName}`);
   return keychainDelete(sessionHeadersAccount(sessionName));
+}
+
+/**
+ * Store stdio environment variables for a session. Treated as secrets: config `env`
+ * values commonly hold API tokens (directly or via `${VAR}` substitution).
+ */
+export async function storeKeychainSessionEnv(
+  sessionName: string,
+  env: Record<string, string>
+): Promise<void> {
+  logger.debug(`Storing env variables for session ${sessionName}`);
+  await keychainSet(sessionEnvAccount(sessionName), JSON.stringify(env));
+}
+
+/** Read stdio environment variables for a session. */
+export async function readKeychainSessionEnv(
+  sessionName: string
+): Promise<Record<string, string> | undefined> {
+  logger.debug(`Retrieving env variables for session ${sessionName}`);
+  return keychainGetParsed<Record<string, string>>(
+    sessionEnvAccount(sessionName),
+    'session env variables'
+  );
+}
+
+/** Delete stdio environment variables for a session. */
+export async function removeKeychainSessionEnv(sessionName: string): Promise<boolean> {
+  logger.debug(`Deleting env variables for session ${sessionName}`);
+  return keychainDelete(sessionEnvAccount(sessionName));
 }
 
 /** Store the bearer token used to authenticate requests to the proxy server. */

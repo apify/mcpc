@@ -276,7 +276,7 @@ Implements [MCP security best practices](https://modelcontextprotocol.io/specifi
 
 - Credentials stored in OS keychain (encrypted by system), with `0600` fallback file
 - No credentials logged even in verbose mode — only log presence/absence (e.g., `refreshToken: present`)
-- Headers sent to bridge via IPC after socket connect, never as command-line arguments (visible in `ps`)
+- Headers and stdio `env` values sent to bridge via IPC after socket connect, never as command-line arguments (visible in `ps`)
 - `sessions.json` and `profiles.json` file permissions: `0600` (user-only)
 
 **Transport security:**
@@ -307,7 +307,7 @@ When making changes, follow these rules to maintain the security posture:
 - Always use `ensureDir()` for creating directories (defaults to `0700`); use `mode: 0o600` for files containing secrets
 - Use `execFile()` (array args) instead of `exec()` (shell string) when spawning processes
 - Escape any user-controlled or server-controlled data before embedding in HTML responses
-- Send sensitive data (headers, tokens) via IPC socket, never via CLI arguments or environment variables
+- Send sensitive data (headers, stdio `env` values, tokens) via IPC socket, never via CLI arguments or environment variables
 - Read all keychain values needed to start a bridge in the CLI **before** `spawn()`. After spawn the bridge arms a short IPC-credential timeout; on macOS a Keychain password dialog can block longer than that timeout, so a post-spawn keychain read races the bridge timer and causes ENOENT (#55). The CLI is the only process attached to a TTY and can show the dialog without the user wondering why a background process is asking. Bridge-side keychain access is permitted only on the OAuth token refresh paths (the `oauth-token-manager` callbacks and the id-jag provider callbacks in `src/bridge/index.ts`), where it is needed to persist rotated refresh tokens for long-running sessions
 - Validate and sanitize all external input (URLs, session names, profile names) before use
 - Default to HTTPS; only allow HTTP for localhost/127.0.0.1
@@ -468,7 +468,8 @@ Environment variable substitution supported: `${VAR_NAME}`
 
 - Bearer tokens passed via `--header "Authorization: Bearer ${TOKEN}"` are NOT stored as profiles
 - All session headers are stored in the OS keychain as one JSON blob per session (keychain account: `session:<name>:headers`)
-- Bridge loads them automatically when making requests (delivered over IPC after spawn, never via argv)
+- A stdio server's `env` values get the same treatment (keychain account: `session:<name>:env`) — config `env` routinely holds API tokens, directly or via `${VAR}` substitution
+- Bridge loads both automatically when connecting (delivered over IPC after spawn, never via argv)
 
 **CLI Commands:**
 
@@ -576,7 +577,8 @@ On failure, the error message includes instructions on how to login. This ensure
 // Account: auth-profile:mcp.apify.com:personal:tokens
 // Value: {"access_token": "...", "refresh_token": "...", "expires_at": ...}
 // Other accounts: auth-profile:<host>:<profile>:client (registered OAuth client),
-// session:<name>:headers (per-session headers), session:<name>:proxy-bearer-token
+// session:<name>:headers (per-session headers), session:<name>:env (stdio env vars),
+// session:<name>:proxy-bearer-token
 ```
 
 ## State and Data Storage

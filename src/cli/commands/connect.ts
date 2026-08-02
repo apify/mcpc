@@ -14,7 +14,8 @@ import {
   generateSessionName,
   normalizeServerUrl,
   validateProfileName,
-  redactHeaders,
+  redactValues,
+  redactServerConfigSecrets,
   AuthError,
   ClientError,
   isAuthenticationError,
@@ -47,6 +48,7 @@ import {
 import { startBridge, StartBridgeOptions, stopBridge } from '../../lib/bridge-manager.js';
 import {
   storeKeychainSessionHeaders,
+  storeKeychainSessionEnv,
   storeKeychainProxyBearerToken,
 } from '../../lib/auth/keychain.js';
 import { getWallet } from '../../lib/wallets.js';
@@ -152,7 +154,7 @@ type ConnectSessionOptions = {
 
 /**
  * Connect to a session via the bridge and build a populated ConnectResultEntry from its
- * server details and tools list. The entry's `_mcpc.server` headers are redacted.
+ * server details and tools list. The entry's `_mcpc.server` headers and env are redacted.
  */
 async function buildConnectResultEntry(
   sessionName: string,
@@ -177,12 +179,7 @@ async function buildConnectResultEntry(
       const tools = (await client.listAllTools()).tools;
 
       const server: ServerConfig | undefined = context.serverConfig
-        ? {
-            ...context.serverConfig,
-            ...(context.serverConfig.headers && {
-              headers: redactHeaders(context.serverConfig.headers),
-            }),
-          }
+        ? redactServerConfigSecrets(context.serverConfig)
         : undefined;
 
       return {
@@ -374,6 +371,17 @@ export async function connectSession(
     await storeKeychainSessionHeaders(name, headers);
   }
 
+  // Same for a stdio server's env variables: they routinely hold API tokens (directly or
+  // via `${VAR}` substitution in the config file), so they go to the keychain too
+  let env: Record<string, string> | undefined;
+  if (serverConfig.env && Object.keys(serverConfig.env).length > 0) {
+    env = { ...serverConfig.env };
+    logger.debug(
+      `Storing ${Object.keys(env).length} env variables for session ${name} in keychain`
+    );
+    await storeKeychainSessionEnv(name, env);
+  }
+
   // Store proxy bearer token in keychain (if provided)
   if (options.proxyBearerToken) {
     logger.debug(`Storing proxy bearer token for session ${name} in keychain`);
@@ -390,12 +398,13 @@ export async function connectSession(
   }
 
   // Create or update session record (without pid - that comes from startBridge)
-  // Store serverConfig with headers redacted (actual values in keychain)
+  // Store serverConfig with headers and env redacted (actual values in keychain)
   const isReconnect = !!existingSession;
-  const { headers: _originalHeaders, ...baseTransportConfig } = serverConfig;
+  const { headers: _originalHeaders, env: _originalEnv, ...baseTransportConfig } = serverConfig;
   const sessionTransportConfig: ServerConfig = {
     ...baseTransportConfig,
-    ...(headers && { headers: redactHeaders(headers) }),
+    ...(headers && { headers: redactValues(headers) }),
+    ...(env && { env: redactValues(env) }),
   };
 
   const sessionUpdate: Parameters<typeof updateSession>[1] = {
@@ -429,6 +438,7 @@ export async function connectSession(
       serverConfig,
       verbose: options.verbose || false,
       ...(headers && { headers }),
+      ...(env && { env }),
       ...(profileName && { profileName }),
       ...(proxyConfig && { proxyConfig }),
       ...(options.x402 && { x402: options.x402 }),

@@ -135,6 +135,31 @@ describe('OS keychain available', () => {
     expect(await readKeychainSessionHeaders('s')).toEqual(headers);
   });
 
+  it('stores and retrieves session env variables', async () => {
+    const { storeKeychainSessionEnv, readKeychainSessionEnv } = await loadKeychain();
+
+    const env = { SECRET_TOKEN: 'sk_totally_fake_12345', DEBUG: 'mcp:*' };
+    await storeKeychainSessionEnv('s', env);
+    expect(await readKeychainSessionEnv('s')).toEqual(env);
+  });
+
+  it('keeps session env variables separate from session headers', async () => {
+    const {
+      storeKeychainSessionEnv,
+      storeKeychainSessionHeaders,
+      readKeychainSessionEnv,
+      readKeychainSessionHeaders,
+      removeKeychainSessionEnv,
+    } = await loadKeychain();
+
+    await storeKeychainSessionHeaders('s', { Authorization: 'Bearer tok' });
+    await storeKeychainSessionEnv('s', { SECRET_TOKEN: 'env-secret' });
+
+    expect(await removeKeychainSessionEnv('s')).toBe(true);
+    expect(await readKeychainSessionEnv('s')).toBeUndefined();
+    expect(await readKeychainSessionHeaders('s')).toEqual({ Authorization: 'Bearer tok' });
+  });
+
   it('stores and retrieves proxy bearer token', async () => {
     const { storeKeychainProxyBearerToken, readKeychainProxyBearerToken } = await loadKeychain();
 

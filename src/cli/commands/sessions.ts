@@ -10,7 +10,7 @@ import {
   OutputMode,
   isProcessAlive,
   getServerHost,
-  redactHeaders,
+  redactServerConfigSecrets,
   ClientError,
 } from '../../lib/index.js';
 import { DISCONNECTED_THRESHOLD_MILLIS } from '../../lib/types.js';
@@ -37,6 +37,7 @@ import {
   StartBridgeOptions,
   stopBridge,
   reconnectCrashedSessions,
+  resolveSessionEnv,
 } from '../../lib/bridge-manager.js';
 import chalk from 'chalk';
 import { createLogger } from '../../lib/logger.js';
@@ -326,13 +327,8 @@ export async function showServerDetails(
       // 2026-07-28 ones. `ServerDetails` reconciles the two — see its doc comment.
       // https://modelcontextprotocol.io/specification/2025-11-25/schema#initializeresult
       // https://modelcontextprotocol.io/specification/2026-07-28/schema#discoverresult
-      // Build _mcpc.server with redacted headers for security
-      const server: ServerConfig = {
-        ...context.serverConfig,
-        ...(context.serverConfig?.headers && {
-          headers: redactHeaders(context.serverConfig.headers),
-        }),
-      };
+      // Build _mcpc.server with redacted headers and env values for security
+      const server: ServerConfig = redactServerConfigSecrets({ ...context.serverConfig });
 
       // The bridge log path is useful debug context for callers — only meaningful for
       // session targets (those starting with "@"); ad-hoc URL/config targets have no
@@ -406,9 +402,11 @@ export async function restartSession(
     throw new ClientError(`Session ${name} has no server configuration`);
   }
 
-  // Load headers from keychain if present
+  // Load headers and stdio env variables from keychain if present. The copies in
+  // sessions.json only carry key names — their values are redacted.
   const { readKeychainSessionHeaders } = await import('../../lib/auth/keychain.js');
   const headers = await readKeychainSessionHeaders(name);
+  const env = await resolveSessionEnv(name, serverConfig.env);
 
   // Resolve auth profile: use stored profile, or auto-detect a "default" profile.
   // This handles the case where user creates a session without auth, then later runs
@@ -432,9 +430,10 @@ export async function restartSession(
   // the session ID, the session is marked as expired.
   const bridgeOptions: StartBridgeOptions = {
     sessionName: name,
-    serverConfig: { ...serverConfig, ...(headers && { headers }) },
+    serverConfig: { ...serverConfig, ...(headers && { headers }), ...(env && { env }) },
     verbose: options.verbose || false,
     ...(headers && { headers }),
+    ...(env && { env }),
     ...(profileName && { profileName }),
     ...(session.proxy && { proxyConfig: session.proxy }),
     ...(session.x402 && { x402: session.x402 }),
