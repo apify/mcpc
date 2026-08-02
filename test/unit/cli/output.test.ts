@@ -1061,6 +1061,38 @@ describe('formatServerDetails', () => {
     expect(output).toContain('This is the server instructions.');
   });
 
+  it('shows the description and website URL a server advertises in serverInfo', () => {
+    const details: ServerDetails = {
+      protocolVersion: '2025-11-25',
+      capabilities: { tools: {} },
+      serverInfo: {
+        name: 'Notion MCP',
+        version: '1.2.0',
+        description: "Notion's official MCP server.\nUse your workspace as a system of record.",
+        websiteUrl: 'https://developers.notion.com/docs/mcp',
+      },
+    };
+
+    const output = formatServerDetails(details, '@notion');
+
+    expect(output).toContain('Notion MCP (version: 1.2.0)');
+    expect(output).toContain("Notion's official MCP server.");
+    expect(output).toContain('Use your workspace as a system of record.');
+    expect(output).toContain('https://developers.notion.com/docs/mcp');
+  });
+
+  it('keeps the server line alone when no description or website URL is advertised', () => {
+    const details: ServerDetails = {
+      protocolVersion: '2025-11-25',
+      capabilities: { tools: {} },
+      serverInfo: { name: 'Bare Server', version: '1.0.0' },
+    };
+
+    const output = formatServerDetails(details, '@bare');
+
+    expect(output).toContain('Server: Bare Server (version: 1.0.0)\n\nCapabilities:');
+  });
+
   it('shows the MCP version with the transport and its connection mode', () => {
     const details: ServerDetails = {
       protocolVersion: '2026-07-28',
@@ -1436,6 +1468,25 @@ describe('formatDiscoverResult', () => {
     expect(output).toContain('Server instructions.');
     // Points at the session screen for the connection state and command inventory
     expect(output).toContain('mcpc @m');
+  });
+
+  it('shows the description and website URL from the advertised identity', () => {
+    const described = {
+      ...result,
+      _meta: {
+        'io.modelcontextprotocol/serverInfo': {
+          name: 'Modern Server',
+          version: '2.0.0',
+          description: 'A server that describes itself.',
+          websiteUrl: 'https://example.com/docs',
+        },
+      },
+    } as Parameters<typeof formatDiscoverResult>[0];
+
+    const output = formatDiscoverResult(described, '@m', '2026-07-28');
+
+    expect(output).toContain('A server that describes itself.');
+    expect(output).toContain('https://example.com/docs');
   });
 
   it('marks the version this session negotiated', () => {

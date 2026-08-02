@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - New [REFERENCE.md](REFERENCE.md) with the full `--help` output of every mcpc command, generated from the CLI itself so it always matches the release.
+- `mcpc @session` and `server-discover` now show the description and website URL a server advertises about itself, right below its name.
+
+### Fixed
+
+- `mcpc help tools/list` and other MCP method names now show the command's help instead of failing with "Unknown command" — they already worked as aliases everywhere else.
 
 ## [0.6.0] - 2026-08-02
 

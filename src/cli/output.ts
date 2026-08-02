@@ -897,7 +897,7 @@ export function formatResourceContents(
       lines.push(chalk.gray('(binary content not shown)'));
       lines.push(
         chalk.dim(
-          `  ↳ save to a file: mcpc ${target} resources-read ${item.uri || requestedUri} -o <file>`
+          `↳ save to a file: mcpc ${target} resources-read ${item.uri || requestedUri} -o <file>`
         )
       );
     } else {
@@ -1676,6 +1676,33 @@ function formatCapabilityList(
 }
 
 /**
+ * Format the server identity block: the name/version headline plus the optional
+ * `description` and `websiteUrl` a server may advertise in its `serverInfo`.
+ *
+ * Those two fields are the only human-readable statement of what the server actually is
+ * and where it is documented, so they belong next to the name instead of staying a
+ * `--json`-only detail. Both are optional — servers that omit them keep the single line.
+ * Long descriptions are printed verbatim and left to the terminal to wrap, like
+ * instructions and tool descriptions elsewhere in this file.
+ */
+function formatServerIdentity(serverInfo: Implementation): string[] {
+  const lines = [
+    chalk.bold('Server:') + ` ${serverInfo.name} (version: ${serverInfo.version || 'N/A'})`,
+  ];
+
+  const description = serverInfo.description?.trim();
+  if (description) {
+    lines.push(...description.split('\n').map((line) => chalk.gray(line)));
+  }
+
+  if (serverInfo.websiteUrl) {
+    lines.push(theme.cyan(serverInfo.websiteUrl));
+  }
+
+  return lines;
+}
+
+/**
  * Format the result of a live `server/discover` request (2026-07-28+).
  *
  * Deliberately narrower than {@link formatServerDetails}: it reports what the server just
@@ -1692,9 +1719,7 @@ export function formatDiscoverResult(
   const serverInfo = result._meta?.[SERVER_INFO_META_KEY] as Implementation | undefined;
 
   if (serverInfo) {
-    lines.push(
-      chalk.bold('Server:') + ` ${serverInfo.name} (version: ${serverInfo.version || 'N/A'})`
-    );
+    lines.push(...formatServerIdentity(serverInfo));
     lines.push('');
   }
 
@@ -1730,7 +1755,9 @@ export function formatDiscoverResult(
     lines.push('');
   }
 
-  lines.push(chalk.dim(`  ↳ session info and available commands: mcpc ${target}`));
+  // Plain footer rather than an indented "↳" hint: this block ends with the server's
+  // instructions, which can run for pages, so an indented arrow reads as part of them.
+  lines.push(chalk.dim(`For session info and available commands, run: mcpc ${target}`));
 
   return lines.join('\n');
 }
@@ -1769,9 +1796,7 @@ export function formatServerDetails(
 
   // Server info
   if (serverInfo) {
-    lines.push(
-      chalk.bold('Server:') + ` ${serverInfo.name} (version: ${serverInfo.version || 'N/A'})`
-    );
+    lines.push(...formatServerIdentity(serverInfo));
     lines.push('');
   }
 

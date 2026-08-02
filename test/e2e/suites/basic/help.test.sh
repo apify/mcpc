@@ -61,6 +61,16 @@ assert_not_contains "$STDOUT" "Mental model"
 assert_contains "$STDERR" "takes no command name"
 test_pass
 
+# Test: mcpc help accepts raw MCP method names, like the command slot itself does
+test_case "help resolves slash-style method names"
+run_mcpc help server/discover
+assert_success
+assert_contains "$STDOUT" "mcpc <@session> server-discover"
+run_mcpc help tools/list
+assert_success
+assert_contains "$STDOUT" "mcpc <@session> tools-list"
+test_pass
+
 # Test: --version shows version
 test_case "--version shows version"
 run_mcpc --version

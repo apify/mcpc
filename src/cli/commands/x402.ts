@@ -178,7 +178,7 @@ async function walletInfo(options: {
     } else {
       console.log(formatInfo('No wallet configured. Create one with: mcpc x402 init'));
       if (options.showUsageHint) {
-        console.log(chalk.dim('  For usage information, run: mcpc help x402'));
+        console.log(chalk.dim('For usage information, run: mcpc help x402'));
       }
     }
     return;
@@ -237,7 +237,7 @@ async function walletInfo(options: {
   await printAddressQrCode(wallet.address);
   if (options.showUsageHint) {
     console.log('');
-    console.log(chalk.dim('  For usage information, run: mcpc help x402'));
+    console.log(chalk.dim('For usage information, run: mcpc help x402'));
   }
 }
 

@@ -161,7 +161,7 @@ export async function listSessionsAndAuthProfiles(options: {
     // Display sessions
     if (sessions.length === 0) {
       console.log(chalk.bold('No active MCP sessions.'));
-      console.log(chalk.dim('  ↳ run: mcpc connect mcp.example.com @test'));
+      console.log(chalk.dim('↳ run: mcpc connect mcp.example.com @test'));
     } else {
       console.log(chalk.bold('MCP sessions:'));
       for (const session of sessions) {
@@ -202,7 +202,7 @@ export async function listSessionsAndAuthProfiles(options: {
     console.log('');
     if (profiles.length === 0) {
       console.log(chalk.bold('No OAuth profiles.'));
-      console.log(chalk.dim('  ↳ run: mcpc login mcp.example.com'));
+      console.log(chalk.dim('↳ run: mcpc login mcp.example.com'));
     } else {
       console.log(chalk.bold('Saved OAuth profiles:'));
       for (const profile of profiles) {

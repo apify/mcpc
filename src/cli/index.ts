@@ -929,6 +929,17 @@ ${jsonHelp('`[{ sessionName, tools?: Tool[], resources?: Resource[], prompts?: P
         return;
       }
 
+      // Raw MCP method names ("server/discover") are accepted wherever a command name
+      // is expected, so `help` must resolve them too — otherwise looking up the alias
+      // you just used successfully reports it as an unknown command.
+      const slashAlias = normalizeSlashCommand(cmdName);
+      if (
+        slashAlias !== cmdName &&
+        [...KNOWN_COMMANDS, ...KNOWN_SESSION_COMMANDS].includes(slashAlias)
+      ) {
+        cmdName = slashAlias;
+      }
+
       // x402 has its own Commander program with full subcommand help
       if (cmdName === 'x402') {
         const helpArgs = subcommand ? [subcommand, '--help'] : ['--help'];
@@ -1463,13 +1474,8 @@ ${jsonHelp('`{ success: true, durationMs: number }`')}`
       'after',
       `
 ${chalk.bold('Notes:')}
-  Sends \`server/discover\` and reports the answer: every protocol version the
-  server supports, its capabilities, instructions, and \`_meta\`. Unlike
-  \`mcpc ${session}\`, which shows what the connection settled on at connect time,
-  this is a live request.
-  MCP 2026-07-28 introduced the method, so the command fails on 2025-11-25 (and
-  older) connections, where \`initialize\` carries the same data — run
-  \`mcpc ${session}\` there instead.
+  A live \`server/discover\` request; \`mcpc ${session}\` shows the cached connect-time
+  answer instead — use it on 2025-11-25 (and older) connections, where this fails.
 ${jsonHelp(
   '`DiscoverResult` object, verbatim',
   '`{ supportedVersions: [...], capabilities: { ... }, instructions?, _meta? }`',

@@ -164,11 +164,13 @@ export async function subscribeResource(
     if (options.outputMode === 'human') {
       const mimeSuffix = result.mimeType ? `, ${result.mimeType}` : '';
       console.log(formatSuccess(`Subscribed to resource: ${uri}`));
-      console.log(`  Synced to ${result.file} (${result.bytes} bytes${mimeSuffix})`);
-      console.log(chalk.dim('  The file is updated automatically while the session is connected.'));
-      console.log(chalk.dim(`  ↳ check sync status: mcpc ${target}`));
+      console.log(`Synced to ${result.file} (${result.bytes} bytes${mimeSuffix})`);
+      console.log(chalk.dim('The file is updated automatically while the session is connected.'));
+      console.log(chalk.dim(`To check sync status, run: mcpc ${target}`));
       console.log(
-        chalk.dim(`  ↳ stop syncing (keeps the file): mcpc ${target} resources-unsubscribe ${uri}`)
+        chalk.dim(
+          `To stop syncing (keeps the file), run: mcpc ${target} resources-unsubscribe ${uri}`
+        )
       );
     } else {
       console.log(formatOutput({ subscribed: true, ...result }, 'json'));

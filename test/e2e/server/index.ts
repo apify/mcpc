@@ -182,6 +182,8 @@ function createMcpServer(): Server {
     {
       name: 'e2e-test-server',
       version: '1.0.0',
+      description: 'A fake MCP server that exists only to exercise the mcpc CLI.',
+      websiteUrl: 'https://example.com/e2e-test-server',
     },
     {
       capabilities,
