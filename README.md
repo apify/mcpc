@@ -189,6 +189,9 @@ Run "mcpc --json" to get the same data as `{ sessions: [...], profiles: [...] }`
 Agent guide: mcpc help --skill
 ```
 
+For the full `--help` output of every command, see [REFERENCE.md](REFERENCE.md)
+(also available in your terminal via `mcpc help <command>`).
+
 ### General actions
 
 With no arguments, `mcpc` lists all active sessions and saved OAuth profiles:

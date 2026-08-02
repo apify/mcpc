@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- New [REFERENCE.md](REFERENCE.md) with the full `--help` output of every mcpc command, generated from the CLI itself so it always matches the release.
+
 ## [0.6.0] - 2026-08-02
 
 ### Added
