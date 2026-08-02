@@ -29,7 +29,7 @@ If your change touches the user-facing CLI surface (commands, flags, argument sy
 or workflows), also update the built-in agent skill at [`skills/mcpc/SKILL.md`](./skills/mcpc/SKILL.md)
 (printed by `mcpc help --skill`) so it keeps matching the CLI and README.
 
-If your change touches any help text, regenerate [`REFERENCE.md`](./REFERENCE.md) with
+If your change touches any help text, regenerate [`docs/REFERENCE.md`](./docs/REFERENCE.md) with
 `pnpm run build:reference` and commit it — it is captured verbatim from `mcpc --help` and
 `mcpc help <command>`, and CI fails when it has drifted (`pnpm run check:reference`).
 
@@ -57,8 +57,8 @@ pnpm link --global
 mcpc --help
 ```
 
-As a supply-chain hardening measure, `pnpm-workspace.yaml` sets `minimumReleaseAge: 7200`, so newly
-published third-party packages aren't installed until they're at least 5 days old. If a fresh
+As a supply-chain hardening measure, `pnpm-workspace.yaml` sets `minimumReleaseAge: 4320`, so newly
+published third-party packages aren't installed until they're at least 3 days old. If a fresh
 dependency bump seems "stuck," that's why — wait it out, or add a targeted exclusion in
 `minimumReleaseAgeExclude` if you have a justified reason.
 

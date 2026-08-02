@@ -1,24 +1,13 @@
 # Supply-chain protection: require packages to be at least X days old before pnpm will install them.
 # Mitigates compromised npm packages discovered and yanked within the first day (shai-hulud worm,
-# nx self-replicator, etc.). 7200 minutes = 5 days.
-minimumReleaseAge: 7200
-
-# The MCP TypeScript SDK ships fast and mcpc tracks it closely (the
-# 2026-07-28 protocol support depends on the latest release), so exempt the SDK
-# packages from the release-age gate. Scoped to the official
-# @modelcontextprotocol org only; everything else keeps the 5-day quarantine.
-# Remove entries once the pinned version is older than the age limit.
+# nx self-replicator, etc.). 4320 minutes = 3 days.
 #
 # Note: pnpm 10 applies minimumReleaseAge only when *resolving*, and does not re-check an
 # existing lockfile on a --frozen-lockfile install (that landed in pnpm 11). The release
-# gate in scripts/check-dependency-age.mjs enforces it over the committed lockfile, and
-# holds the packages below to a 48-hour floor rather than exempting them outright.
-minimumReleaseAgeExclude:
-  - "@modelcontextprotocol/client"
-  - "@modelcontextprotocol/core"
-  - "@modelcontextprotocol/server"
-  - "@modelcontextprotocol/node"
-  - "@modelcontextprotocol/sdk"
+# gate in scripts/check-dependency-age.mjs enforces the same threshold over the committed
+# lockfile at release time. If a package ever needs a justified exemption, add it to
+# minimumReleaseAgeExclude — the release gate still holds excluded packages to a 48-hour floor.
+minimumReleaseAge: 4320
 
 # @napi-rs/keyring ships a native node binding that needs to be built/copied
 # into place on install. Without this entry pnpm v10 refuses to run its
