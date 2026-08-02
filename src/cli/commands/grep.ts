@@ -577,7 +577,7 @@ export async function grepAllSessions(pattern: string, options: GrepOptions): Pr
       );
     } else {
       console.log(chalk.bold('No active sessions.'));
-      console.log(chalk.dim('  \u21B3 run: mcpc connect mcp.example.com @test'));
+      console.log(chalk.dim('\u21B3 run: mcpc connect mcp.example.com @test'));
     }
     return 1;
   }

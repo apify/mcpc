@@ -897,7 +897,7 @@ export function formatResourceContents(
       lines.push(chalk.gray('(binary content not shown)'));
       lines.push(
         chalk.dim(
-          `  ↳ save to a file: mcpc ${target} resources-read ${item.uri || requestedUri} -o <file>`
+          `↳ save to a file: mcpc ${target} resources-read ${item.uri || requestedUri} -o <file>`
         )
       );
     } else {
