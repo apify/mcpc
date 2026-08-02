@@ -958,13 +958,8 @@ Options:
   --json  Output in JSON format
 
 Notes:
-  Sends `server/discover` and reports the answer: every protocol version the
-  server supports, its capabilities, instructions, and `_meta`. Unlike
-  `mcpc @<session>`, which shows what the connection settled on at connect time,
-  this is a live request.
-  MCP 2026-07-28 introduced the method, so the command fails on 2025-11-25 (and
-  older) connections, where `initialize` carries the same data — run
-  `mcpc @<session>` there instead.
+  A live `server/discover` request; `mcpc @<session>` shows the cached connect-time
+  answer instead — use it on 2025-11-25 (and older) connections, where this fails.
 
 JSON output (--json):
   `DiscoverResult` object, verbatim:
