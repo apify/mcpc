@@ -28,9 +28,9 @@ export async function ping(target: string, options: CommandOptions): Promise<voi
       // so a --verbose log or the server's access log shows server/discover instead.
       if (isModern) {
         console.log(
-          chalk.dim(`  MCP ${protocolVersion} has no ping request; probed with server/discover.`)
+          chalk.dim(`MCP ${protocolVersion} has no ping request; probed with server/discover.`)
         );
-        console.log(chalk.dim(`  ↳ see the full result: mcpc ${target} server-discover`));
+        console.log(chalk.dim(`↳ see the full result: mcpc ${target} server-discover`));
       }
     } else {
       console.log(

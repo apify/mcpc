@@ -180,6 +180,13 @@ assert_success
 assert_contains "$STDOUT" "e2e-test-server"
 test_pass
 
+test_case "server info contains the advertised description and website"
+run_mcpc "$SESSION"
+assert_success
+assert_contains "$STDOUT" "A fake MCP server that exists only to exercise the mcpc CLI."
+assert_contains "$STDOUT" "https://example.com/e2e-test-server"
+test_pass
+
 test_case "server info contains capabilities"
 run_mcpc "$SESSION"
 assert_success
