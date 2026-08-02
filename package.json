@@ -32,6 +32,8 @@
     "build": "tsc && node scripts/bundle-viem.mjs",
     "build:watch": "tsc --watch",
     "build:readme": "./scripts/update-readme.sh",
+    "build:reference": "node scripts/generate-reference.mjs",
+    "check:reference": "node scripts/generate-reference.mjs --check",
     "test": "pnpm run build && pnpm run test:unit && ./test/e2e/run.sh --no-build --parallel 8 && ./test/e2e/run.sh --no-build --parallel 8 --server-protocol modern && ./test/e2e/run.sh --no-build --parallel 8 --runtime bun",
     "test:unit": "vitest run",
     "test:watch": "vitest",

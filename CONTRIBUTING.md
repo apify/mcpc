@@ -29,6 +29,10 @@ If your change touches the user-facing CLI surface (commands, flags, argument sy
 or workflows), also update the built-in agent skill at [`skills/mcpc/SKILL.md`](./skills/mcpc/SKILL.md)
 (printed by `mcpc help --skill`) so it keeps matching the CLI and README.
 
+If your change touches any help text, regenerate [`REFERENCE.md`](./REFERENCE.md) with
+`pnpm run build:reference` and commit it — it is captured verbatim from `mcpc --help` and
+`mcpc help <command>`, and CI fails when it has drifted (`pnpm run check:reference`).
+
 ## Development setup
 
 This repo uses [pnpm](https://pnpm.io/) 10 (pinned via `packageManager` in `package.json`). If you
@@ -115,8 +119,8 @@ pnpm run release:major    # major version bump (0.1.2 → 1.0.0)
 
 The script validates preconditions locally (clean branch, up-to-date with `origin/main`, dependency
 age), then triggers the `release.yml` GitHub Actions workflow which handles lint, build, test, version
-bump, changelog update, README update, git commit/tag/push, npm publish (with provenance), and
-GitHub release creation.
+bump, changelog update, README and REFERENCE update, git commit/tag/push, npm publish (with
+provenance), and GitHub release creation.
 
 ## Architecture
 
