@@ -12,7 +12,7 @@ that maps every MCP operation to an intuitive shell command.
 
 Use it to manually inspect and debug MCP servers, to script repeatable MCP workflows in plain shell, or to
 give AI agents the full MCP protocol through a single `Bash()` tool call, so they can interact with any MCP
-server and its latest capabilities using the most universal interface there is: the UNIX shell.
+server and its latest capabilities using the most universal programming interface there is: the UNIX shell.
 
 **Key features:**
 
