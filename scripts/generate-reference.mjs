@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Generates REFERENCE.md — the `--help` output of every mcpc command, in the order
+ * Generates docs/REFERENCE.md — the `--help` output of every mcpc command, in the order
  * the commands appear in `mcpc --help`.
  *
  * The CLI's help text is mcpc's primary documentation surface (see CLAUDE.md), so the
@@ -9,8 +9,8 @@
  * committed file has drifted from the CLI.
  *
  * Usage:
- *   node scripts/generate-reference.mjs          Write REFERENCE.md
- *   node scripts/generate-reference.mjs --check  Verify REFERENCE.md is up to date
+ *   node scripts/generate-reference.mjs          Write docs/REFERENCE.md
+ *   node scripts/generate-reference.mjs --check  Verify docs/REFERENCE.md is up to date
  */
 
 import { execFileSync } from 'node:child_process';
@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 
 const PROJECT_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const CLI = join(PROJECT_ROOT, 'bin', 'mcpc');
-const OUTPUT_FILE = join(PROJECT_ROOT, 'REFERENCE.md');
+const OUTPUT_FILE = join(PROJECT_ROOT, 'docs', 'REFERENCE.md');
 
 /**
  * Placeholder session name used for the session command help screens. The CLI accepts it
@@ -205,7 +205,7 @@ Complete \`--help\` output for every \`mcpc\` command, in the order the commands
 by \`mcpc --help\`. It is generated from the CLI itself, so it always matches the installed
 version — run \`mcpc help <command>\` to get the same text in your terminal.
 
-New to mcpc? Start with the [README](README.md), or run \`mcpc help --skill\` for the agent guide.
+New to mcpc? Start with the [README](../README.md), or run \`mcpc help --skill\` for the agent guide.
 
 ${toc}
 
@@ -226,13 +226,13 @@ if (checkOnly) {
   const current = existsSync(OUTPUT_FILE) ? readFileSync(OUTPUT_FILE, 'utf8') : '';
   if (current !== generated) {
     console.error(
-      'ERROR: REFERENCE.md is out of date with the CLI help output.\n' +
+      'ERROR: docs/REFERENCE.md is out of date with the CLI help output.\n' +
         '       Run "pnpm run build:reference" and commit the result.'
     );
     process.exit(1);
   }
-  console.log('REFERENCE.md is up to date.');
+  console.log('docs/REFERENCE.md is up to date.');
 } else {
   writeFileSync(OUTPUT_FILE, generated);
-  console.log(`REFERENCE.md updated (${generated.split('\n').length} lines).`);
+  console.log(`docs/REFERENCE.md updated (${generated.split('\n').length} lines).`);
 }

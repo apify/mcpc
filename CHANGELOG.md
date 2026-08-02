@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- New [REFERENCE.md](REFERENCE.md) with the full `--help` output of every mcpc command, generated from the CLI itself so it always matches the release.
+- New [REFERENCE.md](docs/REFERENCE.md) with the full `--help` output of every mcpc command, generated from the CLI itself so it always matches the release.
 - `mcpc @session` and `server-discover` now show the description and website URL a server advertises about itself, right below its name.
 
 ### Fixed

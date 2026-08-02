@@ -161,7 +161,7 @@ mcpc/
 - `mcpc clean [sessions|profiles|logs|all ...]` - Clean up mcpc data
 - `mcpc help [command]` - Show help for a specific command (`--skill` prints the agent guide)
 
-Run `mcpc --help` and `mcpc help <command>` for the authoritative, always-current inventory — the usage block in README.md and the whole of REFERENCE.md are generated from it.
+Run `mcpc --help` and `mcpc help <command>` for the authoritative, always-current inventory — the usage block in README.md and the whole of docs/REFERENCE.md are generated from it.
 
 **Server formats for `connect`, `login`, `logout`:**
 
@@ -638,7 +638,7 @@ For any non-trivial change (new feature, bug fix, behaviour change, or notable r
 
 Whenever a change touches the user-facing CLI surface — adding, renaming, or removing commands or flags, changing argument syntax, defaults, session states, or workflows — check the agent skill at `skills/mcpc/SKILL.md` (printed by `mcpc help --skill`) and update it so it keeps matching the actual CLI behaviour and README. The skill is a curated guide, not an exhaustive reference: it must never contradict the CLI, but it doesn't need to enumerate every flag — keep it concise and only add features that matter to agents. Purely internal changes don't need a skill update; as a rule of thumb, any change that warrants a `CHANGELOG.md` entry also warrants a quick skill check.
 
-Any change to help text — a description, an option, an `addHelpText` section, a new command — also changes `REFERENCE.md`, which is captured verbatim from `mcpc --help` and `mcpc help <command>`. Never edit it by hand: run `pnpm run build:reference` and commit the result. CI runs `pnpm run check:reference` and fails when the committed file has drifted from the CLI, so this is not optional.
+Any change to help text — a description, an option, an `addHelpText` section, a new command — also changes `docs/REFERENCE.md`, which is captured verbatim from `mcpc --help` and `mcpc help <command>`. Never edit it by hand: run `pnpm run build:reference` and commit the result. CI runs `pnpm run check:reference` and fails when the committed file has drifted from the CLI, so this is not optional.
 
 Keep the MCP conformance tests up to date the same way you keep the e2e tests up to date. Whenever a change touches protocol behaviour, the OAuth/authentication flows, or transport handling, check `test/conformance/` in the same PR: update the adapter (`test/conformance/client.mjs`) if the change alters what a scenario observes, and wire up a matching upstream scenario when a new feature has one. Run the affected scenario locally before finishing — see `test/conformance/README.md` for the command, the current coverage table, and the list of scenarios that are not covered yet. A deliberate behaviour change that breaks the adapter must be fixed in the PR that makes the change, not discovered later when a release is gated on it.
 
