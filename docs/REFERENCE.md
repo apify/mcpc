@@ -6,7 +6,7 @@ Complete `--help` output for every `mcpc` command, in the order the commands are
 by `mcpc --help`. It is generated from the CLI itself, so it always matches the installed
 version — run `mcpc help <command>` to get the same text in your terminal.
 
-New to mcpc? Start with the [README](README.md), or run `mcpc help --skill` for the agent guide.
+New to mcpc? Start with the [README](../README.md), or run `mcpc help --skill` for the agent guide.
 
 - [`mcpc connect`](#mcpc-connect)
 - [`mcpc close`](#mcpc-close)
