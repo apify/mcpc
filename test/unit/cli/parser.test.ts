@@ -13,6 +13,7 @@ import {
   suggestCommand,
   normalizeSlashCommand,
   normalizeSlashCommandArgs,
+  preProcessSkillArgv,
   preProcessX402Argv,
 } from '../../../src/cli/parser.js';
 import { ClientError } from '../../../src/lib/errors.js';
@@ -732,5 +733,56 @@ describe('preProcessX402Argv', () => {
     expect(
       preProcessX402Argv([...head, '--x402', 'mcp.apify.com', 'other', '--x402', 'exact'])
     ).toEqual([...head, '--x402=auto', 'mcp.apify.com', 'other', '--x402', 'exact']);
+  });
+});
+
+describe('preProcessSkillArgv', () => {
+  // Mirrors process.argv where indices 0 and 1 are node + script path.
+  const head = ['node', 'mcpc'];
+
+  it('rewrites bare `--skill` into `help --skill`', () => {
+    expect(preProcessSkillArgv([...head, '--skill'])).toEqual([...head, 'help', '--skill']);
+  });
+
+  it('keeps global flags around the rewritten command', () => {
+    expect(preProcessSkillArgv([...head, '--verbose', '--skill'])).toEqual([
+      ...head,
+      'help',
+      '--verbose',
+      '--skill',
+    ]);
+    expect(preProcessSkillArgv([...head, '--skill', '--timeout', '5'])).toEqual([
+      ...head,
+      'help',
+      '--skill',
+      '--timeout',
+      '5',
+    ]);
+  });
+
+  it('leaves `help --skill` untouched', () => {
+    expect(preProcessSkillArgv([...head, 'help', '--skill'])).toEqual([...head, 'help', '--skill']);
+  });
+
+  it('leaves argv with any other positional untouched', () => {
+    expect(preProcessSkillArgv([...head, '@s', '--skill'])).toEqual([...head, '@s', '--skill']);
+    expect(preProcessSkillArgv([...head, '--skill', 'connect'])).toEqual([
+      ...head,
+      '--skill',
+      'connect',
+    ]);
+  });
+
+  it('lets `--help` win over `--skill`', () => {
+    expect(preProcessSkillArgv([...head, '--skill', '--help'])).toEqual([
+      ...head,
+      '--skill',
+      '--help',
+    ]);
+    expect(preProcessSkillArgv([...head, '-h', '--skill'])).toEqual([...head, '-h', '--skill']);
+  });
+
+  it('leaves argv without `--skill` untouched', () => {
+    expect(preProcessSkillArgv([...head, 'help'])).toEqual([...head, 'help']);
   });
 });
