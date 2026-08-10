@@ -174,7 +174,7 @@ async function getOrSignPayment(
   paymentCache: X402PaymentCache,
   schemePreference?: SchemePreference
 ): Promise<string | undefined> {
-  if (!getToolByName || !init?.body) {
+  if (!init?.body) {
     return undefined;
   }
 
@@ -186,6 +186,18 @@ async function getOrSignPayment(
   // Parse the request body to find tools/call requests
   const toolName = extractToolCallName(init.body);
   if (!toolName) {
+    return undefined;
+  }
+
+  // The bridge can populate this cache after receiving a payment-required
+  // CallToolResult. That retry must not depend on proactive tools/list metadata:
+  // challenge-first servers may omit _meta.x402 entirely.
+  if (paymentCache.signature) {
+    logger.debug(`Using cached payment signature for tool "${toolName}"`);
+    return paymentCache.signature;
+  }
+
+  if (!getToolByName) {
     return undefined;
   }
 
@@ -201,12 +213,6 @@ async function getOrSignPayment(
   const x402 = meta?.x402;
   if (!x402 || !x402.paymentRequired) {
     return undefined;
-  }
-
-  // Return cached signature if available
-  if (paymentCache.signature) {
-    logger.debug(`Using cached payment signature for tool "${toolName}"`);
-    return paymentCache.signature;
   }
 
   const accept = selectAcceptFromToolMeta(x402, schemePreference);
