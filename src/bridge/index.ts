@@ -1309,13 +1309,17 @@ class BridgeProcess {
    * Returns { handled: false } if the result is not a payment-required response.
    */
   private async handlePaymentRequiredRetry(
+    toolName: string,
     toolResult: unknown,
     retryFn: () => Promise<unknown>
   ): Promise<{ handled: true; result: unknown } | { handled: false }> {
     if (!this.x402Wallet) return { handled: false };
 
-    const { extractPaymentRequiredFromResult, extractAcceptFromPaymentRequired } =
-      await import('../lib/x402/fetch-middleware.js');
+    const {
+      extractPaymentRequiredFromResult,
+      extractAcceptFromPaymentRequired,
+      recordPaymentRequiredTool,
+    } = await import('../lib/x402/fetch-middleware.js');
     const paymentRequired = extractPaymentRequiredFromResult(toolResult);
     if (!paymentRequired) return { handled: false };
 
@@ -1326,6 +1330,10 @@ class BridgeProcess {
     }
 
     logger.debug('Payment-required tool result received, signing fresh payment and retrying...');
+
+    // The challenge is the only proof that this tool is paid on servers that advertise no
+    // _meta.x402 — without it the middleware would leave the retry unpaid (#365)
+    recordPaymentRequiredTool(this.x402PaymentCache, toolName);
 
     // Invalidate cache and sign fresh
     this.x402PaymentCache.signature = null;
@@ -1499,7 +1507,7 @@ class BridgeProcess {
 
           // Execute with automatic x402 payment retry on payment-required tool results
           result = await executeToolCall();
-          const retry = await this.handlePaymentRequiredRetry(result, executeToolCall);
+          const retry = await this.handlePaymentRequiredRetry(params.name, result, executeToolCall);
           if (retry.handled) {
             result = retry.result;
           }

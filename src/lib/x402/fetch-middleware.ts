@@ -2,7 +2,7 @@
  * x402 fetch middleware for MCP transport
  *
  * Wraps the fetch function used by StreamableHTTPClientTransport to:
- * 1. Reuse a cached payment signature across tool calls within a session
+ * 1. Reuse a cached payment signature across calls to paid tools within a session
  * 2. Sign a fresh payment on the first call (or after cache invalidation)
  * 3. Handle HTTP 402 responses by parsing PAYMENT-REQUIRED, signing, and retrying once
  *
@@ -73,6 +73,23 @@ interface JsonRpcRequest {
 export interface X402PaymentCache {
   /** Base64-encoded payment signature, or null if not yet signed / invalidated */
   signature: string | null;
+
+  /**
+   * Names of tools the server has charged for at runtime, via a payment-required tool
+   * result or an HTTP 402. Challenge-first servers omit `_meta.x402` from `tools/list`,
+   * so this is the only record that such a tool is paid at all — without it the cached
+   * signature would have to be attached to every tools/call in the session (including
+   * free ones) for the retry after a challenge to carry payment.
+   */
+  paymentRequiredTools?: Set<string>;
+}
+
+/**
+ * Remember that the server charges for a tool, so later calls to it reuse the session's
+ * payment signature even when the tool advertises no `_meta.x402`.
+ */
+export function recordPaymentRequiredTool(cache: X402PaymentCache, toolName: string): void {
+  (cache.paymentRequiredTools ??= new Set<string>()).add(toolName);
 }
 
 /**
@@ -189,28 +206,34 @@ async function getOrSignPayment(
     return undefined;
   }
 
-  // The bridge can populate this cache after receiving a payment-required
-  // CallToolResult. That retry must not depend on proactive tools/list metadata:
-  // challenge-first servers may omit _meta.x402 entirely.
+  // Look up tool metadata (absent on challenge-first servers, which advertise no price
+  // until the tool is called)
+  const tool = getToolByName?.(toolName);
+  if (getToolByName && !tool) {
+    logger.debug(`Tool "${toolName}" not found in cache, relying on runtime payment challenges`);
+  }
+  const x402 = (tool as { _meta?: { x402?: ToolPaymentMeta } } | undefined)?._meta?.x402;
+
+  // Only tools the server charges for get a payment. The signature is deliberately reused
+  // across calls (servers such as mcp.apify.com treat it as a prepaid token, see #247), so
+  // this check is what keeps it off free tools — the alternative, attaching it to every
+  // tools/call, would hand a live authorization to calls that never asked for one.
+  const advertisesPayment = !!x402?.paymentRequired;
+  const chargedBefore = paymentCache.paymentRequiredTools?.has(toolName) ?? false;
+  if (!advertisesPayment && !chargedBefore) {
+    return undefined;
+  }
+
+  // Reuse the session's signature. The bridge stores one here after a payment-required
+  // CallToolResult, and the retry must find it even though the tool has no _meta.x402.
   if (paymentCache.signature) {
     logger.debug(`Using cached payment signature for tool "${toolName}"`);
     return paymentCache.signature;
   }
 
-  if (!getToolByName) {
-    return undefined;
-  }
-
-  // Look up tool metadata
-  const tool = getToolByName(toolName);
-  if (!tool) {
-    logger.debug(`Tool "${toolName}" not found in cache, skipping payment`);
-    return undefined;
-  }
-
-  // Check _meta.x402
-  const meta = (tool as { _meta?: { x402?: ToolPaymentMeta } })._meta;
-  const x402 = meta?.x402;
+  // Charged before, but the tool advertises no terms to sign from — defer to the challenge,
+  // which carries the authoritative ones (a payment-required result handled by the bridge,
+  // or an HTTP 402). Proactive signing still requires _meta.x402.
   if (!x402 || !x402.paymentRequired) {
     return undefined;
   }
@@ -283,6 +306,13 @@ async function handle402Fallback(
 
     // Cache the freshly signed payment for subsequent calls
     paymentCache.signature = result.paymentSignatureBase64;
+
+    // A 402 on a tools/call proves the server charges for that tool, even if it advertises
+    // no _meta.x402, so later calls to it can reuse this signature
+    const toolName = extractToolCallName(originalInit?.body);
+    if (toolName) {
+      recordPaymentRequiredTool(paymentCache, toolName);
+    }
 
     // Retry with payment signature (once only)
     const retryInit = injectPayment(originalInit, result.paymentSignatureBase64);

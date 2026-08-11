@@ -103,7 +103,11 @@ describe('createX402FetchMiddleware proactive sign', () => {
       payload: { signature: '0xsig', authorization: { from: WALLET.address } },
     };
     const cachedSignature = Buffer.from(JSON.stringify(cachedPayload)).toString('base64');
-    const cache: X402PaymentCache = { signature: cachedSignature };
+    // What the bridge leaves behind after a payment-required CallToolResult
+    const cache: X402PaymentCache = {
+      signature: cachedSignature,
+      paymentRequiredTools: new Set(['paid-tool']),
+    };
     const baseFetch = vi.fn().mockResolvedValue(new Response('', { status: 200 }));
     const fetchFn = createX402FetchMiddleware(baseFetch as never, {
       wallet: WALLET,
@@ -120,6 +124,52 @@ describe('createX402FetchMiddleware proactive sign', () => {
     expect(new Headers(init.headers).get('PAYMENT-SIGNATURE')).toBe(cachedSignature);
     const body = JSON.parse(String(init.body));
     expect(body.params._meta['x402/payment']).toEqual(cachedPayload);
+  });
+
+  it('does not attach the cached signature to a tool the server never charged for', async () => {
+    const cache: X402PaymentCache = {
+      signature: 'session-signature-base64',
+      paymentRequiredTools: new Set(['paid-tool']),
+    };
+    const freeTool = {
+      name: 'free-tool',
+      description: 'Free tool',
+      inputSchema: { type: 'object' },
+    } as unknown as Tool;
+    const baseFetch = vi.fn().mockResolvedValue(new Response('', { status: 200 }));
+    const fetchFn = createX402FetchMiddleware(baseFetch as never, {
+      wallet: WALLET,
+      getToolByName: () => freeTool,
+      paymentCache: cache,
+    });
+
+    await fetchFn('https://example.test/mcp', { method: 'POST', body: toolsCallBody('free-tool') });
+
+    expect(mockSignPayment).not.toHaveBeenCalled();
+    const init = baseFetch.mock.calls[0]?.[1] as RequestInit;
+    expect(new Headers(init.headers).get('PAYMENT-SIGNATURE')).toBeNull();
+    expect(JSON.parse(String(init.body)).params._meta).toBeUndefined();
+  });
+
+  it('does not attach the cached signature to a tool missing from the tools cache', async () => {
+    const cache: X402PaymentCache = {
+      signature: 'session-signature-base64',
+      paymentRequiredTools: new Set(['paid-tool']),
+    };
+    const baseFetch = vi.fn().mockResolvedValue(new Response('', { status: 200 }));
+    const fetchFn = createX402FetchMiddleware(baseFetch as never, {
+      wallet: WALLET,
+      getToolByName: () => undefined,
+      paymentCache: cache,
+    });
+
+    await fetchFn('https://example.test/mcp', {
+      method: 'POST',
+      body: toolsCallBody('unknown-tool'),
+    });
+
+    const init = baseFetch.mock.calls[0]?.[1] as RequestInit;
+    expect(new Headers(init.headers).get('PAYMENT-SIGNATURE')).toBeNull();
   });
 
   it('with schemePreference=exact and accepts=[exact, upto], signs exact', async () => {
@@ -214,6 +264,44 @@ describe('createX402FetchMiddleware proactive sign', () => {
 
     const accept = mockSignPayment.mock.calls[0]?.[0]?.accept as PaymentRequiredAccept;
     expect(accept.scheme).toBe('upto');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// HTTP 402 fallback path
+// ---------------------------------------------------------------------------
+
+describe('createX402FetchMiddleware HTTP 402 fallback', () => {
+  const paymentRequiredHeader = Buffer.from(
+    JSON.stringify({ x402Version: 2, accepts: [EXACT_ACCEPT] })
+  ).toString('base64');
+
+  it('remembers the charged tool, so the next call to it reuses the signature', async () => {
+    const cache: X402PaymentCache = { signature: null };
+    const baseFetch = vi
+      .fn()
+      // First call: unpaid, server demands payment
+      .mockResolvedValueOnce(
+        new Response('', { status: 402, headers: { 'PAYMENT-REQUIRED': paymentRequiredHeader } })
+      )
+      .mockResolvedValue(new Response('', { status: 200 }));
+    const fetchFn = createX402FetchMiddleware(baseFetch as never, {
+      wallet: WALLET,
+      // Challenge-first server: nothing advertised in tools/list
+      getToolByName: () => undefined,
+      paymentCache: cache,
+    });
+
+    await fetchFn('https://example.test/mcp', { method: 'POST', body: toolsCallBody('paid-tool') });
+    expect(cache.paymentRequiredTools?.has('paid-tool')).toBe(true);
+
+    // Second call to the same tool goes out paid without signing again
+    await fetchFn('https://example.test/mcp', { method: 'POST', body: toolsCallBody('paid-tool') });
+
+    expect(mockSignPayment).toHaveBeenCalledTimes(1);
+    expect(baseFetch).toHaveBeenCalledTimes(3);
+    const init = baseFetch.mock.calls[2]?.[1] as RequestInit;
+    expect(new Headers(init.headers).get('PAYMENT-SIGNATURE')).toBe('mock-signature-base64');
   });
 });
 
