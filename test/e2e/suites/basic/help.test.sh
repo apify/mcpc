@@ -45,6 +45,34 @@ assert_contains "$STDOUT" "name: mcpc"
 assert_contains "$STDOUT" "Mental model"
 test_pass
 
+# Test: mcpc --skill is an undocumented alias printing the exact same guide.
+# Kept out of --help output on purpose (one documented way to print the guide),
+# but agents reach for the bare flag, so it must not be a dead end.
+test_case "--skill matches help --skill"
+run_mcpc --skill
+assert_success
+SKILL_FLAG_OUTPUT="$STDOUT"
+assert_contains "$SKILL_FLAG_OUTPUT" "name: mcpc"
+run_mcpc help --skill
+assert_success
+assert_eq "$SKILL_FLAG_OUTPUT" "$STDOUT" "mcpc --skill should match mcpc help --skill"
+test_pass
+
+# Test: the top-level --skill alias stays out of the documented options
+test_case "--skill is not listed as a top-level option"
+run_mcpc --help
+assert_success
+assert_not_contains "$STDOUT" "Print the agent skill"
+assert_contains "$STDOUT" "mcpc help --skill"
+test_pass
+
+# Test: --skill with a command is not silently treated as the guide
+test_case "--skill with a command name errors"
+run_mcpc --skill connect
+assert_failure
+assert_not_contains "$STDOUT" "Mental model"
+test_pass
+
 # Test: mcpc help (no args) still shows the overview, not the guide
 test_case "help with no args shows the command overview"
 run_mcpc help

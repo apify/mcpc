@@ -58,6 +58,32 @@ export function preProcessX402Argv(argv: string[]): string[] {
   return out;
 }
 
+/**
+ * Rewrite a bare `mcpc --skill` into `mcpc help --skill`.
+ *
+ * `--skill` is an undocumented alias — agents reach for the flag form first, and
+ * an unknown-option error there is a dead end. Only an invocation with no
+ * positional token at all is rewritten, so `mcpc @s --skill`, `mcpc help --skill`
+ * and friends keep their existing behaviour (including their errors). `--help`
+ * also wins, so it keeps printing usage rather than the guide.
+ */
+export function preProcessSkillArgv(argv: string[]): string[] {
+  const args = argv.slice(2);
+  if (!args.includes('--skill') || hasPositionalArg(args)) return argv;
+  if (args.includes('--help') || args.includes('-h')) return argv;
+  return [...argv.slice(0, 2), 'help', ...args];
+}
+
+/** Whether `args` contains a non-option token (a command, session, or value). */
+function hasPositionalArg(args: string[]): boolean {
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i] as string;
+    if (!arg.startsWith('-')) return true;
+    if (optionTakesValue(arg) && !arg.includes('=')) i++; // skip option value
+  }
+  return false;
+}
+
 // Global options that take a value (not boolean flags)
 const GLOBAL_OPTIONS_WITH_VALUES = ['--timeout', '--profile', '--max-chars'];
 

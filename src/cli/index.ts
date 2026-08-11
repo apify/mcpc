@@ -37,6 +37,7 @@ import type { OutputMode, X402SchemePreference } from '../lib/index.js';
 import { X402_SCHEME_PREFERENCES } from '../lib/index.js';
 import {
   extractOptions,
+  preProcessSkillArgv,
   preProcessX402Argv,
   getVerboseFromEnv,
   getJsonFromEnv,
@@ -173,7 +174,8 @@ function getOptionsFromCommand(command: Command): HandlerOptions {
 async function main(): Promise<void> {
   // Disambiguate `--x402 <non-scheme>` (URL, @session, etc.) so Commander's
   // greedy [optional] arg parser doesn't eat the next positional as the value.
-  process.argv = preProcessX402Argv(process.argv);
+  // Then accept `mcpc --skill` as an undocumented alias of `mcpc help --skill`.
+  process.argv = preProcessSkillArgv(preProcessX402Argv(process.argv));
   const args = process.argv.slice(2);
 
   // Set up cleanup handlers for graceful shutdown
