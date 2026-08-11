@@ -97,6 +97,31 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('createX402FetchMiddleware proactive sign', () => {
+  it('reuses a challenge-signed cache entry when the tool has no proactive x402 metadata', async () => {
+    const cachedPayload = {
+      x402Version: 2,
+      payload: { signature: '0xsig', authorization: { from: WALLET.address } },
+    };
+    const cachedSignature = Buffer.from(JSON.stringify(cachedPayload)).toString('base64');
+    const cache: X402PaymentCache = { signature: cachedSignature };
+    const baseFetch = vi.fn().mockResolvedValue(new Response('', { status: 200 }));
+    const fetchFn = createX402FetchMiddleware(baseFetch as never, {
+      wallet: WALLET,
+      getToolByName: () => undefined,
+      paymentCache: cache,
+      schemePreference: 'exact',
+    });
+
+    await fetchFn('https://example.test/mcp', { method: 'POST', body: toolsCallBody('paid-tool') });
+
+    expect(mockSignPayment).not.toHaveBeenCalled();
+    expect(baseFetch).toHaveBeenCalledTimes(1);
+    const init = baseFetch.mock.calls[0]?.[1] as RequestInit;
+    expect(new Headers(init.headers).get('PAYMENT-SIGNATURE')).toBe(cachedSignature);
+    const body = JSON.parse(String(init.body));
+    expect(body.params._meta['x402/payment']).toEqual(cachedPayload);
+  });
+
   it('with schemePreference=exact and accepts=[exact, upto], signs exact', async () => {
     const tool = makePaidTool({ accepts: [EXACT_ACCEPT, UPTO_ACCEPT], ...UPTO_ACCEPT });
     const cache: X402PaymentCache = { signature: null };
