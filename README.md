@@ -775,6 +775,22 @@ mcpc x402 remove
 
 After creating a wallet, **fund it with USDC on Base** (mainnet or Sepolia testnet) to enable payments.
 
+### Try it against a live server
+
+[scrape402](https://x402.shizu.me) is an independently operated MCP server whose tools are priced via x402 (USDC on Base mainnet), so you can exercise the full payment flow against something real:
+
+```bash
+# Connect (no wallet needed yet — initialize and discovery are free)
+mcpc connect https://x402.shizu.me/mcp/rpc --x402
+
+# Free: list its tools
+mcpc @x402 tools-list
+
+# Paid: the tool answers with an x402 payment-required result, which mcpc
+# signs and retries automatically ($0.003 per call, settled on Base mainnet)
+mcpc @x402 tools-call crypto_price pair:=BTC-USD
+```
+
 ### Manual payment signing
 
 You can manually sign a payment from a server's `PAYMENT-REQUIRED` header using `x402 sign`.
