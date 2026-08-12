@@ -754,6 +754,17 @@ Two schemes are supported, both signed by your local wallet:
 
 Flow: server returns HTTP 402 with a `PAYMENT-REQUIRED` header → `mcpc` picks the best scheme per your preference, signs, and retries with `PAYMENT-SIGNATURE` → server verifies and fulfills. Tools that advertise pricing in `_meta.x402` are signed proactively, skipping the 402 round-trip.
 
+For guarded autonomous spending, `--x402-policy agent-guild` waits for the authoritative 402,
+buys one short-lived [Agent Guild](https://agent-guild-5d5r.onrender.com) AGPD-1 decision,
+and verifies its Ed25519 signature, issuer, freshness, policy thresholds, and exact payment fields
+locally. The protected payment is never signed unless that credential says `allow`. Any decision
+or verification failure blocks the payment.
+
+Guarded mode requires `--x402-max-amount <atomic>` as a local ceiling for the protected payment.
+The decision is itself a paid x402 call on Base mainnet, but mcpc separately pins that purchase
+to exact scheme, Base USDC, the Guild treasury and a $0.01 maximum; redirects fail closed. The
+local wallet must hold enough Base USDC for both the decision and the protected tool call.
+
 ### Wallet setup
 
 `mcpc` stores a single wallet in `~/.mcpc/wallets.json` (file permissions `0600`).
@@ -819,6 +830,10 @@ mcpc connect mcp.apify.com @apify --x402
 mcpc connect --x402 upto mcp.apify.com @apify
 mcpc connect mcp.apify.com @apify --x402 exact
 
+# Require a signed, exact pre-payment decision and cap each tool payment at 1 USDC
+mcpc connect mcp.apify.com @apify --x402 exact --x402-policy agent-guild \
+  --x402-max-amount 1000000
+
 # The session now automatically handles 402 responses using your preference
 mcpc @apify tools-call expensive-tool query:="hello"
 
@@ -827,7 +842,12 @@ mcpc @apify restart
 ```
 
 When `--x402` is active, a fetch middleware wraps all HTTP requests to the MCP server.
-If any request returns HTTP 402, the middleware transparently signs and retries. Your scheme preference is persisted in `sessions.json` and reused on every reconnect or restart.
+If any request returns HTTP 402, the middleware transparently signs and retries. When a payment
+policy is enabled, proactive signing is disabled until the authoritative 402 supplies the exact
+resource URL; a signature already approved for the immediate retry may still be reused. Your
+guarded retry receives its signature through call-local async state, so concurrent calls cannot
+consume each other's approvals. Your scheme preference, payment policy and ceiling are persisted
+in `sessions.json` and reused on every reconnect or restart.
 
 ### Supported networks
 

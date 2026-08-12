@@ -438,6 +438,10 @@ export async function restartSession(
     ...(profileName && { profileName }),
     ...(session.proxy && { proxyConfig: session.proxy }),
     ...(session.x402 && { x402: session.x402 }),
+    ...(session.x402Policy && { x402Policy: session.x402Policy }),
+    ...(session.x402MaxAmountAtomic && {
+      x402MaxAmountAtomic: session.x402MaxAmountAtomic,
+    }),
     ...(session.insecure && { insecure: session.insecure }),
   };
 

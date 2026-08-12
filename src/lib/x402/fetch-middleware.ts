@@ -28,6 +28,8 @@ import {
   type SchemePreference,
 } from './signer.js';
 import { createLogger } from '../logger.js';
+import { ClientError } from '../errors.js';
+import type { X402PaymentPolicy, X402PaymentSignatureScope } from './payment-policy.js';
 
 const logger = createLogger('x402-middleware');
 
@@ -94,6 +96,12 @@ export interface X402FetchMiddlewareOptions {
 
   /** Payment scheme preference when multiple accepts are available (default: auto) */
   schemePreference?: SchemePreference;
+
+  /** Optional fail-closed policy invoked before every fresh payment signature. */
+  paymentPolicy?: X402PaymentPolicy;
+
+  /** Async-call-local signature handoff for policy-approved MCP retries. */
+  paymentSignatureScope?: X402PaymentSignatureScope;
 }
 
 /**
@@ -108,16 +116,27 @@ export function createX402FetchMiddleware(
   baseFetch: FetchLike,
   options: X402FetchMiddlewareOptions
 ): FetchLike {
-  const { wallet, getToolByName, paymentCache, schemePreference } = options;
+  const {
+    wallet,
+    getToolByName,
+    paymentCache,
+    schemePreference,
+    paymentPolicy,
+    paymentSignatureScope,
+  } = options;
 
   return async (url: string | URL, init?: RequestInit): Promise<Response> => {
     // Try to get a payment signature (cached or freshly signed) for tools/call requests
+    // A policy needs the authoritative resource URL from a real 402 challenge.
+    // Disable speculative metadata signing rather than guessing that binding.
     const paymentSignature = await getOrSignPayment(
       init,
       wallet,
       getToolByName,
       paymentCache,
-      schemePreference
+      schemePreference,
+      Boolean(paymentPolicy),
+      paymentSignatureScope
     );
     if (paymentSignature) {
       const enhancedInit = injectPayment(init, paymentSignature);
@@ -138,7 +157,9 @@ export function createX402FetchMiddleware(
         baseFetch,
         wallet,
         paymentCache,
-        schemePreference
+        schemePreference,
+        paymentPolicy,
+        String(url)
       );
     }
 
@@ -154,7 +175,9 @@ export function createX402FetchMiddleware(
         baseFetch,
         wallet,
         paymentCache,
-        schemePreference
+        schemePreference,
+        paymentPolicy,
+        String(url)
       );
     }
 
@@ -172,7 +195,9 @@ async function getOrSignPayment(
   wallet: SignerWallet,
   getToolByName: ((name: string) => Tool | undefined) | undefined,
   paymentCache: X402PaymentCache,
-  schemePreference?: SchemePreference
+  schemePreference?: SchemePreference,
+  challengeOnly = false,
+  paymentSignatureScope?: X402PaymentSignatureScope
 ): Promise<string | undefined> {
   if (!init?.body) {
     return undefined;
@@ -189,13 +214,26 @@ async function getOrSignPayment(
     return undefined;
   }
 
+  // A guarded bridge passes its approved signature through AsyncLocalStorage,
+  // making the handoff private to the exact retry even when calls overlap.
+  const scopedSignature = paymentSignatureScope?.get();
+  if (scopedSignature) {
+    logger.debug(`Using scoped payment signature for tool "${toolName}"`);
+    return scopedSignature;
+  }
+
   // The bridge can populate this cache after receiving a payment-required
   // CallToolResult. That retry must not depend on proactive tools/list metadata:
   // challenge-first servers may omit _meta.x402 entirely.
-  if (paymentCache.signature) {
+  if (!challengeOnly && paymentCache.signature) {
     logger.debug(`Using cached payment signature for tool "${toolName}"`);
     return paymentCache.signature;
   }
+
+  // A guarded wallet needs the authoritative resource URL from a real 402.
+  // Cached signatures reached this point only after policy approval, but a new
+  // speculative signature based on tools/list metadata would not have that URL.
+  if (challengeOnly) return undefined;
 
   if (!getToolByName) {
     return undefined;
@@ -247,7 +285,9 @@ async function handle402Fallback(
   baseFetch: FetchLike,
   wallet: SignerWallet,
   paymentCache: X402PaymentCache,
-  schemePreference?: SchemePreference
+  schemePreference?: SchemePreference,
+  paymentPolicy?: X402PaymentPolicy,
+  requestUrl?: string
 ): Promise<Response> {
   // Extract PAYMENT-REQUIRED header (case-insensitive)
   const paymentRequiredBase64 =
@@ -269,6 +309,17 @@ async function handle402Fallback(
     return response402;
   }
 
+  if (paymentPolicy) {
+    const decision = await paymentPolicy({
+      paymentRequired: header,
+      selectedRequirements: accept,
+      ...(requestUrl && { requestUrl }),
+    });
+    if (decision?.abort) {
+      throw new ClientError(`x402 payment blocked by policy: ${decision.reason}`);
+    }
+  }
+
   // Sign the payment
   try {
     const result = await signPayment({
@@ -281,8 +332,10 @@ async function handle402Fallback(
       `402 fallback payment signed: scheme=${accept.scheme} amount=$${result.amountUsd.toFixed(6)} to=${result.to} network=${result.networkLabel}`
     );
 
-    // Cache the freshly signed payment for subsequent calls
-    paymentCache.signature = result.paymentSignatureBase64;
+    // Unguarded sessions retain the existing session-level cache behavior.
+    // Guarded HTTP fallback retries directly below, so caching it would permit
+    // an unrelated later tool call to reuse resource-specific approval.
+    if (!paymentPolicy) paymentCache.signature = result.paymentSignatureBase64;
 
     // Retry with payment signature (once only)
     const retryInit = injectPayment(originalInit, result.paymentSignatureBase64);

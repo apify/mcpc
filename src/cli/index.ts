@@ -33,8 +33,8 @@ import * as tasks from './commands/tasks.js';
 import * as grepCmd from './commands/grep.js';
 import { clean } from './commands/clean.js';
 import { MCPC_OAUTH_CALLBACK_HOSTS, MCPC_OAUTH_CALLBACK_PORTS } from '../lib/auth/oauth-utils.js';
-import type { OutputMode, X402SchemePreference } from '../lib/index.js';
-import { X402_SCHEME_PREFERENCES } from '../lib/index.js';
+import type { OutputMode, X402SchemePreference, X402PaymentPolicyPreset } from '../lib/index.js';
+import { X402_PAYMENT_POLICY_PRESETS, X402_SCHEME_PREFERENCES } from '../lib/index.js';
 import {
   extractOptions,
   preProcessSkillArgv,
@@ -89,6 +89,8 @@ interface HandlerOptions {
    * `--x402` (no value) resolves to `'auto'` (prefer upto, fall back to exact).
    */
   x402?: X402SchemePreference;
+  x402Policy?: X402PaymentPolicyPreset;
+  x402MaxAmountAtomic?: string;
   insecure?: boolean;
   schema?: string;
   schemaMode?: 'strict' | 'compatible' | 'ignore';
@@ -145,6 +147,27 @@ function getOptionsFromCommand(command: Command): HandlerOptions {
       );
     }
     options.x402 = opts.x402 as X402SchemePreference;
+  }
+  if (typeof opts.x402Policy === 'string') {
+    if (!(X402_PAYMENT_POLICY_PRESETS as readonly string[]).includes(opts.x402Policy)) {
+      throw new ClientError(
+        `Invalid --x402-policy value: "${opts.x402Policy}". Expected one of ${X402_PAYMENT_POLICY_PRESETS.join(', ')}.`
+      );
+    }
+    if (!options.x402) throw new ClientError('--x402-policy requires --x402');
+    options.x402Policy = opts.x402Policy as X402PaymentPolicyPreset;
+  }
+  if (typeof opts.x402MaxAmount === 'string') {
+    if (!/^[0-9]+$/.test(opts.x402MaxAmount) || BigInt(opts.x402MaxAmount) <= 0n) {
+      throw new ClientError('--x402-max-amount requires a positive atomic-unit integer');
+    }
+    options.x402MaxAmountAtomic = opts.x402MaxAmount;
+  }
+  if (options.x402Policy && !options.x402MaxAmountAtomic) {
+    throw new ClientError('--x402-policy requires --x402-max-amount');
+  }
+  if (options.x402MaxAmountAtomic && !options.x402Policy) {
+    throw new ClientError('--x402-max-amount requires --x402-policy');
   }
   if (opts.insecure) options.insecure = true;
   if (opts.schema) options.schema = opts.schema;
@@ -489,6 +512,8 @@ Full docs: ${docsUrl}`
     .option('--stdio', 'Launch all local stdio servers from selected config files')
     .option('--protocol-version <version>', 'Pin the MCP protocol version (see below)')
     .option('--x402 [scheme]', 'Enable x402 auto-payment (see below)')
+    .option('--x402-policy <policy>', 'Authorize each payment with a signed policy decision')
+    .option('--x402-max-amount <atomic>', 'Maximum atomic token amount for a guarded payment')
     .addHelpText(
       'after',
       `
@@ -522,6 +547,9 @@ ${chalk.bold('Protocol version:')}
 ${chalk.bold('x402 payments (experimental):')}
   --x402 pays for paid tool calls from the wallet set up with mcpc x402.
   Schemes: auto (default, prefers upto), upto, exact.
+  --x402-policy agent-guild buys and locally verifies a short-lived signed
+  Agent Guild decision bound to the exact payment before the wallet signs.
+  Guarded mode also requires --x402-max-amount <atomic> as a local spend ceiling.
 ${outputHelp([
   'For a single server, shows session, server info, capabilities, and tools.',
   'Bulk connects list every session with its state, then a summary.',
@@ -553,6 +581,10 @@ ${outputHelp([
           ...(opts.stdio && { stdio: true }),
           ...(opts.protocolVersion && { protocolVersion: opts.protocolVersion as string }),
           ...(globalOpts.x402 && { x402: globalOpts.x402 }),
+          ...(globalOpts.x402Policy && { x402Policy: globalOpts.x402Policy }),
+          ...(globalOpts.x402MaxAmountAtomic && {
+            x402MaxAmountAtomic: globalOpts.x402MaxAmountAtomic,
+          }),
           ...(globalOpts.insecure && { insecure: true }),
         });
         // Trailing blank line to match the spacing of other commands (human mode only).
@@ -585,6 +617,10 @@ ${outputHelp([
           ...(opts.stdio && { stdio: true }),
           ...(opts.protocolVersion && { protocolVersion: opts.protocolVersion as string }),
           ...(globalOpts.x402 && { x402: globalOpts.x402 }),
+          ...(globalOpts.x402Policy && { x402Policy: globalOpts.x402Policy }),
+          ...(globalOpts.x402MaxAmountAtomic && {
+            x402MaxAmountAtomic: globalOpts.x402MaxAmountAtomic,
+          }),
           ...(globalOpts.insecure && { insecure: true }),
         });
         return;
@@ -597,6 +633,11 @@ ${outputHelp([
           ...(globalOpts.profile && { profile: globalOpts.profile }),
           ...(headers && { headers }),
           ...(globalOpts.noProfile && { noProfile: globalOpts.noProfile }),
+          ...(globalOpts.x402 && { x402: globalOpts.x402 }),
+          ...(globalOpts.x402Policy && { x402Policy: globalOpts.x402Policy }),
+          ...(globalOpts.x402MaxAmountAtomic && {
+            x402MaxAmountAtomic: globalOpts.x402MaxAmountAtomic,
+          }),
         });
       }
 
@@ -610,6 +651,10 @@ ${outputHelp([
           proxyBearerToken: opts.proxyBearerToken,
           ...(opts.protocolVersion && { protocolVersion: opts.protocolVersion as string }),
           ...(globalOpts.x402 && { x402: globalOpts.x402 }),
+          ...(globalOpts.x402Policy && { x402Policy: globalOpts.x402Policy }),
+          ...(globalOpts.x402MaxAmountAtomic && {
+            x402MaxAmountAtomic: globalOpts.x402MaxAmountAtomic,
+          }),
           ...(globalOpts.insecure && { insecure: true }),
         });
       } else {
@@ -620,6 +665,10 @@ ${outputHelp([
           proxyBearerToken: opts.proxyBearerToken,
           ...(opts.protocolVersion && { protocolVersion: opts.protocolVersion as string }),
           ...(globalOpts.x402 && { x402: globalOpts.x402 }),
+          ...(globalOpts.x402Policy && { x402Policy: globalOpts.x402Policy }),
+          ...(globalOpts.x402MaxAmountAtomic && {
+            x402MaxAmountAtomic: globalOpts.x402MaxAmountAtomic,
+          }),
           ...(globalOpts.insecure && { insecure: true }),
         });
       }

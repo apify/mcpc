@@ -2225,6 +2225,20 @@ describe('formatSessionLine', () => {
 
     expect(output).not.toContain('[proxy:');
   });
+
+  it('should make a guarded x402 session visible', () => {
+    const session: SessionData = {
+      name: '@guarded',
+      server: { url: 'https://mcp.example.com' },
+      x402: 'exact',
+      x402Policy: 'agent-guild',
+      createdAt: '2025-01-01T00:00:00Z',
+    };
+
+    const output = formatSessionLine(session);
+
+    expect(output).toContain('[x402:agent-guild]');
+  });
 });
 
 describe('logTarget', () => {

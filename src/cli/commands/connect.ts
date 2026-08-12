@@ -25,6 +25,7 @@ import type {
   ProxyConfig,
   ServerDetails,
   X402SchemePreference,
+  X402PaymentPolicyPreset,
 } from '../../lib/types.js';
 import {
   formatOutput,
@@ -145,6 +146,8 @@ type ConnectSessionOptions = {
   proxyBearerToken?: string;
   protocolVersion?: string;
   x402?: X402SchemePreference;
+  x402Policy?: X402PaymentPolicyPreset;
+  x402MaxAmountAtomic?: string;
   insecure?: boolean;
   skipDetails?: boolean;
   quiet?: boolean;
@@ -292,12 +295,42 @@ export async function connectSession(
   // Validate --protocol-version (if provided)
   assertSupportedProtocolVersion(options.protocolVersion);
 
+  if (options.x402Policy && !options.x402) {
+    throw new ClientError('--x402-policy requires --x402');
+  }
+  if (options.x402Policy && !options.x402MaxAmountAtomic) {
+    throw new ClientError('--x402-policy requires --x402-max-amount');
+  }
+  if (options.x402MaxAmountAtomic && !options.x402Policy) {
+    throw new ClientError('--x402-max-amount requires --x402-policy');
+  }
+  if (
+    options.x402MaxAmountAtomic &&
+    (!/^[0-9]+$/.test(options.x402MaxAmountAtomic) || BigInt(options.x402MaxAmountAtomic) <= 0n)
+  ) {
+    throw new ClientError('--x402-max-amount requires a positive atomic-unit integer');
+  }
+
   // Check if session already exists
   const existingSession = await getSession(name);
   if (existingSession) {
     const bridgeStatus = getBridgeStatus(existingSession);
 
     if (bridgeStatus === 'live') {
+      const paymentModeChanged =
+        (options.x402 !== undefined && options.x402 !== existingSession.x402) ||
+        (options.x402Policy !== undefined && options.x402Policy !== existingSession.x402Policy) ||
+        (options.x402MaxAmountAtomic !== undefined &&
+          options.x402MaxAmountAtomic !== existingSession.x402MaxAmountAtomic) ||
+        (existingSession.x402Policy !== undefined &&
+          options.x402 !== undefined &&
+          options.x402Policy === undefined);
+      if (paymentModeChanged) {
+        throw new ClientError(
+          `Session ${name} is already active with different x402 payment settings. ` +
+            `Close it before changing the scheme, policy, or amount ceiling.`
+        );
+      }
       // Session exists and bridge is running - just show server info
       if (options.outputMode === 'human' && !options.quiet) {
         console.log(formatSuccess(`Session ${name} is already active`));
@@ -388,6 +421,24 @@ export async function connectSession(
     }
     logger.debug(`Using x402 wallet: ${wallet.address}`);
   }
+  // An explicit reconnect may omit payment flags. Preserve the stored policy
+  // and its ceiling rather than launching an unguarded bridge while the session
+  // record still claims it is guarded. An explicit conflicting mode is refused.
+  const effectiveX402 = options.x402 ?? existingSession?.x402;
+  const effectiveX402Policy = options.x402Policy ?? existingSession?.x402Policy;
+  const effectiveX402MaxAmountAtomic =
+    options.x402MaxAmountAtomic ?? existingSession?.x402MaxAmountAtomic;
+  if (existingSession?.x402Policy && options.x402 && !options.x402Policy) {
+    throw new ClientError(
+      `Session ${name} already uses x402 policy ${existingSession.x402Policy}; reconnect with ` +
+        `--x402-policy ${existingSession.x402Policy} --x402-max-amount ${existingSession.x402MaxAmountAtomic ?? '<atomic>'}`
+    );
+  }
+  if (effectiveX402Policy && (!effectiveX402 || !effectiveX402MaxAmountAtomic)) {
+    throw new ClientError(
+      'Stored x402 policy is incomplete; reconnect with an explicit policy and ceiling'
+    );
+  }
 
   // Create or update session record (without pid - that comes from startBridge)
   // Store serverConfig with headers redacted (actual values in keychain)
@@ -402,7 +453,11 @@ export async function connectSession(
     server: sessionTransportConfig,
     ...(profileName && { profileName }),
     ...(proxyConfig && { proxy: proxyConfig }),
-    ...(options.x402 && { x402: options.x402 }),
+    ...(effectiveX402 && { x402: effectiveX402 }),
+    ...(effectiveX402Policy && { x402Policy: effectiveX402Policy }),
+    ...(effectiveX402MaxAmountAtomic && {
+      x402MaxAmountAtomic: effectiveX402MaxAmountAtomic,
+    }),
     ...(options.insecure && { insecure: true }),
     // Clear any previous error status (unauthorized, expired) when reconnecting
     ...(isReconnect && { status: 'active' }),
@@ -431,7 +486,11 @@ export async function connectSession(
       ...(headers && { headers }),
       ...(profileName && { profileName }),
       ...(proxyConfig && { proxyConfig }),
-      ...(options.x402 && { x402: options.x402 }),
+      ...(effectiveX402 && { x402: effectiveX402 }),
+      ...(effectiveX402Policy && { x402Policy: effectiveX402Policy }),
+      ...(effectiveX402MaxAmountAtomic && {
+        x402MaxAmountAtomic: effectiveX402MaxAmountAtomic,
+      }),
       ...(options.insecure && { insecure: true }),
     };
 
@@ -526,7 +585,14 @@ export async function connectSession(
  */
 async function findMatchingSession(
   parsed: { type: 'url'; url: string } | { type: 'config'; file: string; entry: string },
-  options: { profile?: string; headers?: string[]; noProfile?: boolean }
+  options: {
+    profile?: string;
+    headers?: string[];
+    noProfile?: boolean;
+    x402?: X402SchemePreference;
+    x402Policy?: X402PaymentPolicyPreset;
+    x402MaxAmountAtomic?: string;
+  }
 ): Promise<string | undefined> {
   const storage = await loadSessions();
   const sessions = Object.values(storage.sessions);
@@ -570,6 +636,12 @@ async function findMatchingSession(
       .sort();
     if (existingHeaderKeys.join(',') !== newHeaderKeys.join(',')) continue;
 
+    // Payment behavior is part of session identity. Reusing an unguarded
+    // session when the caller requested a policy would silently weaken it.
+    if (session.x402 !== options.x402) continue;
+    if (session.x402Policy !== options.x402Policy) continue;
+    if (session.x402MaxAmountAtomic !== options.x402MaxAmountAtomic) continue;
+
     // Found a match
     return session.name;
   }
@@ -590,6 +662,9 @@ export async function resolveSessionName(
     profile?: string;
     headers?: string[];
     noProfile?: boolean;
+    x402?: X402SchemePreference;
+    x402Policy?: X402PaymentPolicyPreset;
+    x402MaxAmountAtomic?: string;
   }
 ): Promise<string> {
   // First, check if an existing session matches this server + auth settings
@@ -646,6 +721,8 @@ type BulkConnectOptions = {
   stdio?: boolean;
   protocolVersion?: string;
   x402?: X402SchemePreference;
+  x402Policy?: X402PaymentPolicyPreset;
+  x402MaxAmountAtomic?: string;
   insecure?: boolean;
 };
 

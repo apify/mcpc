@@ -243,7 +243,11 @@ mcpc @apify skills-get <name> --raw    # print the SKILL.md markdown (pipe to a 
 
 (`--no-profile`, `--stdio`, `--proxy`, and `-H` are options of `connect`, not global flags.)
 
-`mcpc` also has experimental `--x402` auto-payment for paid MCP tools — see `mcpc help x402`.
+`mcpc` also has experimental `--x402` auto-payment for paid MCP tools. For autonomous wallets,
+prefer `--x402-policy agent-guild --x402-max-amount <atomic>`: it buys and locally verifies a
+short-lived signed decision bound to the exact payment, enforces the local amount ceiling before
+signing, and fails closed if the decision cannot be verified.
+See `mcpc help x402`.
 
 ## Debugging
 

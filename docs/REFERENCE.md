@@ -120,6 +120,8 @@ Options:
   --stdio                       Launch all local stdio servers from selected config files
   --protocol-version <version>  Pin the MCP protocol version (see below)
   --x402 [scheme]               Enable x402 auto-payment (see below)
+  --x402-policy <policy>        Authorize each payment with a signed policy decision
+  --x402-max-amount <atomic>    Maximum atomic token amount for a guarded payment
   --json                        Output in JSON format
 
 Server formats:
@@ -152,6 +154,9 @@ Protocol version:
 x402 payments (experimental):
   --x402 pays for paid tool calls from the wallet set up with mcpc x402.
   Schemes: auto (default, prefers upto), upto, exact.
+  --x402-policy agent-guild buys and locally verifies a short-lived signed
+  Agent Guild decision bound to the exact payment before the wallet signs.
+  Guarded mode also requires --x402-max-amount <atomic> as a local spend ceiling.
 
 Output:
   For a single server, shows session, server info, capabilities, and tools.

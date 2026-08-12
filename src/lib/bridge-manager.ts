@@ -21,6 +21,7 @@ import type {
   ProxyConfig,
   X402WalletCredentials,
   X402SchemePreference,
+  X402PaymentPolicyPreset,
 } from './types.js';
 import {
   getSocketPath,
@@ -120,6 +121,10 @@ export interface StartBridgeOptions {
   protocolVersion?: string; // Protocol version negotiated by the resumed session (only pass with mcpSessionId)
   /** x402 scheme preference; presence enables x402 auto-payment, absence disables. */
   x402?: X402SchemePreference;
+  /** Optional fail-closed policy applied before every fresh x402 signature. */
+  x402Policy?: X402PaymentPolicyPreset;
+  /** Required local atomic-unit ceiling for policy-guarded x402 payments. */
+  x402MaxAmountAtomic?: string;
   insecure?: boolean; // Skip TLS certificate verification
 }
 
@@ -153,6 +158,8 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
     mcpSessionId,
     protocolVersion,
     x402,
+    x402Policy,
+    x402MaxAmountAtomic,
     insecure,
   } = options;
 
@@ -228,6 +235,14 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
   if (x402) {
     args.push('--x402', x402);
     logger.debug(`Passing x402 scheme preference: ${x402}`);
+  }
+  if (x402Policy) {
+    args.push('--x402-policy', x402Policy);
+    logger.debug(`Passing x402 payment policy: ${x402Policy}`);
+  }
+  if (x402MaxAmountAtomic) {
+    args.push('--x402-max-amount', x402MaxAmountAtomic);
+    logger.debug(`Passing x402 maximum atomic amount: ${x402MaxAmountAtomic}`);
   }
 
   // Pass insecure flag (if enabled)
@@ -521,6 +536,14 @@ export async function restartBridge(sessionName: string): Promise<StartBridgeRes
   if (session.x402) {
     bridgeOptions.x402 = session.x402;
     logger.debug(`Using saved x402 scheme preference: ${session.x402}`);
+  }
+  if (session.x402Policy) {
+    bridgeOptions.x402Policy = session.x402Policy;
+    logger.debug(`Using saved x402 payment policy: ${session.x402Policy}`);
+  }
+  if (session.x402MaxAmountAtomic) {
+    bridgeOptions.x402MaxAmountAtomic = session.x402MaxAmountAtomic;
+    logger.debug(`Using saved x402 maximum atomic amount: ${session.x402MaxAmountAtomic}`);
   }
   if (session.insecure) {
     bridgeOptions.insecure = session.insecure;

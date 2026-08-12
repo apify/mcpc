@@ -15,6 +15,10 @@ import {
   type X402PaymentCache,
 } from '../../../../src/lib/x402/fetch-middleware.js';
 import type { PaymentRequiredAccept, SignerWallet } from '../../../../src/lib/x402/signer.js';
+import {
+  X402PaymentSignatureScope,
+  type X402PaymentPolicy,
+} from '../../../../src/lib/x402/payment-policy.js';
 
 // ---------------------------------------------------------------------------
 // Mocks — vi.mock is hoisted above local const declarations
@@ -77,6 +81,16 @@ function toolsCallBody(toolName: string): string {
     method: 'tools/call',
     params: { name: toolName, arguments: {} },
   });
+}
+
+function paymentRequiredHeader(accept: PaymentRequiredAccept): string {
+  return Buffer.from(
+    JSON.stringify({
+      x402Version: 2,
+      resource: { url: 'https://seller.example/paid-tool' },
+      accepts: [accept],
+    })
+  ).toString('base64');
 }
 
 beforeEach(() => {
@@ -214,6 +228,130 @@ describe('createX402FetchMiddleware proactive sign', () => {
 
     const accept = mockSignPayment.mock.calls[0]?.[0]?.accept as PaymentRequiredAccept;
     expect(accept.scheme).toBe('upto');
+  });
+
+  it('waits for an authoritative 402 before a policy authorizes a fresh signature', async () => {
+    const tool = makePaidTool({ accepts: [EXACT_ACCEPT], ...EXACT_ACCEPT });
+    const policy = vi.fn<X402PaymentPolicy>().mockResolvedValue(undefined);
+    const baseFetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response('', {
+          status: 402,
+          headers: { 'PAYMENT-REQUIRED': paymentRequiredHeader(EXACT_ACCEPT) },
+        })
+      )
+      .mockResolvedValueOnce(new Response('', { status: 200 }));
+    const fetchFn = createX402FetchMiddleware(baseFetch as never, {
+      wallet: WALLET,
+      getToolByName: () => tool,
+      paymentCache: { signature: null },
+      schemePreference: 'exact',
+      paymentPolicy: policy,
+    });
+
+    await fetchFn('https://example.test/mcp', {
+      method: 'POST',
+      body: toolsCallBody('paid-tool'),
+    });
+
+    expect(baseFetch).toHaveBeenCalledTimes(2);
+    expect(new Headers(baseFetch.mock.calls[0]?.[1]?.headers).has('PAYMENT-SIGNATURE')).toBe(false);
+    expect(policy).toHaveBeenCalledWith({
+      paymentRequired: expect.objectContaining({
+        resource: { url: 'https://seller.example/paid-tool' },
+      }),
+      selectedRequirements: expect.objectContaining({ scheme: 'exact' }),
+      requestUrl: 'https://example.test/mcp',
+    });
+    expect(mockSignPayment).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not create a wallet signature when the policy blocks', async () => {
+    const policy = vi
+      .fn<X402PaymentPolicy>()
+      .mockResolvedValue({ abort: true, reason: 'payee is not trusted' });
+    const baseFetch = vi.fn().mockResolvedValue(
+      new Response('', {
+        status: 402,
+        headers: { 'PAYMENT-REQUIRED': paymentRequiredHeader(EXACT_ACCEPT) },
+      })
+    );
+    const fetchFn = createX402FetchMiddleware(baseFetch as never, {
+      wallet: WALLET,
+      paymentCache: { signature: null },
+      schemePreference: 'exact',
+      paymentPolicy: policy,
+    });
+
+    await expect(
+      fetchFn('https://example.test/mcp', {
+        method: 'POST',
+        body: toolsCallBody('paid-tool'),
+      })
+    ).rejects.toThrow('x402 payment blocked by policy: payee is not trusted');
+    expect(baseFetch).toHaveBeenCalledTimes(1);
+    expect(mockSignPayment).not.toHaveBeenCalled();
+  });
+
+  it('ignores the process-wide cache in policy mode', async () => {
+    const cachedPayload = {
+      x402Version: 2,
+      payload: { signature: '0xapproved', authorization: { from: WALLET.address } },
+    };
+    const cachedSignature = Buffer.from(JSON.stringify(cachedPayload)).toString('base64');
+    const policy = vi.fn<X402PaymentPolicy>();
+    const baseFetch = vi.fn().mockResolvedValue(new Response('', { status: 200 }));
+    const cache: X402PaymentCache = { signature: cachedSignature };
+    const fetchFn = createX402FetchMiddleware(baseFetch as never, {
+      wallet: WALLET,
+      paymentCache: cache,
+      paymentPolicy: policy,
+    });
+
+    await fetchFn('https://example.test/mcp', {
+      method: 'POST',
+      body: toolsCallBody('paid-tool'),
+    });
+
+    expect(new Headers(baseFetch.mock.calls[0]?.[1]?.headers).has('PAYMENT-SIGNATURE')).toBe(false);
+    expect(policy).not.toHaveBeenCalled();
+    expect(mockSignPayment).not.toHaveBeenCalled();
+    expect(cache.signature).toBe(cachedSignature);
+  });
+
+  it('hands a guarded retry signature through call-local async context', async () => {
+    const scopedPayload = {
+      x402Version: 2,
+      payload: { signature: '0xscoped', authorization: { from: WALLET.address } },
+    };
+    const scopedSignature = Buffer.from(JSON.stringify(scopedPayload)).toString('base64');
+    const scope = new X402PaymentSignatureScope();
+    const baseFetch = vi.fn().mockResolvedValue(new Response('', { status: 200 }));
+    const fetchFn = createX402FetchMiddleware(baseFetch as never, {
+      wallet: WALLET,
+      paymentCache: { signature: null },
+      paymentPolicy: vi.fn(),
+      paymentSignatureScope: scope,
+    });
+
+    await Promise.all([
+      scope.run(scopedSignature, () =>
+        fetchFn('https://example.test/mcp', {
+          method: 'POST',
+          body: toolsCallBody('paid-tool'),
+        })
+      ),
+      fetchFn('https://example.test/mcp', {
+        method: 'POST',
+        body: toolsCallBody('other-tool'),
+      }),
+    ]);
+
+    const paidHeaders = baseFetch.mock.calls.map((call) =>
+      new Headers(call[1]?.headers).get('PAYMENT-SIGNATURE')
+    );
+    expect(paidHeaders).toEqual([scopedSignature, null]);
   });
 });
 

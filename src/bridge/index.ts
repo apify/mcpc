@@ -21,6 +21,7 @@ import type {
   IpcMessage,
   LoggingLevel,
   X402SchemePreference,
+  X402PaymentPolicyPreset,
   ServerDetails,
 } from '../lib/index.js';
 import {
@@ -28,6 +29,7 @@ import {
   MAX_PERSISTED_INSTRUCTIONS_CHARS,
   TRIMMED_INSTRUCTIONS_NOTICE,
   X402_SCHEME_PREFERENCES,
+  X402_PAYMENT_POLICY_PRESETS,
 } from '../lib/types.js';
 import { createLogger, setVerbose, initFileLogger, closeFileLogger } from '../lib/index.js';
 import {
@@ -74,6 +76,7 @@ import type { ProxyConfig } from '../lib/types.js';
 // x402 modules pull in the bundled viem (~1 MB of crypto code) — import types
 // only here and load the implementations lazily at the x402-gated call sites.
 import type { X402PaymentCache } from '../lib/x402/fetch-middleware.js';
+import type { X402PaymentPolicy, X402PaymentSignatureScope } from '../lib/x402/payment-policy.js';
 import type { SignerWallet } from '../lib/x402/signer.js';
 import type { FetchLike } from '@modelcontextprotocol/client';
 
@@ -96,6 +99,10 @@ interface BridgeOptions {
   protocolVersion?: string; // Protocol version negotiated by the resumed session (only set with mcpSessionId)
   /** x402 scheme preference; presence enables x402 auto-payment, absence disables. */
   x402?: X402SchemePreference;
+  /** Optional fail-closed policy applied before every fresh x402 signature. */
+  x402Policy?: X402PaymentPolicyPreset;
+  /** Required local atomic-unit ceiling when an x402 payment policy is enabled. */
+  x402MaxAmountAtomic?: string;
   insecure?: boolean; // Skip TLS certificate verification
 }
 
@@ -141,6 +148,11 @@ class BridgeProcess {
 
   // Shared payment signature cache — middleware reads/writes, bridge invalidates on payment-required results
   private x402PaymentCache: X402PaymentCache = { signature: null };
+
+  // Built alongside the fetch middleware so HTTP and tool-result 402 paths
+  // authorize payments with the same fail-closed policy instance.
+  private x402PaymentPolicy: X402PaymentPolicy | null = null;
+  private x402PaymentSignatureScope: X402PaymentSignatureScope | null = null;
 
   // Active async tasks (in-memory, also persisted to disk for crash recovery)
   private activeTasks: Map<string, Task> = new Map();
@@ -678,11 +690,27 @@ class BridgeProcess {
         return this.client?.getCachedTools()?.find((t: Tool) => t.name === name);
       };
       const { createX402FetchMiddleware } = await import('../lib/x402/fetch-middleware.js');
+      if (this.options.x402Policy === 'agent-guild') {
+        const { createAgentGuildPaymentPolicy } = await import('../lib/x402/agent-guild-policy.js');
+        const { X402PaymentSignatureScope } = await import('../lib/x402/payment-policy.js');
+        this.x402PaymentSignatureScope = new X402PaymentSignatureScope();
+        this.x402PaymentPolicy = createAgentGuildPaymentPolicy({
+          baseFetch: proxyFetch,
+          wallet,
+          ...(this.options.x402MaxAmountAtomic && {
+            maxAmountAtomic: this.options.x402MaxAmountAtomic,
+          }),
+        });
+      }
       customFetch = createX402FetchMiddleware(proxyFetch, {
         wallet,
         getToolByName,
         paymentCache: this.x402PaymentCache,
         ...(this.options.x402 && { schemePreference: this.options.x402 }),
+        ...(this.x402PaymentPolicy && { paymentPolicy: this.x402PaymentPolicy }),
+        ...(this.x402PaymentSignatureScope && {
+          paymentSignatureScope: this.x402PaymentSignatureScope,
+        }),
       });
     }
 
@@ -1329,6 +1357,21 @@ class BridgeProcess {
 
     // Invalidate cache and sign fresh
     this.x402PaymentCache.signature = null;
+    if (this.x402PaymentPolicy) {
+      const decision = await this.x402PaymentPolicy({
+        paymentRequired: {
+          x402Version: Number(paymentRequired.x402Version),
+          accepts: [parsed.accept],
+          ...(parsed.resource && { resource: parsed.resource }),
+        },
+        selectedRequirements: parsed.accept,
+        ...(this.options.serverConfig.url && { requestUrl: this.options.serverConfig.url }),
+      });
+      if (decision?.abort) {
+        throw new ClientError(`x402 payment blocked by policy: ${decision.reason}`);
+      }
+    }
+    let paymentSignatureBase64: string;
     try {
       const { signPayment } = await import('../lib/x402/signer.js');
       const signed = await signPayment({
@@ -1336,7 +1379,7 @@ class BridgeProcess {
         accept: parsed.accept,
         resource: parsed.resource,
       });
-      this.x402PaymentCache.signature = signed.paymentSignatureBase64;
+      paymentSignatureBase64 = signed.paymentSignatureBase64;
       logger.debug(
         `Fresh payment signed for retry: $${signed.amountUsd.toFixed(6)} to ${signed.to} on ${signed.networkLabel}`
       );
@@ -1346,7 +1389,12 @@ class BridgeProcess {
     }
 
     // Retry once with the new cached payment
-    const result = await retryFn();
+    const result = this.x402PaymentSignatureScope
+      ? await this.x402PaymentSignatureScope.run(paymentSignatureBase64, retryFn)
+      : await (async () => {
+          this.x402PaymentCache.signature = paymentSignatureBase64;
+          return retryFn();
+        })();
     return { handled: true, result };
   }
 
@@ -1891,7 +1939,7 @@ async function main(): Promise<void> {
 
   if (args.length < 2) {
     console.error(
-      'Usage: mcpc-bridge <sessionName> <transportConfigJson> [--verbose] [--profile <name>] [--proxy-host <host>] [--proxy-port <port>] [--mcp-session-id <id>] [--protocol-version <version>] [--x402 <auto|upto|exact>] [--insecure]'
+      'Usage: mcpc-bridge <sessionName> <transportConfigJson> [--verbose] [--profile <name>] [--proxy-host <host>] [--proxy-port <port>] [--mcp-session-id <id>] [--protocol-version <version>] [--x402 <auto|upto|exact>] [--x402-policy <agent-guild>] [--x402-max-amount <atomic>] [--insecure]'
     );
     process.exit(1);
   }
@@ -1947,6 +1995,45 @@ async function main(): Promise<void> {
     x402 = value as X402SchemePreference;
   }
 
+  let x402Policy: X402PaymentPolicyPreset | undefined;
+  const x402PolicyIndex = args.indexOf('--x402-policy');
+  if (x402PolicyIndex !== -1) {
+    const value = args[x402PolicyIndex + 1];
+    if (
+      value === undefined ||
+      !(X402_PAYMENT_POLICY_PRESETS as readonly string[]).includes(value)
+    ) {
+      console.error(
+        `--x402-policy requires one of: ${X402_PAYMENT_POLICY_PRESETS.join('|')} (got ${value ?? '<missing>'})`
+      );
+      process.exit(1);
+    }
+    if (!x402) {
+      console.error('--x402-policy requires --x402');
+      process.exit(1);
+    }
+    x402Policy = value as X402PaymentPolicyPreset;
+  }
+
+  let x402MaxAmountAtomic: string | undefined;
+  const x402MaxAmountIndex = args.indexOf('--x402-max-amount');
+  if (x402MaxAmountIndex !== -1) {
+    const value = args[x402MaxAmountIndex + 1];
+    if (value === undefined || !/^[0-9]+$/.test(value) || BigInt(value) <= 0n) {
+      console.error('--x402-max-amount requires a positive atomic-unit integer');
+      process.exit(1);
+    }
+    x402MaxAmountAtomic = value;
+  }
+  if (x402Policy && !x402MaxAmountAtomic) {
+    console.error('--x402-policy requires --x402-max-amount');
+    process.exit(1);
+  }
+  if (x402MaxAmountAtomic && !x402Policy) {
+    console.error('--x402-max-amount requires --x402-policy');
+    process.exit(1);
+  }
+
   // Parse --insecure flag (skip TLS certificate verification)
   const insecure = args.includes('--insecure');
 
@@ -1974,6 +2061,12 @@ async function main(): Promise<void> {
     }
     if (x402) {
       bridgeOptions.x402 = x402;
+    }
+    if (x402Policy) {
+      bridgeOptions.x402Policy = x402Policy;
+    }
+    if (x402MaxAmountAtomic) {
+      bridgeOptions.x402MaxAmountAtomic = x402MaxAmountAtomic;
     }
     if (insecure) {
       bridgeOptions.insecure = true;

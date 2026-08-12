@@ -1545,7 +1545,7 @@ export function formatSessionLine(session: SessionData): string {
   // x402 takes precedence when both happen to be present on the session record.
   let infoStr = '';
   if (session.x402) {
-    infoStr = theme.yellow('[x402]');
+    infoStr = theme.yellow(session.x402Policy ? `[x402:${session.x402Policy}]` : '[x402]');
   } else if (!session.server.command && session.profileName) {
     infoStr = chalk.dim('(OAuth: ') + theme.magenta(session.profileName) + chalk.dim(')');
   }

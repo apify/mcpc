@@ -96,6 +96,10 @@ export const TRIMMED_INSTRUCTIONS_NOTICE = '\n\n[... trimmed excessive length]';
 export const X402_SCHEME_PREFERENCES = ['auto', 'upto', 'exact'] as const;
 export type X402SchemePreference = (typeof X402_SCHEME_PREFERENCES)[number];
 
+/** Built-in policies that may authorize a fresh x402 payment signature. */
+export const X402_PAYMENT_POLICY_PRESETS = ['agent-guild'] as const;
+export type X402PaymentPolicyPreset = (typeof X402_PAYMENT_POLICY_PRESETS)[number];
+
 /**
  * Configuration for a connection to MCP server
  * Used both for config file format and internal representation
@@ -180,6 +184,10 @@ export interface SessionData {
    * Absent / undefined means x402 is disabled.
    */
   x402?: X402SchemePreference;
+  /** Optional fail-closed policy applied before every fresh x402 signature. */
+  x402Policy?: X402PaymentPolicyPreset;
+  /** Required local atomic-unit ceiling for policy-guarded x402 payments. */
+  x402MaxAmountAtomic?: string;
   insecure?: boolean; // Skip TLS certificate verification
   pid?: number; // Bridge process PID
   protocolVersion?: string; // Negotiated MCP version
