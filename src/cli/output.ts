@@ -4,6 +4,7 @@
  */
 
 import chalk from 'chalk';
+import { formatUsdAmount, usdToAtomicUnits } from '../lib/x402/limits.js';
 import type {
   DiscoverResult,
   GetPromptResult,
@@ -1545,7 +1546,12 @@ export function formatSessionLine(session: SessionData): string {
   // x402 takes precedence when both happen to be present on the session record.
   let infoStr = '';
   if (session.x402) {
-    infoStr = theme.yellow('[x402]');
+    // Show the spend limit — it is the difference between a capped wallet and an open one.
+    infoStr = theme.yellow(
+      session.x402MaxAmountUsd === undefined
+        ? '[x402]'
+        : `[x402 max ${formatUsdAmount(usdToAtomicUnits(session.x402MaxAmountUsd))}]`
+    );
   } else if (!session.server.command && session.profileName) {
     infoStr = chalk.dim('(OAuth: ') + theme.magenta(session.profileName) + chalk.dim(')');
   }
