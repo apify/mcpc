@@ -23,6 +23,11 @@ const EXPIRY_BUFFER_SECONDS = 60;
 /**
  * Callback invoked when tokens are refreshed
  * Allows callers to persist the new tokens (e.g., to keychain)
+ *
+ * `tokens.refresh_token` always carries the effective refresh token: the rotated
+ * one when the server returned a new one, otherwise the previous one. Callers can
+ * persist the whole object without erasing a refresh token that a non-rotating
+ * server omitted from the refresh response.
  */
 export type OnTokenRefreshCallback = (tokens: OAuthTokenResponse) => void | Promise<void>;
 
@@ -170,9 +175,11 @@ export class OAuthTokenManager {
 
       logger.debug(`Access token refreshed successfully for profile: ${this.profileName}`);
 
-      // Notify callback for persistence
+      // Notify callback for persistence. Pass the effective refresh token: a
+      // non-rotating server omits refresh_token from the response, and persisting
+      // the raw response would erase the stored one (#371).
       if (this.onTokenRefresh) {
-        await this.onTokenRefresh(tokenResponse);
+        await this.onTokenRefresh({ ...tokenResponse, refresh_token: this.refreshToken });
       }
 
       return tokenResponse;
