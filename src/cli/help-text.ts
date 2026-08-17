@@ -43,6 +43,13 @@ const SERVER_DETAILS_SCHEMA_URLS = [
 ];
 
 /**
+ * Stated with the shape so an agent reading the output never mistakes the redaction
+ * sentinel for a real credential: the values live in the OS keychain, not here.
+ */
+const SERVER_DETAILS_SECRETS_NOTE =
+  'Secrets in `server` (`headers`, `env`) are always shown as "<redacted>".';
+
+/**
  * Standard "JSON output (--json):" block for every command that prints server details:
  * `connect` (an array of entries), `restart` (the restarted session), and the `mcpc
  * @session` screen below.
@@ -57,7 +64,11 @@ export function serverDetailsJsonHelp(returns: 'object' | 'array'): string {
       : '`InitializeResult` or `DiscoverResult` object';
   const shape =
     returns === 'array' ? `\`[${SERVER_DETAILS_JSON_SHAPE}]\`` : `\`${SERVER_DETAILS_JSON_SHAPE}\``;
-  return jsonHelp(`${subject} ${SERVER_DETAILS_JSON_META}`, shape, SERVER_DETAILS_SCHEMA_URLS);
+  return `${jsonHelp(
+    `${subject} ${SERVER_DETAILS_JSON_META}`,
+    shape,
+    SERVER_DETAILS_SCHEMA_URLS
+  )}  ${SERVER_DETAILS_SECRETS_NOTE}\n`;
 }
 
 /**

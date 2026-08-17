@@ -28,6 +28,9 @@ import {
   isProcessAlive,
   generateRequestId,
   fetchAllPages,
+  redactValues,
+  redactServerConfigSecrets,
+  REDACTED_VALUE,
 } from '../../../src/lib/utils.js';
 import { ServerError } from '../../../src/lib/errors.js';
 import { DEFAULT_AUTH_PROFILE } from '../../../src/lib/auth/oauth-utils.js';
@@ -654,5 +657,57 @@ describe('fetchAllPages', () => {
         (page) => page.items
       )
     ).rejects.toThrow(/pagination cursor/);
+  });
+});
+
+describe('redactValues', () => {
+  it('replaces every value with the redaction sentinel, keeping the keys', () => {
+    expect(redactValues({ Authorization: 'Bearer secret', 'X-Api-Key': 'abc' })).toEqual({
+      Authorization: REDACTED_VALUE,
+      'X-Api-Key': REDACTED_VALUE,
+    });
+  });
+
+  it('returns an empty record unchanged', () => {
+    expect(redactValues({})).toEqual({});
+  });
+});
+
+describe('redactServerConfigSecrets', () => {
+  it('redacts HTTP header values', () => {
+    const config = redactServerConfigSecrets({
+      url: 'https://mcp.example.com',
+      headers: { Authorization: 'Bearer secret' },
+    });
+    expect(config).toEqual({
+      url: 'https://mcp.example.com',
+      headers: { Authorization: REDACTED_VALUE },
+    });
+  });
+
+  it('redacts stdio env values (they hold API tokens via ${VAR} substitution)', () => {
+    const config = redactServerConfigSecrets({
+      command: 'node',
+      args: ['server.js'],
+      env: { SECRET_TOKEN: 'sk_totally_fake_12345', DEBUG: 'mcp:*' },
+    });
+    expect(config).toEqual({
+      command: 'node',
+      args: ['server.js'],
+      env: { SECRET_TOKEN: REDACTED_VALUE, DEBUG: REDACTED_VALUE },
+    });
+  });
+
+  it('leaves non-secret fields untouched and omits absent ones', () => {
+    expect(redactServerConfigSecrets({ url: 'https://mcp.example.com', timeout: 30 })).toEqual({
+      url: 'https://mcp.example.com',
+      timeout: 30,
+    });
+  });
+
+  it('does not mutate the input config', () => {
+    const original = { command: 'node', env: { SECRET: 'value' } };
+    redactServerConfigSecrets(original);
+    expect(original.env.SECRET).toBe('value');
   });
 });

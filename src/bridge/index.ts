@@ -131,6 +131,10 @@ class BridgeProcess {
   // HTTP headers (received via IPC, stored in memory only)
   private headers: Record<string, string> | null = null;
 
+  // Environment variables for a stdio server (received via IPC, stored in memory only).
+  // Kept off the command line so their values never show up in `ps` output.
+  private serverEnv: Record<string, string> | null = null;
+
   // Bearer token the proxy server requires (received via IPC, stored in memory only).
   // Read by the CLI before spawn and sent over IPC — never read from the keychain here,
   // keeping the bridge's only keychain access on the OAuth-refresh path (see #55).
@@ -211,6 +215,7 @@ class BridgeProcess {
     logger.debug(`  clientSecret: ${credentials.clientSecret ? 'present' : 'absent'}`);
     logger.debug(`  privateKey: ${credentials.privateKeyPem ? 'present' : 'absent'}`);
     logger.debug(`  headers: ${credentials.headers ? Object.keys(credentials.headers).length : 0}`);
+    logger.debug(`  env: ${credentials.env ? Object.keys(credentials.env).length : 0}`);
     logger.debug(`  proxyBearerToken: ${credentials.proxyBearerToken ? 'present' : 'absent'}`);
     logger.debug(`  idJag: ${credentials.idJag ? 'present' : 'absent'}`);
 
@@ -355,6 +360,15 @@ class BridgeProcess {
         ...credentials.headers,
       };
       logger.debug(`Stored headers "${Object.keys(this.headers).join(', ')}" in memory`);
+    }
+
+    // Store stdio env variables if provided (merged into the transport config on connect)
+    if (credentials.env) {
+      this.serverEnv = {
+        ...this.serverEnv,
+        ...credentials.env,
+      };
+      logger.debug(`Stored env variables "${Object.keys(this.serverEnv).join(', ')}" in memory`);
     }
 
     // Store the proxy bearer token if provided (used by startProxyServer)
@@ -656,6 +670,14 @@ class BridgeProcess {
       // No authProvider - use updateTransportAuth for static headers
       logger.debug('No authProvider - using updateTransportAuth for headers');
       serverConfig = await this.updateTransportAuth();
+    }
+
+    // Restore the stdio server's env variables. They are stripped from the command-line
+    // config by the CLI and delivered over IPC instead, so their values (often API tokens)
+    // are never visible in `ps` output.
+    if (this.serverEnv && serverConfig.command) {
+      serverConfig.env = { ...serverConfig.env, ...this.serverEnv };
+      logger.debug(`Added ${Object.keys(this.serverEnv).length} env variables to transport`);
     }
 
     logger.debug('Building MCP client config...');

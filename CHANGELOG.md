@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `mcpc help tools/list` and other MCP method names now show the command's help instead of failing with "Unknown command" — they already worked as aliases everywhere else.
 - x402 payments now work against servers that only reveal a tool's price when it is called: the payment signed for such a challenge is attached to the retried call, which used to go out unpaid and return the payment-required result again. The signature stays scoped to the tools the server charges for, so calls to free tools never carry a payment.
 
+### Security
+
+- A stdio server's `env` values are no longer stored in plaintext: they are kept in the OS keychain (like HTTP headers), shown as `<redacted>` in `sessions.json` and `--json` output, and passed to the bridge over IPC so they never appear in the process list. Sessions created before this change keep working; recreate them to move their already-stored values out of `sessions.json`.
+
 ## [0.6.0] - 2026-08-02
 
 ### Added

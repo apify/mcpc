@@ -19,7 +19,11 @@ import {
 import { withFileLock } from './file-lock.js';
 import { createLogger } from './logger.js';
 import { ClientError } from './errors.js';
-import { removeKeychainSessionHeaders, removeKeychainProxyBearerToken } from './auth/keychain.js';
+import {
+  removeKeychainSessionHeaders,
+  removeKeychainSessionEnv,
+  removeKeychainProxyBearerToken,
+} from './auth/keychain.js';
 
 const logger = createLogger('sessions');
 
@@ -239,6 +243,14 @@ export async function deleteSession(sessionName: string): Promise<void> {
         // Ignore errors - headers may not exist
       }
 
+      // Delete stdio env variables from keychain (if any)
+      try {
+        await removeKeychainSessionEnv(sessionName);
+        logger.debug(`Deleted env variables from keychain for session: ${sessionName}`);
+      } catch {
+        // Ignore errors - env variables may not exist
+      }
+
       // Delete proxy bearer token from keychain (if any)
       try {
         await removeKeychainProxyBearerToken(sessionName);
@@ -322,6 +334,14 @@ export async function consolidateSessions(
             logger.debug(`Deleted headers from keychain for session: ${name}`);
           } catch {
             // Ignore errors - headers may not exist
+          }
+
+          // Delete stdio env variables from keychain (if any)
+          try {
+            await removeKeychainSessionEnv(name);
+            logger.debug(`Deleted env variables from keychain for session: ${name}`);
+          } catch {
+            // Ignore errors - env variables may not exist
           }
 
           // Delete proxy bearer token from keychain (if any)

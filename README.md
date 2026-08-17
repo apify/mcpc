@@ -1262,7 +1262,7 @@ For **stdio servers:**
 
 - `command` (required) - Command to execute (e.g., `node`, `npx`, `python`)
 - `args` (optional) - Array of command arguments
-- `env` (optional) - Environment variables for the process
+- `env` (optional) - Environment variables for the process (treated as secrets: stored in the OS keychain and shown as `<redacted>` in session output)
 
 > **Note:** Stdio servers inherit only a minimal env whitelist from the shell
 > (`PATH`, `HOME`, `SHELL`, …). Other vars — `NODE_EXTRA_CA_CERTS`, `HTTPS_PROXY`,
@@ -1341,6 +1341,7 @@ MCP enables arbitrary tool execution and data access - treat servers like you tr
 | ---------------------- | ----------------------------------------------- |
 | **OAuth tokens**       | Stored in OS keychain (headless fallback: `credentials.json`, `0600`) |
 | **HTTP headers**       | Stored in OS keychain per-session               |
+| **stdio `env` values** | Stored in OS keychain per-session               |
 | **Bridge credentials** | Passed via Unix socket IPC, kept in memory only |
 | **Process arguments**  | No secrets visible in `ps aux`                  |
 | **x402 private key**   | Stored in OS keychain (fallback: `wallets.json`, `0600`) |
