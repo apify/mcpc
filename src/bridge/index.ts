@@ -37,6 +37,7 @@ import {
   ensureDir,
   ensureSecureTempDir,
   cleanupOrphanedLogFiles,
+  isProtocolMismatchError,
   isSessionExpiredError,
   truncate,
   StderrTail,
@@ -64,6 +65,7 @@ import { createClientCredentialsProvider } from '../lib/auth/client-credentials.
 import { createIdJagProvider } from '../lib/auth/id-jag.js';
 import type { Tool, Resource, Prompt, Task } from '@modelcontextprotocol/client';
 import { ResourceSyncManager } from './resource-sync.js';
+import { isModernProtocolVersion } from '../core/protocol.js';
 import type { TaskUpdate } from '../lib/types.js';
 import { createRequire } from 'module';
 const { version: mcpcVersion } = createRequire(import.meta.url)('../../package.json') as {
@@ -542,9 +544,20 @@ class BridgeProcess {
         // Raw SDK errors (plain Error) would get default code 2 (ServerError) in sendError(),
         // losing the auth/session-expired distinction. Wrap as AuthError so the CLI
         // can detect it via `instanceof AuthError` after deserialization.
-        const errorMsg = (error as Error).message || '';
+        let errorMsg = (error as Error).message || '';
         let classifiedError: Error = error as Error;
-        if (isAuthenticationError(errorMsg) && !(error instanceof AuthError)) {
+        // A resumed session rejected for a protocol mismatch means the server changed
+        // protocol version underneath it (e.g. upgraded to 2026-07-28). The session
+        // cannot be resumed anymore — treat it exactly like an expired one, so the CLI
+        // tells the user to run `restart` (which reconnects without the session id)
+        // instead of auto-reconnecting into the same rejection forever (#374).
+        if (this.options.mcpSessionId && isProtocolMismatchError(errorMsg)) {
+          errorMsg =
+            `Session expired: the server no longer speaks protocol ` +
+            `${this.options.protocolVersion ?? 'unknown'} that this session negotiated. ` +
+            errorMsg;
+          classifiedError = new ClientError(errorMsg);
+        } else if (isAuthenticationError(errorMsg) && !(error instanceof AuthError)) {
           classifiedError = new AuthError(errorMsg);
         }
         // Append recent stdio server stderr so the CLI can show the user why
@@ -633,6 +646,25 @@ class BridgeProcess {
    * Connect to the MCP server
    */
   private async connectToMcp(): Promise<void> {
+    // Session resumption exists only in the 2025 era — 2026-07-28 connections are
+    // stateless and must negotiate the protocol on every connect. A stored session id
+    // recorded with a modern protocol version is a leftover (typically from a server
+    // that upgraded and dropped session support): replaying it makes the SDK skip
+    // version negotiation, so every request goes out without the required `_meta`
+    // envelope and is rejected, wedging the session in a reconnect loop (#374).
+    if (
+      this.options.mcpSessionId &&
+      this.options.protocolVersion &&
+      isModernProtocolVersion(this.options.protocolVersion)
+    ) {
+      logger.warn(
+        `Ignoring the stored MCP session id: protocol ${this.options.protocolVersion} ` +
+          `has no session resumption. Connecting with a fresh protocol negotiation.`
+      );
+      delete this.options.mcpSessionId;
+      delete this.options.protocolVersion;
+    }
+
     logger.debug('Connecting to MCP server...');
     logger.debug(`  authProvider: ${this.authProvider ? 'present' : 'NOT SET'}`);
     logger.debug(`  tokenManager: ${this.tokenManager ? 'present' : 'NOT SET'}`);
@@ -875,6 +907,12 @@ class BridgeProcess {
     if (newMcpSessionId) {
       sessionUpdate.mcpSessionId = newMcpSessionId;
       logger.info(`MCP-Session-Id saved for resumption: ${newMcpSessionId}`);
+    } else if (sessionData?.mcpSessionId) {
+      // The connection ended up without a session id although sessions.json holds one —
+      // the server stopped assigning them, or the stored id was ignored above. Drop it,
+      // or every later bridge start would keep trying to resume a session that is gone.
+      sessionUpdate.mcpSessionId = undefined;
+      logger.info('Cleared the stored MCP-Session-Id (this connection has none)');
     }
     await updateSession(this.options.sessionName, sessionUpdate);
 
@@ -1093,7 +1131,13 @@ class BridgeProcess {
     // a session "expired" (it cannot be, and there is nothing for `restart` to recover).
     const hadActiveSession = !!(this.options.mcpSessionId || this.client?.getMcpSessionId());
     let status: 'expired' | 'unauthorized' | null = null;
-    if (isSessionExpiredError(error.message, { hadActiveSession })) {
+    if (
+      isSessionExpiredError(error.message, { hadActiveSession }) ||
+      // A protocol mismatch on a live server-side session means the server changed its
+      // protocol version underneath it — the session cannot continue and cannot be
+      // resumed, same as expiry (#374).
+      (hadActiveSession && isProtocolMismatchError(error.message))
+    ) {
       logger.warn('Session appears to be expired, marking as expired and shutting down');
       status = 'expired';
     } else if (isAuthenticationError(error.message)) {

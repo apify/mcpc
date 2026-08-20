@@ -188,7 +188,12 @@ export interface SessionData {
    * (2026-07-28 connections only — see `ServerDetails.supportedVersions`).
    */
   supportedVersions?: string[];
-  mcpSessionId?: string; // Server-assigned MCP session ID for resumption (stateful Streamable HTTP only)
+  /**
+   * Server-assigned MCP session ID for resumption (stateful Streamable HTTP only).
+   * Explicitly clearable: a reconnect that ends up without a session id must drop the
+   * stored one, or every later bridge start would keep resuming a session that is gone.
+   */
+  mcpSessionId?: string | undefined;
   connectionMode?: ConnectionMode; // Whether the connection carries server-side session state (derived at connect)
   /** Server identity, as reported by the handshake (`initialize`) or `server/discover`. */
   serverInfo?: Implementation;
