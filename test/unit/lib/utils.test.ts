@@ -28,6 +28,7 @@ import {
   isProcessAlive,
   generateRequestId,
   fetchAllPages,
+  isProtocolMismatchError,
 } from '../../../src/lib/utils.js';
 import { ServerError } from '../../../src/lib/errors.js';
 import { DEFAULT_AUTH_PROFILE } from '../../../src/lib/auth/oauth-utils.js';
@@ -654,5 +655,46 @@ describe('fetchAllPages', () => {
         (page) => page.items
       )
     ).rejects.toThrow(/pagination cursor/);
+  });
+});
+
+describe('isProtocolMismatchError', () => {
+  it('matches the envelope rejection a 2026-07-28 server answers a bare modern header with', () => {
+    // Exactly what a resumed session used to hit on every reconnect (#374).
+    expect(
+      isProtocolMismatchError(
+        'Ping failed: Error POSTing to endpoint: {"jsonrpc":"2.0","error":{"code":-32602,' +
+          '"message":"Invalid params: the MCP-Protocol-Version header names protocol revision ' +
+          '2026-07-28, but the request is missing the required per-request envelope key(s): _meta"}}'
+      )
+    ).toBe(true);
+  });
+
+  it('matches the HeaderMismatch and UnsupportedProtocolVersion codes', () => {
+    expect(isProtocolMismatchError('{"error":{"code":-32020,"message":"header mismatch"}}')).toBe(
+      true
+    );
+    expect(isProtocolMismatchError('{"error":{"code":-32022,"message":"nope"}}')).toBe(true);
+  });
+
+  it("matches the SDK's own version verdicts", () => {
+    expect(isProtocolMismatchError("Server's protocol version is not supported: 2027-01-01")).toBe(
+      true
+    );
+    expect(
+      isProtocolMismatchError(
+        'connect({ prior }) with a modern verdict requires a 2026-07-28+ mutual protocol version'
+      )
+    ).toBe(true);
+  });
+
+  it('does not match unrelated failures', () => {
+    // These have their own recovery paths — resumption must survive them.
+    expect(isProtocolMismatchError('Session expired: session id not found')).toBe(false);
+    expect(isProtocolMismatchError('HTTP 401 invalid_token')).toBe(false);
+    expect(isProtocolMismatchError('fetch failed: ECONNREFUSED')).toBe(false);
+    expect(isProtocolMismatchError('{"error":{"code":-32602,"message":"Invalid params"}}')).toBe(
+      false
+    );
   });
 });

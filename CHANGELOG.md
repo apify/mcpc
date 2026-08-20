@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `mcpc help tools/list` and other MCP method names now show the command's help instead of failing with "Unknown command" — they already worked as aliases everywhere else.
 - x402 payments now work against servers that only reveal a tool's price when it is called: the payment signed for such a challenge is attached to the retried call, which used to go out unpaid and return the payment-required result again. The signature stays scoped to the tools the server charges for, so calls to free tools never carry a payment.
+- Sessions against MCP 2026-07-28 servers no longer get stuck reconnecting forever, which happened when a reconnect replayed a stored session ID: the client then skipped protocol negotiation and the server rejected every request as missing the required `_meta` envelope. A session ID the server no longer honors is now dropped, and a server that changes protocol version under a live session gets a fresh connection instead of endless retries.
 - Sessions no longer lose their saved OAuth refresh token when a server that does not rotate refresh tokens omits `refresh_token` from the refresh response. The bridge used to overwrite the stored token with nothing, so the session could not authenticate after the access token expired and required a new `mcpc login`.
 
 ## [0.6.0] - 2026-08-02

@@ -239,6 +239,88 @@ describe('protocol era', () => {
   });
 });
 
+describe('resumed connections (connect with a prior era verdict)', () => {
+  const DISCOVER = { supportedVersions: ['2026-07-28'], capabilities: {} };
+
+  it('hands the prior verdict to the SDK so the connection knows its era', async () => {
+    // Without it the SDK skips negotiation on a session-id transport and sends every
+    // request without the `_meta` envelope 2026-07-28 servers require.
+    era = 'modern';
+    negotiatedVersion = '2026-07-28';
+    const client = new McpClient({ name: 'test', version: '0.0.0' });
+    const prior = { kind: 'modern' as const, discover: DISCOVER };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await client.connect(httpTransport('sess-1') as any, { prior });
+
+    expect(stubSdkClient.connect).toHaveBeenCalledWith(expect.anything(), { prior });
+  });
+
+  it('passes no connect options when there is no prior verdict', async () => {
+    await connectClient({});
+    expect(stubSdkClient.connect).toHaveBeenCalledWith(expect.anything(), undefined);
+  });
+
+  it('opens the listChanged stream the adopted connection did not get', async () => {
+    // `connect({ prior })` registers the notification handlers but opens no stream, so a
+    // resumed modern session would never hear that tools or resources changed.
+    stubSdkClient.getServerCapabilities = vi.fn().mockReturnValue({
+      tools: { listChanged: true },
+      resources: {},
+    });
+    listenQueue = [makeSubscription()];
+    era = 'modern';
+    negotiatedVersion = '2026-07-28';
+    const client = new McpClient(
+      { name: 'test', version: '0.0.0' },
+      { listChanged: { tools: { onChanged: () => {} }, resources: { onChanged: () => {} } } }
+    );
+
+    await client.connect(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      httpTransport('sess-1') as any,
+      { prior: { kind: 'modern', discover: DISCOVER } }
+    );
+
+    // Only what the server advertises: resources declared no listChanged support.
+    expect(listenCalls).toEqual([{ toolsListChanged: true }]);
+  });
+
+  it('opens no stream on a resumed legacy connection', async () => {
+    // 2025-era servers push list-change notifications unsolicited.
+    const client = new McpClient(
+      { name: 'test', version: '0.0.0' },
+      { listChanged: { tools: { onChanged: () => {} } } }
+    );
+    stubSdkClient.getServerCapabilities = vi.fn().mockReturnValue({ tools: { listChanged: true } });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await client.connect(httpTransport('sess-1') as any, { prior: { kind: 'legacy' } });
+
+    expect(listenCalls).toEqual([]);
+  });
+
+  it('connects anyway when the server refuses the listChanged stream', async () => {
+    // Notifications are degradable — losing them must not cost the whole session.
+    stubSdkClient.getServerCapabilities = vi.fn().mockReturnValue({ tools: { listChanged: true } });
+    listenQueue = [];
+    era = 'modern';
+    negotiatedVersion = '2026-07-28';
+    const client = new McpClient(
+      { name: 'test', version: '0.0.0' },
+      { listChanged: { tools: { onChanged: () => {} } } }
+    );
+
+    await client.connect(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      httpTransport('sess-1') as any,
+      { prior: { kind: 'modern', discover: DISCOVER } }
+    );
+
+    expect(client.getProtocolEra()).toBe('modern');
+  });
+});
+
 describe('removed protocol methods are rejected per era', () => {
   it('rejects logging-set-level on a modern connection without calling the SDK', async () => {
     const client = await connectClient({ era: 'modern' });

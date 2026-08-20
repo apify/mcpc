@@ -11,7 +11,9 @@ import {
 } from '@modelcontextprotocol/client';
 import type {
   Transport,
+  ListChangedHandlers,
   McpSubscription,
+  PriorDiscovery,
   ProtocolEra,
   SubscriptionFilter,
 } from '@modelcontextprotocol/client';
@@ -240,6 +242,12 @@ export class McpClient implements IMcpClient {
    * probe as a real failure (modern pin), so their errors are never rewritten.
    */
   private readonly autoNegotiates: boolean;
+  /**
+   * The listChanged handlers the client was created with. Kept because the SDK opens the
+   * 2026-07-28 `subscriptions/listen` stream carrying them only on a probed connect —
+   * a connection adopted from a prior era verdict (see connect()) must open it here.
+   */
+  private readonly listChangedConfig: ListChangedHandlers | undefined;
   /** Resource URIs subscribed on a 2026-07-28 connection (served by one listen stream). */
   private modernSubscribedUris = new Set<string>();
   /** The open `subscriptions/listen` stream backing modernSubscribedUris, if any. */
@@ -252,6 +260,7 @@ export class McpClient implements IMcpClient {
     }
     this.configuredRequestTimeoutMillis = this.requestTimeoutMillis;
     this.autoNegotiates = options.protocolVersion === undefined;
+    this.listChangedConfig = options.listChanged;
 
     this.client = new SDKClient(clientInfo, {
       capabilities: options.capabilities || {},
@@ -300,9 +309,16 @@ export class McpClient implements IMcpClient {
   }
 
   /**
-   * Connect to an MCP server using the provided transport
+   * Connect to an MCP server using the provided transport.
+   *
+   * `prior` short-circuits version negotiation with an era verdict the caller already
+   * holds. Resuming a stateful session needs it: the SDK skips the handshake whenever the
+   * transport carries a session id, so on a 2026-07-28 connection it would otherwise never
+   * learn the era and would send every request without the mandatory `_meta` envelope —
+   * which servers reject, since the transport still stamps the modern
+   * `MCP-Protocol-Version` header (see planResumption in src/bridge/resume.ts).
    */
-  async connect(transport: Transport): Promise<void> {
+  async connect(transport: Transport, options?: { prior?: PriorDiscovery }): Promise<void> {
     try {
       this.logger.debug('Connecting to MCP server...');
 
@@ -334,7 +350,11 @@ export class McpClient implements IMcpClient {
         this.logger.debug('Transport closed');
       };
 
-      await this.client.connect(transport);
+      const prior = options?.prior;
+      if (prior) {
+        this.logger.debug(`Connecting with a prior era verdict: ${prior.kind}`);
+      }
+      await this.client.connect(transport, prior ? { prior } : undefined);
 
       this.hasConnected = true;
 
@@ -359,8 +379,13 @@ export class McpClient implements IMcpClient {
 
       // On 2026-07-28 connections the SDK auto-opens a subscriptions/listen stream for
       // the configured listChanged handlers, but never re-opens it after a drop —
-      // without this watch, list-change notifications would silently stop.
-      this.watchListChangedStream(this.client.autoOpenedSubscription);
+      // without this watch, list-change notifications would silently stop. A connection
+      // adopted from a prior verdict gets no auto-opened stream at all, so open it here.
+      if (this.client.autoOpenedSubscription) {
+        this.watchListChangedStream(this.client.autoOpenedSubscription);
+      } else if (this.getProtocolEra() === 'modern') {
+        await this.openListChangedStream();
+      }
 
       const serverVersion = this.client.getServerVersion();
       const serverCapabilities = this.client.getServerCapabilities();
@@ -839,6 +864,38 @@ export class McpClient implements IMcpClient {
         await this.reopenModernListen();
       });
     });
+  }
+
+  /**
+   * Open the listChanged `subscriptions/listen` stream on a 2026-07-28 connection the SDK
+   * did not open one for. The SDK opens it only when it probed the server itself; a
+   * connection adopted from a prior era verdict (a resumed session, see connect()) has the
+   * notification handlers registered but no stream to deliver on, so without this a resumed
+   * session would never hear that tools, resources or prompts changed.
+   *
+   * Notifications are a degradable feature: a server that refuses the stream must not fail
+   * the connection, so failures are logged and the connection proceeds without them.
+   */
+  private async openListChangedStream(): Promise<void> {
+    const config = this.listChangedConfig;
+    if (!config) return;
+    // Same filter the SDK derives on a probed connect: only what the server advertises.
+    const advertised = this.client.getServerCapabilities();
+    const filter: SubscriptionFilter = {
+      ...(config.tools && advertised?.tools?.listChanged && { toolsListChanged: true }),
+      ...(config.prompts && advertised?.prompts?.listChanged && { promptsListChanged: true }),
+      ...(config.resources && advertised?.resources?.listChanged && { resourcesListChanged: true }),
+    };
+    if (Object.keys(filter).length === 0) return;
+    try {
+      this.logger.debug('Opening listChanged listen stream:', filter);
+      this.watchListChangedStream(await this.client.listen(filter, this.getRequestOptions()));
+    } catch (error) {
+      this.logger.warn(
+        'Failed to open the listChanged listen stream, list-change notifications will not arrive:',
+        error
+      );
+    }
   }
 
   /**

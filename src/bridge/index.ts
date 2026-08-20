@@ -37,6 +37,7 @@ import {
   ensureDir,
   ensureSecureTempDir,
   cleanupOrphanedLogFiles,
+  isProtocolMismatchError,
   isSessionExpiredError,
   truncate,
   StderrTail,
@@ -49,7 +50,7 @@ import {
   isAuthenticationError,
 } from '../lib/index.js';
 import { getSession, loadSessions, updateSession } from '../lib/sessions.js';
-import type { AuthCredentials, X402WalletCredentials } from '../lib/types.js';
+import type { AuthCredentials, SessionData, X402WalletCredentials } from '../lib/types.js';
 import { OAuthTokenManager } from '../lib/auth/oauth-token-manager.js';
 import { OAuthProvider } from '../lib/auth/oauth-provider.js';
 import type { OAuthClientProvider } from '@modelcontextprotocol/client';
@@ -64,6 +65,7 @@ import { createClientCredentialsProvider } from '../lib/auth/client-credentials.
 import { createIdJagProvider } from '../lib/auth/id-jag.js';
 import type { Tool, Resource, Prompt, Task } from '@modelcontextprotocol/client';
 import { ResourceSyncManager } from './resource-sync.js';
+import { planResumption, type SessionResumption } from './resume.js';
 import type { TaskUpdate } from '../lib/types.js';
 import { createRequire } from 'module';
 const { version: mcpcVersion } = createRequire(import.meta.url)('../../package.json') as {
@@ -147,6 +149,13 @@ class BridgeProcess {
 
   // Resource→file sync for resources-subscribe (created once the MCP client connects)
   private resourceSync: ResourceSyncManager | null = null;
+
+  // How this connection resumes the server-side session recorded in sessions.json, or
+  // null when it connects from scratch. Set by connectToMcp from planResumption(), and
+  // cleared there when a resume turns out to be unusable and is retried as a fresh
+  // connect — so everything downstream (session-id checks, verification ping, restored
+  // handshake details) reflects what actually happened, not what was requested.
+  private resume: SessionResumption | null = null;
 
   // Handshake results persisted at the original connect, used only when this bridge
   // resumed a server-side session: resumption skips `initialize`, so the SDK client
@@ -558,7 +567,7 @@ class BridgeProcess {
         // User must explicitly use 'mcpc @session restart' or 'mcpc login' to recover
         if (
           isSessionExpiredError(errorMsg, {
-            hadActiveSession: !!this.options.mcpSessionId,
+            hadActiveSession: !!this.resume,
           })
         ) {
           logger.warn('Session rejected by server (expired session ID), marking as expired');
@@ -630,9 +639,67 @@ class BridgeProcess {
   }
 
   /**
-   * Connect to the MCP server
+   * Connect to the MCP server, resuming the server-side session recorded in sessions.json
+   * when this bridge was started with one.
+   *
+   * A resumed connection skips version negotiation (see planResumption), so it relies on
+   * the era recorded for it. When the server has since changed era — an upgrade to
+   * 2026-07-28 being the common case — it rejects every request on the resumed connection,
+   * and retrying forever would leave the session stuck reconnecting (#374). So a rejection
+   * that names a protocol mismatch costs the resumption, not the session: mcpc reconnects
+   * once from scratch, negotiating the version again.
    */
   private async connectToMcp(): Promise<void> {
+    const session = await getSession(this.options.sessionName);
+    const plan = planResumption({
+      ...(this.options.mcpSessionId && { mcpSessionId: this.options.mcpSessionId }),
+      ...(this.options.protocolVersion && { protocolVersion: this.options.protocolVersion }),
+      session,
+    });
+    if (plan.abandonedReason) {
+      logger.warn(
+        `Not resuming the stored MCP session: ${plan.abandonedReason}. ` +
+          `Connecting with a fresh protocol negotiation instead.`
+      );
+    }
+    this.resume = plan.resumption ?? null;
+
+    try {
+      await this.connectToMcpAttempt(session);
+      return;
+    } catch (error) {
+      const message = (error as Error).message || '';
+      if (!this.resume || !isProtocolMismatchError(message)) throw error;
+      logger.warn(
+        `Server rejected the resumed session ` +
+          `(protocol ${this.resume.protocolVersion ?? 'version unknown'}): ${message}`
+      );
+      logger.info('Reconnecting from scratch with a fresh protocol negotiation...');
+      this.resume = null;
+      this.resumedHandshakeDetails = null;
+      await this.discardClient();
+    }
+
+    await this.connectToMcpAttempt(session);
+  }
+
+  /**
+   * Close and forget a client that failed to become usable, so the next connect attempt
+   * starts from a clean slate. Best-effort: the connection is already unusable, and its
+   * teardown must not mask the error that led here.
+   */
+  private async discardClient(): Promise<void> {
+    const client = this.client;
+    this.client = null;
+    this.resourceSync = null;
+    if (!client) return;
+    await client.close().catch((error) => {
+      logger.debug('Error closing the unusable client (ignored):', error);
+    });
+  }
+
+  /** One connect attempt, honoring the resumption state in `this.resume`. */
+  private async connectToMcpAttempt(session: SessionData | undefined): Promise<void> {
     logger.debug('Connecting to MCP server...');
     logger.debug(`  authProvider: ${this.authProvider ? 'present' : 'NOT SET'}`);
     logger.debug(`  tokenManager: ${this.tokenManager ? 'present' : 'NOT SET'}`);
@@ -696,12 +763,14 @@ class BridgeProcess {
       // Pass auth provider for automatic token refresh (HTTP transport only)
       ...(this.authProvider && { authProvider: this.authProvider }),
       // Pass session ID for resumption (HTTP transport only)
-      ...(this.options.mcpSessionId && { mcpSessionId: this.options.mcpSessionId }),
+      ...(this.resume && { mcpSessionId: this.resume.mcpSessionId }),
       // Restore the previously negotiated protocol version on resumption: the SDK skips
       // the handshake when a session ID is supplied, so without this the reconnected
       // transport would not know which MCP-Protocol-Version header to send
-      ...(this.options.mcpSessionId &&
-        this.options.protocolVersion && { protocolVersion: this.options.protocolVersion }),
+      ...(this.resume?.protocolVersion && { protocolVersion: this.resume.protocolVersion }),
+      // Era verdict for a resumed 2026-07-28 session: without it the SDK never learns the
+      // era and omits the `_meta` envelope those servers require (see planResumption)
+      ...(this.resume?.prior && { priorDiscovery: this.resume.prior }),
       // Pass x402 fetch middleware (HTTP transport only)
       ...(customFetch && { customFetch }),
       // Route stdio server stderr into the bridge log + tail buffer
@@ -778,8 +847,7 @@ class BridgeProcess {
         updateSession(this.options.sessionName, { resourceSubscriptions: entries }),
       logger: createLogger('resource-sync'),
     });
-    const sessionData = await getSession(this.options.sessionName);
-    this.resourceSync.load(sessionData?.resourceSubscriptions);
+    this.resourceSync.load(session?.resourceSubscriptions);
     this.client
       .getSDKClient()
       .setNotificationHandler('notifications/resources/updated', (notification) => {
@@ -790,15 +858,15 @@ class BridgeProcess {
     // Resuming a server-side session skips the initialize handshake, so remember the
     // values persisted by the connect that did perform it — they are the only source
     // of server capabilities and instructions for the rest of this bridge's life.
-    if (this.options.mcpSessionId && sessionData) {
+    if (this.resume && session) {
       this.resumedHandshakeDetails = {
-        ...(sessionData.serverInfo && { serverInfo: sessionData.serverInfo }),
-        ...(sessionData.capabilities && { capabilities: sessionData.capabilities }),
-        ...(sessionData.instructions && { instructions: sessionData.instructions }),
-        ...(sessionData.supportedVersions && {
-          supportedVersions: sessionData.supportedVersions,
+        ...(session.serverInfo && { serverInfo: session.serverInfo }),
+        ...(session.capabilities && { capabilities: session.capabilities }),
+        ...(session.instructions && { instructions: session.instructions }),
+        ...(session.supportedVersions && {
+          supportedVersions: session.supportedVersions,
         }),
-        ...(sessionData._meta && { _meta: sessionData._meta }),
+        ...(session._meta && { _meta: session._meta }),
       };
     }
 
@@ -809,16 +877,17 @@ class BridgeProcess {
     // Detect session ID mismatch: we tried to resume but server did not return the
     // same session ID. This covers: server issued a different ID, or server did not
     // return any ID at all (e.g. session state lost). Either way the old session is gone.
-    // Guarded by `this.options.mcpSessionId`, so stateless connections (which never resume,
-    // since no session id was ever persisted) fall through without being marked expired.
-    if (this.options.mcpSessionId && newMcpSessionId !== this.options.mcpSessionId) {
+    // Guarded by `this.resume`, so connections that are not resuming — stateless ones
+    // (no session id was ever persisted) and reconnects that abandoned a stale
+    // resumption — fall through without being marked expired.
+    if (this.resume && newMcpSessionId !== this.resume.mcpSessionId) {
       logger.warn(
         `Server did not resume MCP session ` +
-          `(expected ${this.options.mcpSessionId}, got ${newMcpSessionId ?? 'none'}). Marking as expired.`
+          `(expected ${this.resume.mcpSessionId}, got ${newMcpSessionId ?? 'none'}). Marking as expired.`
       );
       throw new Error(
         `Session expired: server did not resume MCP session ` +
-          `(expected ${this.options.mcpSessionId}, got ${newMcpSessionId ?? 'none'})`
+          `(expected ${this.resume.mcpSessionId}, got ${newMcpSessionId ?? 'none'})`
       );
     }
 
@@ -826,7 +895,7 @@ class BridgeProcess {
     // The initialize handshake may succeed even when the server has lost session state,
     // causing the session to appear "live" until the first real request reveals it's expired.
     // Ping before marking as active so we never show a false "live" status.
-    if (this.options.mcpSessionId) {
+    if (this.resume) {
       logger.info('Verifying resumed session with ping...');
       await this.client.ping();
       logger.info('Session verification ping succeeded');
@@ -875,6 +944,15 @@ class BridgeProcess {
     if (newMcpSessionId) {
       sessionUpdate.mcpSessionId = newMcpSessionId;
       logger.info(`MCP-Session-Id saved for resumption: ${newMcpSessionId}`);
+    } else if (session?.mcpSessionId) {
+      // This connection has no session id although sessions.json holds one: the server
+      // stopped assigning them (the 2026-07-28 stateless model), the resumption was
+      // abandoned, or this was an explicit restart. Drop the stale id — keeping it makes
+      // every later bridge start resume a session that no longer exists, and on a modern
+      // server it also suppresses version negotiation, so requests go out with the
+      // modern protocol header but no `_meta` envelope and the server rejects them (#374).
+      sessionUpdate.mcpSessionId = undefined;
+      logger.info('Cleared the stored MCP-Session-Id (this connection has none)');
     }
     await updateSession(this.options.sessionName, sessionUpdate);
 
@@ -1091,7 +1169,7 @@ class BridgeProcess {
     // server-assigned session id to lose. Stateless servers (2026-07-28) issue no id, so a
     // transient 404 there is a routing/path error, not an expired session — never mark such
     // a session "expired" (it cannot be, and there is nothing for `restart` to recover).
-    const hadActiveSession = !!(this.options.mcpSessionId || this.client?.getMcpSessionId());
+    const hadActiveSession = !!(this.resume || this.client?.getMcpSessionId());
     let status: 'expired' | 'unauthorized' | null = null;
     if (isSessionExpiredError(error.message, { hadActiveSession })) {
       logger.warn('Session appears to be expired, marking as expired and shutting down');

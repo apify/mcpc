@@ -59,7 +59,7 @@ const logger = createLogger('bridge-manager');
  */
 async function classifyAndThrowSessionError(
   sessionName: string,
-  session: { server: ServerConfig; mcpSessionId?: string },
+  session: { server: ServerConfig; mcpSessionId?: string | undefined },
   errorMessage: string,
   originalError?: Error
 ): Promise<void> {
