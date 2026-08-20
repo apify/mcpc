@@ -7,7 +7,6 @@ import type {
   ListChangedHandlers,
   OAuthClientProvider,
   FetchLike,
-  PriorDiscovery,
 } from '@modelcontextprotocol/client';
 import { McpClient, type McpClientOptions } from './mcp-client.js';
 import { createTransportFromConfig } from './transports.js';
@@ -63,15 +62,6 @@ export interface CreateMcpClientOptions {
    * MCP-Protocol-Version header.
    */
   protocolVersion?: string;
-
-  /**
-   * Era verdict from the connection being resumed, handed straight to the SDK's
-   * `connect({ prior })`. Required to resume a 2026-07-28 session: the SDK skips version
-   * negotiation whenever a session id is supplied, and a client that never negotiated
-   * sends requests without the `_meta` envelope those servers demand. Pass together with
-   * mcpSessionId; built by planResumption (src/bridge/resume.ts).
-   */
-  priorDiscovery?: PriorDiscovery;
 
   /**
    * Custom fetch function for the transport (HTTP transport only)
@@ -195,10 +185,7 @@ export async function createMcpClient(options: CreateMcpClientOptions): Promise<
       transportOptions.onStderrLine = options.onStderrLine;
     }
     const transport = createTransportFromConfig(options.serverConfig, transportOptions);
-    await client.connect(
-      transport,
-      options.priorDiscovery ? { prior: options.priorDiscovery } : undefined
-    );
+    await client.connect(transport);
   }
 
   return client;

@@ -632,9 +632,9 @@ export function redactHeaders(headers: Record<string, string>): Record<string, s
  * server answers when a modern header arrives without the `_meta` envelope, and the SDK's
  * own refusal of a server version it cannot speak.
  *
- * The bridge uses this to stop resuming a server-side session whose recorded protocol era
- * the server has since changed underneath it, and reconnect from scratch instead of
- * retrying the same rejected connection forever (#374).
+ * The bridge uses this to mark a resumed server-side session as expired when the server
+ * has changed protocol version underneath it, instead of auto-reconnecting into the same
+ * rejection forever (#374).
  */
 export function isProtocolMismatchError(errorMessage: string): boolean {
   const msg = errorMessage.toLowerCase();
