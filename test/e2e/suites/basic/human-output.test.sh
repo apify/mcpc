@@ -51,10 +51,10 @@ assert_success
 assert_contains "$STDOUT" "* \`"
 test_pass
 
-test_case "tools-list compact shows hint about --full"
+test_case "tools-list compact shows hint to fetch tool details"
 run_mcpc "$SESSION" tools-list
 assert_success
-assert_contains "$STDOUT" "--full"
+assert_contains "$STDOUT" "Before calling a tool"
 assert_contains "$STDOUT" "tools-get"
 test_pass
 
@@ -86,7 +86,7 @@ test_pass
 test_case "tools-list --full does NOT show hint"
 run_mcpc "$SESSION" tools-list --full
 assert_success
-assert_not_contains "$STDOUT" "Use \`tools-list --full\`"
+assert_not_contains "$STDOUT" "Before calling a tool"
 test_pass
 
 # =============================================================================

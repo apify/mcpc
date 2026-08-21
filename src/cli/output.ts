@@ -550,7 +550,7 @@ function formatToolsCompact(tools: Tool[], options?: FormatOptions): string {
   const session = options?.sessionName ? `${options.sessionName} ` : '';
   lines.push('');
   lines.push(
-    `For full tool details and schema, run \`mcpc ${session}tools-list --full\` or \`mcpc ${session}tools-get <name>\``
+    `Before calling a tool, get its full details and schema by running: \`mcpc ${session}tools-get <name>\``
   );
 
   return lines.join('\n');
