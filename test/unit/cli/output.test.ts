@@ -506,10 +506,11 @@ describe('formatTools', () => {
       expect(output).toContain('[destructive]');
     });
 
-    it('should show hint about --full flag', () => {
+    it('should show hint to fetch tool details before calling', () => {
       const output = formatTools(sampleTools);
-      expect(output).toContain('tools-list --full');
+      expect(output).toContain('Before calling a tool');
       expect(output).toContain('tools-get <name>');
+      expect(output).toContain('tools-list --full');
     });
 
     it('should NOT show detailed input schema', () => {
@@ -545,9 +546,9 @@ describe('formatTools', () => {
       );
     });
 
-    it('should NOT show hint about --full flag', () => {
+    it('should NOT show hint about fetching tool details', () => {
       const output = formatTools(sampleTools, { full: true });
-      expect(output).not.toContain('tools-list --full');
+      expect(output).not.toContain('Before calling a tool');
     });
   });
 
