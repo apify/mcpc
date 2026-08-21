@@ -552,6 +552,7 @@ function formatToolsCompact(tools: Tool[], options?: FormatOptions): string {
   lines.push(
     `Before calling a tool, get its full details and schema by running: \`mcpc ${session}tools-get <name>\``
   );
+  lines.push(`To get full details for all tools, run: \`mcpc ${session}tools-list --full\``);
 
   return lines.join('\n');
 }

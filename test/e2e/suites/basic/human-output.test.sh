@@ -56,6 +56,7 @@ run_mcpc "$SESSION" tools-list
 assert_success
 assert_contains "$STDOUT" "Before calling a tool"
 assert_contains "$STDOUT" "tools-get"
+assert_contains "$STDOUT" "tools-list --full"
 test_pass
 
 test_case "tools-list compact does NOT show Input section"

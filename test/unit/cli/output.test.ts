@@ -510,6 +510,7 @@ describe('formatTools', () => {
       const output = formatTools(sampleTools);
       expect(output).toContain('Before calling a tool');
       expect(output).toContain('tools-get <name>');
+      expect(output).toContain('tools-list --full');
     });
 
     it('should NOT show detailed input schema', () => {
