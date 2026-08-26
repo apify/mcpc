@@ -14,7 +14,7 @@ The examples below use `mcpc` as a command on `PATH`. If it is not installed glo
 or otherwise available, use the published package through `npx` instead:
 
 ```bash
-npx @apify/mcpc@latest --help
+npx -y @apify/mcpc@latest --help
 ```
 
 After checking the help, prefix the commands below with `npx @apify/mcpc`
