@@ -1438,6 +1438,7 @@ See [CONTRIBUTING](./CONTRIBUTING.md) for development setup, architecture overvi
 | [wong2/mcp-cli](https://github.com/wong2/mcp-cli)                       | JS     |   440 |      67 |       6 | ✅     | ✅    | ✅        | ✅      | —     | —         | —        | ✅    | ✅    | ✅   | —           | —    | —   |
 | [activeing123/mcptoon](https://github.com/activeing123/mcptoon)         | Python |   130 |      25 |       2 | ✅     | ✅    | —         | —       | —     | ✅        | —        | —     | ✅    | ✅   | —           | —    | —   |
 | [mcpshim/mcpshim](https://github.com/mcpshim/mcpshim)                   | Go     |    62 |      15 |       1 | ✅     | ✅    | —         | —       | —     | ✅        | ✅       | ✅    | —     | ✅   | ✅          | —    | —   |
+| [lydakis/mcpx](https://github.com/lydakis/mcpx)                         | Go     |    52 |     118 |       3 | ✅     | ✅    | —         | —       | —     | ✅        | ✅       | ✅    | ✅    | ✅   | —           | —    | —   |
 | [evantahler/mcpx](https://github.com/evantahler/mcpx)                   | TS     |    33 |     111 |       1 | ✅     | ✅    | ✅        | ✅      | ✅    | ✅        | —        | ✅    | ✅    | ✅   | ✅          | —    | —   |
 | [EstebanForge/mcp-cli-ent](https://github.com/EstebanForge/mcp-cli-ent) | Go     |    15 |      61 |       2 | ✅     | ✅    | —         | —       | —     | ✅        | ✅       | —     | ✅    | ✅   | ✅          | —    | —   |
 | [domdomegg/call-mcp](https://github.com/domdomegg/call-mcp)             | TS     |     3 |      29 |       2 | ✅     | ✅    | —         | —       | —     | ✅        | —        | ✅    | ✅    | ✅   | —           | —    | —   |
@@ -1451,6 +1452,7 @@ See [CONTRIBUTING](./CONTRIBUTING.md) for development setup, architecture overvi
 - [activeing123/mcptoon](https://github.com/activeing123/mcptoon) is tools-only and focuses on token efficiency: tool listings, schemas, and results are encoded as [TOON](https://github.com/toon-format/toon) or its own compact formats instead of JSON.
 - [IBM/mcp-cli](https://github.com/IBM/mcp-cli) and [mcp-client-cli](https://github.com/adhikasp/mcp-client-cli) integrate an LLM (Ollama, OpenAI, etc.) for chat-style interaction, while the other tools are pure CLI clients.
 - [domdomegg/call-mcp](https://github.com/domdomegg/call-mcp) can also call connectors configured in claude.ai by reusing the Claude Code OAuth token, with no separate login.
+- [lydakis/mcpx](https://github.com/lydakis/mcpx) is a Unix-composable client (`mcpx <server> <tool>`), not [evantahler/mcpx](https://github.com/evantahler/mcpx).
 
 ### Code mode and dynamic tool discovery
 
