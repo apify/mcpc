@@ -4,7 +4,11 @@
 
 import { OAuthError, OAuthErrorCode } from '@modelcontextprotocol/client';
 import { validateClientMetadataUrl } from '../../../../src/lib/auth/oauth-utils.js';
-import { explainOAuthRegistrationFailure } from '../../../../src/lib/auth/oauth-flow.js';
+import {
+  assertHttpAuthorizationUrl,
+  explainOAuthRegistrationFailure,
+  getBrowserOpenCommand,
+} from '../../../../src/lib/auth/oauth-flow.js';
 import { AuthError } from '../../../../src/lib/errors.js';
 
 describe('explainOAuthRegistrationFailure', () => {
@@ -191,5 +195,84 @@ describe('validateClientMetadataUrl', () => {
 
   it('accepts a URL with a query string', () => {
     expect(() => validateClientMetadataUrl('https://example.com/client.json?v=1')).not.toThrow();
+  });
+});
+
+describe('getBrowserOpenCommand', () => {
+  const platforms: NodeJS.Platform[] = ['darwin', 'win32', 'linux', 'freebsd', 'openbsd', 'sunos'];
+  // The authorization URL is server-controlled, so cmd.exe-style metacharacters are
+  // realistic input: `&` and `|` would be command separators under `cmd.exe /c start`.
+  const hostile = new URL('https://evil.example/authorize?client_id=1&calc|whoami^%PATH%#frag');
+
+  it.each(platforms)('never launches a shell or command interpreter on %s', (platform) => {
+    const { command } = getBrowserOpenCommand(hostile, platform);
+    expect(command).not.toMatch(/cmd(\.exe)?$/i);
+    expect(command).not.toMatch(/powershell|pwsh/i);
+    expect(command).not.toMatch(/(^|\/)(ba|z|da)?sh$/);
+    expect(command).not.toMatch(/^start$/i);
+  });
+
+  it.each(platforms)('passes the URL through verbatim as a single argument on %s', (platform) => {
+    const { args } = getBrowserOpenCommand(hostile, platform);
+    expect(args[args.length - 1]).toBe(hostile.toString());
+    expect(args.filter((a) => a.includes('evil.example'))).toHaveLength(1);
+  });
+
+  it('uses rundll32 url.dll,FileProtocolHandler on Windows', () => {
+    expect(getBrowserOpenCommand(new URL('https://auth.example/authorize'), 'win32')).toEqual({
+      command: 'rundll32',
+      args: ['url.dll,FileProtocolHandler', 'https://auth.example/authorize'],
+    });
+  });
+
+  it('uses open on macOS and xdg-open elsewhere', () => {
+    const url = new URL('https://auth.example/authorize?x=1');
+    expect(getBrowserOpenCommand(url, 'darwin')).toEqual({
+      command: 'open',
+      args: [url.toString()],
+    });
+    expect(getBrowserOpenCommand(url, 'linux')).toEqual({
+      command: 'xdg-open',
+      args: [url.toString()],
+    });
+  });
+
+  it('serialises whitespace and quotes so the argument cannot be split or re-quoted', () => {
+    const url = new URL('https://auth.example/authorize?redirect="x y"');
+    const { args } = getBrowserOpenCommand(url, 'win32');
+    expect(args[1]).not.toMatch(/[\s"]/);
+    expect(args[1]).toBe('https://auth.example/authorize?redirect=%22x%20y%22');
+  });
+
+  it.each(['http://127.0.0.1:8080/authorize', 'https://auth.example/authorize'])(
+    'accepts %s',
+    (url) => {
+      expect(() => getBrowserOpenCommand(new URL(url), 'linux')).not.toThrow();
+    }
+  );
+
+  it.each([
+    'javascript:alert(1)',
+    'file:///etc/passwd',
+    'ms-msdt:/id PCWDiagnostic',
+    'ftp://auth.example/authorize',
+    'mailto:victim@example.com',
+  ])('rejects the non-http(s) authorization URL %s on every platform', (url) => {
+    for (const platform of platforms) {
+      expect(() => getBrowserOpenCommand(new URL(url), platform)).toThrow(AuthError);
+    }
+  });
+});
+
+describe('assertHttpAuthorizationUrl', () => {
+  it('names the offending scheme and refuses to open it', () => {
+    expect(() => assertHttpAuthorizationUrl(new URL('javascript:alert(1)'))).toThrow(
+      /unsupported scheme "javascript:".*Refusing to open/
+    );
+  });
+
+  it('allows http and https', () => {
+    expect(() => assertHttpAuthorizationUrl(new URL('http://localhost/a'))).not.toThrow();
+    expect(() => assertHttpAuthorizationUrl(new URL('https://a.example/b'))).not.toThrow();
   });
 });

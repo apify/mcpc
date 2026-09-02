@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sessions no longer get stuck reconnecting forever after a server upgrades to MCP 2026-07-28: a reconnect replayed the stored session ID, which made the client skip protocol negotiation and the server reject every request. Stale session IDs are now dropped (2026-07-28 has no session resumption), and a session whose server no longer speaks its protocol version is marked expired with a hint to run `restart`.
 - Sessions no longer lose their saved OAuth refresh token when a server that does not rotate refresh tokens omits `refresh_token` from the refresh response. The bridge used to overwrite the stored token with nothing, so the session could not authenticate after the access token expired and required a new `mcpc login`.
 
+### Security
+
+- `mcpc login` no longer opens the authorization URL through `cmd.exe` on Windows. The URL comes from the authorization server, and `cmd.exe` treated `&`, `|`, `^` and `%VAR%` inside it as commands, so a malicious or compromised server could run arbitrary commands when you pressed Enter to open the browser (and even a benign URL was cut off at its first `&`). The browser is now launched without any shell on all platforms, and authorization URLs with a scheme other than `http:`/`https:` are refused.
+
 ## [0.6.0] - 2026-08-02
 
 ### Added

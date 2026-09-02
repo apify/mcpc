@@ -291,7 +291,7 @@ Implements [MCP security best practices](https://modelcontextprotocol.io/specifi
 - Input validation for session names, profile names, and URLs (strict regex, no path traversal)
 - URL normalization strips username, password, and hash
 - HTML output in OAuth callback is escaped to prevent XSS
-- Browser opening uses `execFile()` (not `exec()`) to avoid shell injection
+- Browser opening uses `execFile()` with a non-shell launcher on every platform (`open`, `rundll32 url.dll,FileProtocolHandler`, `xdg-open` — never `cmd.exe /c start`, which interprets `&`/`|`/`^`/`%VAR%` inside the server-supplied URL), and only `http:`/`https:` authorization URLs are opened
 
 **Filesystem security:**
 
