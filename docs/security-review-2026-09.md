@@ -10,7 +10,7 @@ mcpc gets the big things right: credentials live in the OS keychain, headers tra
 
 The gaps cluster in five places:
 
-1. **A shell on the OAuth path on Windows.** The authorization URL, which the server controls, is handed to `cmd.exe /c start`. That is command injection on `mcpc login`.
+1. **A shell on the OAuth path on Windows** (fixed in #382). The authorization URL, which the server controls, is handed to `cmd.exe /c start`. That is command injection on `mcpc login`.
 2. **x402 pays whatever the server asks.** No spending cap, no asset allowlist, no expiry clamp, an automatic unlimited Permit2 approval for a server-chosen token, and payments are invisible outside debug logs. Once `--x402` is set on a session, every later agent tool call pays.
 3. **Config files are trusted more than they should be.** A bare `mcpc connect` reads project-directory configs, expands any `${VAR}` into headers or URLs, and connects HTTP entries without confirmation. A cloned repo can exfiltrate environment secrets.
 4. **The "no credentials in logs or argv" guarantee has holes.** Substituted headers are debug-printed, stdio `env`/`args` secrets go into bridge argv, the bridge log banner, `sessions.json` and `mcpc --json`, and the bridge log receives every debug line regardless of `--verbose`.
@@ -25,6 +25,8 @@ Severity scale: **High** = exploitable by a remote server or a malicious repo wi
 ## High
 
 ### H1. Windows browser launch goes through `cmd.exe` with a server-controlled URL
+
+**Status: fixed** in [#382](https://github.com/apify/mcpc/pull/382). The browser is now launched via `rundll32 url.dll,FileProtocolHandler` on Windows (no shell on any platform), non-`http(s)` authorization URLs are refused before they are shown or opened, and unit tests assert the launcher command is never a shell.
 
 - `src/lib/auth/oauth-flow.ts:423-427`: `execFile('cmd.exe', ['/c', 'start', '""', url])`.
 - The URL is built by the SDK from the authorization server's `authorization_endpoint` (`node_modules/@modelcontextprotocol/client/dist/index.mjs:1144`, `new URL(metadata.authorization_endpoint)` with no scheme check). The metadata comes from whatever server the user typed into `mcpc login`, or from the protected-resource metadata that server points to. Same code path for `login --grant id-jag`.
