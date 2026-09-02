@@ -404,31 +404,69 @@ async function findAvailablePort(ports: readonly number[]): Promise<number> {
 }
 
 /**
- * Open a URL in the default browser
- * Uses platform-specific commands
- * Returns true if the browser was opened successfully, false otherwise
+ * Reject authorization URLs that are not plain `http:`/`https:` before they are
+ * shown to the user or handed to the browser launcher.
+ *
+ * The URL comes from the authorization server's metadata, i.e. from whatever
+ * server the user typed into `mcpc login` (or a server it pointed to). The MCP
+ * security best practices require clients to only open `http://` and
+ * `https://` authorization URLs — anything else (`javascript:`, `file:`,
+ * custom app schemes) must never reach the OS URL handler.
  */
-async function tryOpenBrowser(url: string): Promise<boolean> {
+export function assertHttpAuthorizationUrl(url: URL): void {
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new AuthError(
+      `Authorization server returned an authorization URL with unsupported scheme "${url.protocol}" ` +
+        '(only http: and https: are allowed). Refusing to open it.'
+    );
+  }
+}
+
+/**
+ * Build the platform command that opens `url` in the default browser.
+ *
+ * Exported for tests. Two invariants are enforced here and guarded by unit
+ * tests, because the URL is server-controlled:
+ *
+ * - The URL must be `http:`/`https:` (see `assertHttpAuthorizationUrl`).
+ * - The command is never a shell. In particular, Windows must not use
+ *   `cmd.exe /c start`: libuv only quotes arguments containing whitespace or
+ *   double quotes, so `&`, `|`, `^` and `%VAR%` in a URL reach `cmd.exe`
+ *   unescaped and are interpreted as commands. `rundll32 url.dll,FileProtocolHandler`
+ *   hands the URL straight to the shell-execute API (the approach used by the
+ *   GitHub CLI and Go's `pkg/browser`), with no command interpreter in between.
+ */
+export function getBrowserOpenCommand(
+  url: URL,
+  platform: NodeJS.Platform = process.platform
+): { command: string; args: string[] } {
+  assertHttpAuthorizationUrl(url);
+  // WHATWG URL serialisation percent-encodes whitespace and double quotes, so the
+  // string is always a single, unambiguous argument for the launcher.
+  const target = url.toString();
+
+  if (platform === 'darwin') {
+    return { command: 'open', args: [target] };
+  }
+  if (platform === 'win32') {
+    return { command: 'rundll32', args: ['url.dll,FileProtocolHandler', target] };
+  }
+  return { command: 'xdg-open', args: [target] };
+}
+
+/**
+ * Open a URL in the default browser
+ * Uses platform-specific commands (see `getBrowserOpenCommand`)
+ * Returns true if the browser was opened successfully, false otherwise.
+ * Throws if the URL is not http(s) — that is a bad server, not a missing browser,
+ * so it must not fall back to "paste this URL into your browser".
+ */
+async function tryOpenBrowser(url: URL): Promise<boolean> {
+  const { command, args } = getBrowserOpenCommand(url);
+
   const { execFile } = await import('child_process');
   const { promisify } = await import('util');
   const execFileAsync = promisify(execFile);
-
-  const platform = process.platform;
-  let command: string;
-  let args: string[];
-
-  if (platform === 'darwin') {
-    command = 'open';
-    args = [url];
-  } else if (platform === 'win32') {
-    // On Windows, use cmd.exe /c start to open URLs.
-    // The empty "" is the window title argument required by 'start' when the target contains special characters.
-    command = 'cmd.exe';
-    args = ['/c', 'start', '""', url];
-  } else {
-    command = 'xdg-open';
-    args = [url];
-  }
 
   try {
     await execFileAsync(command, args);
@@ -569,6 +607,10 @@ export async function runInteractiveAuthorization(
       });
     });
 
+    // Refuse non-http(s) URLs before showing them — the user would otherwise
+    // be invited to paste them into a browser if the launcher fails.
+    assertHttpAuthorizationUrl(authorizationUrl);
+
     // Interactive chatter goes to stderr so stdout stays clean for --json output.
     console.error(`\nAuthorization URL: ${authorizationUrl.toString()}`);
     const confirmed = await waitForEnterKey(
@@ -579,7 +621,7 @@ export async function runInteractiveAuthorization(
     }
 
     console.error('Opening browser...');
-    const opened = await tryOpenBrowser(authorizationUrl.toString());
+    const opened = await tryOpenBrowser(authorizationUrl);
 
     const racers: Promise<CallbackResult>[] = [codePromise];
     if (opened) {
@@ -742,6 +784,10 @@ export async function performOAuthFlow(
         authorizationUrl.searchParams.set('state', randomBytes(16).toString('hex'));
       }
 
+      // Refuse non-http(s) URLs before showing them — the user would otherwise
+      // be invited to paste them into a browser if the launcher fails.
+      assertHttpAuthorizationUrl(authorizationUrl);
+
       logger.debug('Opening browser for authorization...');
       // Interactive chatter goes to stderr so stdout stays clean for --json output.
       console.error(`\nAuthorization URL: ${authorizationUrl.toString()}`);
@@ -755,7 +801,7 @@ export async function performOAuthFlow(
       }
 
       console.error('Opening browser...');
-      const opened = await tryOpenBrowser(authorizationUrl.toString());
+      const opened = await tryOpenBrowser(authorizationUrl);
 
       if (opened) {
         console.error('If the browser does not open automatically, please visit the URL above.');
