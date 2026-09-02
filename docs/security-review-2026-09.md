@@ -12,7 +12,7 @@ The gaps cluster in five places:
 
 1. **A shell on the OAuth path on Windows** (fixed in #382). The authorization URL, which the server controls, is handed to `cmd.exe /c start`. That is command injection on `mcpc login`.
 2. **x402 pays whatever the server asks.** No spending cap, no asset allowlist, no expiry clamp, an automatic unlimited Permit2 approval for a server-chosen token, and payments are invisible outside debug logs. Once `--x402` is set on a session, every later agent tool call pays.
-3. **Config files are trusted more than they should be** (fixed, see H3). A bare `mcpc connect` reads project-directory configs, expands any `${VAR}` into headers or URLs, and connects HTTP entries without confirmation. A cloned repo can exfiltrate environment secrets.
+3. **Config files are trusted more than they should be** (fixed in #383). A bare `mcpc connect` reads project-directory configs, expands any `${VAR}` into headers or URLs, and connects HTTP entries without confirmation. A cloned repo can exfiltrate environment secrets.
 4. **The "no credentials in logs or argv" guarantee has holes.** Substituted headers are debug-printed, stdio `env`/`args` secrets go into bridge argv, the bridge log banner, `sessions.json` and `mcpc --json`, and the bridge log receives every debug line regardless of `--verbose`.
 5. **Token refresh does not reuse what login learned.** The refresh path rediscovers the token endpoint from the MCP server's own origin, with no issuer check, no HTTPS check, no client secret and no `resource` parameter.
 
@@ -49,7 +49,7 @@ Severity scale: **High** = exploitable by a remote server or a malicious repo wi
 
 ### H3. Project-directory config discovery plus unrestricted `${VAR}` expansion exfiltrates environment secrets
 
-**Status: fixed.** Auto-discovery (`mcpc connect` with no server) now treats project-scope files as untrusted: an entry that references any `${VAR}` — in `url`, `headers`, `command`, `args` or `env` — is skipped (`skipReason: "project-env"` in `--json`, with the variable names), the listing shows the header names each entry would send, and `-H` is refused in auto-discovery mode. Global files under the home directory still expand `${VAR}`, as does naming a file explicitly (`mcpc connect ./.mcp.json`), which is the deliberate trust step. Running from the home directory keeps user-level locations (`~/.cursor/mcp.json` etc.) global-scoped. The default-profile attachment noted below is unchanged: it only applies when the entry's host matches a host the user has logged in to. Covered by unit tests and `test/e2e/suites/basic/connect-discover.test.sh`.
+**Status: fixed** in [#383](https://github.com/apify/mcpc/pull/383). Auto-discovery (`mcpc connect` with no server) now treats project-scope files as untrusted: an entry that references any `${VAR}` — in `url`, `headers`, `command`, `args` or `env` — is skipped (`skipReason: "project-env"` in `--json`, with the variable names), the listing shows the header names each entry would send, and `-H` is refused in auto-discovery mode. Global files under the home directory still expand `${VAR}`, as does naming a file explicitly (`mcpc connect ./.mcp.json`), which is the deliberate trust step. Running from the home directory keeps user-level locations (`~/.cursor/mcp.json` etc.) global-scoped. The default-profile attachment noted below is unchanged: it only applies when the entry's host matches a host the user has logged in to. Covered by unit tests and `test/e2e/suites/basic/connect-discover.test.sh`.
 
 - `src/lib/config.ts:310-318`: auto-discovery reads `.mcp.json`, `mcp.json`, `mcp_config.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, `.kiro/settings/mcp.json` from the current directory, i.e. files committed in whatever repository an agent happens to be working in.
 - `src/lib/config.ts:161-173`: `${NAME}` resolves to `process.env[NAME]` for any name, in `url`, `command`, `args`, `env` and `headers` (`:114-146`).
@@ -244,7 +244,7 @@ Help (`src/cli/index.ts:824`, `docs/REFERENCE.md:311`): "Remove stale/crashed se
 | Redeem codes and refresh tokens only at the recorded AS (mix-up) | Login yes, refresh no | H5. |
 | Secure token storage | Yes | Keychain with `0600` fallback. |
 | Block private IP ranges during OAuth discovery (clients deployed to servers) | No | No SSRF mitigation; mcpc is explicitly aimed at CI and agent hosts, so worth a follow-up. |
-| Consent before running local server commands from configuration | Partial | Bulk connect skips stdio unless `--stdio`; single-entry connect spawns without showing the command. Auto-discovered project entries that read `${VAR}` are now skipped until the file is connected by name (H3, fixed). |
+| Consent before running local server commands from configuration | Partial | Bulk connect skips stdio unless `--stdio`; single-entry connect spawns without showing the command. Auto-discovered project entries that read `${VAR}` are now skipped until the file is connected by name (H3, fixed in #383). |
 | Treat tool descriptions and annotations as untrusted | Not surfaced | Printed verbatim with no marker or sanitisation (M10, M17). |
 | Keep local server IPC access restricted | Unix yes, Windows unverified | See Info. |
 
