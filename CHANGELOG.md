@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- A bare `mcpc connect` no longer lets config files found in the current directory read environment variables. A `.mcp.json` checked into a repository could reference `${GITHUB_TOKEN}` in a header or hostname pointed at an attacker's server, and auto-discovery would have sent the secret on the first request. Such entries are now skipped with the variable names shown, `-H` is refused for auto-discovery (it would go to every discovered server), and connecting the file by name (`mcpc connect ./.mcp.json`) remains the explicit way to trust it. Config files under your home directory are unaffected.
 - `mcpc login` no longer opens the authorization URL through `cmd.exe` on Windows. The URL comes from the authorization server, and `cmd.exe` treated `&`, `|`, `^` and `%VAR%` inside it as commands, so a malicious or compromised server could run arbitrary commands when you pressed Enter to open the browser (and even a benign URL was cut off at its first `&`). The browser is now launched without any shell on all platforms, and authorization URLs with a scheme other than `http:`/`https:` are refused.
 
 ## [0.6.0] - 2026-08-02

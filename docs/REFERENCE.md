@@ -143,6 +143,14 @@ Stdio servers (command-based, run locally):
   later fails — only connect to configs you trust. Bulk connects skip
   stdio by default; pass --stdio to include them.
 
+Project configs are untrusted (auto-discovery only):
+  A config file in the current directory may have been committed by
+  someone else, so auto-discovery never lets it read ${VAR}: entries
+  that reference environment variables (in url, headers, command, args
+  or env) are skipped, and -H is refused. Files under ~ are yours and
+  expand ${VAR} as usual. To connect a skipped entry, review the file
+  and name it: mcpc connect ./.mcp.json
+
 Protocol version:
   mcpc negotiates the newest MCP version both sides support, from
   2026-07-28 down to 2024-10-07. Pass --protocol-version to pin one exact
