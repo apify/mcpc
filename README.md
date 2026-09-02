@@ -231,10 +231,21 @@ mcpc connect ~/.vscode/mcp.json   # connect every server in one file
 
 Bulk connects auto-generate session names (so they don't take an `@session`) and **skip local
 stdio servers by default** — pass `--stdio` to include them. Each discovered config file is listed
-with its servers and their status (`● live`, `✗ failed`); files that can't be used are shown as
-`(0 servers)` or `(invalid)` with the reason, rather than silently ignored. The command waits for
-every handshake to finish (with a progress spinner in human mode); `--json` reports each server's
-details. If every server fails to connect, the command exits with a non-zero code.
+with its servers, the names of the headers they send, and their status (`● live`, `✗ failed`);
+files that can't be used are shown as `(0 servers)` or `(invalid)` with the reason, rather than
+silently ignored. The command waits for every handshake to finish (with a progress spinner in
+human mode); `--json` reports each server's details. If every server fails to connect, the command
+exits with a non-zero code.
+
+**Auto-discovery does not trust config files in the current directory to read environment
+variables.** A `.mcp.json` checked into a repository could carry
+`"headers": { "X": "${GITHUB_TOKEN}" }` (or `${SECRET}` in a hostname) pointed at an attacker's
+server, and a bare `mcpc connect` in that checkout would send the secret on the first request.
+So `mcpc connect` skips every project-scope entry that references a `${VAR}` — in `url`, `headers`,
+`command`, `args` or `env`, with or without `--stdio` — and shows which variables it would have
+read; it also refuses `-H`, which would go to every discovered server. Files under your home
+directory are your own and expand `${VAR}` as usual. To connect a skipped entry, review the file
+and name it explicitly (`mcpc connect ./.mcp.json`): naming a file is the trust step.
 
 ### MCP commands
 

@@ -8,6 +8,7 @@
  */
 
 import { createServer } from 'net';
+import { relative, sep } from 'path';
 import {
   OutputMode,
   isValidSessionName,
@@ -59,6 +60,7 @@ import {
   loadConfig,
   listServers,
   isStdioEntry,
+  listEnvVarReferences,
   scanMcpConfigFiles,
   getStandardMcpConfigPaths,
   type DiscoveredConfig,
@@ -112,7 +114,9 @@ export type ConnectResultEntry = {
     configFile?: string;
     entry?: string;
     status: 'created' | 'active' | 'failed' | 'skipped';
-    skipReason?: 'stdio' | 'duplicate';
+    skipReason?: 'stdio' | 'duplicate' | 'project-env';
+    /** For `skipReason: 'project-env'`: the `${VAR}` names the entry would have read. */
+    envVars?: string[];
     error?: string;
     stateless?: boolean | null; // true=stateless, false=stateful, null=not yet determined
   };
@@ -668,11 +672,12 @@ type BulkConnectResult = BulkConnectEntry & {
 
 /**
  * Build a `skipped` ConnectResultEntry for a config entry that wasn't connected
- * (stdio servers skipped without --stdio, or duplicate session names).
+ * (stdio servers skipped without --stdio, duplicate session names, or project-scope entries
+ * that read environment variables — see `aggregateDiscoveredEntries`).
  */
 function skippedConnectEntry(
-  entry: { sessionName: string; configFile: string; entry: string },
-  skipReason: 'stdio' | 'duplicate'
+  entry: { sessionName: string; configFile: string; entry: string; envVars?: string[] },
+  skipReason: 'stdio' | 'duplicate' | 'project-env'
 ): ConnectResultEntry {
   return {
     _mcpc: {
@@ -681,6 +686,7 @@ function skippedConnectEntry(
       entry: entry.entry,
       status: 'skipped',
       skipReason,
+      ...(entry.envVars && { envVars: entry.envVars }),
     },
   };
 }
@@ -988,13 +994,28 @@ export async function connectAllFromConfig(
   }
 }
 
-type SkippedEntry = { configFile: string; entry: string; sessionName: string };
+type SkippedEntry = {
+  configFile: string;
+  entry: string;
+  sessionName: string;
+  /** Only for project-env skips: the `${VAR}` names the entry references. */
+  envVars?: string[];
+};
 
 /**
  * Aggregate config entries from multiple discovered config files into a flat list of
  * bulk-connect entries. Resolves session-name collisions by taking the first occurrence
  * (project-scoped configs win over global ones due to discovery order).
  * When `stdio` is false/omitted, entries with a `command` field are filtered out.
+ *
+ * Project-scope files (found in the current directory) are not trusted to read the
+ * environment: an entry that references any `${VAR}` — in its URL, headers, command, args or
+ * env — is skipped as `project-env`, whatever transport it uses and even with `--stdio`. Such a
+ * file may have been committed by someone else, and `${GITHUB_TOKEN}` in a header (or a
+ * hostname) pointed at an attacker's URL would leak the secret on the first request. The user
+ * opts in by naming the file (`mcpc connect ./.mcp.json`), which is a deliberate act on a file
+ * they have looked at. Global files under the home directory are the user's own and expand
+ * `${VAR}` as before.
  */
 function aggregateDiscoveredEntries(
   discovered: DiscoveredConfig[],
@@ -1003,15 +1024,23 @@ function aggregateDiscoveredEntries(
   entries: BulkConnectEntry[];
   skippedDuplicates: SkippedEntry[];
   skippedStdio: SkippedEntry[];
+  skippedProjectEnv: SkippedEntry[];
 } {
   const entries: BulkConnectEntry[] = [];
   const skippedDuplicates: SkippedEntry[] = [];
   const skippedStdio: SkippedEntry[] = [];
+  const skippedProjectEnv: SkippedEntry[] = [];
   const seenNames = new Set<string>();
 
   for (const d of discovered) {
     for (const entry of Object.keys(d.config.mcpServers)) {
       const sessionName = generateSessionName({ type: 'config', file: d.path, entry });
+      const serverCfg = d.config.mcpServers[entry];
+      const envVars = d.scope === 'project' && serverCfg ? listEnvVarReferences(serverCfg) : [];
+      if (envVars.length > 0) {
+        skippedProjectEnv.push({ configFile: d.path, entry, sessionName, envVars });
+        continue;
+      }
       if (!options.stdio && isStdioEntry(d.config, entry)) {
         skippedStdio.push({ configFile: d.path, entry, sessionName });
         continue;
@@ -1029,7 +1058,36 @@ function aggregateDiscoveredEntries(
     }
   }
 
-  return { entries, skippedDuplicates, skippedStdio };
+  return { entries, skippedDuplicates, skippedStdio, skippedProjectEnv };
+}
+
+/**
+ * Render the `${VAR}` names a skipped project-scope entry reads, for the inline marker and
+ * the footer note: `${APIFY_TOKEN}, ${GITHUB_TOKEN}`.
+ */
+function formatEnvVarRefs(envVars: string[]): string {
+  return envVars.map((v) => `\${${v}}`).join(', ');
+}
+
+/**
+ * The footer note under an auto-discovery listing that skipped project-scope entries for
+ * reading environment variables: why, and the explicit command that connects each file.
+ * The command names the file (not `--stdio`-style flag) because naming it is the trust step —
+ * it is the same command that already connects a config file the user chose.
+ */
+function formatProjectEnvNote(skipped: SkippedEntry[]): string {
+  // Discovery stores absolute paths; a project file reads better relative to the cwd it was
+  // found in (`./.mcp.json`), and the `./` keeps parseServerArg from reading it as a hostname.
+  const cwd = process.cwd();
+  const files = [...new Set(skipped.map((s) => s.configFile))].map((f) =>
+    f.startsWith(cwd + sep) ? `.${sep}${relative(cwd, f)}` : f
+  );
+  const lines = [
+    `Config files in the current directory are not trusted to read environment variables — a`,
+    `checked-in file could send them to any server. Review the file, then connect it by name:`,
+    ...files.map((f) => `  mcpc connect ${formatPath(f)}`),
+  ];
+  return lines.join('\n');
 }
 
 /**
@@ -1091,6 +1149,19 @@ function buildNoServersError(scan: McpConfigScan): string {
  * the first occurrence wins. Re-running the command reuses existing sessions.
  */
 export async function connectAllFromStandardConfigs(options: BulkConnectOptions): Promise<void> {
+  // A header given to auto-discovery would go to every server any discovered file names —
+  // including one a checked-in project config points at an attacker. There is no legitimate
+  // "same Authorization for every server" case, so refuse rather than fan the header out.
+  if (options.headers && options.headers.length > 0) {
+    throw new ClientError(
+      `-H/--header cannot be combined with config auto-discovery: the header would be sent to ` +
+        `every discovered server.\n` +
+        `Pass it when connecting one server or one config file you chose:\n` +
+        `  mcpc connect mcp.example.com @myserver -H "Authorization: Bearer ..."\n` +
+        `  mcpc connect ./mcp.json -H "X-Custom: value"`
+    );
+  }
+
   const scan = scanMcpConfigFiles();
   const { discovered } = scan;
 
@@ -1102,9 +1173,10 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
     throw new ClientError(buildNoServersError(scan));
   }
 
-  const { entries, skippedDuplicates, skippedStdio } = aggregateDiscoveredEntries(discovered, {
-    ...(options.stdio && { stdio: true }),
-  });
+  const { entries, skippedDuplicates, skippedStdio, skippedProjectEnv } =
+    aggregateDiscoveredEntries(discovered, {
+      ...(options.stdio && { stdio: true }),
+    });
 
   // Connect all non-skipped entries (quietly) so each server's result can be shown inline
   // next to its config entry. In human mode bulkConnectEntries waits for each handshake to
@@ -1114,6 +1186,7 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
 
   if (options.outputMode === 'json') {
     const skippedJsonEntries = [
+      ...skippedProjectEnv.map((s) => skippedConnectEntry(s, 'project-env')),
       ...skippedStdio.map((s) => skippedConnectEntry(s, 'stdio')),
       ...skippedDuplicates.map((s) => skippedConnectEntry(s, 'duplicate')),
     ];
@@ -1132,7 +1205,8 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
 
   // Human output: list each discovered config file and annotate every server entry with
   // its connection result (or skip reason) inline, within the context of its config file.
-  const totalEntries = entries.length + skippedDuplicates.length + skippedStdio.length;
+  const totalEntries =
+    entries.length + skippedDuplicates.length + skippedStdio.length + skippedProjectEnv.length;
   const fileCount = discovered.length + scan.empty.length + scan.errors.length;
   console.log(
     theme.cyan(
@@ -1143,17 +1217,19 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
 
   const statusByName = new Map(results.map((r) => [r.sessionName, r] as const));
 
-  // A stdio server skipped (no --stdio) may already be live from an earlier
-  // `mcpc connect --stdio`. Detect those so we show their real status instead of "skipped",
-  // and only suggest --stdio when a stdio server is genuinely unconnected.
-  const liveSkippedStdio = new Set<string>();
-  for (const s of skippedStdio) {
+  // A skipped server may already be live from an earlier explicit connect (`mcpc connect
+  // --stdio`, or `mcpc connect ./.mcp.json` for a project entry that reads ${VAR}). Detect
+  // those so we show their real status instead of "skipped", and only print the how-to notes
+  // when a skipped server is genuinely unconnected.
+  const liveSkipped = new Set<string>();
+  for (const s of [...skippedStdio, ...skippedProjectEnv]) {
     const session = await getSession(s.sessionName);
     if (session && getBridgeStatus(session) === 'live') {
-      liveSkippedStdio.add(s.sessionName);
+      liveSkipped.add(s.sessionName);
     }
   }
-  const unconnectedStdio = skippedStdio.length - liveSkippedStdio.size;
+  const unconnectedStdio = skippedStdio.filter((s) => !liveSkipped.has(s.sessionName));
+  const unconnectedProjectEnv = skippedProjectEnv.filter((s) => !liveSkipped.has(s.sessionName));
 
   for (const d of discovered) {
     console.log(
@@ -1164,14 +1240,25 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
       const serverCfg = d.config.mcpServers[entryName];
       const target = serverCfg?.url ?? [serverCfg?.command, ...(serverCfg?.args ?? [])].join(' ');
       const truncated = target && target.length > 72 ? target.slice(0, 72) + '…' : target;
+      // Name the headers the entry would send (values stay hidden — they may be secrets), so
+      // the listing shows what a connect from this file does before anything is sent.
+      const headerNames = Object.keys(serverCfg?.headers ?? {});
+      const headersNote = headerNames.length > 0 ? ` (headers: ${headerNames.join(', ')})` : '';
 
+      const isSkipped = (list: SkippedEntry[]) =>
+        list.some((s) => s.configFile === d.path && s.entry === entryName);
       let marker: string;
-      if (skippedStdio.some((s) => s.configFile === d.path && s.entry === entryName)) {
-        // Show a live badge for stdio servers that are already running; otherwise "skipped".
-        marker = liveSkippedStdio.has(sessionName)
+      if (isSkipped(skippedProjectEnv) || isSkipped(skippedStdio)) {
+        // Show a live badge for skipped servers that are already running; otherwise "skipped".
+        const projectEnv = skippedProjectEnv.find(
+          (s) => s.configFile === d.path && s.entry === entryName
+        );
+        marker = liveSkipped.has(sessionName)
           ? formatConnectStatusBadge('active')
-          : theme.yellow('○ skipped (stdio)');
-      } else if (skippedDuplicates.some((s) => s.configFile === d.path && s.entry === entryName)) {
+          : projectEnv
+            ? theme.yellow(`○ skipped (reads ${formatEnvVarRefs(projectEnv.envVars ?? [])})`)
+            : theme.yellow('○ skipped (stdio)');
+      } else if (isSkipped(skippedDuplicates)) {
         marker = chalk.dim('○ skipped (duplicate)');
       } else {
         const r = statusByName.get(sessionName);
@@ -1179,7 +1266,7 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
       }
 
       console.log(
-        `    ${theme.cyan(sessionName)} → ${chalk.dim(truncated ?? entryName)}${marker ? ` ${marker}` : ''}`
+        `    ${theme.cyan(sessionName)} → ${chalk.dim((truncated ?? entryName) + headersNote)}${marker ? ` ${marker}` : ''}`
       );
     }
   }
@@ -1197,17 +1284,34 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
     console.log(`    ${chalk.dim(c.error)}`);
   }
 
-  // Nothing connectable and nothing already live — guide the user to --stdio.
-  if (entries.length === 0 && liveSkippedStdio.size === 0) {
-    throw new ClientError(
-      `All servers in discovered config files use stdio transport.\n` +
-        `Pass --stdio to include them: mcpc connect --stdio`
-    );
+  // Nothing connectable and nothing already live — say why and how to proceed.
+  if (entries.length === 0 && liveSkipped.size === 0) {
+    if (unconnectedProjectEnv.length === 0) {
+      throw new ClientError(
+        `All servers in discovered config files use stdio transport.\n` +
+          `Pass --stdio to include them: mcpc connect --stdio`
+      );
+    }
+    const lines = [`No servers connected from discovered config files.`];
+    if (unconnectedStdio.length > 0) {
+      lines.push(
+        `${unconnectedStdio.length} use${unconnectedStdio.length === 1 ? 's' : ''} stdio transport — ` +
+          `pass --stdio to include them: mcpc connect --stdio`
+      );
+    }
+    lines.push(formatProjectEnvNote(unconnectedProjectEnv));
+    throw new ClientError(lines.join('\n'));
   }
 
   // Only suggest --stdio when a stdio server isn't already connected.
-  if (unconnectedStdio > 0) {
+  if (unconnectedStdio.length > 0) {
     console.log('\nTo include stdio servers, run: mcpc connect --stdio');
+  }
+
+  // Same for project-scope entries skipped for reading ${VAR}: explain the trust rule once,
+  // with the explicit per-file command that connects them.
+  if (unconnectedProjectEnv.length > 0) {
+    console.log(`\n${formatProjectEnvNote(unconnectedProjectEnv)}`);
   }
 
   // If ALL connectable servers failed, exit with error
