@@ -77,6 +77,8 @@ import type { ProxyConfig } from '../lib/types.js';
 // only here and load the implementations lazily at the x402-gated call sites.
 import type { X402PaymentCache } from '../lib/x402/fetch-middleware.js';
 import type { SignerWallet } from '../lib/x402/signer.js';
+// Spend-limit helpers are deliberately dependency-free, so they stay a static import.
+import { X402PaymentLimitError, parseMaxAmountUsd, usdToAtomicUnits } from '../lib/x402/limits.js';
 import type { FetchLike } from '@modelcontextprotocol/client';
 
 // HTTP proxy and TLS settings are configured in main() after parsing --insecure flag
@@ -98,6 +100,8 @@ interface BridgeOptions {
   protocolVersion?: string; // Protocol version negotiated by the resumed session (only set with mcpSessionId)
   /** x402 scheme preference; presence enables x402 auto-payment, absence disables. */
   x402?: X402SchemePreference;
+  /** Local spend limit in USD applied to every single x402 payment. */
+  x402MaxAmountUsd?: number;
   insecure?: boolean; // Skip TLS certificate verification
 }
 
@@ -710,11 +714,13 @@ class BridgeProcess {
         return this.client?.getCachedTools()?.find((t: Tool) => t.name === name);
       };
       const { createX402FetchMiddleware } = await import('../lib/x402/fetch-middleware.js');
+      const maxAmountAtomicUnits = this.x402MaxAmountAtomicUnits();
       customFetch = createX402FetchMiddleware(proxyFetch, {
         wallet,
         getToolByName,
         paymentCache: this.x402PaymentCache,
         ...(this.options.x402 && { schemePreference: this.options.x402 }),
+        ...(maxAmountAtomicUnits !== undefined && { maxAmountAtomicUnits }),
       });
     }
 
@@ -1345,6 +1351,12 @@ class BridgeProcess {
     }
   }
 
+  /** The session's `--x402-max-amount` in atomic units, or undefined when uncapped. */
+  private x402MaxAmountAtomicUnits(): bigint | undefined {
+    const maxAmountUsd = this.options.x402MaxAmountUsd;
+    return maxAmountUsd === undefined ? undefined : usdToAtomicUnits(maxAmountUsd);
+  }
+
   /**
    * Handle a tool result that contains x402 payment-required data.
    * Signs a fresh payment, caches it, and retries the tool call once.
@@ -1381,18 +1393,23 @@ class BridgeProcess {
 
     // Invalidate cache and sign fresh
     this.x402PaymentCache.signature = null;
+    const { signPayment } = await import('../lib/x402/signer.js');
+    const maxAmountAtomicUnits = this.x402MaxAmountAtomicUnits();
     try {
-      const { signPayment } = await import('../lib/x402/signer.js');
       const signed = await signPayment({
         wallet: this.x402Wallet,
         accept: parsed.accept,
         resource: parsed.resource,
+        ...(maxAmountAtomicUnits !== undefined && { maxAmountAtomicUnits }),
       });
       this.x402PaymentCache.signature = signed.paymentSignatureBase64;
       logger.debug(
         `Fresh payment signed for retry: $${signed.amountUsd.toFixed(6)} to ${signed.to} on ${signed.networkLabel}`
       );
     } catch (signError) {
+      // Refusing to exceed the spend limit must reach the caller — returning the
+      // payment-required result instead would read as "the server wants payment".
+      if (signError instanceof X402PaymentLimitError) throw signError;
       logger.warn('Failed to sign fresh payment for 402 retry:', signError);
       return { handled: false };
     }
@@ -1943,7 +1960,7 @@ async function main(): Promise<void> {
 
   if (args.length < 2) {
     console.error(
-      'Usage: mcpc-bridge <sessionName> <transportConfigJson> [--verbose] [--profile <name>] [--proxy-host <host>] [--proxy-port <port>] [--mcp-session-id <id>] [--protocol-version <version>] [--x402 <auto|upto|exact>] [--insecure]'
+      'Usage: mcpc-bridge <sessionName> <transportConfigJson> [--verbose] [--profile <name>] [--proxy-host <host>] [--proxy-port <port>] [--mcp-session-id <id>] [--protocol-version <version>] [--x402 <auto|upto|exact>] [--x402-max-amount <usd>] [--insecure]'
     );
     process.exit(1);
   }
@@ -1999,6 +2016,18 @@ async function main(): Promise<void> {
     x402 = value as X402SchemePreference;
   }
 
+  // Parse `--x402-max-amount <usd>` (local spend limit for every single payment).
+  let x402MaxAmountUsd: number | undefined;
+  const x402MaxAmountIndex = args.indexOf('--x402-max-amount');
+  if (x402MaxAmountIndex !== -1) {
+    try {
+      x402MaxAmountUsd = parseMaxAmountUsd(args[x402MaxAmountIndex + 1] ?? '');
+    } catch (error) {
+      console.error((error as Error).message);
+      process.exit(1);
+    }
+  }
+
   // Parse --insecure flag (skip TLS certificate verification)
   const insecure = args.includes('--insecure');
 
@@ -2026,6 +2055,9 @@ async function main(): Promise<void> {
     }
     if (x402) {
       bridgeOptions.x402 = x402;
+    }
+    if (x402MaxAmountUsd !== undefined) {
+      bridgeOptions.x402MaxAmountUsd = x402MaxAmountUsd;
     }
     if (insecure) {
       bridgeOptions.insecure = true;

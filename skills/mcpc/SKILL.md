@@ -254,6 +254,8 @@ mcpc @apify skills-get <name> --raw    # print the SKILL.md markdown (pipe to a 
 (`--no-profile`, `--stdio`, `--proxy`, and `-H` are options of `connect`, not global flags.)
 
 `mcpc` also has experimental `--x402` auto-payment for paid MCP tools — see `mcpc help x402`.
+When spending unattended, add `--x402-max-amount <usd>` (e.g. `--x402-max-amount 0.50`): any single
+payment above it is refused instead of signed, and the cap survives session restarts.
 
 ## Debugging
 
