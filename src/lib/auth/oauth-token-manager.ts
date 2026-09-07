@@ -48,6 +48,8 @@ export interface OAuthTokenManagerOptions {
   profileName: string;
   /** OAuth client ID (required for public clients) */
   clientId: string;
+  /** OAuth client secret (confidential clients only; sent with every refresh) */
+  clientSecret?: string;
   /** Initial refresh token */
   refreshToken: string;
   /** Initial access token (optional - will be refreshed if not provided or expired) */
@@ -67,6 +69,7 @@ export class OAuthTokenManager {
   private serverUrl: string;
   private profileName: string;
   private clientId: string;
+  private clientSecret: string | undefined;
   private refreshToken: string;
   private accessToken: string | null = null;
   private accessTokenExpiresAt: number | null = null; // unix timestamp
@@ -77,6 +80,7 @@ export class OAuthTokenManager {
     this.serverUrl = options.serverUrl;
     this.profileName = options.profileName;
     this.clientId = options.clientId;
+    this.clientSecret = options.clientSecret;
     this.refreshToken = options.refreshToken;
     this.accessToken = options.accessToken ?? null;
     this.accessTokenExpiresAt = options.accessTokenExpiresAt ?? null;
@@ -157,7 +161,8 @@ export class OAuthTokenManager {
       const tokenResponse = await discoverAndRefreshToken(
         this.serverUrl,
         this.refreshToken,
-        this.clientId
+        this.clientId,
+        this.clientSecret
       );
 
       // Store new access token

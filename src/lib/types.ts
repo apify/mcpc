@@ -376,8 +376,11 @@ export interface AuthCredentials {
    * refresh-token / access-token flow above.
    */
   oauthGrant?: OAuthGrant;
+  // Client secret (sent via IPC, never CLI args). Authorization-code grant: the
+  // confidential client's secret, presented on token refresh. Client-credentials
+  // grant: the client_secret_basic variant of the material below.
+  clientSecret?: string;
   // Client-credentials grant material (machine-to-machine; sent via IPC, never CLI args)
-  clientSecret?: string; // client_secret_basic variant
   privateKeyPem?: string; // private_key_jwt variant (RFC 7523): PEM-encoded signing key
   keyAlg?: string; // JWT signing algorithm for the private_key_jwt variant (e.g. RS256)
   scope?: string; // space-separated scopes requested by the client-credentials grant

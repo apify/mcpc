@@ -236,23 +236,31 @@ export async function discoverTokenEndpoint(serverUrl: string): Promise<string |
  * @param tokenEndpoint - The OAuth token endpoint URL
  * @param refreshToken - The refresh token to use
  * @param clientId - The OAuth client ID (required for public clients)
+ * @param clientSecret - The OAuth client secret, for confidential clients (pre-registered
+ *   or issued by dynamic client registration). Sent as `client_secret_post`; servers such as
+ *   Asana reject the refresh with `invalid_client` without it.
  * @returns The token response from the server
  * @throws AuthError if the refresh fails
  */
 export async function refreshAccessToken(
   tokenEndpoint: string,
   refreshToken: string,
-  clientId: string
+  clientId: string,
+  clientSecret?: string
 ): Promise<OAuthTokenResponse> {
   logger.debug(`Refreshing token at: ${tokenEndpoint}`);
 
   // Prepare refresh request (OAuth spec uses snake_case)
-  // Public clients (token_endpoint_auth_method: 'none') must include client_id
+  // Public clients (token_endpoint_auth_method: 'none') must include client_id;
+  // confidential clients authenticate with client_secret as well
   const params = new URLSearchParams({
     grant_type: 'refresh_token',
     refresh_token: refreshToken,
     client_id: clientId,
   });
+  if (clientSecret) {
+    params.set('client_secret', clientSecret);
+  }
 
   const response = await proxyFetch(tokenEndpoint, {
     method: 'POST',
@@ -287,20 +295,30 @@ export async function refreshAccessToken(
  * @param serverUrl - The MCP server URL
  * @param refreshToken - The refresh token to use
  * @param clientId - The OAuth client ID
+ * @param clientSecret - The OAuth client secret (confidential clients only)
  * @returns The token response from the server
  * @throws AuthError if discovery or refresh fails
  */
 export async function discoverAndRefreshToken(
   serverUrl: string,
   refreshToken: string,
-  clientId: string
+  clientId: string,
+  clientSecret?: string
 ): Promise<OAuthTokenResponse> {
-  const tokenEndpoint = await discoverTokenEndpoint(serverUrl);
+  // Resolve the authorization server the way login did (RFC 9728 protected
+  // resource metadata first): when it lives on another origin than the MCP
+  // server, the origin's own well-known metadata may describe a different
+  // authorization server where the client is unknown (Asana: mcp.asana.com
+  // vs app.asana.com), and the refresh fails with invalid_client.
+  const metadata =
+    (await discoverAuthServerViaProtectedResource(serverUrl)) ??
+    (await discoverAuthServerMetadata(serverUrl));
+  const tokenEndpoint = metadata?.token_endpoint;
   if (!tokenEndpoint) {
     throw new AuthError(`Could not find OAuth token endpoint for ${serverUrl}`);
   }
 
-  return refreshAccessToken(tokenEndpoint, refreshToken, clientId);
+  return refreshAccessToken(tokenEndpoint, refreshToken, clientId, clientSecret);
 }
 
 /**
