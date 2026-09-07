@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Human-readable `tools-call` and `tasks-result` output now hints when structured data is hidden behind other content and points to `--json` to retrieve the full result. (#346)
 - `mcpc help tools/list` and other MCP method names now show the command's help instead of failing with "Unknown command" — they already worked as aliases everywhere else.
 - x402 payments now work against servers that only reveal a tool's price when it is called: the payment signed for such a challenge is attached to the retried call, which used to go out unpaid and return the payment-required result again. The signature stays scoped to the tools the server charges for, so calls to free tools never carry a payment.
 - Sessions no longer get stuck reconnecting forever after a server upgrades to MCP 2026-07-28: a reconnect replayed the stored session ID, which made the client skip protocol negotiation and the server reject every request. Stale session IDs are now dropped (2026-07-28 has no session resumption), and a session whose server no longer speaks its protocol version is marked expired with a hint to run `restart`.
