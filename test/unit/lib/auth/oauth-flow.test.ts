@@ -66,6 +66,28 @@ describe('explainOAuthRegistrationFailure', () => {
     const message = (result as AuthError).message;
     expect(message).toContain('does not support Dynamic Client Registration');
     expect(message).toContain('--client-id');
+    expect(message).toContain('--client-secret');
+    // The redirect URL to pre-register with the provider is spelled out.
+    expect(message).toContain('http://127.0.0.1:13316/callback');
+  });
+
+  it('keeps the full server URL in the suggested login commands', () => {
+    // Asana: `/v2/mcp` delegates to app.asana.com (no DCR), while the bare host
+    // is a different, deprecated authorization server. A host-only hint would
+    // send the user to the wrong one.
+    const asanaUrl = 'https://mcp.asana.com/v2/mcp';
+    const raw = new Error('Incompatible auth server: does not support dynamic client registration');
+
+    const result = explainOAuthRegistrationFailure(raw, {
+      serverUrl: asanaUrl,
+      reachedAuthorization: false,
+    });
+
+    const message = (result as AuthError).message;
+    expect(message).toContain('mcp.asana.com does not support Dynamic Client Registration');
+    expect(message).toContain(`mcpc login ${asanaUrl} --client-id <id>`);
+    expect(message).toContain(`mcpc login ${asanaUrl} --client-metadata-url`);
+    expect(message).not.toContain('mcpc login mcp.asana.com ');
   });
 
   it('does not claim an allow-list for a registration 5xx', () => {
