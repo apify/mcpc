@@ -15,6 +15,7 @@ import {
   type X402PaymentCache,
 } from '../../../../src/lib/x402/fetch-middleware.js';
 import type { PaymentRequiredAccept, SignerWallet } from '../../../../src/lib/x402/signer.js';
+import { X402PaymentLimitError } from '../../../../src/lib/x402/limits.js';
 
 // ---------------------------------------------------------------------------
 // Mocks — vi.mock is hoisted above local const declarations
@@ -172,6 +173,22 @@ describe('createX402FetchMiddleware proactive sign', () => {
     expect(new Headers(init.headers).get('PAYMENT-SIGNATURE')).toBeNull();
   });
 
+  it('fails the call instead of sending it unpaid when the payment is over the limit', async () => {
+    mockSignPayment.mockRejectedValue(new X402PaymentLimitError('x402 payment refused: $1.00'));
+    const baseFetch = vi.fn().mockResolvedValue(new Response('', { status: 200 }));
+    const fetchFn = createX402FetchMiddleware(baseFetch as never, {
+      wallet: WALLET,
+      getToolByName: () => makePaidTool({ accepts: [EXACT_ACCEPT] }),
+      paymentCache: { signature: null },
+      maxAmountAtomicUnits: 500_000n,
+    });
+
+    await expect(
+      fetchFn('https://example.test/mcp', { method: 'POST', body: toolsCallBody('paid-tool') })
+    ).rejects.toThrow('x402 payment refused');
+    expect(baseFetch).not.toHaveBeenCalled();
+  });
+
   it('with schemePreference=exact and accepts=[exact, upto], signs exact', async () => {
     const tool = makePaidTool({ accepts: [EXACT_ACCEPT, UPTO_ACCEPT], ...UPTO_ACCEPT });
     const cache: X402PaymentCache = { signature: null };
@@ -302,6 +319,44 @@ describe('createX402FetchMiddleware HTTP 402 fallback', () => {
     expect(baseFetch).toHaveBeenCalledTimes(3);
     const init = baseFetch.mock.calls[2]?.[1] as RequestInit;
     expect(new Headers(init.headers).get('PAYMENT-SIGNATURE')).toBe('mock-signature-base64');
+  });
+
+  it('passes the spend limit to the signer', async () => {
+    const baseFetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response('', { status: 402, headers: { 'PAYMENT-REQUIRED': paymentRequiredHeader } })
+      )
+      .mockResolvedValue(new Response('', { status: 200 }));
+    const fetchFn = createX402FetchMiddleware(baseFetch as never, {
+      wallet: WALLET,
+      getToolByName: () => undefined,
+      paymentCache: { signature: null },
+      maxAmountAtomicUnits: 500_000n,
+    });
+
+    await fetchFn('https://example.test/mcp', { method: 'POST', body: toolsCallBody('paid-tool') });
+
+    expect(mockSignPayment.mock.calls[0]?.[0]?.maxAmountAtomicUnits).toBe(500_000n);
+  });
+
+  it('surfaces a refused payment instead of returning the 402 to the caller', async () => {
+    mockSignPayment.mockRejectedValue(new X402PaymentLimitError('x402 payment refused: $1.00'));
+    const baseFetch = vi
+      .fn()
+      .mockResolvedValue(
+        new Response('', { status: 402, headers: { 'PAYMENT-REQUIRED': paymentRequiredHeader } })
+      );
+    const fetchFn = createX402FetchMiddleware(baseFetch as never, {
+      wallet: WALLET,
+      getToolByName: () => undefined,
+      paymentCache: { signature: null },
+      maxAmountAtomicUnits: 500_000n,
+    });
+
+    await expect(
+      fetchFn('https://example.test/mcp', { method: 'POST', body: toolsCallBody('paid-tool') })
+    ).rejects.toThrow('x402 payment refused');
   });
 });
 

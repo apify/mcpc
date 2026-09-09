@@ -120,6 +120,8 @@ export interface StartBridgeOptions {
   protocolVersion?: string; // Protocol version negotiated by the resumed session (only pass with mcpSessionId)
   /** x402 scheme preference; presence enables x402 auto-payment, absence disables. */
   x402?: X402SchemePreference;
+  /** Local spend limit in USD applied to every single x402 payment. */
+  x402MaxAmountUsd?: number;
   insecure?: boolean; // Skip TLS certificate verification
 }
 
@@ -153,6 +155,7 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
     mcpSessionId,
     protocolVersion,
     x402,
+    x402MaxAmountUsd,
     insecure,
   } = options;
 
@@ -228,6 +231,10 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
   if (x402) {
     args.push('--x402', x402);
     logger.debug(`Passing x402 scheme preference: ${x402}`);
+  }
+  if (x402MaxAmountUsd !== undefined) {
+    args.push('--x402-max-amount', String(x402MaxAmountUsd));
+    logger.debug(`Passing x402 spend limit: $${x402MaxAmountUsd}`);
   }
 
   // Pass insecure flag (if enabled)
@@ -521,6 +528,10 @@ export async function restartBridge(sessionName: string): Promise<StartBridgeRes
   if (session.x402) {
     bridgeOptions.x402 = session.x402;
     logger.debug(`Using saved x402 scheme preference: ${session.x402}`);
+  }
+  if (session.x402MaxAmountUsd !== undefined) {
+    bridgeOptions.x402MaxAmountUsd = session.x402MaxAmountUsd;
+    logger.debug(`Using saved x402 spend limit: $${session.x402MaxAmountUsd}`);
   }
   if (session.insecure) {
     bridgeOptions.insecure = session.insecure;

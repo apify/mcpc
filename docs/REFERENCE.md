@@ -120,6 +120,7 @@ Options:
   --stdio                       Launch all local stdio servers from selected config files
   --protocol-version <version>  Pin the MCP protocol version (see below)
   --x402 [scheme]               Enable x402 auto-payment (see below)
+  --x402-max-amount <usd>       Refuse any single x402 payment above this amount
   --json                        Output in JSON format
 
 Server formats:
@@ -152,6 +153,10 @@ Protocol version:
 x402 payments (experimental):
   --x402 pays for paid tool calls from the wallet set up with mcpc x402.
   Schemes: auto (default, prefers upto), upto, exact.
+  --x402-max-amount <usd> caps every single payment, e.g. --x402-max-amount 0.50.
+  A payment above the cap fails instead of being signed, whatever the server asks
+  for. The cap is stored with the session and reused on restart; close the session
+  to change it.
 
 Output:
   For a single server, shows session, server info, capabilities, and tools.

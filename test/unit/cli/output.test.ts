@@ -2187,6 +2187,18 @@ describe('formatSessionLine', () => {
     expect(output).not.toContain('stdio');
   });
 
+  it('should show the x402 spend limit when the session has one', () => {
+    const base: SessionData = {
+      name: '@paid',
+      server: { url: 'https://mcp.example.com' },
+      x402: 'auto',
+      createdAt: '2025-01-01T00:00:00Z',
+    };
+
+    expect(formatSessionLine(base)).toContain('[x402]');
+    expect(formatSessionLine({ ...base, x402MaxAmountUsd: 0.5 })).toContain('[x402 max $0.50]');
+  });
+
   it('should include proxy info when configured', () => {
     const session: SessionData = {
       name: '@proxy-test',

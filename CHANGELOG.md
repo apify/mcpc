@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- New `mcpc connect --x402-max-amount <usd>` option that caps every single x402 payment, e.g. `--x402-max-amount 0.50`. A payment above the cap fails instead of being signed, whatever the server asks for. The cap is stored with the session and reused on restart.
 - New [REFERENCE.md](docs/REFERENCE.md) with the full `--help` output of every mcpc command, generated from the CLI itself so it always matches the release.
 - `mcpc @session` and `server-discover` now show the description and website URL a server advertises about itself, right below its name.
 

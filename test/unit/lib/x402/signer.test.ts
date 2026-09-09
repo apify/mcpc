@@ -11,6 +11,7 @@ import {
   type PaymentRequiredAccept,
   type SignerWallet,
 } from '../../../../src/lib/x402/signer.js';
+import { X402PaymentLimitError } from '../../../../src/lib/x402/limits.js';
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -324,6 +325,61 @@ describe('signPayment', () => {
     expect(payload.accepted.amount).toBe('3000000');
     expect(payload.payload.permit2Authorization.permitted.amount).toBe('3000000');
     expect(result.amountUsd).toBe(3);
+  });
+
+  // -------------------------------------------------------------------------
+  // local spend limit (--x402-max-amount)
+  // -------------------------------------------------------------------------
+
+  it('signs when the amount is at the spend limit', async () => {
+    const result = await signPayment({
+      wallet: MOCK_WALLET,
+      accept: VALID_EXACT_ACCEPT,
+      maxAmountAtomicUnits: BigInt(VALID_EXACT_ACCEPT.amount),
+    });
+    expect(result.paymentSignatureBase64).toBeTruthy();
+  });
+
+  it('refuses to sign above the spend limit, naming both amounts', async () => {
+    const attempt = signPayment({
+      wallet: MOCK_WALLET,
+      accept: VALID_EXACT_ACCEPT, // $1.00
+      maxAmountAtomicUnits: 500_000n, // $0.50
+    });
+    await expect(attempt).rejects.toBeInstanceOf(X402PaymentLimitError);
+    await expect(attempt).rejects.toThrow('$1.00');
+    await expect(attempt).rejects.toThrow('$0.50 limit');
+  });
+
+  it('caps the upto scheme by its maximum authorization', async () => {
+    await expect(
+      signPayment({
+        wallet: MOCK_WALLET,
+        accept: VALID_UPTO_ACCEPT, // authorizes up to $5.00
+        maxAmountAtomicUnits: 1_000_000n,
+      })
+    ).rejects.toBeInstanceOf(X402PaymentLimitError);
+  });
+
+  it('checks amountOverride rather than the advertised amount', async () => {
+    await expect(
+      signPayment({
+        wallet: MOCK_WALLET,
+        accept: VALID_EXACT_ACCEPT,
+        amountOverride: 9_000_000n,
+        maxAmountAtomicUnits: 2_000_000n,
+      })
+    ).rejects.toBeInstanceOf(X402PaymentLimitError);
+  });
+
+  it('refuses an amount it cannot check against the limit', async () => {
+    await expect(
+      signPayment({
+        wallet: MOCK_WALLET,
+        accept: { ...VALID_EXACT_ACCEPT, amount: 'not-a-number' },
+        maxAmountAtomicUnits: 1_000_000n,
+      })
+    ).rejects.toBeInstanceOf(X402PaymentLimitError);
   });
 
   it('unsupported scheme: throws', async () => {

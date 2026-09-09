@@ -50,6 +50,7 @@ import {
   storeKeychainProxyBearerToken,
 } from '../../lib/auth/keychain.js';
 import { getWallet } from '../../lib/wallets.js';
+import { formatUsdAmount, usdToAtomicUnits } from '../../lib/x402/limits.js';
 import chalk from 'chalk';
 // ora is loaded lazily at the spinner call site — it is only needed for
 // human-mode bulk connects and costs ~50 ms at import.
@@ -145,6 +146,7 @@ type ConnectSessionOptions = {
   proxyBearerToken?: string;
   protocolVersion?: string;
   x402?: X402SchemePreference;
+  x402MaxAmountUsd?: number;
   insecure?: boolean;
   skipDetails?: boolean;
   quiet?: boolean;
@@ -292,12 +294,32 @@ export async function connectSession(
   // Validate --protocol-version (if provided)
   assertSupportedProtocolVersion(options.protocolVersion);
 
+  if (options.x402MaxAmountUsd !== undefined && !options.x402) {
+    throw new ClientError('--x402-max-amount requires --x402');
+  }
+
+  /** Render a stored or requested spend limit for error messages. */
+  const formatLimit = (maxAmountUsd: number | undefined): string =>
+    maxAmountUsd === undefined ? 'no limit' : formatUsdAmount(usdToAtomicUnits(maxAmountUsd));
+
   // Check if session already exists
   const existingSession = await getSession(name);
   if (existingSession) {
     const bridgeStatus = getBridgeStatus(existingSession);
 
     if (bridgeStatus === 'live') {
+      // A live bridge keeps the limit it was started with, so silently ignoring a
+      // different --x402-max-amount would leave the session spending on the old one.
+      if (
+        options.x402MaxAmountUsd !== undefined &&
+        options.x402MaxAmountUsd !== existingSession.x402MaxAmountUsd
+      ) {
+        throw new ClientError(
+          `Session ${name} is already active with a different x402 spend limit ` +
+            `(${formatLimit(existingSession.x402MaxAmountUsd)}, requested ${formatLimit(options.x402MaxAmountUsd)}). ` +
+            `To change it, run: mcpc ${name} close`
+        );
+      }
       // Session exists and bridge is running - just show server info
       if (options.outputMode === 'human' && !options.quiet) {
         console.log(formatSuccess(`Session ${name} is already active`));
@@ -389,6 +411,11 @@ export async function connectSession(
     logger.debug(`Using x402 wallet: ${wallet.address}`);
   }
 
+  // A bare reconnect (`mcpc connect <server> @name` after a crash) must not drop the
+  // spend limit the session was created with — restoring it keeps the guard on until
+  // the session is explicitly closed.
+  const effectiveX402MaxAmountUsd = options.x402MaxAmountUsd ?? existingSession?.x402MaxAmountUsd;
+
   // Create or update session record (without pid - that comes from startBridge)
   // Store serverConfig with headers redacted (actual values in keychain)
   const isReconnect = !!existingSession;
@@ -403,6 +430,9 @@ export async function connectSession(
     ...(profileName && { profileName }),
     ...(proxyConfig && { proxy: proxyConfig }),
     ...(options.x402 && { x402: options.x402 }),
+    ...(effectiveX402MaxAmountUsd !== undefined && {
+      x402MaxAmountUsd: effectiveX402MaxAmountUsd,
+    }),
     ...(options.insecure && { insecure: true }),
     // Clear any previous error status (unauthorized, expired) when reconnecting
     ...(isReconnect && { status: 'active' }),
@@ -432,6 +462,9 @@ export async function connectSession(
       ...(profileName && { profileName }),
       ...(proxyConfig && { proxyConfig }),
       ...(options.x402 && { x402: options.x402 }),
+      ...(effectiveX402MaxAmountUsd !== undefined && {
+        x402MaxAmountUsd: effectiveX402MaxAmountUsd,
+      }),
       ...(options.insecure && { insecure: true }),
     };
 
@@ -646,6 +679,7 @@ type BulkConnectOptions = {
   stdio?: boolean;
   protocolVersion?: string;
   x402?: X402SchemePreference;
+  x402MaxAmountUsd?: number;
   insecure?: boolean;
 };
 
