@@ -618,6 +618,13 @@ export async function loadAuthCredentials(
         if (clientInfo.clientSecret) credentials.clientSecret = clientInfo.clientSecret;
         logger.debug(`Found OAuth client ID for profile ${profileName}`);
       }
+
+      // Pin the refresh to the authorization server login used, so the refresh
+      // token and client secret cannot follow a changed pointer in the MCP
+      // server's metadata to a different server.
+      if (profile.oauthIssuer) {
+        credentials.oauthIssuer = profile.oauthIssuer;
+      }
     }
   }
 

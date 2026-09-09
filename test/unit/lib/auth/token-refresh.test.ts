@@ -35,6 +35,7 @@ beforeEach(() => {
     name: 'default',
     serverUrl: SERVER_URL,
     authType: 'oauth',
+    oauthIssuer: 'https://auth.example.com',
     createdAt: '2026-01-01T00:00:00.000Z',
   } as never);
   vi.mocked(readKeychainOAuthTokenInfo).mockResolvedValue({
@@ -61,12 +62,11 @@ describe('getValidAccessTokenFromKeychain confidential clients (#387)', () => {
     const token = await getValidAccessTokenFromKeychain(SERVER_URL, 'default');
 
     expect(token).toBe('fresh-access');
-    expect(discoverAndRefreshToken).toHaveBeenCalledWith(
-      SERVER_URL,
-      'refresh-1',
-      'client-123',
-      'secret-xyz'
-    );
+    expect(discoverAndRefreshToken).toHaveBeenCalledWith(SERVER_URL, 'refresh-1', {
+      clientId: 'client-123',
+      clientSecret: 'secret-xyz',
+      issuer: 'https://auth.example.com',
+    });
   });
 
   it('refreshes without a secret for public clients', async () => {
@@ -74,11 +74,28 @@ describe('getValidAccessTokenFromKeychain confidential clients (#387)', () => {
 
     await getValidAccessTokenFromKeychain(SERVER_URL, 'default');
 
-    expect(discoverAndRefreshToken).toHaveBeenCalledWith(
-      SERVER_URL,
-      'refresh-1',
-      'client-123',
-      undefined
-    );
+    expect(discoverAndRefreshToken).toHaveBeenCalledWith(SERVER_URL, 'refresh-1', {
+      clientId: 'client-123',
+      issuer: 'https://auth.example.com',
+    });
+  });
+
+  it('leaves the issuer unpinned for a profile written before mcpc recorded it', async () => {
+    // Older profiles carry oauthIssuer: '' — those refreshes still discover the
+    // authorization server, they must not fail on an empty pin.
+    vi.mocked(getAuthProfile).mockResolvedValue({
+      name: 'default',
+      serverUrl: SERVER_URL,
+      authType: 'oauth',
+      oauthIssuer: '',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    } as never);
+    vi.mocked(readKeychainOAuthClientInfo).mockResolvedValue({ clientId: 'client-123' });
+
+    await getValidAccessTokenFromKeychain(SERVER_URL, 'default');
+
+    expect(discoverAndRefreshToken).toHaveBeenCalledWith(SERVER_URL, 'refresh-1', {
+      clientId: 'client-123',
+    });
   });
 });

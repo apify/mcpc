@@ -380,6 +380,13 @@ export interface AuthCredentials {
   // confidential client's secret, presented on token refresh. Client-credentials
   // grant: the client_secret_basic variant of the material below.
   clientSecret?: string;
+  /**
+   * Authorization server the profile authenticated with (`AuthProfile.oauthIssuer`).
+   * Pins token refresh to that server instead of re-resolving it from whatever the
+   * MCP server's metadata points at now. Absent for profiles written before mcpc
+   * recorded the issuer.
+   */
+  oauthIssuer?: string;
   // Client-credentials grant material (machine-to-machine; sent via IPC, never CLI args)
   privateKeyPem?: string; // private_key_jwt variant (RFC 7523): PEM-encoded signing key
   keyAlg?: string; // JWT signing algorithm for the private_key_jwt variant (e.g. RS256)

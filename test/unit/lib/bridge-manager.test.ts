@@ -31,6 +31,7 @@ beforeEach(() => {
     name: 'default',
     serverUrl: SERVER_URL,
     authType: 'oauth',
+    oauthIssuer: 'https://auth.example.com',
     createdAt: '2026-01-01T00:00:00.000Z',
   } as never);
   vi.mocked(readKeychainOAuthTokenInfo).mockResolvedValue({
@@ -66,5 +67,28 @@ describe('loadAuthCredentials for the authorization-code grant (#387)', () => {
 
     expect(credentials.clientId).toBe('client-123');
     expect(credentials).not.toHaveProperty('clientSecret');
+  });
+
+  it('includes the recorded issuer so the bridge pins the refresh to it', async () => {
+    vi.mocked(readKeychainOAuthClientInfo).mockResolvedValue({ clientId: 'client-123' });
+
+    const credentials = await loadAuthCredentials(SERVER_URL, 'default');
+
+    expect(credentials.oauthIssuer).toBe('https://auth.example.com');
+  });
+
+  it('omits the issuer for a profile written before mcpc recorded it', async () => {
+    vi.mocked(getAuthProfile).mockResolvedValue({
+      name: 'default',
+      serverUrl: SERVER_URL,
+      authType: 'oauth',
+      oauthIssuer: '',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    } as never);
+    vi.mocked(readKeychainOAuthClientInfo).mockResolvedValue({ clientId: 'client-123' });
+
+    const credentials = await loadAuthCredentials(SERVER_URL, 'default');
+
+    expect(credentials).not.toHaveProperty('oauthIssuer');
   });
 });

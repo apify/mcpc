@@ -314,13 +314,20 @@ export class OAuthProvider implements OAuthClientProvider {
         name: this.profileName,
         serverUrl: this.serverUrl,
         authType: 'oauth',
-        oauthIssuer: '', // Will be set by caller
+        oauthIssuer: this._discoveryState?.authorizationServerUrl ?? '',
         createdAt: now,
         authenticatedAt: now,
       };
     } else {
       // Update existing profile
       profile.authenticatedAt = now;
+      // Record (or correct) the authorization server this login used, so token
+      // refresh can go back to the same one instead of re-resolving it from the
+      // MCP server's metadata. Only set during the interactive flow — a runtime
+      // refresh has no discovery state and must not blank a stored issuer.
+      if (this._discoveryState?.authorizationServerUrl) {
+        profile.oauthIssuer = this._discoveryState.authorizationServerUrl;
+      }
     }
 
     if (tokens.scope) {
@@ -387,6 +394,10 @@ export class OAuthProvider implements OAuthClientProvider {
    */
   async saveDiscoveryState(state: OAuthDiscoveryState): Promise<void> {
     this._discoveryState = state;
+    // The authorization server recorded here is also what updateProfileMetadata()
+    // persists as the profile's oauthIssuer, so a later token refresh authenticates
+    // at the same server this login used.
+    logger.debug(`Discovered authorization server: ${state.authorizationServerUrl}`);
   }
 
   async discoveryState(): Promise<OAuthDiscoveryState | undefined> {
