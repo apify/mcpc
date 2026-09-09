@@ -11,6 +11,8 @@ import {
   discoverTokenEndpoint,
   getOAuthServerUrl,
   MCPC_OAUTH_CALLBACK_PORTS,
+  discoverAndRefreshToken,
+  refreshAccessToken,
 } from '../../../../src/lib/auth/oauth-utils.js';
 import * as proxyModule from '../../../../src/lib/proxy.js';
 
@@ -214,6 +216,107 @@ describe('discoverTokenEndpoint', () => {
       'https://example.com/.well-known/oauth-authorization-server',
       'https://example.com/.well-known/openid-configuration',
     ]);
+  });
+});
+
+describe('refreshAccessToken client authentication (#387)', () => {
+  let fetchSpy: MockInstance;
+
+  beforeEach(() => {
+    fetchSpy = vi.spyOn(proxyModule, 'proxyFetch');
+    fetchSpy.mockResolvedValue(
+      mockResponse({ access_token: 'new-access', token_type: 'Bearer', expires_in: 3600 })
+    );
+  });
+
+  afterEach(() => {
+    fetchSpy.mockRestore();
+  });
+
+  function sentParams(): URLSearchParams {
+    const init = fetchSpy.mock.calls[0]![1] as RequestInit;
+    return new URLSearchParams(init.body as string);
+  }
+
+  it('sends client_secret when the client is confidential', async () => {
+    // Asana (and any server enforcing client auth on refresh_token) rejects the
+    // refresh with invalid_client when the pre-registered secret is missing.
+    await refreshAccessToken('https://example.com/token', 'refresh-1', 'client-123', 'secret-xyz');
+
+    const params = sentParams();
+    expect(params.get('grant_type')).toBe('refresh_token');
+    expect(params.get('refresh_token')).toBe('refresh-1');
+    expect(params.get('client_id')).toBe('client-123');
+    expect(params.get('client_secret')).toBe('secret-xyz');
+  });
+
+  it('omits client_secret for public clients', async () => {
+    await refreshAccessToken('https://example.com/token', 'refresh-1', 'client-123');
+
+    expect(sentParams().has('client_secret')).toBe(false);
+  });
+});
+
+describe('discoverAndRefreshToken authorization server discovery (#387)', () => {
+  let fetchSpy: MockInstance;
+
+  beforeEach(() => {
+    fetchSpy = vi.spyOn(proxyModule, 'proxyFetch');
+  });
+
+  afterEach(() => {
+    fetchSpy.mockRestore();
+  });
+
+  it('refreshes at the authorization server named by the protected resource metadata', async () => {
+    // Asana: mcp.asana.com serves its own (legacy) authorization-server metadata,
+    // but the MCP server's RFC 9728 document delegates to app.asana.com, which is
+    // where login registered the client. Refreshing at the wrong server yields
+    // invalid_client.
+    const posted: string[] = [];
+    fetchSpy.mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        posted.push(url);
+        return Promise.resolve(
+          mockResponse({ access_token: 'fresh', token_type: 'Bearer', expires_in: 3600 })
+        );
+      }
+      if (url === 'https://mcp.example.com/.well-known/oauth-protected-resource/mcp') {
+        return Promise.resolve(
+          mockResponse({ authorization_servers: ['https://auth.example.com'] })
+        );
+      }
+      if (url === 'https://auth.example.com/.well-known/oauth-authorization-server') {
+        return Promise.resolve(mockResponse({ token_endpoint: 'https://auth.example.com/token' }));
+      }
+      if (url === 'https://mcp.example.com/.well-known/oauth-authorization-server') {
+        return Promise.resolve(mockResponse({ token_endpoint: 'https://mcp.example.com/token' }));
+      }
+      return Promise.resolve(mockResponse(null, false));
+    });
+
+    const tokens = await discoverAndRefreshToken('https://mcp.example.com/mcp', 'refresh-1', 'c');
+
+    expect(tokens.access_token).toBe('fresh');
+    expect(posted).toEqual(['https://auth.example.com/token']);
+  });
+
+  it('falls back to well-known probes on the MCP origin without protected resource metadata', async () => {
+    const posted: string[] = [];
+    fetchSpy.mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        posted.push(url);
+        return Promise.resolve(mockResponse({ access_token: 'fresh', token_type: 'Bearer' }));
+      }
+      if (url === 'https://mcp.example.com/.well-known/oauth-authorization-server') {
+        return Promise.resolve(mockResponse({ token_endpoint: 'https://mcp.example.com/token' }));
+      }
+      return Promise.resolve(mockResponse(null, false));
+    });
+
+    await discoverAndRefreshToken('https://mcp.example.com/mcp', 'refresh-1', 'c');
+
+    expect(posted).toEqual(['https://mcp.example.com/token']);
   });
 });
 

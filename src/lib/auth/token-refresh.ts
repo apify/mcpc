@@ -117,6 +117,7 @@ export async function getValidAccessTokenFromKeychain(
     serverUrl,
     profileName,
     clientId: clientInfo.clientId,
+    ...(clientInfo.clientSecret !== undefined && { clientSecret: clientInfo.clientSecret }),
     refreshToken: tokens.refreshToken,
     accessToken: tokens.accessToken,
     ...(tokens.expiresAt !== undefined && { accessTokenExpiresAt: tokens.expiresAt }),

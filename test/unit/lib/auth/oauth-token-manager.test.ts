@@ -91,7 +91,8 @@ describe('OAuthTokenManager refresh-token persistence (#371)', () => {
       2,
       'https://mcp.example.com',
       'original-refresh-token',
-      'client-123'
+      'client-123',
+      undefined
     );
   });
 
@@ -114,8 +115,38 @@ describe('OAuthTokenManager refresh-token persistence (#371)', () => {
     expect(mockRefresh).toHaveBeenCalledWith(
       'https://mcp.example.com',
       'externally-rotated-token',
-      'client-123'
+      'client-123',
+      undefined
     );
     expect(persisted[0]?.refresh_token).toBe('externally-rotated-token');
+  });
+});
+
+describe('OAuthTokenManager confidential clients (#387)', () => {
+  it('passes the client secret to the refresh request', async () => {
+    mockRefresh.mockResolvedValue({ access_token: 'new-access-token', token_type: 'Bearer' });
+
+    const manager = makeManager({ clientSecret: 'secret-xyz' });
+    await manager.refreshAccessToken();
+
+    expect(mockRefresh).toHaveBeenCalledWith(
+      'https://mcp.example.com',
+      'original-refresh-token',
+      'client-123',
+      'secret-xyz'
+    );
+  });
+
+  it('refreshes without a secret for public clients', async () => {
+    mockRefresh.mockResolvedValue({ access_token: 'new-access-token', token_type: 'Bearer' });
+
+    await makeManager().refreshAccessToken();
+
+    expect(mockRefresh).toHaveBeenCalledWith(
+      'https://mcp.example.com',
+      'original-refresh-token',
+      'client-123',
+      undefined
+    );
   });
 });
