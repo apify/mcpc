@@ -50,6 +50,12 @@ export interface OAuthTokenManagerOptions {
   clientId: string;
   /** OAuth client secret (confidential clients only; sent with every refresh) */
   clientSecret?: string;
+  /**
+   * Authorization server login authenticated with (`AuthProfile.oauthIssuer`).
+   * Pins the refresh to that server; profiles written before mcpc recorded it
+   * have none and fall back to discovery.
+   */
+  issuer?: string;
   /** Initial refresh token */
   refreshToken: string;
   /** Initial access token (optional - will be refreshed if not provided or expired) */
@@ -70,6 +76,7 @@ export class OAuthTokenManager {
   private profileName: string;
   private clientId: string;
   private clientSecret: string | undefined;
+  private issuer: string | undefined;
   private refreshToken: string;
   private accessToken: string | null = null;
   private accessTokenExpiresAt: number | null = null; // unix timestamp
@@ -81,6 +88,7 @@ export class OAuthTokenManager {
     this.profileName = options.profileName;
     this.clientId = options.clientId;
     this.clientSecret = options.clientSecret;
+    this.issuer = options.issuer;
     this.refreshToken = options.refreshToken;
     this.accessToken = options.accessToken ?? null;
     this.accessTokenExpiresAt = options.accessTokenExpiresAt ?? null;
@@ -158,12 +166,11 @@ export class OAuthTokenManager {
     logger.debug(`Refreshing access token for profile: ${this.profileName}`);
 
     try {
-      const tokenResponse = await discoverAndRefreshToken(
-        this.serverUrl,
-        this.refreshToken,
-        this.clientId,
-        this.clientSecret
-      );
+      const tokenResponse = await discoverAndRefreshToken(this.serverUrl, this.refreshToken, {
+        clientId: this.clientId,
+        ...(this.clientSecret !== undefined && { clientSecret: this.clientSecret }),
+        ...(this.issuer !== undefined && { issuer: this.issuer }),
+      });
 
       // Store new access token
       this.accessToken = tokenResponse.access_token;
