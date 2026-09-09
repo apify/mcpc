@@ -1245,7 +1245,7 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
       const headerNames = Object.keys(serverCfg?.headers ?? {});
       const headersNote = headerNames.length > 0 ? ` (headers: ${headerNames.join(', ')})` : '';
 
-      const isSkipped = (list: SkippedEntry[]) =>
+      const isSkipped = (list: SkippedEntry[]): boolean =>
         list.some((s) => s.configFile === d.path && s.entry === entryName);
       let marker: string;
       if (isSkipped(skippedProjectEnv) || isSkipped(skippedStdio)) {
