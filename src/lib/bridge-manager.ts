@@ -543,7 +543,7 @@ export async function restartBridge(sessionName: string): Promise<StartBridgeRes
  * than the bridge's IPC startup timeout, so doing this read after spawn()
  * races the bridge timer (see https://github.com/apify/mcpc/issues/55).
  */
-async function loadAuthCredentials(
+export async function loadAuthCredentials(
   serverUrl: string,
   profileName?: string,
   headers?: Record<string, string>,
@@ -609,11 +609,21 @@ async function loadAuthCredentials(
         }
       }
 
-      // Load client info from keychain (needed for token refresh)
+      // Load client info from keychain (needed for token refresh). A confidential
+      // client (pre-registered or issued by DCR) must present its secret on refresh
+      // too, or servers like Asana reject the refresh with invalid_client (#387).
       const clientInfo = await readKeychainOAuthClientInfo(profile.serverUrl, profileName);
       if (clientInfo?.clientId) {
         credentials.clientId = clientInfo.clientId;
+        if (clientInfo.clientSecret) credentials.clientSecret = clientInfo.clientSecret;
         logger.debug(`Found OAuth client ID for profile ${profileName}`);
+      }
+
+      // Pin the refresh to the authorization server login used, so the refresh
+      // token and client secret cannot follow a changed pointer in the MCP
+      // server's metadata to a different server.
+      if (profile.oauthIssuer) {
+        credentials.oauthIssuer = profile.oauthIssuer;
       }
     }
   }

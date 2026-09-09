@@ -59,13 +59,21 @@ const MAX_DETAIL_LENGTH = 400;
  * was ever redirected to the authorization endpoint.
  *
  * Many hosted MCP servers do not allow open DCR: they either expose no
- * `registration_endpoint`, or the endpoint rejects unknown clients. Figma's
- * remote MCP server is a concrete example — its registration endpoint returns
- * a bare `403 Forbidden` for any client not on its approved allow-list.
+ * `registration_endpoint` (Asana's V2 MCP server delegates to
+ * `app.asana.com`, which only knows clients pre-registered in Asana's
+ * developer console), or the endpoint rejects unknown clients. Figma's remote
+ * MCP server is a concrete example of the latter — its registration endpoint
+ * returns a bare `403 Forbidden` for any client not on its approved allow-list.
  * Because that body is not valid OAuth-error JSON, the SDK surfaces it as the
  * opaque `HTTP 403: Invalid OAuth error response: ... Raw body: Forbidden`,
  * which gives the user no idea what to do next. Retrying cannot help; the user
  * must supply pre-registered client credentials (or a custom CIMD document).
+ *
+ * The suggested commands repeat the full server URL, not just its host: the
+ * path is part of the resource identity, and dropping it can select a
+ * different authorization server (Asana's `/v2/mcp` delegates to
+ * `app.asana.com`, while the bare host is served by a separate, deprecated
+ * authorization server that does support DCR).
  *
  * Phase detection: before the authorization redirect the only SDK request that
  * surfaces {@link SdkOAuthError} is client registration — discovery failures
@@ -132,11 +140,21 @@ export function explainOAuthRegistrationFailure(
     lines.push(`Client registration with ${host} failed: ${truncatedDetail}`);
   }
 
+  // Keep the full server URL (scheme and path) in the suggested commands, so
+  // that following them targets the same resource — and the same
+  // authorization server — as the command that just failed.
+  const loginTarget = context.serverUrl;
+  const redirectUrl = `http://127.0.0.1:${MCPC_OAUTH_CALLBACK_PORTS[0]}/callback`;
   lines.push(
     '',
     'To authenticate, supply a client the server already recognizes:',
-    `  • pre-registered client:  mcpc login ${host} --client-id <id> [--client-secret <secret>]`,
-    `  • custom CIMD document:   mcpc login ${host} --client-metadata-url <https-url>`,
+    `  • pre-registered client:  mcpc login ${loginTarget} --client-id <id> [--client-secret <secret>]`,
+    `  • custom CIMD document:   mcpc login ${loginTarget} --client-metadata-url <https-url>`,
+    '',
+    `When registering a client with the provider, use ${redirectUrl} as its redirect URL ` +
+      `(or pass --callback-host/--callback-port to match an already registered one), and ` +
+      `pass --client-secret if the provider issued one — authorization servers that only ` +
+      `accept confidential clients require it.`,
     '',
     `If the server restricts MCP access to specific approved clients, check with the ` +
       `provider whether third-party clients such as mcpc are supported.`

@@ -269,6 +269,8 @@ class BridgeProcess {
         serverUrl: credentials.serverUrl,
         profileName: credentials.profileName,
         clientId: credentials.clientId,
+        ...(credentials.clientSecret ? { clientSecret: credentials.clientSecret } : {}),
+        ...(credentials.oauthIssuer ? { issuer: credentials.oauthIssuer } : {}),
         refreshToken: credentials.refreshToken,
         // Reload tokens from keychain before refresh (handles token rotation by other processes)
         onBeforeRefresh: async () => {
