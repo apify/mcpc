@@ -863,11 +863,23 @@ start_test_server() {
 # Uses atomic mkdir for cross-platform locking
 # Usage: _create_test_auth_profile <host> [scheme]
 #   scheme defaults to "http" if not specified
+#
+# Tests sharing a home directory all write the same profiles.json, so the write
+# runs under a lock directory taken with mkdir (atomic on macOS, Linux and
+# Windows). Two rules keep that lock honest, and both used to be broken:
+#
+# - Release it exactly once, right here. A `trap ... RETURN` also fires when the
+#   *calling* function returns, so the release ran a second time long after the
+#   lock had been handed to another test, deleting a lock someone else held.
+# - Release it with rmdir, never `rm -rf`. rmdir is a single atomic operation on
+#   the lock itself, while `rm -rf` walks the path: raced against a concurrent
+#   mkdir of the same lock it fails with "Is a directory" (easily reproduced on
+#   coreutils 9.4), and under `set -e` that error killed the test outright.
 _create_test_auth_profile() {
   local host="$1"
   local scheme="${2:-http}"
   local profiles_file="$MCPC_HOME_DIR/profiles.json"
-  local lock_file="$MCPC_HOME_DIR/profiles.lock"
+  local lock_dir="$MCPC_HOME_DIR/profiles.lock"
 
   # Ensure mcpc home dir exists
   mkdir -p "$MCPC_HOME_DIR"
@@ -875,49 +887,54 @@ _create_test_auth_profile() {
   # Acquire lock using atomic mkdir (works on macOS, Linux, and Windows)
   local max_wait=50
   local waited=0
-  while ! mkdir "$lock_file" 2>/dev/null; do
+  while ! mkdir "$lock_dir" 2>/dev/null; do
     sleep 0.1
     ((waited++)) || true
     if [[ $waited -ge $max_wait ]]; then
-      # Stale lock - remove and retry
-      rm -rf "$lock_file"
+      # Held (or leaked by a test that died mid-write) for far longer than the
+      # jq run it guards — break it and retry, as edit_sessions_json does.
+      rmdir "$lock_dir" 2>/dev/null || true
       waited=0
     fi
   done
 
-  # Ensure lock is released on function exit
-  trap "rm -rf '$lock_file'" RETURN
-
-  # Create or update profiles.json with a dummy profile for this host
+  # Create or update profiles.json with a dummy profile for this host.
+  # Failures are recorded instead of aborting, so the lock is always released
+  # before returning (a leaked lock stalls every other test for 5 seconds).
+  local status=0
   if [[ -f "$profiles_file" && -s "$profiles_file" ]]; then
     # File exists and is non-empty - add profile for this host using jq
     local updated
     if updated=$(jq --arg host "$host" --arg scheme "$scheme" '.profiles[$host] = {"default": {"name": "default", "serverUrl": ($scheme + "://" + $host), "authType": "oauth", "oauthIssuer": "https://test.example.com", "createdAt": "2025-01-01T00:00:00Z"}}' "$profiles_file" 2>/dev/null); then
       # Write to temp file then atomically rename
       local temp_file="$profiles_file.$$.tmp"
-      echo "$updated" > "$temp_file"
-      mv "$temp_file" "$profiles_file"
+      if echo "$updated" > "$temp_file"; then
+        mv "$temp_file" "$profiles_file" || status=1
+      else
+        status=1
+      fi
     else
       # JSON parse error - recreate file
-      cat > "$profiles_file" << EOF
-{
-  "profiles": {
-    "$host": {
-      "default": {
-        "name": "default",
-        "serverUrl": "$scheme://$host",
-        "authType": "oauth",
-        "oauthIssuer": "https://test.example.com",
-        "createdAt": "2025-01-01T00:00:00Z"
-      }
-    }
-  }
-}
-EOF
+      _write_test_auth_profile "$profiles_file" "$host" "$scheme" || status=1
     fi
   else
     # Create new profiles file
-    cat > "$profiles_file" << EOF
+    _write_test_auth_profile "$profiles_file" "$host" "$scheme" || status=1
+  fi
+
+  rmdir "$lock_dir" 2>/dev/null || true
+  return $status
+}
+
+# Write a profiles.json holding a single dummy profile (internal helper).
+# Callers hold the profiles lock.
+# Usage: _write_test_auth_profile <profiles-file> <host> <scheme>
+_write_test_auth_profile() {
+  local profiles_file="$1"
+  local host="$2"
+  local scheme="$3"
+
+  cat > "$profiles_file" << EOF
 {
   "profiles": {
     "$host": {
@@ -932,7 +949,6 @@ EOF
   }
 }
 EOF
-  fi
 }
 
 # Start a local HTTP proxy server (proxy-chain) for testing HTTPS_PROXY / HTTP_PROXY support.
