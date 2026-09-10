@@ -21,6 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sessions authenticated with a pre-registered confidential client (`mcpc login --client-id … --client-secret …`, as Asana's MCP server requires) no longer die at the first access-token expiry. The token refresh now presents the stored `client_secret`, and it resolves the authorization server through the MCP server's protected resource metadata like login does, instead of probing the MCP origin's own well-known metadata. Against Asana that probe found the legacy `mcp.asana.com` authorization server, where the client registered at `app.asana.com` does not exist, so every refresh failed with `invalid_client` and the session needed a new `mcpc login` every hour. (#387)
 - Confidential-client sessions now also refresh against authorization servers that accept only HTTP Basic client authentication. The refresh presents the client secret the way the login did and retries with the other form if the server rejects it. (#387)
 - Sessions no longer lose their saved OAuth refresh token when a server that does not rotate refresh tokens omits `refresh_token` from the refresh response. The bridge used to overwrite the stored token with nothing, so the session could not authenticate after the access token expired and required a new `mcpc login`.
+- Accented text, CJK characters, and emoji in large tool results are no longer corrupted in transit: a multibyte character that landed on a socket chunk boundary between the CLI and the bridge was replaced with `�`, and the JSON stayed valid so nothing reported an error. (#390)
+
+### Changed
+
+- Updated bundled dependencies to their latest versions, which picks up security fixes in the HTTP stack (`undici`) and the OS keychain binding (`@napi-rs/keyring`).
 
 ### Security
 

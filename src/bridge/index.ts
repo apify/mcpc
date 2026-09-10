@@ -78,6 +78,7 @@ import type { ProxyConfig } from '../lib/types.js';
 import type { X402PaymentCache } from '../lib/x402/fetch-middleware.js';
 import type { SignerWallet } from '../lib/x402/signer.js';
 import type { FetchLike } from '@modelcontextprotocol/client';
+import { IpcLineBuffer } from '../lib/ipc-line-buffer.js';
 
 // HTTP proxy and TLS settings are configured in main() after parsing --insecure flag
 
@@ -1245,10 +1246,10 @@ class BridgeProcess {
     logger.debug('New client connected');
     this.connections.add(socket);
 
-    let buffer = '';
+    const buffer = new IpcLineBuffer();
 
     socket.on('data', (data) => {
-      buffer += data.toString();
+      buffer.append(data);
 
       if (buffer.length > MAX_BUFFER_SIZE) {
         logger.error(`IPC buffer exceeded ${MAX_BUFFER_SIZE} bytes, destroying socket`);
@@ -1258,11 +1259,7 @@ class BridgeProcess {
       }
 
       // Process complete JSON messages (newline-delimited)
-      let newlineIndex: number;
-      while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
-        const line = buffer.slice(0, newlineIndex);
-        buffer = buffer.slice(newlineIndex + 1);
-
+      for (const line of buffer.drainLines()) {
         if (line.trim()) {
           this.handleMessage(socket, line).catch((error) => {
             logger.error('Error handling message:', error);

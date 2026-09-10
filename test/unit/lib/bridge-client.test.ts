@@ -94,4 +94,28 @@ describe.skipIf(onWindows)('BridgeClient.connect retry', () => {
     // margin keeps this robust under parallel-suite CPU contention.
     expect(Date.now() - start).toBeLessThan(2500);
   });
+
+  it('preserves UTF-8 in a response split inside a multibyte character', async () => {
+    const p = sockPath();
+    const server = net.createServer((conn) => {
+      conn.once('data', (requestData) => {
+        const request = JSON.parse(requestData.toString().trim()) as { id: string };
+        const response = Buffer.from(
+          `${JSON.stringify({ type: 'response', id: request.id, result: 'ready 🚀' })}\n`
+        );
+        const emojiStart = response.indexOf(Buffer.from('🚀'));
+
+        conn.write(response.subarray(0, emojiStart + 2));
+        setTimeout(() => conn.write(response.subarray(emojiStart + 2)), 25);
+      });
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(p, resolve));
+
+    const client = new BridgeClient(p);
+    clients.push(client);
+    await client.connect();
+
+    await expect(client.request('status')).resolves.toBe('ready 🚀');
+  });
 });
