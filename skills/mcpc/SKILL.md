@@ -140,9 +140,14 @@ echo '{"query":"hello"}' | mcpc @apify tools-call search
 Add `--json` for machine-readable output: results on stdout, errors on stderr,
 shaped strictly per the MCP spec.
 
+Human-readable tool results omit text blocks that duplicate `structuredContent`.
+When other content remains, a hint points to `--json` for the structured data;
+otherwise it is printed directly. JSON output always includes the full result.
+
 ```bash
 mcpc --json @apify tools-list | jq -r '.[].name'
 mcpc --json @apify tools-call search query:="test" | jq -r '.content[0].text'
+mcpc --json @apify tools-call search query:="test" | jq '.structuredContent'
 
 # chain tools across calls/sessions
 mcpc --json @apify tools-call search-actors keywords:="scraper" \

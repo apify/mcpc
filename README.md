@@ -985,8 +985,9 @@ server's current tools.
 - **Safety annotations**: `read-only`, `destructive`, `idempotent`, and `open-world` hints are shown
   right next to each tool, so a human or an agent can tell a harmless query from a dangerous mutation
   before calling it.
-- **Structured output**: `structuredContent` is pretty-printed as JSON and output schemas are shown
-  with `--full`, so scripts can rely on machine-readable results, not just text.
+- **Structured output**: tool results show `structuredContent` as JSON when no other content remains
+  after removing duplicate text blocks. Otherwise a hint points to `--json`, which includes the full
+  result. Output schemas are shown with `tools-list --full` and `tools-get`.
 - **Rich result content**: text, images, audio, and [resource links or embedded resources](#resources)
   in tool results are all rendered (binary is summarized, never dumped to your terminal).
 - **Async tasks**: long-running tools can run in the background as [async tasks](#async-tasks); each
