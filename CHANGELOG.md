@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sessions no longer lose their saved OAuth refresh token when a server that does not rotate refresh tokens omits `refresh_token` from the refresh response. The bridge used to overwrite the stored token with nothing, so the session could not authenticate after the access token expired and required a new `mcpc login`.
 - Accented text, CJK characters, and emoji in large tool results are no longer corrupted in transit: a multibyte character that landed on a socket chunk boundary between the CLI and the bridge was replaced with `�`, and the JSON stayed valid so nothing reported an error. (#390)
 
+### Changed
+
+- Updated bundled dependencies to their latest versions, which picks up security fixes in the HTTP stack (`undici`) and the OS keychain binding (`@napi-rs/keyring`).
+
 ### Security
 
 - Token refresh now goes only to the authorization server the profile logged in at, which `mcpc login` records, and never to a plaintext HTTP token endpoint. It used to re-resolve the server from the MCP server's metadata on every refresh, so a compromised server could point a session's refresh token and client secret at a server of its choosing. Profiles created before this release are pinned the next time you run `mcpc login`. (#387)
