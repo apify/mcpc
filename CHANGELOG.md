@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Confidential-client sessions now also refresh against authorization servers that accept only HTTP Basic client authentication. The refresh presents the client secret the way the login did and retries with the other form if the server rejects it. (#387)
 - Sessions no longer lose their saved OAuth refresh token when a server that does not rotate refresh tokens omits `refresh_token` from the refresh response. The bridge used to overwrite the stored token with nothing, so the session could not authenticate after the access token expired and required a new `mcpc login`.
 - Accented text, CJK characters, and emoji in large tool results are no longer corrupted in transit: a multibyte character that landed on a socket chunk boundary between the CLI and the bridge was replaced with `�`, and the JSON stayed valid so nothing reported an error. (#390)
+- x402 auto-pay no longer signs when the PAYMENT-REQUIRED `resource.url` is unreachable (timeout, DNS, or connection error). Ghost 402s used to settle against a dead host.
 
 ### Changed
 

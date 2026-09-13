@@ -152,6 +152,8 @@ Protocol version:
 x402 payments (experimental):
   --x402 pays for paid tool calls from the wallet set up with mcpc x402.
   Schemes: auto (default, prefers upto), upto, exact.
+  A 402 whose resource.url is unreachable (timeout, DNS, connection) is
+  refused — mcpc does not sign or settle against a dead host.
 
 Output:
   For a single server, shows session, server info, capabilities, and tools.

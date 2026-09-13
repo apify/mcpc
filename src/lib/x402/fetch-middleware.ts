@@ -4,7 +4,8 @@
  * Wraps the fetch function used by StreamableHTTPClientTransport to:
  * 1. Reuse a cached payment signature across calls to paid tools within a session
  * 2. Sign a fresh payment on the first call (or after cache invalidation)
- * 3. Handle HTTP 402 responses by parsing PAYMENT-REQUIRED, signing, and retrying once
+ * 3. Handle HTTP 402 responses by parsing PAYMENT-REQUIRED, probing
+ *    `resource.url` (fail closed if unreachable), signing, and retrying once
  *
  * Payment is injected in two places simultaneously (server decides which to use):
  * - HTTP header: PAYMENT-SIGNATURE (base64-encoded payment payload)
@@ -28,6 +29,7 @@ import {
   type SchemePreference,
 } from './signer.js';
 import { createLogger } from '../logger.js';
+import { probeHttpResource } from './resource-probe.js';
 
 const logger = createLogger('x402-middleware');
 
@@ -289,6 +291,14 @@ async function handle402Fallback(
     ({ header, accept } = parsePaymentRequired(paymentRequiredBase64, schemePreference));
   } catch (error) {
     logger.warn('Failed to parse PAYMENT-REQUIRED header:', error);
+    return response402;
+  }
+
+  const reachability = await probeHttpResource(header.resource?.url, {
+    alreadyReachedUrl: String(url),
+  });
+  if (reachability === 'unreachable') {
+    logger.warn(`x402 resource unreachable, refusing to sign: ${header.resource?.url ?? '<none>'}`);
     return response402;
   }
 
