@@ -276,6 +276,10 @@ describe('createX402FetchMiddleware HTTP 402 fallback', () => {
     JSON.stringify({ x402Version: 2, accepts: [EXACT_ACCEPT] })
   ).toString('base64');
 
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it('remembers the charged tool, so the next call to it reuses the signature', async () => {
     const cache: X402PaymentCache = { signature: null };
     const baseFetch = vi
@@ -302,6 +306,70 @@ describe('createX402FetchMiddleware HTTP 402 fallback', () => {
     expect(baseFetch).toHaveBeenCalledTimes(3);
     const init = baseFetch.mock.calls[2]?.[1] as RequestInit;
     expect(new Headers(init.headers).get('PAYMENT-SIGNATURE')).toBe('mock-signature-base64');
+  });
+
+  it('does not sign when PAYMENT-REQUIRED resource.url is unreachable', async () => {
+    const headerWithGhost = Buffer.from(
+      JSON.stringify({
+        x402Version: 2,
+        accepts: [EXACT_ACCEPT],
+        resource: { url: 'https://ghost.test/v1/ping' },
+      })
+    ).toString('base64');
+    const cache: X402PaymentCache = { signature: null };
+    const baseFetch = vi
+      .fn()
+      .mockResolvedValue(
+        new Response('', { status: 402, headers: { 'PAYMENT-REQUIRED': headerWithGhost } })
+      );
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('fetch failed')));
+    const fetchFn = createX402FetchMiddleware(baseFetch as never, {
+      wallet: WALLET,
+      getToolByName: () => undefined,
+      paymentCache: cache,
+    });
+
+    const response = await fetchFn('https://example.test/mcp', {
+      method: 'POST',
+      body: toolsCallBody('paid-tool'),
+    });
+
+    expect(response.status).toBe(402);
+    expect(mockSignPayment).not.toHaveBeenCalled();
+    expect(cache.signature).toBeNull();
+    expect(baseFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('signs after a reachable resource.url probe', async () => {
+    const headerWithLive = Buffer.from(
+      JSON.stringify({
+        x402Version: 2,
+        accepts: [EXACT_ACCEPT],
+        resource: { url: 'https://live.test/v1/ping' },
+      })
+    ).toString('base64');
+    const cache: X402PaymentCache = { signature: null };
+    const baseFetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response('', { status: 402, headers: { 'PAYMENT-REQUIRED': headerWithLive } })
+      )
+      .mockResolvedValue(new Response('', { status: 200 }));
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 402 })));
+    const fetchFn = createX402FetchMiddleware(baseFetch as never, {
+      wallet: WALLET,
+      getToolByName: () => undefined,
+      paymentCache: cache,
+    });
+
+    const response = await fetchFn('https://example.test/mcp', {
+      method: 'POST',
+      body: toolsCallBody('paid-tool'),
+    });
+
+    expect(response.status).toBe(200);
+    expect(mockSignPayment).toHaveBeenCalledTimes(1);
+    expect(baseFetch).toHaveBeenCalledTimes(2);
   });
 });
 

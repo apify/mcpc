@@ -1372,6 +1372,15 @@ class BridgeProcess {
       return { handled: false };
     }
 
+    const { probeHttpResource } = await import('../lib/x402/resource-probe.js');
+    const reachability = await probeHttpResource(parsed.resource?.url);
+    if (reachability === 'unreachable') {
+      logger.warn(
+        `x402 resource unreachable, refusing to sign: ${parsed.resource?.url ?? '<none>'}`
+      );
+      return { handled: false };
+    }
+
     logger.debug('Payment-required tool result received, signing fresh payment and retrying...');
 
     // The challenge is the only proof that this tool is paid on servers that advertise no
