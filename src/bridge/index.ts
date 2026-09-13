@@ -77,6 +77,9 @@ import type { ProxyConfig } from '../lib/types.js';
 // only here and load the implementations lazily at the x402-gated call sites.
 import type { X402PaymentCache } from '../lib/x402/fetch-middleware.js';
 import type { SignerWallet } from '../lib/x402/signer.js';
+// resource-probe is fetch-only (no viem). Safe to import statically; keep
+// signer/middleware lazy at the x402-gated call sites below.
+import { probeHttpResource } from '../lib/x402/resource-probe.js';
 import type { FetchLike } from '@modelcontextprotocol/client';
 import { IpcLineBuffer } from '../lib/ipc-line-buffer.js';
 
@@ -1372,7 +1375,6 @@ class BridgeProcess {
       return { handled: false };
     }
 
-    const { probeHttpResource } = await import('../lib/x402/resource-probe.js');
     const reachability = await probeHttpResource(parsed.resource?.url);
     if (reachability === 'unreachable') {
       logger.warn(

@@ -68,6 +68,8 @@ export async function probeHttpResource(
 
   try {
     const response = await fetchFn(resourceUrl, {
+      // GET, not HEAD: live hosts that omit HEAD can hang until timeout, which
+      // would fail-closed on a reachable resource. Cancel the body; status only.
       method: 'GET',
       redirect: 'follow',
       signal: controller.signal,
