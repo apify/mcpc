@@ -54,12 +54,6 @@ export const MCP_PAYMENT_RESPONSE_META_KEY = 'x402/payment-response';
 const MAX_SETTLEMENT_RECEIPT_BASE64_CHARS = 64 * 1024;
 
 /**
- * Unconsumed receipts kept per tool before the oldest is dropped. Only grows when
- * nothing consumes them (a direct middleware user with no bridge attaching them).
- */
-const MAX_PENDING_RECEIPTS_PER_TOOL = 8;
-
-/**
  * Payment information from tool's `_meta.x402`.
  *
  * Apify exposes two shapes side-by-side:
@@ -109,27 +103,20 @@ export interface X402PaymentCache {
   paymentRequiredTools?: Set<string>;
 
   /**
-   * Settlement receipts decoded from the HTTP `PAYMENT-RESPONSE` header, queued per tool
-   * name until `withSettlementReceipt()` attaches them to the matching tool result.
+   * The settlement receipt from the last paid response's `PAYMENT-RESPONSE` header, with
+   * the tool it paid for, until `withSettlementReceipt()` attaches it to that tool's
+   * result. Kept exactly as the server encoded it: mcpc does not validate or normalize
+   * the spec's `success`/`transaction`/`network` fields, so a caller reconciles against
+   * the server's receipt rather than our reading of it.
    *
-   * Queued rather than a single slot because the header arrives with the HTTP response
-   * headers, which on a streamed response precede the JSON-RPC result the bridge is
-   * awaiting. Correlation is by tool name in FIFO order: two *concurrent* calls to the
-   * same paid tool can therefore swap receipts — both are genuine receipts from this
-   * session for that tool, and pinning them tighter would mean sending an mcpc-specific
-   * correlation id to the server on every call.
+   * One slot, and the tool name is what keeps a paid tool's receipt off a free tool's
+   * result. Concurrent paid calls are the one case it does not serve: the newer receipt
+   * wins and the older is logged and dropped. Holding both would not fix it — correlating
+   * a receipt to one of two in-flight calls to the *same* tool needs a per-call id on the
+   * wire, which is not worth sending to every server for this.
    */
-  settlements?: Map<string, SettlementReceipt[]>;
+  lastSettlement?: { toolName: string; receipt: Record<string, unknown> };
 }
-
-/**
- * An x402 `SettlementResponse`, kept exactly as the server encoded it.
- *
- * The spec's fields are `success`, `transaction`, `network` and the optional `errorReason`,
- * `payer`, `amount` and `extensions` — but mcpc neither validates nor normalizes them, so
- * that what a caller reconciles against is the server's receipt and not our reading of it.
- */
-export type SettlementReceipt = Record<string, unknown>;
 
 /**
  * Remember that the server charges for a tool, so later calls to it reuse the session's
@@ -147,7 +134,7 @@ export function recordPaymentRequiredTool(cache: X402PaymentCache, toolName: str
  * The payment already succeeded at this point — a malformed receipt must never turn a
  * paid-for tool result into a failure.
  */
-function decodeSettlementReceipt(encodedBase64: string): SettlementReceipt | undefined {
+function decodeSettlementReceipt(encodedBase64: string): Record<string, unknown> | undefined {
   if (encodedBase64.length > MAX_SETTLEMENT_RECEIPT_BASE64_CHARS) {
     logger.warn(
       `Ignoring PAYMENT-RESPONSE header: ${encodedBase64.length} base64 chars exceeds the ${MAX_SETTLEMENT_RECEIPT_BASE64_CHARS} cap`
@@ -161,7 +148,7 @@ function decodeSettlementReceipt(encodedBase64: string): SettlementReceipt | und
       logger.debug('Ignoring PAYMENT-RESPONSE header: decoded value is not a JSON object');
       return undefined;
     }
-    return parsed as SettlementReceipt;
+    return parsed as Record<string, unknown>;
   } catch (error) {
     logger.debug('Ignoring PAYMENT-RESPONSE header: not base64-encoded JSON:', error);
     return undefined;
@@ -172,7 +159,7 @@ function decodeSettlementReceipt(encodedBase64: string): SettlementReceipt | und
  * Capture the settlement receipt from a paid response, if the server sent one.
  *
  * Called only for requests this middleware attached a payment to, so a receipt is never
- * queued against a call that did not pay for anything.
+ * recorded against a call that did not pay for anything.
  */
 function captureSettlementReceipt(
   cache: X402PaymentCache,
@@ -198,12 +185,12 @@ function captureSettlementReceipt(
     return;
   }
 
-  const queue = (cache.settlements ??= new Map<string, SettlementReceipt[]>()).get(toolName) ?? [];
-  queue.push(receipt);
-  while (queue.length > MAX_PENDING_RECEIPTS_PER_TOOL) {
-    queue.shift();
+  if (cache.lastSettlement) {
+    logger.debug(
+      `Dropping an unclaimed settlement receipt for tool "${cache.lastSettlement.toolName}"`
+    );
   }
-  cache.settlements.set(toolName, queue);
+  cache.lastSettlement = { toolName, receipt };
   logger.debug(`Captured x402 settlement receipt for tool "${toolName}"`);
 }
 
@@ -216,12 +203,13 @@ function captureSettlementReceipt(
  * receipt is consumed either way, so it cannot leak onto a later call to the same tool.
  */
 export function withSettlementReceipt<T>(result: T, cache: X402PaymentCache, toolName: string): T {
-  const queue = cache.settlements?.get(toolName);
-  const receipt = queue?.shift();
-  if (queue && queue.length === 0) {
-    cache.settlements?.delete(toolName);
+  if (cache.lastSettlement?.toolName !== toolName) {
+    return result;
   }
-  if (!receipt || !result || typeof result !== 'object') {
+  const { receipt } = cache.lastSettlement;
+  delete cache.lastSettlement;
+
+  if (!result || typeof result !== 'object') {
     return result;
   }
 

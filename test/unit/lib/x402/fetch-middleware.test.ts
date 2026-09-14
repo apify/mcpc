@@ -400,13 +400,13 @@ describe('settlement receipts (PAYMENT-RESPONSE)', () => {
 
     await fetchFn('https://example.test/mcp', { method: 'POST', body: toolsCallBody('paid-tool') });
 
-    expect(cache.settlements?.get('paid-tool')).toEqual([RECEIPT]);
+    expect(cache.lastSettlement).toEqual({ toolName: 'paid-tool', receipt: RECEIPT });
   });
 
   it('consumes the receipt once, so a later unpaid call does not claim it', () => {
     const cache: X402PaymentCache = {
       signature: null,
-      settlements: new Map([['paid-tool', [RECEIPT]]]),
+      lastSettlement: { toolName: 'paid-tool', receipt: RECEIPT },
     };
 
     expect(withSettlementReceipt({ content: [] }, cache, 'paid-tool')).toHaveProperty('_meta', {
@@ -419,7 +419,7 @@ describe('settlement receipts (PAYMENT-RESPONSE)', () => {
     const serverReceipt = { success: true, transaction: '0xserver', network: 'eip155:8453' };
     const cache: X402PaymentCache = {
       signature: null,
-      settlements: new Map([['paid-tool', [RECEIPT]]]),
+      lastSettlement: { toolName: 'paid-tool', receipt: RECEIPT },
     };
 
     const result = withSettlementReceipt(
@@ -430,13 +430,13 @@ describe('settlement receipts (PAYMENT-RESPONSE)', () => {
 
     expect(result._meta['x402/payment-response']).toBe(serverReceipt);
     // Still consumed, so it cannot resurface on the next call to the same tool
-    expect(cache.settlements?.has('paid-tool')).toBe(false);
+    expect(cache.lastSettlement).toBeUndefined();
   });
 
   it('preserves other _meta keys on the tool result', () => {
     const cache: X402PaymentCache = {
       signature: null,
-      settlements: new Map([['paid-tool', [RECEIPT]]]),
+      lastSettlement: { toolName: 'paid-tool', receipt: RECEIPT },
     };
 
     const result = withSettlementReceipt(
@@ -473,7 +473,7 @@ describe('settlement receipts (PAYMENT-RESPONSE)', () => {
       });
 
       expect(response.status).toBe(200);
-      expect(cache.settlements?.size ?? 0).toBe(0);
+      expect(cache.lastSettlement).toBeUndefined();
       expect(withSettlementReceipt({ content: [] }, cache, 'paid-tool')).toEqual({ content: [] });
     }
   );
@@ -489,7 +489,7 @@ describe('settlement receipts (PAYMENT-RESPONSE)', () => {
 
     await fetchFn('https://example.test/mcp', { method: 'POST', body: toolsCallBody('paid-tool') });
 
-    expect(cache.settlements?.size ?? 0).toBe(0);
+    expect(cache.lastSettlement).toBeUndefined();
   });
 
   it('drops an oversized receipt instead of attaching it to every tool result', async () => {
@@ -508,6 +508,6 @@ describe('settlement receipts (PAYMENT-RESPONSE)', () => {
 
     await fetchFn('https://example.test/mcp', { method: 'POST', body: toolsCallBody('paid-tool') });
 
-    expect(cache.settlements?.size ?? 0).toBe(0);
+    expect(cache.lastSettlement).toBeUndefined();
   });
 });
