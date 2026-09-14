@@ -68,6 +68,10 @@ mcpc connect                             # discover standard configs + connect e
   (`mcp.apify.com` → `@apify`). A matching session (same server + auth) is reused.
 - **Stdio (command-based) entries launch a local process on connect** — only connect
   to configs you trust. Bulk connects skip stdio entries unless you pass `--stdio`.
+- **A bare `mcpc connect` treats config files in the current directory as untrusted** — a
+  checked-in `.mcp.json` could point `${GITHUB_TOKEN}` at an attacker's server. Entries that
+  reference `${VAR}` are skipped (the output names the variables), and `-H` is refused. Review
+  the file before connecting it by name (`mcpc connect ./.mcp.json`), which expands `${VAR}`.
 - The MCP protocol version is negotiated automatically. Pass
   `--protocol-version <version>` (e.g. `--protocol-version 2025-11-25`) to pin
   one exact version — the connection fails if the server does not support it.
