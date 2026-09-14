@@ -1158,8 +1158,8 @@ ${chalk.bold('JSON output (--json):')}
   \`{ taskId: string, status: string }\`
   Schema: ${LEGACY_SCHEMA_BASE}#createtaskresult
 
-  Paid tools (x402): the server's settlement receipt, when it sends one, is at
-  \`_meta["x402/payment-response"]\`.
+  With \`--x402\` on the session: the server's settlement receipt, when it sends
+  one, is at \`_meta["x402/payment-response"]\`.
 `;
 
   program
