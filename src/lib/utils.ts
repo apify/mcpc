@@ -625,6 +625,29 @@ export function redactHeaders(headers: Record<string, string>): Record<string, s
 }
 
 /**
+ * Check if an error message means the connection is speaking the wrong protocol era —
+ * as opposed to a malformed request or an expired session. Four wire signatures qualify:
+ * `-32020` (HeaderMismatch: the MCP-Protocol-Version header disagrees with the body),
+ * `-32022` (UnsupportedProtocolVersion), the `-32602` envelope rejection a 2026-07-28
+ * server answers when a modern header arrives without the `_meta` envelope, and the SDK's
+ * own refusal of a server version it cannot speak.
+ *
+ * The bridge uses this to mark a resumed server-side session as expired when the server
+ * has changed protocol version underneath it, instead of auto-reconnecting into the same
+ * rejection forever (#374).
+ */
+export function isProtocolMismatchError(errorMessage: string): boolean {
+  const msg = errorMessage.toLowerCase();
+  return (
+    msg.includes('-32020') ||
+    msg.includes('-32022') ||
+    (msg.includes('envelope') && msg.includes('mcp-protocol-version')) ||
+    msg.includes('protocol version is not supported') ||
+    msg.includes('mutual protocol version')
+  );
+}
+
+/**
  * Check if an error message indicates MCP session expiration.
  * Used to detect when a server has invalidated a session so it can be marked as expired.
  *

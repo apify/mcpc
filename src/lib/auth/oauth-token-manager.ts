@@ -20,9 +20,32 @@ const DEFAULT_TOKEN_EXPIRY_SECONDS = 3600;
 // Buffer time before expiry to trigger refresh (60 seconds)
 const EXPIRY_BUFFER_SECONDS = 60;
 
+// A forced refresh (the server rejected the access token) is skipped when the token
+// was refreshed this recently: the rejected request raced the refresh and its retry
+// already carries the new token. Refreshing again would only rotate the refresh
+// token a second time.
+const FORCED_REFRESH_DEDUPE_MILLIS = 5_000;
+
+/**
+ * Options for `OAuthTokenManager.refreshAccessToken()`.
+ */
+export interface RefreshAccessTokenOptions {
+  /**
+   * Refresh even though the current access token has not expired by the local
+   * clock — the server rejected it (HTTP 401). A refresh already in flight, or one
+   * that finished moments ago, is reused instead of starting another.
+   */
+  force?: boolean;
+}
+
 /**
  * Callback invoked when tokens are refreshed
  * Allows callers to persist the new tokens (e.g., to keychain)
+ *
+ * `tokens.refresh_token` always carries the effective refresh token: the rotated
+ * one when the server returned a new one, otherwise the previous one. Callers can
+ * persist the whole object without erasing a refresh token that a non-rotating
+ * server omitted from the refresh response.
  */
 export type OnTokenRefreshCallback = (tokens: OAuthTokenResponse) => void | Promise<void>;
 
@@ -43,6 +66,20 @@ export interface OAuthTokenManagerOptions {
   profileName: string;
   /** OAuth client ID (required for public clients) */
   clientId: string;
+  /** OAuth client secret (confidential clients only; sent with every refresh) */
+  clientSecret?: string;
+  /**
+   * Authorization server login authenticated with (`AuthProfile.oauthIssuer`).
+   * Pins the refresh to that server; profiles written before mcpc recorded it
+   * have none and fall back to discovery.
+   */
+  issuer?: string;
+  /**
+   * RFC 8707 resource indicator the login sent (`AuthProfile.oauthResource`), repeated
+   * on every refresh. When absent, the refresh derives it from the server's protected
+   * resource metadata.
+   */
+  resource?: string;
   /** Initial refresh token */
   refreshToken: string;
   /** Initial access token (optional - will be refreshed if not provided or expired) */
@@ -62,16 +99,27 @@ export class OAuthTokenManager {
   private serverUrl: string;
   private profileName: string;
   private clientId: string;
+  private clientSecret: string | undefined;
+  private issuer: string | undefined;
+  private resource: string | undefined;
   private refreshToken: string;
   private accessToken: string | null = null;
   private accessTokenExpiresAt: number | null = null; // unix timestamp
   private onTokenRefresh?: OnTokenRefreshCallback;
   private onBeforeRefresh?: OnBeforeRefreshCallback;
+  // Refresh in progress, shared by concurrent callers (several requests can fail
+  // with 401 at once — one refresh must serve them all, or a rotating server
+  // rejects the second refresh as a reused token).
+  private refreshInFlight: Promise<OAuthTokenResponse> | null = null;
+  private lastRefreshedAtMillis = 0;
 
   constructor(options: OAuthTokenManagerOptions) {
     this.serverUrl = options.serverUrl;
     this.profileName = options.profileName;
     this.clientId = options.clientId;
+    this.clientSecret = options.clientSecret;
+    this.issuer = options.issuer;
+    this.resource = options.resource;
     this.refreshToken = options.refreshToken;
     this.accessToken = options.accessToken ?? null;
     this.accessTokenExpiresAt = options.accessTokenExpiresAt ?? null;
@@ -111,7 +159,27 @@ export class OAuthTokenManager {
    * @returns The token response from the server
    * @throws AuthError if refresh fails
    */
-  async refreshAccessToken(): Promise<OAuthTokenResponse> {
+  async refreshAccessToken(options?: RefreshAccessTokenOptions): Promise<OAuthTokenResponse> {
+    if (this.refreshInFlight) {
+      logger.debug('Token refresh already in progress, waiting for it');
+      return this.refreshInFlight;
+    }
+    if (
+      options?.force &&
+      this.accessToken &&
+      Date.now() - this.lastRefreshedAtMillis < FORCED_REFRESH_DEDUPE_MILLIS
+    ) {
+      logger.debug('Access token was refreshed moments ago, not refreshing it again');
+      return { access_token: this.accessToken, token_type: 'Bearer' };
+    }
+
+    this.refreshInFlight = this.doRefreshAccessToken(options?.force ?? false).finally(() => {
+      this.refreshInFlight = null;
+    });
+    return this.refreshInFlight;
+  }
+
+  private async doRefreshAccessToken(force: boolean): Promise<OAuthTokenResponse> {
     // Reload tokens from keychain before refresh (handles token rotation by other processes)
     if (this.onBeforeRefresh) {
       logger.debug('Reloading tokens from storage before refresh...');
@@ -121,8 +189,14 @@ export class OAuthTokenManager {
           logger.debug('Found newer refresh token in storage (another process rotated it)');
           this.refreshToken = latestTokens.refreshToken;
         }
-        // Also update access token if still valid (another process may have refreshed)
-        if (latestTokens.accessToken && latestTokens.accessTokenExpiresAt) {
+        // Also update access token if still valid (another process may have refreshed).
+        // On a forced refresh the server has just rejected the current token, so the
+        // stored one only helps when it is a different token.
+        if (
+          latestTokens.accessToken &&
+          latestTokens.accessTokenExpiresAt &&
+          (!force || latestTokens.accessToken !== this.accessToken)
+        ) {
           const nowSeconds = Math.floor(Date.now() / 1000);
           if (latestTokens.accessTokenExpiresAt > nowSeconds + EXPIRY_BUFFER_SECONDS) {
             logger.debug('Found valid access token in storage, using it instead of refreshing');
@@ -149,14 +223,16 @@ export class OAuthTokenManager {
     logger.debug(`Refreshing access token for profile: ${this.profileName}`);
 
     try {
-      const tokenResponse = await discoverAndRefreshToken(
-        this.serverUrl,
-        this.refreshToken,
-        this.clientId
-      );
+      const tokenResponse = await discoverAndRefreshToken(this.serverUrl, this.refreshToken, {
+        clientId: this.clientId,
+        ...(this.clientSecret !== undefined && { clientSecret: this.clientSecret }),
+        ...(this.issuer !== undefined && { issuer: this.issuer }),
+        ...(this.resource !== undefined && { resource: this.resource }),
+      });
 
       // Store new access token
       this.accessToken = tokenResponse.access_token;
+      this.lastRefreshedAtMillis = Date.now();
 
       // Calculate expiry time
       const expiresInSecs = tokenResponse.expires_in ?? DEFAULT_TOKEN_EXPIRY_SECONDS;
@@ -170,9 +246,11 @@ export class OAuthTokenManager {
 
       logger.debug(`Access token refreshed successfully for profile: ${this.profileName}`);
 
-      // Notify callback for persistence
+      // Notify callback for persistence. Pass the effective refresh token: a
+      // non-rotating server omits refresh_token from the response, and persisting
+      // the raw response would erase the stored one (#371).
       if (this.onTokenRefresh) {
-        await this.onTokenRefresh(tokenResponse);
+        await this.onTokenRefresh({ ...tokenResponse, refresh_token: this.refreshToken });
       }
 
       return tokenResponse;

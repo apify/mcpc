@@ -1,7 +1,7 @@
 ---
 name: mcpc
 description: Use the mcpc CLI to work with MCP (Model Context Protocol) servers from the shell - connect to a server as a persistent session, then list and call tools, read resources, get prompts, and run async tasks. Use --json for scripting and code mode. Reach for this whenever interacting with MCP servers, calling MCP tools, or accessing MCP resources programmatically.
-allowed-tools: Bash(mcpc:*), Read, Grep
+allowed-tools: Bash(mcpc:*), Bash(npx @apify/mcpc:*), Read, Grep
 ---
 
 # mcpc: MCP command-line client
@@ -9,6 +9,16 @@ allowed-tools: Bash(mcpc:*), Read, Grep
 `mcpc` maps every MCP operation to a shell command. For agents this is often more
 efficient than function calling: discover the right tool on demand, then generate
 shell commands (ideally with `--json`) instead of carrying tool definitions in context.
+
+The examples below use `mcpc` as a command on `PATH`. If it is not installed globally
+or otherwise available, use the published package through `npx` instead:
+
+```bash
+npx -y @apify/mcpc@latest --help
+```
+
+After checking the help, prefix the commands below with `npx @apify/mcpc`
+(for example, `npx @apify/mcpc connect ...`).
 
 ## Mental model
 
@@ -58,6 +68,10 @@ mcpc connect                             # discover standard configs + connect e
   (`mcp.apify.com` → `@apify`). A matching session (same server + auth) is reused.
 - **Stdio (command-based) entries launch a local process on connect** — only connect
   to configs you trust. Bulk connects skip stdio entries unless you pass `--stdio`.
+- **A bare `mcpc connect` treats config files in the current directory as untrusted** — a
+  checked-in `.mcp.json` could point `${GITHUB_TOKEN}` at an attacker's server. Entries that
+  reference `${VAR}` are skipped (the output names the variables), and `-H` is refused. Review
+  the file before connecting it by name (`mcpc connect ./.mcp.json`), which expands `${VAR}`.
 - The MCP protocol version is negotiated automatically. Pass
   `--protocol-version <version>` (e.g. `--protocol-version 2025-11-25`) to pin
   one exact version — the connection fails if the server does not support it.

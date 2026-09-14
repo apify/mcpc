@@ -173,6 +173,70 @@ function authServerMetadataUrls(issuer: string): string[] {
 }
 
 /**
+ * Fetch an authorization server's metadata from its issuer identifier, trying the
+ * RFC 8414 and OIDC Discovery URL shapes in turn.
+ */
+async function fetchIssuerMetadata(issuer: string): Promise<AuthServerMetadata | undefined> {
+  for (const candidate of authServerMetadataUrls(issuer)) {
+    const metadata = await fetchAuthServerMetadata(candidate);
+    if (metadata) return metadata;
+  }
+  return undefined;
+}
+
+/**
+ * RFC 9728 protected resource metadata. Only the fields mcpc reads are typed.
+ */
+export interface ProtectedResourceMetadata {
+  /** The resource identifier the server binds its tokens to (RFC 9728 §2). */
+  resource?: string;
+  authorization_servers?: string[];
+}
+
+/**
+ * Fetch the RFC 9728 protected resource metadata document of an MCP server:
+ * the path-scoped document first (RFC 9728 §3.1), then the origin-wide one.
+ * Returns the first document that parses, or undefined when the server
+ * publishes none.
+ */
+export async function fetchProtectedResourceMetadata(
+  serverUrl: string
+): Promise<ProtectedResourceMetadata | undefined> {
+  const normalized = getOAuthServerUrl(serverUrl).replace(/\/+$/, '');
+  const url = new URL(normalized);
+  const base = `${url.protocol}//${url.host}`;
+  const path = url.pathname.replace(/\/+$/, '');
+
+  const prmUrls = [`${base}/.well-known/oauth-protected-resource${path}`];
+  if (path) prmUrls.push(`${base}/.well-known/oauth-protected-resource`);
+
+  for (const prmUrl of prmUrls) {
+    try {
+      logger.debug(`Trying protected resource metadata at: ${prmUrl}`);
+      const response = await proxyFetch(prmUrl, { headers: { Accept: 'application/json' } });
+      if (!response.ok) continue;
+      const document = (await response.json()) as unknown;
+      if (!document || typeof document !== 'object') continue;
+      const { resource, authorization_servers } = document as Record<string, unknown>;
+      return {
+        ...(typeof resource === 'string' && resource !== '' ? { resource } : {}),
+        ...(Array.isArray(authorization_servers)
+          ? {
+              authorization_servers: authorization_servers.filter(
+                (issuer): issuer is string => typeof issuer === 'string' && issuer !== ''
+              ),
+            }
+          : {}),
+      };
+    } catch {
+      continue;
+    }
+  }
+
+  return undefined;
+}
+
+/**
  * Discover the authorization server for an MCP server via RFC 9728 protected
  * resource metadata: fetch the PRM document, then read its metadata from the
  * first `authorization_servers` entry.
@@ -181,99 +245,260 @@ function authServerMetadataUrls(issuer: string): string[] {
  * when the authorization server lives on a different origin than the MCP
  * server (`mcp.example.com` protected by `auth.example.com`) — direct
  * well-known probes against the MCP origin cannot find it.
+ *
+ * Pass an already fetched document as `prm` to skip the fetch.
  */
 export async function discoverAuthServerViaProtectedResource(
-  serverUrl: string
+  serverUrl: string,
+  prm?: ProtectedResourceMetadata
 ): Promise<AuthServerMetadata | undefined> {
-  const normalized = getOAuthServerUrl(serverUrl).replace(/\/+$/, '');
-  const url = new URL(normalized);
-  const base = `${url.protocol}//${url.host}`;
-  const path = url.pathname.replace(/\/+$/, '');
-
-  // Path-scoped document first (RFC 9728 §3.1), then the origin-wide one.
-  const prmUrls = [`${base}/.well-known/oauth-protected-resource${path}`];
-  if (path) prmUrls.push(`${base}/.well-known/oauth-protected-resource`);
-
-  for (const prmUrl of prmUrls) {
-    let issuers: unknown;
-    try {
-      logger.debug(`Trying protected resource metadata at: ${prmUrl}`);
-      const response = await proxyFetch(prmUrl, { headers: { Accept: 'application/json' } });
-      if (!response.ok) continue;
-      ({ authorization_servers: issuers } = (await response.json()) as {
-        authorization_servers?: unknown;
-      });
-    } catch {
-      continue;
-    }
-
-    if (!Array.isArray(issuers)) continue;
-    for (const issuer of issuers) {
-      if (typeof issuer !== 'string' || issuer === '') continue;
-      logger.debug(`Protected resource metadata points at issuer: ${issuer}`);
-      for (const candidate of authServerMetadataUrls(issuer)) {
-        const metadata = await fetchAuthServerMetadata(candidate);
-        if (metadata) return metadata;
-      }
-    }
+  const document = prm ?? (await fetchProtectedResourceMetadata(serverUrl));
+  for (const issuer of document?.authorization_servers ?? []) {
+    logger.debug(`Protected resource metadata points at issuer: ${issuer}`);
+    const metadata = await fetchIssuerMetadata(issuer);
+    if (metadata) return metadata;
   }
-
   return undefined;
 }
 
 /**
- * Discover OAuth token endpoint from server.
- * Thin wrapper over discoverAuthServerMetadata() for callers that only need the URL.
+ * Pick the RFC 8707 `resource` indicator for a token refresh the same way the
+ * MCP SDK's `selectResourceURL()` picks it for the login: the canonical MCP
+ * server URL, confirmed by the server's protected resource metadata. Returns
+ * undefined when the server publishes no metadata — the login sent no
+ * `resource` either, so the refresh must not start sending one.
+ *
+ * Mirrors the SDK check, so a server whose metadata names a resource the MCP
+ * URL does not belong to is rejected here just as it is rejected at login.
  */
-export async function discoverTokenEndpoint(serverUrl: string): Promise<string | undefined> {
-  return (await discoverAuthServerMetadata(serverUrl))?.token_endpoint;
+export async function selectRefreshResource(
+  serverUrl: string,
+  prm: ProtectedResourceMetadata | undefined
+): Promise<string | undefined> {
+  if (!prm?.resource) return undefined;
+  // Lazy: the CLI must not load the MCP SDK at startup (it only refreshes tokens
+  // on the connect path), and the bridge has it loaded already.
+  const { resourceUrlFromServerUrl, checkResourceAllowed } =
+    await import('@modelcontextprotocol/client');
+  const requestedResource = resourceUrlFromServerUrl(getOAuthServerUrl(serverUrl));
+  if (!checkResourceAllowed({ requestedResource, configuredResource: prm.resource })) {
+    throw new AuthError(
+      `Protected resource ${prm.resource} does not match the MCP server URL ` +
+        `${requestedResource.href} (or its origin)`
+    );
+  }
+  return new URL(prm.resource).href;
+}
+
+/**
+ * Client authentication method used at the token endpoint.
+ *
+ * Mirrors the MCP SDK's `ClientAuthMethod`: mcpc's own refresh must authenticate
+ * the same way the SDK-driven login did, or a server that accepts only one of the
+ * two secret methods rejects the refresh with `invalid_client`.
+ */
+export type ClientAuthMethod = 'client_secret_basic' | 'client_secret_post' | 'none';
+
+/**
+ * Pick the client authentication method for a token request, following the same
+ * priority the MCP SDK's `selectClientAuthMethod()` applies during login:
+ * `client_secret_basic` > `client_secret_post` > `none`.
+ *
+ * RFC 6749 §2.3.1 makes HTTP Basic the mandatory-to-implement method and the body
+ * form optional, and RFC 8414 §2 defaults to `client_secret_basic` when the server
+ * advertises no `token_endpoint_auth_methods_supported`, so a confidential client
+ * starts with Basic. `refreshAccessToken()` retries with the other method if the
+ * server answers `invalid_client`, which covers servers that advertise nothing and
+ * accept only the body form.
+ */
+export function selectClientAuthMethod(
+  metadata: AuthServerMetadata | undefined,
+  hasClientSecret: boolean
+): ClientAuthMethod {
+  if (!hasClientSecret) return 'none';
+
+  const supported = metadata?.token_endpoint_auth_methods_supported;
+  if (!Array.isArray(supported) || supported.length === 0) return 'client_secret_basic';
+  if (supported.includes('client_secret_basic')) return 'client_secret_basic';
+  if (supported.includes('client_secret_post')) return 'client_secret_post';
+  return 'client_secret_post';
+}
+
+/**
+ * The client half of a refresh request.
+ */
+export interface RefreshClient {
+  /** OAuth client ID */
+  clientId: string;
+  /**
+   * OAuth client secret, for confidential clients (pre-registered or issued by
+   * dynamic client registration). Servers such as Asana reject the refresh with
+   * `invalid_client` without it.
+   */
+  clientSecret?: string;
+  /**
+   * How to present the credentials. Defaults to `selectClientAuthMethod()` with no
+   * metadata, i.e. Basic for a confidential client and `none` for a public one.
+   */
+  authMethod?: ClientAuthMethod;
+  /**
+   * RFC 8707 resource indicator, sent as the `resource` parameter. The MCP
+   * authorization spec requires it on every token request, refresh included:
+   * an authorization server that binds tokens to a resource rejects a refresh
+   * without it, or mints a token the MCP server then rejects (#395).
+   */
+  resource?: string;
+}
+
+/**
+ * Apply client authentication to a token request, mirroring the MCP SDK's
+ * `applyClientAuthentication()`: Basic puts the credentials in the header and
+ * nothing in the body, the body form and public clients put `client_id` in the body.
+ */
+function applyClientAuth(
+  method: ClientAuthMethod,
+  client: RefreshClient,
+  headers: Record<string, string>,
+  params: URLSearchParams
+): void {
+  if (method === 'client_secret_basic' && client.clientSecret) {
+    const credentials = Buffer.from(`${client.clientId}:${client.clientSecret}`).toString('base64');
+    headers.Authorization = `Basic ${credentials}`;
+    return;
+  }
+
+  params.set('client_id', client.clientId);
+  if (method === 'client_secret_post' && client.clientSecret) {
+    params.set('client_secret', client.clientSecret);
+  }
+}
+
+/**
+ * Read the OAuth error code (RFC 6749 §5.2) out of a token error response body.
+ * Returns undefined for a non-JSON or non-conforming body.
+ */
+function parseOAuthErrorCode(body: string): string | undefined {
+  try {
+    const parsed = JSON.parse(body) as { error?: unknown };
+    return typeof parsed.error === 'string' ? parsed.error : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Reject a plaintext token endpoint. The refresh token and, for a confidential
+ * client, the client secret travel in this request body, so the transport must be
+ * encrypted — the MCP SDK asserts the same thing at login
+ * (`assertSecureTokenEndpoint`). Loopback stays allowed for local development.
+ */
+function assertSecureTokenEndpoint(tokenEndpoint: string): void {
+  const { protocol, hostname } = new URL(tokenEndpoint);
+  if (protocol === 'https:') return;
+  if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]') return;
+
+  throw new AuthError(
+    `Refusing to send credentials to a non-HTTPS token endpoint: ${tokenEndpoint}`
+  );
 }
 
 /**
  * Refresh an access token using a refresh token
  * This is the core refresh logic - callers handle storage and error recovery
  *
+ * A confidential client whose method the server rejects with `invalid_client` is
+ * retried once with the other secret method: servers that advertise no
+ * `token_endpoint_auth_methods_supported` accept one form or the other, and there
+ * is no way to tell which from metadata alone.
+ *
  * @param tokenEndpoint - The OAuth token endpoint URL
  * @param refreshToken - The refresh token to use
- * @param clientId - The OAuth client ID (required for public clients)
+ * @param client - Client ID, optional secret, and how to present them
  * @returns The token response from the server
  * @throws AuthError if the refresh fails
  */
 export async function refreshAccessToken(
   tokenEndpoint: string,
   refreshToken: string,
-  clientId: string
+  client: RefreshClient
 ): Promise<OAuthTokenResponse> {
-  logger.debug(`Refreshing token at: ${tokenEndpoint}`);
+  assertSecureTokenEndpoint(tokenEndpoint);
+
+  const method = client.authMethod ?? selectClientAuthMethod(undefined, !!client.clientSecret);
+
+  try {
+    return await postRefreshRequest(tokenEndpoint, refreshToken, client, method);
+  } catch (error) {
+    const alternate =
+      method === 'client_secret_basic'
+        ? 'client_secret_post'
+        : method === 'client_secret_post'
+          ? 'client_secret_basic'
+          : undefined;
+
+    if (!client.clientSecret || !alternate || !isInvalidClientError(error)) {
+      throw error;
+    }
+
+    logger.debug(`Client authentication with ${method} was rejected, retrying with ${alternate}`);
+    return postRefreshRequest(tokenEndpoint, refreshToken, client, alternate);
+  }
+}
+
+/**
+ * AuthError raised for an `invalid_client` token error, as thrown by
+ * postRefreshRequest() (the code travels in `details`).
+ */
+function isInvalidClientError(error: unknown): boolean {
+  return error instanceof AuthError && error.details === 'invalid_client';
+}
+
+/**
+ * POST one `grant_type=refresh_token` request with the given client authentication.
+ */
+async function postRefreshRequest(
+  tokenEndpoint: string,
+  refreshToken: string,
+  client: RefreshClient,
+  method: ClientAuthMethod
+): Promise<OAuthTokenResponse> {
+  logger.debug(`Refreshing token at: ${tokenEndpoint} (client auth: ${method})`);
 
   // Prepare refresh request (OAuth spec uses snake_case)
-  // Public clients (token_endpoint_auth_method: 'none') must include client_id
   const params = new URLSearchParams({
     grant_type: 'refresh_token',
     refresh_token: refreshToken,
-    client_id: clientId,
   });
+  if (client.resource) {
+    params.set('resource', client.resource);
+  }
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/x-www-form-urlencoded',
+    Accept: 'application/json',
+  };
+  applyClientAuth(method, client, headers, params);
 
   const response = await proxyFetch(tokenEndpoint, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      Accept: 'application/json',
-    },
+    headers,
     body: params.toString(),
   });
 
   if (!response.ok) {
     // Log only a bounded snippet — a non-conforming auth server could echo
     // sensitive or attacker-influenced content into the persisted bridge log.
-    const errorText = (await response.text()).slice(0, 400);
-    logger.error(`Token refresh failed: ${response.status} ${errorText}`);
+    const errorBody = await response.text();
+    logger.error(`Token refresh failed: ${response.status} ${errorBody.slice(0, 400)}`);
+    const errorCode = parseOAuthErrorCode(errorBody);
 
     if (response.status === 400 || response.status === 401) {
-      throw new AuthError('Refresh token is invalid or expired');
+      throw new AuthError('Refresh token is invalid or expired', errorCode);
     }
 
-    throw new AuthError(`Failed to refresh token: ${response.status} ${response.statusText}`);
+    throw new AuthError(
+      `Failed to refresh token: ${response.status} ${response.statusText}`,
+      errorCode
+    );
   }
 
   const tokenResponse = (await response.json()) as OAuthTokenResponse;
@@ -281,26 +506,72 @@ export async function refreshAccessToken(
 }
 
 /**
- * Discover token endpoint and refresh access token in one call
- * Convenience function that combines discovery and refresh
+ * Discover the token endpoint and refresh an access token in one call.
+ *
+ * `issuer` is the authorization server login recorded in the profile
+ * (`AuthProfile.oauthIssuer`). When set, its metadata is the only source for the
+ * token endpoint: the refresh token and client secret then travel to the server
+ * that issued them, instead of wherever the MCP server's metadata points today.
+ * Profiles written before mcpc recorded the issuer have none, and fall back to
+ * discovery — RFC 9728 protected resource metadata first, because the
+ * authorization server often lives on another origin than the MCP server
+ * (Asana: `mcp.asana.com` vs `app.asana.com`), and only then the MCP origin's own
+ * well-known documents.
+ *
+ * `resource` is the RFC 8707 resource indicator the login sent
+ * (`AuthProfile.oauthResource`). Profiles written before mcpc recorded it have
+ * none; the indicator is then derived from the server's protected resource
+ * metadata the way the login derived it, so the refreshed token is bound to
+ * the same resource (#395).
  *
  * @param serverUrl - The MCP server URL
  * @param refreshToken - The refresh token to use
- * @param clientId - The OAuth client ID
+ * @param client - Client ID and optional secret; the auth method is resolved from
+ *   the discovered metadata unless the caller pins one
  * @returns The token response from the server
  * @throws AuthError if discovery or refresh fails
  */
 export async function discoverAndRefreshToken(
   serverUrl: string,
   refreshToken: string,
-  clientId: string
+  client: RefreshClient & { issuer?: string }
 ): Promise<OAuthTokenResponse> {
-  const tokenEndpoint = await discoverTokenEndpoint(serverUrl);
+  // The protected resource metadata is needed to derive a missing resource
+  // indicator, and to find the authorization server when no issuer is pinned.
+  const prm =
+    client.resource === undefined || !client.issuer
+      ? await fetchProtectedResourceMetadata(serverUrl)
+      : undefined;
+  const resource = client.resource ?? (await selectRefreshResource(serverUrl, prm));
+  if (client.resource === undefined) {
+    logger.debug(
+      resource
+        ? `Derived resource indicator from protected resource metadata: ${resource}`
+        : 'No protected resource metadata; refreshing without a resource indicator'
+    );
+  }
+
+  const metadata = client.issuer
+    ? await fetchIssuerMetadata(client.issuer)
+    : ((prm && (await discoverAuthServerViaProtectedResource(serverUrl, prm))) ??
+      (await discoverAuthServerMetadata(serverUrl)));
+
+  const tokenEndpoint = metadata?.token_endpoint;
   if (!tokenEndpoint) {
+    if (client.issuer) {
+      throw new AuthError(
+        `Could not find OAuth metadata at ${client.issuer}, the authorization server ` +
+          `this profile logged in at`
+      );
+    }
     throw new AuthError(`Could not find OAuth token endpoint for ${serverUrl}`);
   }
 
-  return refreshAccessToken(tokenEndpoint, refreshToken, clientId);
+  return refreshAccessToken(tokenEndpoint, refreshToken, {
+    ...client,
+    ...(resource !== undefined ? { resource } : {}),
+    authMethod: client.authMethod ?? selectClientAuthMethod(metadata, !!client.clientSecret),
+  });
 }
 
 /**
@@ -314,8 +585,8 @@ export function createReauthError(
 ): AuthError {
   const command =
     profileName === DEFAULT_AUTH_PROFILE
-      ? `mcpc ${serverUrl} login`
-      : `mcpc ${serverUrl} login --profile ${profileName}`;
+      ? `mcpc login ${serverUrl}`
+      : `mcpc login ${serverUrl} --profile ${profileName}`;
   return new AuthError(`${message}. Please re-authenticate with: ${command}`);
 }
 

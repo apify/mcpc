@@ -676,8 +676,10 @@ cleanup_test_servers() {
 if [[ "$KEEP_RUNS" != "true" && $FAILED -eq 0 ]]; then
   cleanup_bridges "$E2E_SHARED_HOME"
   cleanup_test_servers
-  rm -rf "$RUN_DIR"
-  rm -rf "$E2E_SHARED_HOME"
+  # Best-effort: a stray bridge or test server still writing into these
+  # directories can make rm fail, and that must not turn a green run red.
+  rm -rf "$RUN_DIR" || true
+  rm -rf "$E2E_SHARED_HOME" || true
   echo ""
   echo -e "${DIM}Test run directory cleaned up${NC}"
 else

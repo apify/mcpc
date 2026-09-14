@@ -11,6 +11,15 @@
  *    and initializes the proxy-aware fetch. Must be called once at process startup.
  * 2. `proxyFetch()` — a fetch function that explicitly routes through the
  *    EnvHttpProxyAgent dispatcher, for use in code that bypasses the global dispatcher.
+ *
+ * Keep the `undici` dependency on the 7.x line. Both entry points below hand an
+ * `undici` dispatcher to Node's *built-in* global `fetch`, and the dispatcher
+ * handler contract changed in undici 8: Node 22/24 still bundle undici 6.x, whose
+ * global fetch rejects an 8.x dispatcher outright with `invalid onRequestStart
+ * method`, surfacing as a bare `fetch failed` on every request. Routing through
+ * undici's own exported `fetch` instead would work, but returns a non-global
+ * `Response` — see the `proxyFetch()` note below for why that breaks callers.
+ * Revisit only once Node's bundled undici and the standalone package agree.
  */
 
 import type { Dispatcher } from 'undici';

@@ -193,7 +193,12 @@ export interface SessionData {
    * (2026-07-28 connections only — see `ServerDetails.supportedVersions`).
    */
   supportedVersions?: string[];
-  mcpSessionId?: string; // Server-assigned MCP session ID for resumption (stateful Streamable HTTP only)
+  /**
+   * Server-assigned MCP session ID for resumption (stateful Streamable HTTP only).
+   * Explicitly clearable: a reconnect that ends up without a session id must drop the
+   * stored one, or every later bridge start would keep resuming a session that is gone.
+   */
+  mcpSessionId?: string | undefined;
   connectionMode?: ConnectionMode; // Whether the connection carries server-side session state (derived at connect)
   /** Server identity, as reported by the handshake (`initialize`) or `server/discover`. */
   serverInfo?: Implementation;
@@ -302,6 +307,14 @@ export interface AuthProfile {
   oauthGrant?: OAuthGrant;
   // OAuth metadata
   oauthIssuer: string;
+  /**
+   * RFC 8707 resource indicator the login sent to the authorization server (the MCP
+   * server's canonical URL, as selected via its protected resource metadata). Token
+   * refresh repeats it: servers that bind tokens to a resource reject a refresh
+   * without it (#395). Absent when the login sent none, or for profiles written
+   * before mcpc recorded it.
+   */
+  oauthResource?: string;
   /** Enterprise IdP issuer URL (id_jag grant only). */
   idpIssuer?: string;
   scopes?: string[];
@@ -376,8 +389,24 @@ export interface AuthCredentials {
    * refresh-token / access-token flow above.
    */
   oauthGrant?: OAuthGrant;
+  // Client secret (sent via IPC, never CLI args). Authorization-code grant: the
+  // confidential client's secret, presented on token refresh. Client-credentials
+  // grant: the client_secret_basic variant of the material below.
+  clientSecret?: string;
+  /**
+   * Authorization server the profile authenticated with (`AuthProfile.oauthIssuer`).
+   * Pins token refresh to that server instead of re-resolving it from whatever the
+   * MCP server's metadata points at now. Absent for profiles written before mcpc
+   * recorded the issuer.
+   */
+  oauthIssuer?: string;
+  /**
+   * RFC 8707 resource indicator the login sent (`AuthProfile.oauthResource`), repeated
+   * on token refresh. Absent when the login sent none or the profile predates it; the
+   * bridge then derives it from the server's protected resource metadata.
+   */
+  oauthResource?: string;
   // Client-credentials grant material (machine-to-machine; sent via IPC, never CLI args)
-  clientSecret?: string; // client_secret_basic variant
   privateKeyPem?: string; // private_key_jwt variant (RFC 7523): PEM-encoded signing key
   keyAlg?: string; // JWT signing algorithm for the private_key_jwt variant (e.g. RS256)
   scope?: string; // space-separated scopes requested by the client-credentials grant

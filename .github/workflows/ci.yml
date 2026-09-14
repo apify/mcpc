@@ -96,9 +96,14 @@ jobs:
         run: ./test/e2e/run.sh --no-build --parallel 6 --server-protocol modern
 
   e2e-bun:
-    name: E2E tests (Bun)
+    name: E2E tests (Bun ${{ matrix.bun-version }})
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        # Previous stable line and the current one — bump when a new minor ships.
+        bun-version: [1.3.x, 1.4.x]
 
     steps:
       - uses: actions/checkout@v6
@@ -108,8 +113,10 @@ jobs:
         with:
           node-version: 24
 
-      - name: Install Bun
+      - name: Install Bun ${{ matrix.bun-version }}
         uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ matrix.bun-version }}
 
       - name: Install pnpm and dependencies
         uses: apify/actions/pnpm-install@v1.1.2

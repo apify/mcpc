@@ -21,6 +21,7 @@ import type { IpcMessage, TaskUpdate, X402WalletCredentials } from './types.js';
 import { createLogger } from './logger.js';
 import { NetworkError, ClientError, ServerError, AuthError, IpcTimeoutError } from './errors.js';
 import { generateRequestId, sleep } from './utils.js';
+import { IpcLineBuffer } from './ipc-line-buffer.js';
 
 const logger = createLogger('bridge-client');
 
@@ -64,7 +65,7 @@ const MAX_BUFFER_SIZE = 10 * 1024 * 1024;
 export class BridgeClient extends EventEmitter {
   private socket: Socket | null = null;
   private socketPath: string;
-  private buffer = '';
+  private buffer = new IpcLineBuffer();
   private pendingRequests = new Map<
     string,
     {
@@ -175,7 +176,7 @@ export class BridgeClient extends EventEmitter {
     if (!this.socket) return;
 
     this.socket.on('data', (data) => {
-      this.buffer += data.toString();
+      this.buffer.append(data);
 
       if (this.buffer.length > MAX_BUFFER_SIZE) {
         logger.error(`IPC buffer exceeded ${MAX_BUFFER_SIZE} bytes, destroying socket`);
@@ -185,11 +186,7 @@ export class BridgeClient extends EventEmitter {
       }
 
       // Process complete JSON messages (newline-delimited)
-      let newlineIndex: number;
-      while ((newlineIndex = this.buffer.indexOf('\n')) !== -1) {
-        const line = this.buffer.slice(0, newlineIndex);
-        this.buffer = this.buffer.slice(newlineIndex + 1);
-
+      for (const line of this.buffer.drainLines()) {
         if (line.trim()) {
           try {
             const message = JSON.parse(line) as IpcMessage;
@@ -374,6 +371,6 @@ export class BridgeClient extends EventEmitter {
       this.socket = null;
     }
 
-    this.buffer = '';
+    this.buffer.clear();
   }
 }

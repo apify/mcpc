@@ -37,6 +37,7 @@ import {
   ensureDir,
   ensureSecureTempDir,
   cleanupOrphanedLogFiles,
+  isProtocolMismatchError,
   isSessionExpiredError,
   truncate,
   StderrTail,
@@ -51,8 +52,8 @@ import {
 import { getSession, loadSessions, updateSession } from '../lib/sessions.js';
 import type { AuthCredentials, X402WalletCredentials } from '../lib/types.js';
 import { OAuthTokenManager } from '../lib/auth/oauth-token-manager.js';
-import { OAuthProvider } from '../lib/auth/oauth-provider.js';
-import type { OAuthClientProvider } from '@modelcontextprotocol/client';
+import { createRuntimeAuthProvider } from '../lib/auth/runtime-auth-provider.js';
+import type { AuthProvider, OAuthClientProvider } from '@modelcontextprotocol/client';
 import {
   storeKeychainOAuthTokenInfo,
   readKeychainOAuthTokenInfo,
@@ -64,6 +65,7 @@ import { createClientCredentialsProvider } from '../lib/auth/client-credentials.
 import { createIdJagProvider } from '../lib/auth/id-jag.js';
 import type { Tool, Resource, Prompt, Task } from '@modelcontextprotocol/client';
 import { ResourceSyncManager } from './resource-sync.js';
+import { isModernProtocolVersion } from '../core/protocol.js';
 import type { TaskUpdate } from '../lib/types.js';
 import { createRequire } from 'module';
 const { version: mcpcVersion } = createRequire(import.meta.url)('../../package.json') as {
@@ -78,6 +80,7 @@ import type { SignerWallet } from '../lib/x402/signer.js';
 // Spend-limit helpers are deliberately dependency-free, so they stay a static import.
 import { X402PaymentLimitError, parseMaxAmountUsd, usdToAtomicUnits } from '../lib/x402/limits.js';
 import type { FetchLike } from '@modelcontextprotocol/client';
+import { IpcLineBuffer } from '../lib/ipc-line-buffer.js';
 
 // HTTP proxy and TLS settings are configured in main() after parsing --insecure flag
 
@@ -120,9 +123,10 @@ class BridgeProcess {
   // OAuth token manager (created when CLI sends auth credentials via IPC)
   private tokenManager: OAuthTokenManager | null = null;
 
-  // OAuth provider for SDK transport. Either mcpc's OAuthProvider (authorization-code
-  // runtime mode, wraps tokenManager) or an SDK client-credentials provider.
-  private authProvider: OAuthClientProvider | null = null;
+  // Auth provider for the SDK transport. Either mcpc's bearer-token provider
+  // (authorization-code grant: wraps tokenManager, refreshes on 401) or an SDK
+  // client-credentials / id-jag provider.
+  private authProvider: AuthProvider | OAuthClientProvider | null = null;
 
   // True when authProvider is a client-credentials provider — drives the
   // `oauth-client-credentials` extension capability declaration on initialize.
@@ -271,6 +275,9 @@ class BridgeProcess {
         serverUrl: credentials.serverUrl,
         profileName: credentials.profileName,
         clientId: credentials.clientId,
+        ...(credentials.clientSecret ? { clientSecret: credentials.clientSecret } : {}),
+        ...(credentials.oauthIssuer ? { issuer: credentials.oauthIssuer } : {}),
+        ...(credentials.oauthResource ? { resource: credentials.oauthResource } : {}),
         refreshToken: credentials.refreshToken,
         // Reload tokens from keychain before refresh (handles token rotation by other processes)
         onBeforeRefresh: async () => {
@@ -332,14 +339,11 @@ class BridgeProcess {
       });
       logger.debug('OAuth token manager initialized');
 
-      // Create auth provider for SDK transport (enables automatic token refresh)
-      this.authProvider = new OAuthProvider({
-        serverUrl: credentials.serverUrl,
-        profileName: credentials.profileName,
-        tokenManager: this.tokenManager,
-        clientId: credentials.clientId,
-      });
-      logger.debug('OAuthProvider created for SDK transport (runtime mode)');
+      // Auth provider for the SDK transport: hands it a valid token before every
+      // request and refreshes the token when the server answers 401 anyway, so the
+      // transport can retry (#395).
+      this.authProvider = createRuntimeAuthProvider(this.tokenManager);
+      logger.debug('Bearer-token auth provider created for SDK transport');
     } else if (credentials.refreshToken && !credentials.clientId) {
       logger.warn('Refresh token provided but client ID is missing - token refresh will not work');
     } else if (credentials.accessToken && !credentials.refreshToken) {
@@ -546,9 +550,20 @@ class BridgeProcess {
         // Raw SDK errors (plain Error) would get default code 2 (ServerError) in sendError(),
         // losing the auth/session-expired distinction. Wrap as AuthError so the CLI
         // can detect it via `instanceof AuthError` after deserialization.
-        const errorMsg = (error as Error).message || '';
+        let errorMsg = (error as Error).message || '';
         let classifiedError: Error = error as Error;
-        if (isAuthenticationError(errorMsg) && !(error instanceof AuthError)) {
+        // A resumed session rejected for a protocol mismatch means the server changed
+        // protocol version underneath it (e.g. upgraded to 2026-07-28). The session
+        // cannot be resumed anymore — treat it exactly like an expired one, so the CLI
+        // tells the user to run `restart` (which reconnects without the session id)
+        // instead of auto-reconnecting into the same rejection forever (#374).
+        if (this.options.mcpSessionId && isProtocolMismatchError(errorMsg)) {
+          errorMsg =
+            `Session expired: the server no longer speaks protocol ` +
+            `${this.options.protocolVersion ?? 'unknown'} that this session negotiated. ` +
+            errorMsg;
+          classifiedError = new ClientError(errorMsg);
+        } else if (isAuthenticationError(errorMsg) && !(error instanceof AuthError)) {
           classifiedError = new AuthError(errorMsg);
         }
         // Append recent stdio server stderr so the CLI can show the user why
@@ -637,6 +652,25 @@ class BridgeProcess {
    * Connect to the MCP server
    */
   private async connectToMcp(): Promise<void> {
+    // Session resumption exists only in the 2025 era — 2026-07-28 connections are
+    // stateless and must negotiate the protocol on every connect. A stored session id
+    // recorded with a modern protocol version is a leftover (typically from a server
+    // that upgraded and dropped session support): replaying it makes the SDK skip
+    // version negotiation, so every request goes out without the required `_meta`
+    // envelope and is rejected, wedging the session in a reconnect loop (#374).
+    if (
+      this.options.mcpSessionId &&
+      this.options.protocolVersion &&
+      isModernProtocolVersion(this.options.protocolVersion)
+    ) {
+      logger.warn(
+        `Ignoring the stored MCP session id: protocol ${this.options.protocolVersion} ` +
+          `has no session resumption. Connecting with a fresh protocol negotiation.`
+      );
+      delete this.options.mcpSessionId;
+      delete this.options.protocolVersion;
+    }
+
     logger.debug('Connecting to MCP server...');
     logger.debug(`  authProvider: ${this.authProvider ? 'present' : 'NOT SET'}`);
     logger.debug(`  tokenManager: ${this.tokenManager ? 'present' : 'NOT SET'}`);
@@ -881,12 +915,19 @@ class BridgeProcess {
     if (newMcpSessionId) {
       sessionUpdate.mcpSessionId = newMcpSessionId;
       logger.info(`MCP-Session-Id saved for resumption: ${newMcpSessionId}`);
+    } else if (sessionData?.mcpSessionId) {
+      // The connection ended up without a session id although sessions.json holds one —
+      // the server stopped assigning them, or the stored id was ignored above. Drop it,
+      // or every later bridge start would keep trying to resume a session that is gone.
+      sessionUpdate.mcpSessionId = undefined;
+      logger.info('Cleared the stored MCP-Session-Id (this connection has none)');
     }
     await updateSession(this.options.sessionName, sessionUpdate);
 
-    // Note: Token refresh is handled automatically by the SDK
-    // The SDK calls authProvider.tokens() before each request,
-    // which triggers OAuthTokenManager.getValidAccessToken() to refresh if needed
+    // Note: Token refresh is handled automatically by the SDK transport. It calls
+    // authProvider.token() before each request, which triggers
+    // OAuthTokenManager.getValidAccessToken() to refresh if needed, and
+    // authProvider.onUnauthorized() when the server rejects the token anyway.
 
     // Pre-populate tools cache (used by x402 proactive signing and listAllTools IPC method)
     if (serverDetails.capabilities?.tools) {
@@ -1073,9 +1114,12 @@ class BridgeProcess {
    * "tool not found") since these should never cause session status changes. Only
    * transport-level errors (HTTP 401/403/404) should trigger auth/expiry detection.
    *
-   * For auth errors, if a token manager is available, we attempt to refresh the token
-   * before giving up. This handles transient auth failures (e.g., expired access token
-   * that can be refreshed) without unnecessarily killing the session.
+   * An auth error that reaches this point is final: on a 401 the SDK transport has
+   * already asked the auth provider to refresh the token and retried the request
+   * once (see runtime-auth-provider.ts), so either the refresh failed or the server
+   * rejects freshly minted tokens too. Refreshing again here would only report a
+   * spurious success — the stored token is still valid by the local clock — and
+   * leave the session looping instead of marked unauthorized.
    */
   private async handlePossibleExpiration(error: Error): Promise<void> {
     // ServerError wraps errors from mcp-client.ts methods. Check the original error
@@ -1099,23 +1143,16 @@ class BridgeProcess {
     // a session "expired" (it cannot be, and there is nothing for `restart` to recover).
     const hadActiveSession = !!(this.options.mcpSessionId || this.client?.getMcpSessionId());
     let status: 'expired' | 'unauthorized' | null = null;
-    if (isSessionExpiredError(error.message, { hadActiveSession })) {
+    if (
+      isSessionExpiredError(error.message, { hadActiveSession }) ||
+      // A protocol mismatch on a live server-side session means the server changed its
+      // protocol version underneath it — the session cannot continue and cannot be
+      // resumed, same as expiry (#374).
+      (hadActiveSession && isProtocolMismatchError(error.message))
+    ) {
       logger.warn('Session appears to be expired, marking as expired and shutting down');
       status = 'expired';
     } else if (isAuthenticationError(error.message)) {
-      // If we have a token manager, try to refresh before giving up
-      if (this.tokenManager) {
-        try {
-          logger.info(
-            'Authentication error detected, attempting token refresh before giving up...'
-          );
-          await this.tokenManager.refreshAccessToken();
-          logger.info('Token refresh succeeded — session will recover on next request');
-          return;
-        } catch (refreshError) {
-          logger.warn('Token refresh also failed, marking session as unauthorized:', refreshError);
-        }
-      }
       logger.warn('Authentication rejected, marking session as unauthorized and shutting down');
       status = 'unauthorized';
     }
@@ -1205,10 +1242,10 @@ class BridgeProcess {
     logger.debug('New client connected');
     this.connections.add(socket);
 
-    let buffer = '';
+    const buffer = new IpcLineBuffer();
 
     socket.on('data', (data) => {
-      buffer += data.toString();
+      buffer.append(data);
 
       if (buffer.length > MAX_BUFFER_SIZE) {
         logger.error(`IPC buffer exceeded ${MAX_BUFFER_SIZE} bytes, destroying socket`);
@@ -1218,11 +1255,7 @@ class BridgeProcess {
       }
 
       // Process complete JSON messages (newline-delimited)
-      let newlineIndex: number;
-      while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
-        const line = buffer.slice(0, newlineIndex);
-        buffer = buffer.slice(newlineIndex + 1);
-
+      for (const line of buffer.drainLines()) {
         if (line.trim()) {
           this.handleMessage(socket, line).catch((error) => {
             logger.error('Error handling message:', error);
