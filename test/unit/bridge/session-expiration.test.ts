@@ -229,6 +229,12 @@ describe('isAuthenticationError', () => {
       expect(isAuthenticationError('Error: 403 Forbidden')).toBe(true);
     });
 
+    it('detects the SDK error after a refreshed token was rejected too (#395)', () => {
+      // Thrown by the SDK transport when the retry after onUnauthorized() gets 401
+      // again; the bridge must mark the session unauthorized on it.
+      expect(isAuthenticationError('Server returned 401 after re-authentication')).toBe(true);
+    });
+
     it('detects "authentication" keyword', () => {
       expect(isAuthenticationError('authentication failed')).toBe(true);
       expect(isAuthenticationError('Authentication required')).toBe(true);

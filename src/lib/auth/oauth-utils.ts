@@ -185,6 +185,58 @@ async function fetchIssuerMetadata(issuer: string): Promise<AuthServerMetadata |
 }
 
 /**
+ * RFC 9728 protected resource metadata. Only the fields mcpc reads are typed.
+ */
+export interface ProtectedResourceMetadata {
+  /** The resource identifier the server binds its tokens to (RFC 9728 §2). */
+  resource?: string;
+  authorization_servers?: string[];
+}
+
+/**
+ * Fetch the RFC 9728 protected resource metadata document of an MCP server:
+ * the path-scoped document first (RFC 9728 §3.1), then the origin-wide one.
+ * Returns the first document that parses, or undefined when the server
+ * publishes none.
+ */
+export async function fetchProtectedResourceMetadata(
+  serverUrl: string
+): Promise<ProtectedResourceMetadata | undefined> {
+  const normalized = getOAuthServerUrl(serverUrl).replace(/\/+$/, '');
+  const url = new URL(normalized);
+  const base = `${url.protocol}//${url.host}`;
+  const path = url.pathname.replace(/\/+$/, '');
+
+  const prmUrls = [`${base}/.well-known/oauth-protected-resource${path}`];
+  if (path) prmUrls.push(`${base}/.well-known/oauth-protected-resource`);
+
+  for (const prmUrl of prmUrls) {
+    try {
+      logger.debug(`Trying protected resource metadata at: ${prmUrl}`);
+      const response = await proxyFetch(prmUrl, { headers: { Accept: 'application/json' } });
+      if (!response.ok) continue;
+      const document = (await response.json()) as unknown;
+      if (!document || typeof document !== 'object') continue;
+      const { resource, authorization_servers } = document as Record<string, unknown>;
+      return {
+        ...(typeof resource === 'string' && resource !== '' ? { resource } : {}),
+        ...(Array.isArray(authorization_servers)
+          ? {
+              authorization_servers: authorization_servers.filter(
+                (issuer): issuer is string => typeof issuer === 'string' && issuer !== ''
+              ),
+            }
+          : {}),
+      };
+    } catch {
+      continue;
+    }
+  }
+
+  return undefined;
+}
+
+/**
  * Discover the authorization server for an MCP server via RFC 9728 protected
  * resource metadata: fetch the PRM document, then read its metadata from the
  * first `authorization_servers` entry.
@@ -193,42 +245,49 @@ async function fetchIssuerMetadata(issuer: string): Promise<AuthServerMetadata |
  * when the authorization server lives on a different origin than the MCP
  * server (`mcp.example.com` protected by `auth.example.com`) — direct
  * well-known probes against the MCP origin cannot find it.
+ *
+ * Pass an already fetched document as `prm` to skip the fetch.
  */
 export async function discoverAuthServerViaProtectedResource(
-  serverUrl: string
+  serverUrl: string,
+  prm?: ProtectedResourceMetadata
 ): Promise<AuthServerMetadata | undefined> {
-  const normalized = getOAuthServerUrl(serverUrl).replace(/\/+$/, '');
-  const url = new URL(normalized);
-  const base = `${url.protocol}//${url.host}`;
-  const path = url.pathname.replace(/\/+$/, '');
-
-  // Path-scoped document first (RFC 9728 §3.1), then the origin-wide one.
-  const prmUrls = [`${base}/.well-known/oauth-protected-resource${path}`];
-  if (path) prmUrls.push(`${base}/.well-known/oauth-protected-resource`);
-
-  for (const prmUrl of prmUrls) {
-    let issuers: unknown;
-    try {
-      logger.debug(`Trying protected resource metadata at: ${prmUrl}`);
-      const response = await proxyFetch(prmUrl, { headers: { Accept: 'application/json' } });
-      if (!response.ok) continue;
-      ({ authorization_servers: issuers } = (await response.json()) as {
-        authorization_servers?: unknown;
-      });
-    } catch {
-      continue;
-    }
-
-    if (!Array.isArray(issuers)) continue;
-    for (const issuer of issuers) {
-      if (typeof issuer !== 'string' || issuer === '') continue;
-      logger.debug(`Protected resource metadata points at issuer: ${issuer}`);
-      const metadata = await fetchIssuerMetadata(issuer);
-      if (metadata) return metadata;
-    }
+  const document = prm ?? (await fetchProtectedResourceMetadata(serverUrl));
+  for (const issuer of document?.authorization_servers ?? []) {
+    logger.debug(`Protected resource metadata points at issuer: ${issuer}`);
+    const metadata = await fetchIssuerMetadata(issuer);
+    if (metadata) return metadata;
   }
-
   return undefined;
+}
+
+/**
+ * Pick the RFC 8707 `resource` indicator for a token refresh the same way the
+ * MCP SDK's `selectResourceURL()` picks it for the login: the canonical MCP
+ * server URL, confirmed by the server's protected resource metadata. Returns
+ * undefined when the server publishes no metadata — the login sent no
+ * `resource` either, so the refresh must not start sending one.
+ *
+ * Mirrors the SDK check, so a server whose metadata names a resource the MCP
+ * URL does not belong to is rejected here just as it is rejected at login.
+ */
+export async function selectRefreshResource(
+  serverUrl: string,
+  prm: ProtectedResourceMetadata | undefined
+): Promise<string | undefined> {
+  if (!prm?.resource) return undefined;
+  // Lazy: the CLI must not load the MCP SDK at startup (it only refreshes tokens
+  // on the connect path), and the bridge has it loaded already.
+  const { resourceUrlFromServerUrl, checkResourceAllowed } =
+    await import('@modelcontextprotocol/client');
+  const requestedResource = resourceUrlFromServerUrl(getOAuthServerUrl(serverUrl));
+  if (!checkResourceAllowed({ requestedResource, configuredResource: prm.resource })) {
+    throw new AuthError(
+      `Protected resource ${prm.resource} does not match the MCP server URL ` +
+        `${requestedResource.href} (or its origin)`
+    );
+  }
+  return new URL(prm.resource).href;
 }
 
 /**
@@ -282,6 +341,13 @@ export interface RefreshClient {
    * metadata, i.e. Basic for a confidential client and `none` for a public one.
    */
   authMethod?: ClientAuthMethod;
+  /**
+   * RFC 8707 resource indicator, sent as the `resource` parameter. The MCP
+   * authorization spec requires it on every token request, refresh included:
+   * an authorization server that binds tokens to a resource rejects a refresh
+   * without it, or mints a token the MCP server then rejects (#395).
+   */
+  resource?: string;
 }
 
 /**
@@ -403,6 +469,9 @@ async function postRefreshRequest(
     grant_type: 'refresh_token',
     refresh_token: refreshToken,
   });
+  if (client.resource) {
+    params.set('resource', client.resource);
+  }
   const headers: Record<string, string> = {
     'Content-Type': 'application/x-www-form-urlencoded',
     Accept: 'application/json',
@@ -449,6 +518,12 @@ async function postRefreshRequest(
  * (Asana: `mcp.asana.com` vs `app.asana.com`), and only then the MCP origin's own
  * well-known documents.
  *
+ * `resource` is the RFC 8707 resource indicator the login sent
+ * (`AuthProfile.oauthResource`). Profiles written before mcpc recorded it have
+ * none; the indicator is then derived from the server's protected resource
+ * metadata the way the login derived it, so the refreshed token is bound to
+ * the same resource (#395).
+ *
  * @param serverUrl - The MCP server URL
  * @param refreshToken - The refresh token to use
  * @param client - Client ID and optional secret; the auth method is resolved from
@@ -461,9 +536,24 @@ export async function discoverAndRefreshToken(
   refreshToken: string,
   client: RefreshClient & { issuer?: string }
 ): Promise<OAuthTokenResponse> {
+  // The protected resource metadata is needed to derive a missing resource
+  // indicator, and to find the authorization server when no issuer is pinned.
+  const prm =
+    client.resource === undefined || !client.issuer
+      ? await fetchProtectedResourceMetadata(serverUrl)
+      : undefined;
+  const resource = client.resource ?? (await selectRefreshResource(serverUrl, prm));
+  if (client.resource === undefined) {
+    logger.debug(
+      resource
+        ? `Derived resource indicator from protected resource metadata: ${resource}`
+        : 'No protected resource metadata; refreshing without a resource indicator'
+    );
+  }
+
   const metadata = client.issuer
     ? await fetchIssuerMetadata(client.issuer)
-    : ((await discoverAuthServerViaProtectedResource(serverUrl)) ??
+    : ((prm && (await discoverAuthServerViaProtectedResource(serverUrl, prm))) ??
       (await discoverAuthServerMetadata(serverUrl)));
 
   const tokenEndpoint = metadata?.token_endpoint;
@@ -479,6 +569,7 @@ export async function discoverAndRefreshToken(
 
   return refreshAccessToken(tokenEndpoint, refreshToken, {
     ...client,
+    ...(resource !== undefined ? { resource } : {}),
     authMethod: client.authMethod ?? selectClientAuthMethod(metadata, !!client.clientSecret),
   });
 }
@@ -494,8 +585,8 @@ export function createReauthError(
 ): AuthError {
   const command =
     profileName === DEFAULT_AUTH_PROFILE
-      ? `mcpc ${serverUrl} login`
-      : `mcpc ${serverUrl} login --profile ${profileName}`;
+      ? `mcpc login ${serverUrl}`
+      : `mcpc login ${serverUrl} --profile ${profileName}`;
   return new AuthError(`${message}. Please re-authenticate with: ${command}`);
 }
 

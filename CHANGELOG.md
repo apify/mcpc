@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Confidential-client sessions now also refresh against authorization servers that accept only HTTP Basic client authentication. The refresh presents the client secret the way the login did and retries with the other form if the server rejects it. (#387)
 - Sessions no longer lose their saved OAuth refresh token when a server that does not rotate refresh tokens omits `refresh_token` from the refresh response. The bridge used to overwrite the stored token with nothing, so the session could not authenticate after the access token expired and required a new `mcpc login`.
 - Accented text, CJK characters, and emoji in large tool results are no longer corrupted in transit: a multibyte character that landed on a socket chunk boundary between the CLI and the bridge was replaced with `�`, and the JSON stayed valid so nothing reported an error. (#390)
+- Sessions authenticated with OAuth now survive the server rejecting an access token: the bridge refreshes the token and retries the request once, instead of failing with `OAuthProvider in runtime mode does not support authorization flow` until you ran `mcpc login` again. The refresh also sends the RFC 8707 `resource` indicator the login sent, which servers that bind tokens to a resource require. (#395)
 
 ### Changed
 

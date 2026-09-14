@@ -159,3 +159,111 @@ describe('OAuthTokenManager confidential clients (#387)', () => {
     });
   });
 });
+
+describe('OAuthTokenManager resource indicator (#395)', () => {
+  it('passes the resource indicator the login sent to the refresh request', async () => {
+    mockRefresh.mockResolvedValue({ access_token: 'new-access-token', token_type: 'Bearer' });
+
+    await makeManager({ resource: 'https://mcp.example.com/mcp' }).refreshAccessToken();
+
+    expect(mockRefresh).toHaveBeenCalledWith('https://mcp.example.com', 'original-refresh-token', {
+      clientId: 'client-123',
+      resource: 'https://mcp.example.com/mcp',
+    });
+  });
+});
+
+describe('OAuthTokenManager forced refresh after HTTP 401 (#395)', () => {
+  const inAnHour = () => Math.floor(Date.now() / 1000) + 3600;
+
+  it('refreshes although the current access token has not expired by the local clock', async () => {
+    mockRefresh.mockResolvedValue({ access_token: 'fresh', token_type: 'Bearer' });
+    const manager = makeManager({ accessToken: 'rejected', accessTokenExpiresAt: inAnHour() });
+
+    const tokens = await manager.refreshAccessToken({ force: true });
+
+    expect(mockRefresh).toHaveBeenCalledTimes(1);
+    expect(tokens.access_token).toBe('fresh');
+    await expect(manager.getValidAccessToken()).resolves.toBe('fresh');
+  });
+
+  it('does not reuse the rejected token just because storage still holds it as valid', async () => {
+    // Without `force` this shortcut is right: another process may have refreshed.
+    // After a 401 the stored token is the one the server just rejected.
+    mockRefresh.mockResolvedValue({ access_token: 'fresh', token_type: 'Bearer' });
+    const manager = makeManager({
+      accessToken: 'rejected',
+      accessTokenExpiresAt: inAnHour(),
+      onBeforeRefresh: async () => ({
+        refreshToken: 'original-refresh-token',
+        accessToken: 'rejected',
+        accessTokenExpiresAt: inAnHour(),
+      }),
+    });
+
+    await expect(manager.refreshAccessToken()).resolves.toMatchObject({
+      access_token: 'rejected',
+    });
+    expect(mockRefresh).not.toHaveBeenCalled();
+
+    await expect(manager.refreshAccessToken({ force: true })).resolves.toMatchObject({
+      access_token: 'fresh',
+    });
+    expect(mockRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('adopts a different valid token another process stored instead of refreshing', async () => {
+    const manager = makeManager({
+      accessToken: 'rejected',
+      accessTokenExpiresAt: inAnHour(),
+      onBeforeRefresh: async () => ({
+        accessToken: 'refreshed-elsewhere',
+        accessTokenExpiresAt: inAnHour(),
+      }),
+    });
+
+    await expect(manager.refreshAccessToken({ force: true })).resolves.toMatchObject({
+      access_token: 'refreshed-elsewhere',
+    });
+    expect(mockRefresh).not.toHaveBeenCalled();
+  });
+
+  it('shares one refresh between concurrent callers', async () => {
+    // Several requests can fail with 401 at once; a rotating server would reject
+    // the second refresh as a reused refresh token.
+    let release!: (tokens: OAuthTokenResponse) => void;
+    mockRefresh.mockReturnValue(new Promise<OAuthTokenResponse>((resolve) => (release = resolve)));
+    const manager = makeManager({ accessToken: 'rejected', accessTokenExpiresAt: inAnHour() });
+
+    const first = manager.refreshAccessToken({ force: true });
+    const second = manager.refreshAccessToken({ force: true });
+    release({ access_token: 'fresh', token_type: 'Bearer' });
+
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      { access_token: 'fresh', token_type: 'Bearer' },
+      { access_token: 'fresh', token_type: 'Bearer' },
+    ]);
+    expect(mockRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not refresh again right after a refresh: the retry already carries the new token', async () => {
+    mockRefresh.mockResolvedValue({ access_token: 'fresh', token_type: 'Bearer' });
+    const manager = makeManager({ accessToken: 'rejected', accessTokenExpiresAt: inAnHour() });
+
+    await manager.refreshAccessToken({ force: true });
+    await expect(manager.refreshAccessToken({ force: true })).resolves.toMatchObject({
+      access_token: 'fresh',
+    });
+
+    expect(mockRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('propagates a rejected refresh token with a re-login hint', async () => {
+    mockRefresh.mockRejectedValue(new Error('invalid_grant'));
+    const manager = makeManager({ accessToken: 'rejected', accessTokenExpiresAt: inAnHour() });
+
+    await expect(manager.refreshAccessToken({ force: true })).rejects.toThrow(
+      /re-authenticate with: mcpc login https:\/\/mcp\.example\.com/
+    );
+  });
+});

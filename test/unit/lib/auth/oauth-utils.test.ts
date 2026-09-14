@@ -9,6 +9,7 @@ import {
   DEFAULT_CLIENT_METADATA_URL,
   discoverAuthServerMetadata,
   discoverAuthServerViaProtectedResource,
+  fetchProtectedResourceMetadata,
   getOAuthServerUrl,
   MCPC_OAUTH_CALLBACK_PORTS,
   discoverAndRefreshToken,
@@ -393,6 +394,23 @@ describe('refreshAccessToken client authentication (#387)', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
+  it('sends the resource indicator as the RFC 8707 resource parameter (#395)', async () => {
+    await refreshAccessToken('https://example.com/token', 'refresh-1', {
+      clientId: 'client-123',
+      resource: 'https://mcp.example.com/mcp',
+    });
+
+    const { params } = sentRequest();
+    expect(params.get('grant_type')).toBe('refresh_token');
+    expect(params.get('resource')).toBe('https://mcp.example.com/mcp');
+  });
+
+  it('sends no resource parameter when the caller has none', async () => {
+    await refreshAccessToken('https://example.com/token', 'refresh-1', { clientId: 'client-123' });
+
+    expect(sentRequest().params.has('resource')).toBe(false);
+  });
+
   it('does not retry for a public client', async () => {
     fetchSpy.mockResolvedValue(mockErrorResponse(401, { error: 'invalid_client' }));
 
@@ -438,21 +456,75 @@ describe('discoverAndRefreshToken authorization server resolution (#387)', () =>
     });
   }
 
-  it('refreshes at the issuer recorded in the profile, ignoring the MCP server metadata', async () => {
-    // The pin: a server that changes its protected resource metadata cannot
-    // redirect the refresh token and client secret to another authorization server.
-    const posted: string[] = [];
-    const requested: string[] = [];
+  /**
+   * Mock a pinned authorization server plus, optionally, protected resource
+   * metadata on the MCP server. Records GETs in `requested` and the refresh
+   * POSTs in `posted` (URL + form body).
+   */
+  function mockPinnedIssuer(
+    requested: string[],
+    posted: { url: string; params: URLSearchParams }[],
+    prm?: object
+  ): void {
     fetchSpy.mockImplementation((url: string, init?: RequestInit) => {
       if (init?.method === 'POST') {
-        posted.push(url);
+        posted.push({ url, params: new URLSearchParams(init.body as string) });
         return Promise.resolve(mockResponse({ access_token: 'fresh', token_type: 'Bearer' }));
       }
       requested.push(url);
       if (url === 'https://auth.example.com/.well-known/oauth-authorization-server') {
         return Promise.resolve(mockResponse({ token_endpoint: 'https://auth.example.com/token' }));
       }
+      if (prm && url === 'https://mcp.example.com/.well-known/oauth-protected-resource/mcp') {
+        return Promise.resolve(mockResponse(prm));
+      }
       return Promise.resolve(mockResponse(null, false));
+    });
+  }
+
+  it('refreshes at the issuer recorded in the profile, ignoring the MCP server metadata', async () => {
+    // The pin: a server that changes its protected resource metadata cannot
+    // redirect the refresh token and client secret to another authorization server.
+    const posted: { url: string; params: URLSearchParams }[] = [];
+    const requested: string[] = [];
+    mockPinnedIssuer(requested, posted);
+
+    await discoverAndRefreshToken('https://mcp.example.com/mcp', 'refresh-1', {
+      clientId: 'c',
+      issuer: 'https://auth.example.com',
+      resource: 'https://mcp.example.com/mcp',
+    });
+
+    expect(posted.map((p) => p.url)).toEqual(['https://auth.example.com/token']);
+    // No protected resource metadata probe at all: the issuer and the resource
+    // indicator are both already known from the login.
+    expect(requested.some((u) => u.includes('oauth-protected-resource'))).toBe(false);
+  });
+
+  it('repeats the resource indicator the login sent (#395)', async () => {
+    const posted: { url: string; params: URLSearchParams }[] = [];
+    mockPinnedIssuer([], posted);
+
+    await discoverAndRefreshToken('https://mcp.example.com/mcp', 'refresh-1', {
+      clientId: 'c',
+      issuer: 'https://auth.example.com',
+      resource: 'https://mcp.example.com/mcp',
+    });
+
+    expect(posted[0]!.params.get('resource')).toBe('https://mcp.example.com/mcp');
+  });
+
+  it('derives the resource indicator from protected resource metadata for a profile that predates it (#395)', async () => {
+    // The login sent `resource` (the SDK selects it from the PRM document), but an
+    // older profile did not record it. The refresh must still send the same value,
+    // or a server that binds tokens to a resource rejects the refreshed token.
+    const posted: { url: string; params: URLSearchParams }[] = [];
+    const requested: string[] = [];
+    mockPinnedIssuer(requested, posted, {
+      resource: 'https://mcp.example.com/mcp',
+      // The metadata is consulted for the resource only — the refresh still goes
+      // to the pinned issuer, whatever authorization server it names now.
+      authorization_servers: ['https://evil.example.com'],
     });
 
     await discoverAndRefreshToken('https://mcp.example.com/mcp', 'refresh-1', {
@@ -460,9 +532,68 @@ describe('discoverAndRefreshToken authorization server resolution (#387)', () =>
       issuer: 'https://auth.example.com',
     });
 
-    expect(posted).toEqual(['https://auth.example.com/token']);
-    // No protected resource metadata probe at all: the issuer is already known.
-    expect(requested.some((u) => u.includes('oauth-protected-resource'))).toBe(false);
+    expect(requested).toContain('https://mcp.example.com/.well-known/oauth-protected-resource/mcp');
+    expect(requested.some((u) => u.includes('evil.example.com'))).toBe(false);
+    expect(posted.map((p) => p.url)).toEqual(['https://auth.example.com/token']);
+    expect(posted[0]!.params.get('resource')).toBe('https://mcp.example.com/mcp');
+  });
+
+  it('sends no resource indicator when the server publishes no protected resource metadata', async () => {
+    // The SDK login sends none either in that case; the refresh mirrors the login.
+    const posted: { url: string; params: URLSearchParams }[] = [];
+    mockPinnedIssuer([], posted);
+
+    await discoverAndRefreshToken('https://mcp.example.com/mcp', 'refresh-1', {
+      clientId: 'c',
+      issuer: 'https://auth.example.com',
+    });
+
+    expect(posted[0]!.params.has('resource')).toBe(false);
+  });
+
+  it('rejects protected resource metadata naming a resource the MCP server URL does not belong to', async () => {
+    // Same check the SDK applies at login: a token for another resource is useless
+    // here, and sending our refresh token there would be worse.
+    const posted: { url: string; params: URLSearchParams }[] = [];
+    mockPinnedIssuer([], posted, { resource: 'https://other.example.com/mcp' });
+
+    await expect(
+      discoverAndRefreshToken('https://mcp.example.com/mcp', 'refresh-1', {
+        clientId: 'c',
+        issuer: 'https://auth.example.com',
+      })
+    ).rejects.toThrow(/does not match the MCP server URL/);
+    expect(posted).toEqual([]);
+  });
+
+  it('fetches the protected resource metadata once when it also resolves the authorization server', async () => {
+    const posted: { url: string; params: URLSearchParams }[] = [];
+    const requested: string[] = [];
+    fetchSpy.mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        posted.push({ url, params: new URLSearchParams(init.body as string) });
+        return Promise.resolve(mockResponse({ access_token: 'fresh', token_type: 'Bearer' }));
+      }
+      requested.push(url);
+      if (url === 'https://mcp.example.com/.well-known/oauth-protected-resource/mcp') {
+        return Promise.resolve(
+          mockResponse({
+            resource: 'https://mcp.example.com/mcp',
+            authorization_servers: ['https://auth.example.com'],
+          })
+        );
+      }
+      if (url === 'https://auth.example.com/.well-known/oauth-authorization-server') {
+        return Promise.resolve(mockResponse({ token_endpoint: 'https://auth.example.com/token' }));
+      }
+      return Promise.resolve(mockResponse(null, false));
+    });
+
+    await discoverAndRefreshToken('https://mcp.example.com/mcp', 'refresh-1', { clientId: 'c' });
+
+    expect(requested.filter((u) => u.includes('oauth-protected-resource'))).toHaveLength(1);
+    expect(posted.map((p) => p.url)).toEqual(['https://auth.example.com/token']);
+    expect(posted[0]!.params.get('resource')).toBe('https://mcp.example.com/mcp');
   });
 
   it('fails with a re-authentication hint when the recorded issuer has no metadata', async () => {
@@ -539,6 +670,45 @@ describe('discoverAndRefreshToken authorization server resolution (#387)', () =>
 
     expect(bodies).toHaveLength(1);
     expect(new URLSearchParams(bodies[0]!).get('client_secret')).toBe('secret-xyz');
+  });
+});
+
+describe('fetchProtectedResourceMetadata', () => {
+  let fetchSpy: MockInstance;
+
+  beforeEach(() => {
+    fetchSpy = vi.spyOn(proxyModule, 'proxyFetch');
+  });
+
+  afterEach(() => {
+    fetchSpy.mockRestore();
+  });
+
+  it('returns the resource and the authorization servers of the path-scoped document', async () => {
+    fetchSpy.mockImplementation((url: string) =>
+      Promise.resolve(
+        url === 'https://mcp.example.com/.well-known/oauth-protected-resource/mcp'
+          ? mockResponse({
+              resource: 'https://mcp.example.com/mcp',
+              authorization_servers: ['https://auth.example.com', 42, ''],
+              scopes_supported: ['read'],
+            })
+          : mockResponse(null, false)
+      )
+    );
+
+    await expect(fetchProtectedResourceMetadata('https://mcp.example.com/mcp')).resolves.toEqual({
+      resource: 'https://mcp.example.com/mcp',
+      authorization_servers: ['https://auth.example.com'],
+    });
+  });
+
+  it('returns undefined when the server publishes no document', async () => {
+    fetchSpy.mockResolvedValue(mockResponse(null, false));
+
+    await expect(fetchProtectedResourceMetadata('https://mcp.example.com/mcp')).resolves.toBe(
+      undefined
+    );
   });
 });
 
