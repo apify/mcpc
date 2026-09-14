@@ -127,3 +127,57 @@ describe('OAuthProvider records the authorization server it logged in at (#387)'
     expect(savedProfile().oauthIssuer).toBe('https://auth.example.com');
   });
 });
+
+describe('OAuthProvider records the resource indicator the login sent (#395)', () => {
+  const makeProvider = () =>
+    new OAuthProvider({
+      serverUrl: 'https://mcp.example.com',
+      profileName: 'default',
+      redirectUrl: 'http://127.0.0.1:13316/callback',
+    });
+
+  const tokens = { access_token: 'access-1', token_type: 'Bearer', refresh_token: 'refresh-1' };
+
+  beforeEach(() => {
+    vi.mocked(getAuthProfile).mockReset();
+    vi.mocked(saveAuthProfile).mockReset();
+  });
+
+  const savedProfile = () => vi.mocked(saveAuthProfile).mock.calls[0]![0] as AuthProfile;
+
+  it('stores the resource the SDK selected, so the refresh can repeat it', async () => {
+    vi.mocked(getAuthProfile).mockResolvedValue(undefined as never);
+
+    const provider = makeProvider();
+    await provider.saveResourceUrl('https://mcp.example.com/mcp');
+    await provider.saveTokens(tokens);
+
+    expect(savedProfile().oauthResource).toBe('https://mcp.example.com/mcp');
+    await expect(provider.resourceUrl()).resolves.toBe('https://mcp.example.com/mcp');
+  });
+
+  it('drops a stored resource when this login sent none', async () => {
+    // The SDK reports no resource when the server publishes no protected resource
+    // metadata; the refresh must then send none either, like the login did.
+    vi.mocked(getAuthProfile).mockResolvedValue({
+      name: 'default',
+      serverUrl: 'https://mcp.example.com',
+      authType: 'oauth',
+      oauthIssuer: 'https://auth.example.com',
+      oauthResource: 'https://mcp.example.com/old',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    } as never);
+
+    await makeProvider().saveTokens(tokens);
+
+    expect(savedProfile().oauthResource).toBeUndefined();
+  });
+
+  it('has no runtime mode: a 401 on a live connection is handled by the token manager, not by this class', () => {
+    // The SDK would otherwise answer a 401 by starting an interactive authorization
+    // that a background bridge can never complete (#395).
+    const provider = makeProvider() as unknown as Record<string, unknown>;
+    expect(provider.isRuntimeMode).toBeUndefined();
+    expect(provider.tokenManager).toBeUndefined();
+  });
+});

@@ -461,7 +461,7 @@ Environment variable substitution supported: `${VAR_NAME}`
 
 **Storage:**
 
-- `~/.mcpc/profiles.json` - Auth profile metadata (serverUrl, authType, scopes, expiry)
+- `~/.mcpc/profiles.json` - Auth profile metadata (serverUrl, authType, scopes, expiry, the authorization server and RFC 8707 resource indicator the login used — token refresh repeats both)
 - OS keychain - Sensitive credentials (OAuth tokens, refresh tokens, client secrets, bearer tokens)
 
 **Bearer Token Handling:**
@@ -526,7 +526,8 @@ On failure, the error message includes instructions on how to login. This ensure
 
 - `src/lib/auth/profiles.ts` - Manage profiles.json (CRUD operations)
 - `src/lib/auth/keychain.ts` - OS keychain wrapper (save/load/delete tokens)
-- `src/lib/auth/oauth-provider.ts` - Implements `OAuthClientProvider` from MCP SDK
+- `src/lib/auth/oauth-provider.ts` - Implements `OAuthClientProvider` from MCP SDK for the interactive `login` flow; records the authorization server and RFC 8707 resource indicator the login used in the profile
+- `src/lib/auth/runtime-auth-provider.ts` - Bearer-token `AuthProvider` for the bridge: wraps `OAuthTokenManager`, refreshes on HTTP 401 so the SDK transport retries once (never starts an interactive flow)
 - `src/lib/auth/oauth-flow.ts` - Orchestrates interactive OAuth flow
 - `src/lib/auth/oauth-utils.ts` - OAuth metadata discovery, callback ports, CIMD URL validation
 - `src/lib/auth/oauth-token-manager.ts` - Token validation and refresh
@@ -564,6 +565,7 @@ On failure, the error message includes instructions on how to login. This ensure
         "serverUrl": "https://mcp.apify.com",
         "authType": "oauth",
         "oauthIssuer": "https://auth.apify.com",
+        "oauthResource": "https://mcp.apify.com/",
         "scopes": ["tools:read", "tools:write"],
         "authenticatedAt": "2025-12-14T10:00:00Z",
         "expiresAt": "2025-12-15T10:00:00Z"

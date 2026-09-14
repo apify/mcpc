@@ -22,7 +22,12 @@ export {
 // Re-export auth-related types if needed
 export type { OAuthClientProvider } from '@modelcontextprotocol/client';
 
-import type { Transport, FetchLike, OAuthClientProvider } from '@modelcontextprotocol/client';
+import type {
+  Transport,
+  FetchLike,
+  AuthProvider,
+  OAuthClientProvider,
+} from '@modelcontextprotocol/client';
 import {
   StdioClientTransport,
   type StdioServerParameters,
@@ -139,7 +144,7 @@ export interface CreateTransportOptions {
   /**
    * OAuth provider for automatic token refresh (HTTP transport only)
    */
-  authProvider?: OAuthClientProvider;
+  authProvider?: AuthProvider | OAuthClientProvider;
 
   /**
    * MCP session ID for resuming a previous session (HTTP transport only)
@@ -202,9 +207,8 @@ export function createTransportFromConfig(
     if (options.authProvider) {
       transportOptions.authProvider = options.authProvider;
       logger.debug('Setting authProvider on transport options');
-      logger.debug(`  authProvider type: ${options.authProvider.constructor.name}`);
       logger.debug(
-        `  authProvider has tokens method: ${typeof options.authProvider.tokens === 'function'}`
+        `  authProvider kind: ${'tokens' in options.authProvider ? 'OAuthClientProvider' : 'AuthProvider (bearer token)'}`
       );
     } else {
       logger.debug('No authProvider provided for HTTP transport');

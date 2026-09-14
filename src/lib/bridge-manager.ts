@@ -625,6 +625,11 @@ export async function loadAuthCredentials(
       if (profile.oauthIssuer) {
         credentials.oauthIssuer = profile.oauthIssuer;
       }
+      // Repeat the resource indicator the login sent, so a refreshed token is bound
+      // to the same resource (#395).
+      if (profile.oauthResource) {
+        credentials.oauthResource = profile.oauthResource;
+      }
     }
   }
 

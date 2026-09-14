@@ -1,15 +1,13 @@
 /**
- * Unified OAuth provider for mcpc
- * Implements the OAuthClientProvider interface from MCP SDK
+ * OAuth provider for the interactive `mcpc login` flow.
+ * Implements the OAuthClientProvider interface from the MCP SDK: handles the
+ * full OAuth dance (authorization, code exchange) and stores the resulting
+ * tokens in the OS keychain, plus the profile metadata a later token refresh
+ * needs (authorization server, resource indicator).
  *
- * Two modes of operation:
- * 1. Auth flow mode: For interactive OAuth authentication (CLI `auth` command)
- *    - Handles full OAuth dance (authorization, code exchange)
- *    - Stores tokens in OS keychain
- *
- * 2. Runtime mode: For automatic token refresh (bridge and CLI direct connections)
- *    - Wraps OAuthTokenManager for automatic refresh
- *    - No keychain I/O during runtime (token manager handles state)
+ * Long-running connections do not use this class: the bridge authenticates
+ * with `createRuntimeAuthProvider()` (runtime-auth-provider.ts), which wraps
+ * an OAuthTokenManager and refreshes tokens without any interactive flow.
  */
 
 import type {
@@ -19,7 +17,6 @@ import type {
   OAuthDiscoveryState,
   OAuthTokens,
 } from '@modelcontextprotocol/client';
-import { OAuthTokenManager } from './oauth-token-manager.js';
 import {
   readKeychainOAuthTokenInfo,
   storeKeychainOAuthTokenInfo,
@@ -72,23 +69,12 @@ export interface OAuthProviderOptions {
   profileName: string;
 
   /**
-   * Runtime mode: Provide a token manager for automatic token refresh
-   * If not provided, operates in auth flow mode (keychain storage)
-   */
-  tokenManager?: OAuthTokenManager;
-
-  /**
-   * Client ID (required for runtime mode)
-   */
-  clientId?: string;
-
-  /**
-   * Redirect URL for OAuth callback (auth flow mode only)
+   * Redirect URL for OAuth callback
    */
   redirectUrl?: string;
 
   /**
-   * If true, ignore existing tokens and force re-authentication (auth flow mode only)
+   * If true, ignore existing tokens and force re-authentication
    */
   forceReauth?: boolean;
 
@@ -111,13 +97,11 @@ export interface OAuthProviderOptions {
 }
 
 /**
- * Unified OAuth provider for MCP SDK that handles both auth flow and runtime token refresh
+ * OAuth provider for the MCP SDK's interactive authorization-code flow
  */
 export class OAuthProvider implements OAuthClientProvider {
   private serverUrl: string;
   private profileName: string;
-  private tokenManager?: OAuthTokenManager;
-  private _clientId?: string;
   private _redirectUrl: string;
   private _forceReauth: boolean;
   private _clientCredentials?: { clientId: string; clientSecret?: string };
@@ -135,6 +119,7 @@ export class OAuthProvider implements OAuthClientProvider {
   private _authProfile?: AuthProfile;
   private _codeVerifier?: string;
   private _discoveryState?: OAuthDiscoveryState;
+  private _resourceUrl?: string;
   private _clientInformation?: OAuthClientInformationMixed;
 
   constructor(options: OAuthProviderOptions) {
@@ -143,25 +128,12 @@ export class OAuthProvider implements OAuthClientProvider {
     this._redirectUrl = options.redirectUrl || 'http://localhost/callback';
     this._forceReauth = options.forceReauth || false;
 
-    if (options.tokenManager) {
-      this.tokenManager = options.tokenManager;
-    }
-    if (options.clientId) {
-      this._clientId = options.clientId;
-    }
     if (options.clientCredentials) {
       this._clientCredentials = options.clientCredentials;
     }
     if (options.clientMetadataUrl) {
       this.clientMetadataUrl = options.clientMetadataUrl;
     }
-  }
-
-  /**
-   * Check if operating in runtime mode ("mcpc <target> <op>") or login mode (mcpc <server> login"
-   */
-  private isRuntimeMode(): boolean {
-    return !!this.tokenManager;
   }
 
   get redirectUrl(): string {
@@ -185,11 +157,6 @@ export class OAuthProvider implements OAuthClientProvider {
   }
 
   async clientInformation(): Promise<OAuthClientInformationMixed | undefined> {
-    // Runtime mode: return client ID from constructor
-    if (this.isRuntimeMode() && this._clientId) {
-      return { client_id: this._clientId };
-    }
-
     // Pre-configured client credentials: skip dynamic registration
     if (this._clientCredentials) {
       const info: OAuthClientInformationMixed = {
@@ -201,7 +168,7 @@ export class OAuthProvider implements OAuthClientProvider {
       return info;
     }
 
-    // Auth flow mode: try to load from memory or keychain
+    // Try to load from memory or keychain
     if (!this._clientInformation) {
       const storedClient = await readKeychainOAuthClientInfo(this.serverUrl, this.profileName);
       if (storedClient) {
@@ -215,12 +182,6 @@ export class OAuthProvider implements OAuthClientProvider {
   }
 
   async saveClientInformation(clientInformation: OAuthClientInformationMixed): Promise<void> {
-    // Runtime mode: no-op (client info managed by CLI)
-    if (this.isRuntimeMode()) {
-      return;
-    }
-
-    // Auth flow mode: save to keychain
     this._clientInformation = clientInformation;
 
     const clientInfo: Parameters<typeof storeKeychainOAuthClientInfo>[2] = {
@@ -233,16 +194,6 @@ export class OAuthProvider implements OAuthClientProvider {
   }
 
   async tokens(): Promise<OAuthTokens | undefined> {
-    // Runtime mode: use token manager for automatic refresh
-    if (this.isRuntimeMode() && this.tokenManager) {
-      const accessToken = await this.tokenManager.getValidAccessToken();
-      return {
-        access_token: accessToken,
-        token_type: 'Bearer',
-      };
-    }
-
-    // Auth flow mode: check keychain
     // If forcing re-auth, pretend no tokens exist
     if (this._forceReauth) {
       return undefined;
@@ -273,11 +224,6 @@ export class OAuthProvider implements OAuthClientProvider {
   }
 
   async saveTokens(tokens: OAuthTokens): Promise<void> {
-    // Runtime mode: no-op (token manager handles state)
-    if (this.isRuntimeMode()) {
-      return;
-    }
-
     const tokenInfo: OAuthTokenInfo = {
       accessToken: tokens.access_token,
       tokenType: tokens.token_type,
@@ -323,11 +269,21 @@ export class OAuthProvider implements OAuthClientProvider {
       profile.authenticatedAt = now;
       // Record (or correct) the authorization server this login used, so token
       // refresh can go back to the same one instead of re-resolving it from the
-      // MCP server's metadata. Only set during the interactive flow — a runtime
-      // refresh has no discovery state and must not blank a stored issuer.
+      // MCP server's metadata. Never blank a stored issuer when the SDK reported
+      // no discovery state.
       if (this._discoveryState?.authorizationServerUrl) {
         profile.oauthIssuer = this._discoveryState.authorizationServerUrl;
       }
+    }
+
+    // Record the RFC 8707 resource indicator this login sent, so token refresh
+    // repeats it and the refreshed token is bound to the same resource (#395).
+    // The SDK reports none when the server publishes no protected resource
+    // metadata; the login sent no `resource` then, and neither will the refresh.
+    if (this._resourceUrl) {
+      profile.oauthResource = this._resourceUrl;
+    } else {
+      delete profile.oauthResource;
     }
 
     if (tokens.scope) {
@@ -360,14 +316,7 @@ export class OAuthProvider implements OAuthClientProvider {
   }
 
   async redirectToAuthorization(authorizationUrl: URL): Promise<void> {
-    // Runtime mode: not supported
-    if (this.isRuntimeMode()) {
-      throw new Error(
-        'OAuthProvider in runtime mode does not support authorization flow. Use CLI "login" command first.'
-      );
-    }
-
-    // Auth flow mode: log the URL (actual redirect handled by oauth-flow.ts)
+    // Log the URL (actual redirect handled by oauth-flow.ts)
     logger.warn(
       `MCP SDK requested redirect to authorization URL (ignoring): ${authorizationUrl.toString()}`
     );
@@ -402,5 +351,20 @@ export class OAuthProvider implements OAuthClientProvider {
 
   async discoveryState(): Promise<OAuthDiscoveryState | undefined> {
     return this._discoveryState;
+  }
+
+  /**
+   * The SDK reports the RFC 8707 resource indicator it selected for this login
+   * (the MCP server URL, confirmed by the server's protected resource metadata)
+   * before it requests the tokens. `updateProfileMetadata()` persists it as the
+   * profile's `oauthResource`, so a later refresh sends the same indicator.
+   */
+  async saveResourceUrl(resourceUrl: string): Promise<void> {
+    this._resourceUrl = resourceUrl;
+    logger.debug(`Resource indicator for this login: ${resourceUrl}`);
+  }
+
+  async resourceUrl(): Promise<string | undefined> {
+    return this._resourceUrl;
   }
 }
