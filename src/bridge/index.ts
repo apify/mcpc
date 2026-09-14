@@ -1345,6 +1345,32 @@ class BridgeProcess {
   }
 
   /**
+   * Attach the x402 settlement receipt captured for this tool call to its result.
+   *
+   * The receipt reaches the caller at `_meta["x402/payment-response"]`, the key the x402
+   * MCP transport defines for it, so code mode finds it in the same place whether the
+   * server reported settlement on the tool result or in the HTTP `PAYMENT-RESPONSE`
+   * header (which the transport would otherwise swallow).
+   *
+   * Always consumes the receipt, even when the call produced no result — see the caller.
+   */
+  private async consumeSettlementReceipt(toolName: string, result: unknown): Promise<unknown> {
+    // Nothing is queued unless the middleware captured a receipt for this very tool, so a
+    // session without x402 never pays the cost of loading the (viem-backed) x402 module.
+    const pending = this.x402PaymentCache.settlements?.get(toolName);
+    if (!pending?.length) return result;
+
+    if (result === undefined) {
+      // The call failed after the payment settled. The receipt is about to be dropped, so
+      // log it — it is the only record left that money changed hands on this call.
+      logger.warn(`Tool "${toolName}" failed after its x402 payment settled. Receipt:`, pending[0]);
+    }
+
+    const { withSettlementReceipt } = await import('../lib/x402/fetch-middleware.js');
+    return withSettlementReceipt(result, this.x402PaymentCache, toolName);
+  }
+
+  /**
    * Handle a tool result that contains x402 payment-required data.
    * Signs a fresh payment, caches it, and retries the tool call once.
    *
@@ -1549,10 +1575,22 @@ class BridgeProcess {
           };
 
           // Execute with automatic x402 payment retry on payment-required tool results
-          result = await executeToolCall();
-          const retry = await this.handlePaymentRequiredRetry(params.name, result, executeToolCall);
-          if (retry.handled) {
-            result = retry.result;
+          try {
+            result = await executeToolCall();
+            const retry = await this.handlePaymentRequiredRetry(
+              params.name,
+              result,
+              executeToolCall
+            );
+            if (retry.handled) {
+              result = retry.result;
+            }
+          } finally {
+            // Hand the caller the x402 settlement receipt for this call. Runs on the error
+            // path too: the assignment is then discarded with the exception, but consuming
+            // the receipt is what keeps a call that failed after its payment settled from
+            // handing its receipt to the next call to the same tool.
+            result = await this.consumeSettlementReceipt(params.name, result);
           }
           break;
         }

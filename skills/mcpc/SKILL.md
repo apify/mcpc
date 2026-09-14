@@ -254,6 +254,7 @@ mcpc @apify skills-get <name> --raw    # print the SKILL.md markdown (pipe to a 
 (`--no-profile`, `--stdio`, `--proxy`, and `-H` are options of `connect`, not global flags.)
 
 `mcpc` also has experimental `--x402` auto-payment for paid MCP tools — see `mcpc help x402`.
+A paid tool result carries the server's settlement receipt at `_meta["x402/payment-response"]`.
 
 ## Debugging
 

@@ -1152,6 +1152,9 @@ ${chalk.bold('JSON output (--json):')}
   With \`--detach\`: \`CreateTaskResult\` object:
   \`{ taskId: string, status: string }\`
   Schema: ${LEGACY_SCHEMA_BASE}#createtaskresult
+
+  Paid tools (x402): the server's settlement receipt, when it sends one, is at
+  \`_meta["x402/payment-response"]\`.
 `;
 
   program

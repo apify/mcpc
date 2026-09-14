@@ -665,6 +665,9 @@ JSON output (--json):
   With `--detach`: `CreateTaskResult` object:
   `{ taskId: string, status: string }`
   Schema: https://modelcontextprotocol.io/specification/2025-11-25/schema#createtaskresult
+
+  Paid tools (x402): the server's settlement receipt, when it sends one, is at
+  `_meta["x402/payment-response"]`.
 ```
 
 ### `mcpc @<session> tasks-list`
