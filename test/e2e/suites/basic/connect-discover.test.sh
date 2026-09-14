@@ -10,6 +10,8 @@
 #  5. Re-running discovery reuses existing sessions (no duplicates)
 #  6. `@session` argument is rejected
 #  7. JSON output produces structured data
+#  8. Project-scope entries that read ${VAR} are skipped (untrusted), global ones expand it,
+#     `-H` is refused, and naming the file connects the skipped entry
 
 source "$(dirname "$0")/../../lib/framework.sh"
 test_init "basic/connect-discover" --isolated
@@ -408,6 +410,144 @@ assert_contains "$normalized_stdout" "mcp_config.json (invalid)"
 assert_contains "$STDOUT" "No \"mcpServers\" or \"servers\" property."
 # The malformed file's content must not be echoed back (layout + prompt-injection safety).
 assert_not_contains "$STDOUT" "INJECTED_CONTENT"
+test_pass
+
+# =============================================================================
+# Test: Auto-discovery does not trust project-scope configs to read environment
+#       variables — a checked-in .mcp.json could exfiltrate them to any server.
+#       Entries referencing ${VAR} are skipped (with the names shown); the same
+#       entry in a global config expands as usual.
+# =============================================================================
+
+test_case "project-scope entry that reads \${VAR} is skipped; global one is connected"
+run_mcpc "@discover-valid" close || true
+rm -f "$FAKE_CWD/.mcp.json" "$FAKE_CWD/mcp.json" "$FAKE_CWD/mcp_config.json" "$FAKE_HOME/.cursor/mcp.json"
+
+export DISCOVER_LEAK_TOKEN="super-secret-value"
+# Project config: one entry reads ${DISCOVER_LEAK_TOKEN} in a header (must be skipped), one
+# is plain (connects). Global config: reads the same variable (must connect — the user's own file).
+cat > "$FAKE_CWD/.mcp.json" <<EOF
+{
+  "mcpServers": {
+    "discover-leak": {
+      "url": "$TEST_SERVER_URL",
+      "headers": { "X-Test": "true", "Authorization": "Bearer \${DISCOVER_LEAK_TOKEN}" }
+    },
+    "discover-plain": { "url": "$TEST_SERVER_URL", "headers": { "X-Test": "true" } }
+  }
+}
+EOF
+mkdir -p "$FAKE_HOME/.cursor"
+cat > "$FAKE_HOME/.cursor/mcp.json" <<EOF
+{
+  "mcpServers": {
+    "discover-global-env": {
+      "url": "$TEST_SERVER_URL",
+      "headers": { "X-Test": "\${DISCOVER_LEAK_TOKEN}" }
+    }
+  }
+}
+EOF
+_SESSIONS_CREATED+=("@discover-leak" "@discover-plain" "@discover-global-env")
+
+run_mcpc_discover connect
+assert_success "discovery should succeed for the entries that don't read the environment"
+# The project entry reading ${VAR} is marked skipped, naming the variable it would have read.
+assert_contains "$STDOUT" "@discover-leak"
+assert_contains "$STDOUT" "skipped (reads \${DISCOVER_LEAK_TOKEN})"
+# Header names are listed so the user can see what the entry would send; values never are.
+assert_contains "$STDOUT" "headers: X-Test, Authorization"
+assert_not_contains "$STDOUT" "super-secret-value"
+# The plain project entry and the global entry connect normally.
+assert_contains "$STDOUT" "@discover-plain"
+assert_contains "$STDOUT" "@discover-global-env"
+# The footer explains the rule and names the file to connect explicitly.
+assert_contains "$STDOUT" "not trusted to read environment variables"
+assert_contains "$STDOUT" "mcpc connect ./.mcp.json"
+
+# No session was created for the skipped entry, and the others are live.
+run_mcpc --json
+assert_success
+leak_sessions=$(echo "$STDOUT" | jq '[.sessions[] | select(.name == "@discover-leak")] | length')
+assert_eq "$leak_sessions" "0" "no session should exist for the skipped project entry"
+plain_sessions=$(echo "$STDOUT" | jq '[.sessions[] | select(.name == "@discover-plain")] | length')
+assert_eq "$plain_sessions" "1" "the plain project entry should have connected"
+global_sessions=$(echo "$STDOUT" | jq '[.sessions[] | select(.name == "@discover-global-env")] | length')
+assert_eq "$global_sessions" "1" "the global entry reading \${VAR} should have connected"
+test_pass
+
+# =============================================================================
+# Test: --json reports the skipped project entry with skipReason "project-env"
+#       and the variable names it references
+# =============================================================================
+
+test_case "--json marks the skipped project entry as project-env with its envVars"
+run_mcpc_discover --json connect
+assert_success "json discovery should succeed"
+assert_json_valid "$STDOUT"
+leak_reason=$(echo "$STDOUT" | jq -r '[.[] | select(._mcpc.sessionName == "@discover-leak")][0]._mcpc.skipReason')
+assert_eq "$leak_reason" "project-env"
+leak_status=$(echo "$STDOUT" | jq -r '[.[] | select(._mcpc.sessionName == "@discover-leak")][0]._mcpc.status')
+assert_eq "$leak_status" "skipped"
+leak_vars=$(echo "$STDOUT" | jq -c '[.[] | select(._mcpc.sessionName == "@discover-leak")][0]._mcpc.envVars')
+assert_eq "$leak_vars" '["DISCOVER_LEAK_TOKEN"]'
+assert_not_contains "$STDOUT" "super-secret-value"
+test_pass
+
+# =============================================================================
+# Test: -H is refused with auto-discovery (it would be sent to every server)
+# =============================================================================
+
+test_case "-H is refused with auto-discovery"
+run_mcpc_discover connect -H "Authorization: Bearer leaked"
+assert_failure "connect -H with auto-discovery should fail"
+assert_contains "$STDERR" "cannot be combined with config auto-discovery"
+assert_contains "$STDERR" "every discovered server"
+test_pass
+
+# =============================================================================
+# Test: naming the project file is the trust step — it connects the skipped
+#       entry with ${VAR} expanded, and a later bare connect shows it live
+# =============================================================================
+
+test_case "naming the project config connects the skipped entry; re-discovery shows it live"
+run_mcpc_discover connect ./.mcp.json
+assert_success "connecting the project file by name should succeed"
+assert_contains "$STDOUT" "@discover-leak"
+run_mcpc "@discover-leak" ping
+assert_success "the explicitly connected session should be live"
+
+run_mcpc_discover connect
+assert_success "re-discovery should succeed"
+assert_not_contains "$STDOUT" "skipped (reads"
+assert_not_contains "$STDOUT" "not trusted to read environment variables"
+
+run_mcpc "@discover-leak" close || true
+run_mcpc "@discover-plain" close || true
+run_mcpc "@discover-global-env" close || true
+unset DISCOVER_LEAK_TOKEN
+test_pass
+
+# =============================================================================
+# Test: when every discovered entry is skipped for reading ${VAR}, the command
+#       fails and explains how to proceed (not the stdio-only message)
+# =============================================================================
+
+test_case "all entries skipped for \${VAR} — clear error with the per-file command"
+rm -f "$FAKE_CWD/.mcp.json" "$FAKE_HOME/.cursor/mcp.json"
+cat > "$FAKE_CWD/.mcp.json" <<EOF
+{
+  "mcpServers": {
+    "discover-only-env": { "url": "https://\${DISCOVER_HOST}/mcp" }
+  }
+}
+EOF
+
+run_mcpc_discover connect
+assert_failure "connect should fail when nothing could be connected"
+assert_contains "$STDERR" "No servers connected from discovered config files"
+assert_contains "$STDERR" "mcpc connect ./.mcp.json"
+assert_not_contains "$STDERR" "All servers in discovered config files use stdio transport"
 test_pass
 
 test_done

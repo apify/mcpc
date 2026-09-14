@@ -302,6 +302,14 @@ export interface AuthProfile {
   oauthGrant?: OAuthGrant;
   // OAuth metadata
   oauthIssuer: string;
+  /**
+   * RFC 8707 resource indicator the login sent to the authorization server (the MCP
+   * server's canonical URL, as selected via its protected resource metadata). Token
+   * refresh repeats it: servers that bind tokens to a resource reject a refresh
+   * without it (#395). Absent when the login sent none, or for profiles written
+   * before mcpc recorded it.
+   */
+  oauthResource?: string;
   /** Enterprise IdP issuer URL (id_jag grant only). */
   idpIssuer?: string;
   scopes?: string[];
@@ -387,6 +395,12 @@ export interface AuthCredentials {
    * recorded the issuer.
    */
   oauthIssuer?: string;
+  /**
+   * RFC 8707 resource indicator the login sent (`AuthProfile.oauthResource`), repeated
+   * on token refresh. Absent when the login sent none or the profile predates it; the
+   * bridge then derives it from the server's protected resource metadata.
+   */
+  oauthResource?: string;
   // Client-credentials grant material (machine-to-machine; sent via IPC, never CLI args)
   privateKeyPem?: string; // private_key_jwt variant (RFC 7523): PEM-encoded signing key
   keyAlg?: string; // JWT signing algorithm for the private_key_jwt variant (e.g. RS256)

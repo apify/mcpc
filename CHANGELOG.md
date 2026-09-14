@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Confidential-client sessions now also refresh against authorization servers that accept only HTTP Basic client authentication. The refresh presents the client secret the way the login did and retries with the other form if the server rejects it. (#387)
 - Sessions no longer lose their saved OAuth refresh token when a server that does not rotate refresh tokens omits `refresh_token` from the refresh response. The bridge used to overwrite the stored token with nothing, so the session could not authenticate after the access token expired and required a new `mcpc login`.
 - Accented text, CJK characters, and emoji in large tool results are no longer corrupted in transit: a multibyte character that landed on a socket chunk boundary between the CLI and the bridge was replaced with `�`, and the JSON stayed valid so nothing reported an error. (#390)
+- Sessions authenticated with OAuth now survive the server rejecting an access token: the bridge refreshes the token and retries the request once, instead of failing with `OAuthProvider in runtime mode does not support authorization flow` until you ran `mcpc login` again. The refresh also sends the RFC 8707 `resource` indicator the login sent, which servers that bind tokens to a resource require. (#395)
 
 ### Changed
 
@@ -30,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- A bare `mcpc connect` no longer lets config files found in the current directory read environment variables. A `.mcp.json` checked into a repository could reference `${GITHUB_TOKEN}` in a header or hostname pointed at an attacker's server, and auto-discovery would have sent the secret on the first request. Such entries are now skipped with the variable names shown, `-H` is refused for auto-discovery (it would go to every discovered server), and connecting the file by name (`mcpc connect ./.mcp.json`) remains the explicit way to trust it. Config files under your home directory are unaffected.
 - Token refresh now goes only to the authorization server the profile logged in at, which `mcpc login` records, and never to a plaintext HTTP token endpoint. It used to re-resolve the server from the MCP server's metadata on every refresh, so a compromised server could point a session's refresh token and client secret at a server of its choosing. Profiles created before this release are pinned the next time you run `mcpc login`. (#387)
 - `mcpc login` no longer opens the authorization URL through `cmd.exe` on Windows. The URL comes from the authorization server, and `cmd.exe` treated `&`, `|`, `^` and `%VAR%` inside it as commands, so a malicious or compromised server could run arbitrary commands when you pressed Enter to open the browser (and even a benign URL was cut off at its first `&`). The browser is now launched without any shell on all platforms, and authorization URLs with a scheme other than `http:`/`https:` are refused.
 

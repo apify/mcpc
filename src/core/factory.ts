@@ -5,6 +5,7 @@
 import type {
   ClientCapabilities,
   ListChangedHandlers,
+  AuthProvider,
   OAuthClientProvider,
   FetchLike,
 } from '@modelcontextprotocol/client';
@@ -48,7 +49,7 @@ export interface CreateMcpClientOptions {
   /**
    * OAuth provider for automatic token refresh (HTTP transport only)
    */
-  authProvider?: OAuthClientProvider;
+  authProvider?: AuthProvider | OAuthClientProvider;
 
   /**
    * MCP-Session-Id for resuming a previous session (HTTP transport only)
@@ -163,7 +164,7 @@ export async function createMcpClient(options: CreateMcpClientOptions): Promise<
     factoryLogger.debug('Creating transport with mcpSessionId:', options.mcpSessionId || '(none)');
     factoryLogger.debug('Creating transport with customFetch:', !!options.customFetch);
     const transportOptions: {
-      authProvider?: OAuthClientProvider;
+      authProvider?: AuthProvider | OAuthClientProvider;
       mcpSessionId?: string;
       protocolVersion?: string;
       customFetch?: FetchLike;

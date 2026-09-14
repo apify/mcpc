@@ -119,6 +119,7 @@ export async function getValidAccessTokenFromKeychain(
     clientId: clientInfo.clientId,
     ...(clientInfo.clientSecret !== undefined && { clientSecret: clientInfo.clientSecret }),
     ...(profile.oauthIssuer ? { issuer: profile.oauthIssuer } : {}),
+    ...(profile.oauthResource ? { resource: profile.oauthResource } : {}),
     refreshToken: tokens.refreshToken,
     accessToken: tokens.accessToken,
     ...(tokens.expiresAt !== undefined && { accessTokenExpiresAt: tokens.expiresAt }),

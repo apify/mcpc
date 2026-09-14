@@ -52,8 +52,8 @@ import {
 import { getSession, loadSessions, updateSession } from '../lib/sessions.js';
 import type { AuthCredentials, X402WalletCredentials } from '../lib/types.js';
 import { OAuthTokenManager } from '../lib/auth/oauth-token-manager.js';
-import { OAuthProvider } from '../lib/auth/oauth-provider.js';
-import type { OAuthClientProvider } from '@modelcontextprotocol/client';
+import { createRuntimeAuthProvider } from '../lib/auth/runtime-auth-provider.js';
+import type { AuthProvider, OAuthClientProvider } from '@modelcontextprotocol/client';
 import {
   storeKeychainOAuthTokenInfo,
   readKeychainOAuthTokenInfo,
@@ -119,9 +119,10 @@ class BridgeProcess {
   // OAuth token manager (created when CLI sends auth credentials via IPC)
   private tokenManager: OAuthTokenManager | null = null;
 
-  // OAuth provider for SDK transport. Either mcpc's OAuthProvider (authorization-code
-  // runtime mode, wraps tokenManager) or an SDK client-credentials provider.
-  private authProvider: OAuthClientProvider | null = null;
+  // Auth provider for the SDK transport. Either mcpc's bearer-token provider
+  // (authorization-code grant: wraps tokenManager, refreshes on 401) or an SDK
+  // client-credentials / id-jag provider.
+  private authProvider: AuthProvider | OAuthClientProvider | null = null;
 
   // True when authProvider is a client-credentials provider — drives the
   // `oauth-client-credentials` extension capability declaration on initialize.
@@ -272,6 +273,7 @@ class BridgeProcess {
         clientId: credentials.clientId,
         ...(credentials.clientSecret ? { clientSecret: credentials.clientSecret } : {}),
         ...(credentials.oauthIssuer ? { issuer: credentials.oauthIssuer } : {}),
+        ...(credentials.oauthResource ? { resource: credentials.oauthResource } : {}),
         refreshToken: credentials.refreshToken,
         // Reload tokens from keychain before refresh (handles token rotation by other processes)
         onBeforeRefresh: async () => {
@@ -333,14 +335,11 @@ class BridgeProcess {
       });
       logger.debug('OAuth token manager initialized');
 
-      // Create auth provider for SDK transport (enables automatic token refresh)
-      this.authProvider = new OAuthProvider({
-        serverUrl: credentials.serverUrl,
-        profileName: credentials.profileName,
-        tokenManager: this.tokenManager,
-        clientId: credentials.clientId,
-      });
-      logger.debug('OAuthProvider created for SDK transport (runtime mode)');
+      // Auth provider for the SDK transport: hands it a valid token before every
+      // request and refreshes the token when the server answers 401 anyway, so the
+      // transport can retry (#395).
+      this.authProvider = createRuntimeAuthProvider(this.tokenManager);
+      logger.debug('Bearer-token auth provider created for SDK transport');
     } else if (credentials.refreshToken && !credentials.clientId) {
       logger.warn('Refresh token provided but client ID is missing - token refresh will not work');
     } else if (credentials.accessToken && !credentials.refreshToken) {
@@ -919,9 +918,10 @@ class BridgeProcess {
     }
     await updateSession(this.options.sessionName, sessionUpdate);
 
-    // Note: Token refresh is handled automatically by the SDK
-    // The SDK calls authProvider.tokens() before each request,
-    // which triggers OAuthTokenManager.getValidAccessToken() to refresh if needed
+    // Note: Token refresh is handled automatically by the SDK transport. It calls
+    // authProvider.token() before each request, which triggers
+    // OAuthTokenManager.getValidAccessToken() to refresh if needed, and
+    // authProvider.onUnauthorized() when the server rejects the token anyway.
 
     // Pre-populate tools cache (used by x402 proactive signing and listAllTools IPC method)
     if (serverDetails.capabilities?.tools) {
@@ -1108,9 +1108,12 @@ class BridgeProcess {
    * "tool not found") since these should never cause session status changes. Only
    * transport-level errors (HTTP 401/403/404) should trigger auth/expiry detection.
    *
-   * For auth errors, if a token manager is available, we attempt to refresh the token
-   * before giving up. This handles transient auth failures (e.g., expired access token
-   * that can be refreshed) without unnecessarily killing the session.
+   * An auth error that reaches this point is final: on a 401 the SDK transport has
+   * already asked the auth provider to refresh the token and retried the request
+   * once (see runtime-auth-provider.ts), so either the refresh failed or the server
+   * rejects freshly minted tokens too. Refreshing again here would only report a
+   * spurious success — the stored token is still valid by the local clock — and
+   * leave the session looping instead of marked unauthorized.
    */
   private async handlePossibleExpiration(error: Error): Promise<void> {
     // ServerError wraps errors from mcp-client.ts methods. Check the original error
@@ -1144,19 +1147,6 @@ class BridgeProcess {
       logger.warn('Session appears to be expired, marking as expired and shutting down');
       status = 'expired';
     } else if (isAuthenticationError(error.message)) {
-      // If we have a token manager, try to refresh before giving up
-      if (this.tokenManager) {
-        try {
-          logger.info(
-            'Authentication error detected, attempting token refresh before giving up...'
-          );
-          await this.tokenManager.refreshAccessToken();
-          logger.info('Token refresh succeeded — session will recover on next request');
-          return;
-        } catch (refreshError) {
-          logger.warn('Token refresh also failed, marking session as unauthorized:', refreshError);
-        }
-      }
       logger.warn('Authentication rejected, marking session as unauthorized and shutting down');
       status = 'unauthorized';
     }
