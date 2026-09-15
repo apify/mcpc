@@ -176,8 +176,9 @@ MCP session commands (after connecting):
   <@session> resources-subscribe <uri> <file>
   <@session> resources-unsubscribe <uri>
   <@session> resources-templates-list
+  <@session> resources-directory-read <uri>
   <@session> skills-list
-  <@session> skills-get <name> [--raw]
+  <@session> skills-get <skill> [file] [--raw]
   <@session> logging-set-level <level>
   <@session> ping
   <@session> server-discover
@@ -742,8 +743,8 @@ mcpc help --skill > ~/.claude/skills/mcpc/SKILL.md
 
 That copy is a snapshot; re-run it after upgrading mcpc to refresh it.
 
-Separately, `mcpc` also acts as a **client for skills served by MCP servers** (experimental,
-SEP-2640) — see [Skills](#skills) for the `skills-list` / `skills-get` commands.
+Separately, `mcpc` also acts as a **client for skills served by MCP servers** — see
+[Skills](#skills) for the `skills-list` / `skills-get` commands.
 
 ## Agentic payments (x402)
 
@@ -888,7 +889,7 @@ Where `mcpc` stands on each part of the MCP specification:
 | ⏳ [**Async tasks**](#async-tasks)                   | ✅ Supported (2025-11-25 servers; 2026-07-28 tasks extension planned) |
 | 💬 [**Prompts**](#prompts)                           | ✅ Supported (incl. list changed notifications)                   |
 | 📦 [**Resources**](#resources)                       | ✅ Supported (incl. subscriptions and list changed notifications) |
-| 🧠 [**Skills**](#skills)                             | 🧪 Experimental (SEP-2640)                                       |
+| 🧠 [**Skills**](#skills)                             | ✅ Supported (skills extension, 2026-07-28 servers)              |
 | 📝 [**Logging**](#server-logs)                       | ⚠️ Deprecated (removed by MCP 2026-07-28)                         |
 | 🔔 [**Notifications**](#list-change-notifications)   | ✅ Supported                                                      |
 | 📄 [**Pagination**](#pagination)                     | ✅ Supported                                                      |
@@ -1077,38 +1078,47 @@ mcpc @apify resources-unsubscribe "file:///config.json"
 
 #### Skills
 
-> 🧪 **Experimental.** Implements the draft [MCP skills extension (SEP-2640)](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2640).
-> The spec is in active iteration; the index shape, recognized entry types, and capability key may change.
+Implements the [MCP Skills extension](https://github.com/modelcontextprotocol/ext-skills)
+(`io.modelcontextprotocol/skills`), which requires MCP `2026-07-28` or later.
 
-[Agent Skills](https://agentskills.io/) are reusable markdown workflow instructions (`SKILL.md` with YAML frontmatter)
-that AI agents load on demand. `mcpc` lets you discover and pull skills served by any MCP server that exposes
-them under the `skill://` URI convention — no SDK changes required, since skills are just resources:
+[Agent Skills](https://agentskills.io/) are reusable markdown workflow instructions (`SKILL.md` with YAML
+frontmatter, plus any supporting files) that AI agents load on demand. A server that declares the extension
+publishes them over `skills/list` and `skills/get`, and serves their files as ordinary `skill://` resources:
 
 ```bash
-# List skills exposed by the server (tries skill://index.json, falls back to scanning skill://*/SKILL.md)
+# List the skills the server serves, with their file manifests
 mcpc @apify skills-list
 
-# Read a skill's SKILL.md by bare name, nested path, or full URI
+# Read a skill's SKILL.md by name, path, or the URI of its SKILL.md
 mcpc @apify skills-get git-workflow
 mcpc @apify skills-get acme/billing/refunds
 mcpc @apify skills-get skill://git-workflow/SKILL.md
 
-# Print just the markdown (no header/fences) — pipe straight to an LLM or a file
-mcpc @apify skills-get git-workflow --raw > /tmp/skill.md
+# Read one of the skill's supporting files
+mcpc @apify skills-get pdf-processing references/FORMS.md
 
-# JSON for scripts: [{ name, description, type, url }]
-mcpc --json @apify skills-list | jq '.[].name'
+# Print just the content (no header/fences) — pipe straight to an LLM or a file
+mcpc @apify skills-get git-workflow --raw > /tmp/SKILL.md
+
+# JSON for scripts: [{ uri, frontmatter: { name, description, ... }, resources }]
+mcpc --json @apify skills-list | jq -r '.[].frontmatter.name'
+
+# List a directory inside a skill (servers that declare "directoryRead": true)
+mcpc @apify resources-directory-read skill://pdf-processing/templates
 ```
 
-Recognized index entry types (per SEP-2640): `skill-md` (concrete skill), `mcp-resource-template`
-(parameterized namespace), and `archive` (`.tar.gz`/`.zip` bundle — fetch the URL via `resources-read`).
-Entries with an unrecognized `type` are silently skipped.
+Every entry from `skills-list` is complete: the skill's verbatim frontmatter plus a manifest of every
+file with its SHA-256 digest and byte size. `skills-get` uses that manifest as the spec requires —
+it fetches the entry, reads the file, and checks the bytes against the declared size and digest (and, for
+a `SKILL.md`, that the document's frontmatter is what the entry advertised). **Content that fails any of
+those checks is not printed**, and a file missing from the manifest is refused rather than read. Skills
+whose content is generated carry `"resources": "dynamic"` instead of a manifest; `mcpc` reads them but
+labels them unverified.
 
-Skills appear under capabilities in `mcpc @session` output when a server advertises the extension
-under either `capabilities.extensions["io.modelcontextprotocol/skills"]` (per spec) or
-`capabilities.experimental["io.modelcontextprotocol/skills"]` (the SDK-preserved escape hatch some
-SDKs still use). Skill content is treated as untrusted input — `mcpc` only reads and prints it; it
-never executes hooks, scripts, or other frontmatter-declared behavior.
+Skills appear under capabilities in `mcpc @session` output when a server declares the extension in
+`capabilities.extensions["io.modelcontextprotocol/skills"]`. Skill content is treated as untrusted
+input — `mcpc` only reads and prints it; it never executes hooks, scripts, or other frontmatter-declared
+behavior, and `allowed-tools` grants nothing.
 
 #### List change notifications
 

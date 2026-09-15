@@ -14,12 +14,11 @@
  *     must be refused rather than silently run synchronously (default: false)
  *   NO_RESOURCES - disable resources capability (default: false)
  *   NO_PROMPTS - disable prompts capability (default: false)
- *   WITH_SKILLS - enable the io.modelcontextprotocol/skills extension and
- *     expose skill:// resources (default: false; opt-in to avoid skewing
- *     resource counts in non-skills tests)
- *   SKILLS_NO_INDEX - serve skill files but no skill://index.json (default: false,
- *     used to exercise the resource-scan fallback path; only meaningful when
- *     WITH_SKILLS=true)
+ *   WITH_SKILLS - declare the io.modelcontextprotocol/skills extension and expose
+ *     the skill:// files as ordinary resources (default: false). The extension's
+ *     own methods are 2026-07-28-only and live in index-v2.ts; serving them here
+ *     would invent a dialect no server promises — this server exists so tests can
+ *     prove the client refuses skills on a legacy connection.
  *
  * Control endpoints (for test manipulation):
  *   GET  /health - health check
@@ -78,7 +77,6 @@ const NO_TASKS = process.env.NO_TASKS === 'true';
 const NO_RESOURCES = process.env.NO_RESOURCES === 'true';
 const NO_PROMPTS = process.env.NO_PROMPTS === 'true';
 const WITH_SKILLS = process.env.WITH_SKILLS === 'true';
-const SKILLS_NO_INDEX = process.env.SKILLS_NO_INDEX === 'true';
 // OAuth client-credentials grant test endpoints (metadata + /token). Opt-in so
 // other suites are unaffected. Expected credentials default to test values.
 const WITH_OAUTH = process.env.WITH_OAUTH === 'true';
@@ -107,10 +105,8 @@ const V1_TOOLS = TOOLS.map((tool) =>
 );
 
 // Compute the effective skills resource list and content map at startup.
-const { resources: SKILLS_RESOURCES, contents: SKILL_CONTENTS } = computeSkillsFixtures(
-  WITH_SKILLS,
-  SKILLS_NO_INDEX
-);
+const { resources: SKILLS_RESOURCES, contents: SKILL_CONTENTS } =
+  computeSkillsFixtures(WITH_SKILLS);
 
 // Helper for artificial latency
 async function maybeDelay(): Promise<void> {
@@ -161,20 +157,13 @@ function createMcpServer(): Server {
   if (!NO_PROMPTS) {
     capabilities.prompts = { listChanged: true };
   }
-  // Advertise the experimental skills extension when skill resources are exposed.
-  // SEP-2640 specifies `capabilities.extensions`, but current MCP SDKs strip
-  // unknown capability fields. We also publish under `capabilities.experimental`
-  // (the standard SDK-preserved escape hatch) so clients can detect the
-  // extension today regardless of SDK version.
+  // Declare the skills extension, as an out-of-era server might. Its methods are
+  // not served here (see the header) — the client is expected to refuse them on a
+  // 2025-era connection rather than try.
   if (WITH_SKILLS && !NO_RESOURCES) {
-    const SKILLS_KEY = 'io.modelcontextprotocol/skills';
     capabilities.extensions = {
       ...((capabilities.extensions as Record<string, unknown>) || {}),
-      [SKILLS_KEY]: {},
-    };
-    capabilities.experimental = {
-      ...((capabilities.experimental as Record<string, unknown>) || {}),
-      [SKILLS_KEY]: {},
+      'io.modelcontextprotocol/skills': {},
     };
   }
 
@@ -650,7 +639,7 @@ async function main() {
     if (NO_RESOURCES) console.log(`  Resources: DISABLED`);
     if (NO_PROMPTS) console.log(`  Prompts: DISABLED`);
     if (WITH_SKILLS) {
-      console.log(`  Skills: ENABLED${SKILLS_NO_INDEX ? ' (index OFF, fallback only)' : ''}`);
+      console.log(`  Skills: resources only (the extension's methods are 2026-07-28-only)`);
     }
   });
 

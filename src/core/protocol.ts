@@ -94,3 +94,56 @@ export function discoverUnavailableMessage(protocolVersion?: string, sessionName
     `information. Run "mcpc ${session}" to see it, or "mcpc ${session} ping" to check liveness`
   );
 }
+
+/**
+ * Capability key under which servers declare the Skills extension in
+ * `capabilities.extensions` (`skills/list`, `skills/get`, and the optional
+ * `resources/directory/read`).
+ *
+ * Spec: https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/stable/skills.mdx
+ */
+export const SKILLS_EXTENSION_KEY = 'io.modelcontextprotocol/skills';
+
+/**
+ * Explain why skill commands do not work on a legacy connection. The extension is
+ * specified against base revision 2026-07-28 or later — its results carry the modern
+ * era's `resultType`/`ttlMs`/`cacheScope` — so mcpc refuses to speak it on a 2025-era
+ * connection rather than guessing at a dialect no server promises to serve.
+ *
+ * Same no-trailing-period convention as the messages above.
+ */
+export function skillsUnavailableMessage(protocolVersion?: string, sessionName?: string): string {
+  const session = sessionName ?? '@session';
+  return (
+    `Skills are not available on this connection: the ${SKILLS_EXTENSION_KEY} extension is ` +
+    `specified against MCP ${MODERN_PROTOCOL_VERSIONS[0]} and later, and this connection ` +
+    `negotiated ${protocolVersion ?? 'an older version'}. Run "mcpc ${session}" to see what ` +
+    `this server supports`
+  );
+}
+
+/**
+ * Explain that the server never declared the extension. Clients issue `skills/list` and
+ * `skills/get` only after observing the declaration, so mcpc says so instead of firing a
+ * request the server has no obligation to recognize.
+ */
+export function skillsNotDeclaredMessage(sessionName?: string): string {
+  const session = sessionName ?? '@session';
+  return (
+    `This server does not declare the ${SKILLS_EXTENSION_KEY} extension, so it serves no ` +
+    `skills. Run "mcpc ${session} resources-list" to see what it does serve`
+  );
+}
+
+/**
+ * Explain that directory reads are off. `resources/directory/read` is optional and
+ * clients MUST NOT call it unless the server declared `directoryRead: true`.
+ */
+export function directoryReadUnavailableMessage(sessionName?: string): string {
+  const session = sessionName ?? '@session';
+  return (
+    `This server does not support resources/directory/read (the ${SKILLS_EXTENSION_KEY} ` +
+    `extension is declared without "directoryRead": true), so directories cannot be listed. ` +
+    `Run "mcpc ${session} resources-list" to see the resources it serves`
+  );
+}

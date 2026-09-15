@@ -22,6 +22,13 @@ export const SCHEMA_BASE = 'https://modelcontextprotocol.io/specification/2026-0
 export const LEGACY_SCHEMA_BASE = 'https://modelcontextprotocol.io/specification/2025-11-25/schema';
 
 /**
+ * The Skills extension's own spec page. Its `Skill` entry shape is defined there rather
+ * than in the core MCP schema, so the skills commands link here instead of SCHEMA_BASE.
+ */
+export const SKILLS_SPEC_URL =
+  'https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/stable/skills.mdx';
+
+/**
  * The one JSON shape every server-details command returns: the server's handshake result
  * — MCP `InitializeResult` on 2025-11-25 connections, `DiscoverResult` on 2026-07-28 ones
  * — extended with `toolNames` and an `_mcpc` metadata block. `connect` returns an array of

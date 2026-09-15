@@ -14,6 +14,7 @@ import { formatJson, formatJsonError, jsonHelp, rainbow, theme } from './output.
 import {
   SCHEMA_BASE,
   LEGACY_SCHEMA_BASE,
+  SKILLS_SPEC_URL,
   SESSION_DETAILS_HELP,
   outputHelp,
   serverDetailsJsonHelp,
@@ -462,8 +463,9 @@ ${chalk.bold('MCP session commands (after connecting):')}
   <@session> ${theme.cyan('resources-subscribe')} <uri> <file>
   <@session> ${theme.cyan('resources-unsubscribe')} <uri>
   <@session> ${theme.cyan('resources-templates-list')}
+  <@session> ${theme.cyan('resources-directory-read')} <uri>
   <@session> ${theme.cyan('skills-list')}
-  <@session> ${theme.cyan('skills-get')} <name> [--raw]
+  <@session> ${theme.cyan('skills-get')} <skill> [file] [--raw]
   <@session> ${theme.cyan('logging-set-level')} <level>
   <@session> ${theme.cyan('ping')}
   <@session> ${theme.cyan('server-discover')}
@@ -1358,24 +1360,22 @@ ${jsonHelp('`{ subscribed: true, uri, file, bytes, mimeType? }`')}`
       await resources.listResourceTemplates(session, getOptionsFromCommand(command));
     });
 
-  // Skills commands (experimental MCP extension: io.modelcontextprotocol/skills)
-  // Sugar over resources-read using the `skill://` URI convention.
-  // Spec: https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2640
-  // NOTE: This extension is still in draft (SEP-2640) and may change. The
-  // command surface here is marked EXPERIMENTAL accordingly.
+  // Skills commands (MCP extension: io.modelcontextprotocol/skills)
+  // Spec: https://github.com/modelcontextprotocol/ext-skills
   program
     .command('skills-list')
-    .description('[EXPERIMENTAL] List agent skills from the server (SEP-2640).')
+    .description('List the agent skills the server serves.')
     .addHelpText(
       'after',
       `
-${chalk.bold('Discovery:')}
-  Tries \`skill://index.json\`, else scans \`skill://*/SKILL.md\`. Types:
-  \`skill-md\`, \`mcp-resource-template\`, \`archive\` (use \`resources-read <url>\`).
+${chalk.bold('Notes:')}
+  Each entry carries the skill's frontmatter and its complete file manifest
+  (every file with a SHA-256 digest and byte size). A listing may be partial:
+  a skill you know the URI of is readable even when it is not listed.
 ${jsonHelp(
-  '`[{ name, description, type, url }, ...]`',
-  undefined,
-  'https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2640'
+  'Array of `Skill` entries',
+  '`[{ uri, frontmatter: { name, description, ... }, resources: [{ uri, digest, size }] | "dynamic" }, ...]`',
+  SKILLS_SPEC_URL
 )}`
     )
     .action(async (_options, command) => {
@@ -1383,26 +1383,61 @@ ${jsonHelp(
     });
 
   program
-    .command('skills-get <name>')
-    .description("[EXPERIMENTAL] Read a skill's SKILL.md by name (SEP-2640).")
-    .option('--raw', 'Print only the SKILL.md text (Markdown), suitable for piping')
+    .command('skills-get <skill> [file]')
+    .description("Read a skill's SKILL.md, or one of its files (see below).")
+    .option('--raw', 'Print only the file content, suitable for piping')
     .addHelpText(
       'after',
       `
-${chalk.bold('Names:')}
-  \`name\`, \`nested/path\`, or \`skill://...\` URI. For \`archive\` skills, use
-  \`resources-read <url>\`. With --json, --raw is ignored.
+${chalk.bold('Arguments:')}
+  <skill>  Skill name, path (\`acme/billing/refunds\`), or its SKILL.md URI
+  [file]   Path of a supporting file inside the skill (\`references/FORMS.md\`)
+
+${chalk.bold('Notes:')}
+  Content is checked against the skill's manifest (size, digest, and for
+  SKILL.md its frontmatter) and is not printed when the check fails.
+  With --json, --raw is ignored.
+
+${chalk.bold('Examples:')}
+  mcpc ${session} skills-get pdf-processing
+  mcpc ${session} skills-get pdf-processing --raw > SKILL.md
+  mcpc ${session} skills-get pdf-processing references/FORMS.md
 ${jsonHelp(
-  '`ReadResourceResult`: `{ contents: [{ uri, mimeType?, text? | blob? }], ttlMs?, cacheScope? }`',
-  undefined,
-  `${SCHEMA_BASE}#readresourceresult`
+  'The skill entry plus the content that was read',
+  '`{ skill: { uri, frontmatter, resources }, contents: [{ uri, mimeType?, text? | blob? }] }`',
+  SKILLS_SPEC_URL
 )}`
     )
-    .action(async (name, options, command) => {
-      await skills.getSkill(session, name, {
+    .action(async (skill, file, options, command) => {
+      await skills.getSkill(session, skill, file, {
         ...(options.raw && { raw: true }),
         ...getOptionsFromCommand(command),
       });
+    });
+
+  program
+    .command('resources-directory-read <uri>')
+    .description("List a directory resource's direct children.")
+    .addHelpText(
+      'after',
+      `
+${chalk.bold('Notes:')}
+  Part of the skills extension; needs \`"directoryRead": true\` in the server's
+  declaration. Lists one level: descend by re-running on a child directory
+  (children with MIME type \`inode/directory\`). Directory URIs have no
+  trailing slash.
+
+${chalk.bold('Examples:')}
+  mcpc ${session} resources-directory-read skill://pdf-processing
+  mcpc ${session} resources-directory-read skill://pdf-processing/templates
+${jsonHelp(
+  'Array of `Resource` objects (the direct children)',
+  '`[{ uri, name?, mimeType? }, ...]`',
+  `${SCHEMA_BASE}#resource`
+)}`
+    )
+    .action(async (uri, _options, command) => {
+      await resources.readResourceDirectory(session, uri, getOptionsFromCommand(command));
     });
 
   // Prompts commands

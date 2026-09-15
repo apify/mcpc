@@ -39,6 +39,7 @@ New to mcpc? Start with the [README](../README.md), or run `mcpc help --skill` f
   - [`mcpc @<session> resources-subscribe`](#mcpc-session-resources-subscribe)
   - [`mcpc @<session> resources-unsubscribe`](#mcpc-session-resources-unsubscribe)
   - [`mcpc @<session> resources-templates-list`](#mcpc-session-resources-templates-list)
+  - [`mcpc @<session> resources-directory-read`](#mcpc-session-resources-directory-read)
   - [`mcpc @<session> skills-list`](#mcpc-session-skills-list)
   - [`mcpc @<session> skills-get`](#mcpc-session-skills-get)
   - [`mcpc @<session> logging-set-level`](#mcpc-session-logging-set-level)
@@ -91,8 +92,9 @@ MCP session commands (after connecting):
   <@session> resources-subscribe <uri> <file>
   <@session> resources-unsubscribe <uri>
   <@session> resources-templates-list
+  <@session> resources-directory-read <uri>
   <@session> skills-list
-  <@session> skills-get <name> [--raw]
+  <@session> skills-get <skill> [file] [--raw]
   <@session> logging-set-level <level>
   <@session> ping
   <@session> server-discover
@@ -498,8 +500,9 @@ Commands:
   resources-subscribe <uri> <file>  Subscribe to an MCP resource and sync it to a local file.
   resources-unsubscribe <uri>       Stop syncing a subscribed MCP resource (keeps the local file).
   resources-templates-list          List MCP resource templates.
-  skills-list                       [EXPERIMENTAL] List agent skills from the server (SEP-2640).
-  skills-get <name>                 [EXPERIMENTAL] Read a skill's SKILL.md by name (SEP-2640).
+  skills-list                       List the agent skills the server serves.
+  skills-get <skill> [file]         Read a skill's SKILL.md, or one of its files (see below).
+  resources-directory-read <uri>    List a directory resource's direct children.
   prompts-list                      List all MCP prompts.
   prompts-get <name> [args...]      Get an MCP prompt with arguments.
   logging-set-level <level>         Set MCP server logging level (deprecated).
@@ -878,43 +881,82 @@ JSON output (--json):
   Schema: https://modelcontextprotocol.io/specification/2026-07-28/schema#resourcetemplate
 ```
 
+### `mcpc @<session> resources-directory-read`
+
+```text
+Usage: mcpc @<session> resources-directory-read [options] <uri>
+
+List a directory resource's direct children.
+
+Options:
+  --json  Output in JSON format
+
+Notes:
+  Part of the skills extension; needs `"directoryRead": true` in the server's
+  declaration. Lists one level: descend by re-running on a child directory
+  (children with MIME type `inode/directory`). Directory URIs have no
+  trailing slash.
+
+Examples:
+  mcpc @<session> resources-directory-read skill://pdf-processing
+  mcpc @<session> resources-directory-read skill://pdf-processing/templates
+
+JSON output (--json):
+  Array of `Resource` objects (the direct children):
+  `[{ uri, name?, mimeType? }, ...]`
+  Schema: https://modelcontextprotocol.io/specification/2026-07-28/schema#resource
+```
+
 ### `mcpc @<session> skills-list`
 
 ```text
 Usage: mcpc @<session> skills-list [options]
 
-[EXPERIMENTAL] List agent skills from the server (SEP-2640).
+List the agent skills the server serves.
 
 Options:
   --json  Output in JSON format
 
-Discovery:
-  Tries `skill://index.json`, else scans `skill://*/SKILL.md`. Types:
-  `skill-md`, `mcp-resource-template`, `archive` (use `resources-read <url>`).
+Notes:
+  Each entry carries the skill's frontmatter and its complete file manifest
+  (every file with a SHA-256 digest and byte size). A listing may be partial:
+  a skill you know the URI of is readable even when it is not listed.
 
 JSON output (--json):
-  `[{ name, description, type, url }, ...]`
-  Schema: https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2640
+  Array of `Skill` entries:
+  `[{ uri, frontmatter: { name, description, ... }, resources: [{ uri, digest, size }] | "dynamic" }, ...]`
+  Schema: https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/stable/skills.mdx
 ```
 
 ### `mcpc @<session> skills-get`
 
 ```text
-Usage: mcpc @<session> skills-get [options] <name>
+Usage: mcpc @<session> skills-get [options] <skill> [file]
 
-[EXPERIMENTAL] Read a skill's SKILL.md by name (SEP-2640).
+Read a skill's SKILL.md, or one of its files (see below).
 
 Options:
-  --raw   Print only the SKILL.md text (Markdown), suitable for piping
+  --raw   Print only the file content, suitable for piping
   --json  Output in JSON format
 
-Names:
-  `name`, `nested/path`, or `skill://...` URI. For `archive` skills, use
-  `resources-read <url>`. With --json, --raw is ignored.
+Arguments:
+  <skill>  Skill name, path (`acme/billing/refunds`), or its SKILL.md URI
+  [file]   Path of a supporting file inside the skill (`references/FORMS.md`)
+
+Notes:
+  Content is checked against the skill's manifest (size, digest, and for
+  SKILL.md its frontmatter) and is not printed when the check fails.
+  With --json, --raw is ignored.
+
+Examples:
+  mcpc @<session> skills-get pdf-processing
+  mcpc @<session> skills-get pdf-processing --raw > SKILL.md
+  mcpc @<session> skills-get pdf-processing references/FORMS.md
 
 JSON output (--json):
-  `ReadResourceResult`: `{ contents: [{ uri, mimeType?, text? | blob? }], ttlMs?, cacheScope? }`
-  Schema: https://modelcontextprotocol.io/specification/2026-07-28/schema#readresourceresult
+  The skill entry plus the content that was read:
+  `{ skill: { uri, frontmatter, resources }, contents: [{ uri, mimeType?, text? | blob? }] }`
+  Schema: https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/stable/skills.mdx
 ```
 
 ### `mcpc @<session> logging-set-level`
