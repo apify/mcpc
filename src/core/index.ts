@@ -17,3 +17,6 @@ export * from './capabilities.js';
 
 // Export protocol version constants and helpers
 export * from './protocol.js';
+
+// Export the official MCP extension registry
+export * from './extensions.js';

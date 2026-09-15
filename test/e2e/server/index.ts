@@ -19,6 +19,9 @@
  *     own methods are 2026-07-28-only and live in index-v2.ts; serving them here
  *     would invent a dialect no server promises — this server exists so tests can
  *     prove the client refuses skills on a legacy connection.
+ *   WITH_OTHER_EXTENSIONS - also declare extensions mcpc does not implement (MCP Apps)
+ *     and one vendor extension it cannot know, so tests can pin how they are reported
+ *     (default: false)
  *
  * Control endpoints (for test manipulation):
  *   GET  /health - health check
@@ -77,6 +80,7 @@ const NO_TASKS = process.env.NO_TASKS === 'true';
 const NO_RESOURCES = process.env.NO_RESOURCES === 'true';
 const NO_PROMPTS = process.env.NO_PROMPTS === 'true';
 const WITH_SKILLS = process.env.WITH_SKILLS === 'true';
+const WITH_OTHER_EXTENSIONS = process.env.WITH_OTHER_EXTENSIONS === 'true';
 // OAuth client-credentials grant test endpoints (metadata + /token). Opt-in so
 // other suites are unaffected. Expected credentials default to test values.
 const WITH_OAUTH = process.env.WITH_OAUTH === 'true';
@@ -164,6 +168,16 @@ function createMcpServer(): Server {
     capabilities.extensions = {
       ...((capabilities.extensions as Record<string, unknown>) || {}),
       'io.modelcontextprotocol/skills': {},
+    };
+  }
+
+  // Extensions beyond the ones mcpc implements. A server declares what it serves on its
+  // own terms, so the client has to name these without offering commands for them.
+  if (WITH_OTHER_EXTENSIONS) {
+    capabilities.extensions = {
+      ...((capabilities.extensions as Record<string, unknown>) || {}),
+      'io.modelcontextprotocol/ui': { mimeTypes: ['text/html;profile=mcp-app'] },
+      'com.example/widgets': {},
     };
   }
 

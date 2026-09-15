@@ -2,11 +2,14 @@
  * Unit tests for client capability declaration (src/core/capabilities.ts).
  */
 
+import { buildClientCapabilities } from '../../../src/core/capabilities.js';
 import {
-  buildClientCapabilities,
+  APPS_EXTENSION_KEY,
   CLIENT_CREDENTIALS_EXTENSION_KEY,
   ENTERPRISE_MANAGED_AUTH_EXTENSION_KEY,
-} from '../../../src/core/capabilities.js';
+  SKILLS_EXTENSION_KEY,
+  TASKS_EXTENSION_KEY,
+} from '../../../src/core/extensions.js';
 
 describe('buildClientCapabilities', () => {
   it('declares tasks but not unimplemented capabilities (sampling, roots)', () => {
@@ -18,46 +21,22 @@ describe('buildClientCapabilities', () => {
     expect(caps.roots).toBeUndefined();
   });
 
-  it('omits the client-credentials extension by default', () => {
+  it('declares the auth extensions mcpc implements, on every connection', () => {
+    // The map reports what this client can do, not what the connection happens to be
+    // doing: a server can only offer an extension to a client it knows supports it.
     const caps = buildClientCapabilities() as { extensions?: Record<string, unknown> };
-    expect(caps.extensions).toBeUndefined();
+    expect(caps.extensions).toEqual({
+      [CLIENT_CREDENTIALS_EXTENSION_KEY]: {},
+      [ENTERPRISE_MANAGED_AUTH_EXTENSION_KEY]: {},
+    });
   });
 
-  it('omits the extension when clientCredentials is false', () => {
-    const caps = buildClientCapabilities({ clientCredentials: false }) as {
-      extensions?: Record<string, unknown>;
-    };
-    expect(caps.extensions).toBeUndefined();
-  });
-
-  it('declares the client-credentials extension when requested', () => {
-    expect(CLIENT_CREDENTIALS_EXTENSION_KEY).toBe(
-      'io.modelcontextprotocol/oauth-client-credentials'
-    );
-    const caps = buildClientCapabilities({ clientCredentials: true }) as {
-      extensions?: Record<string, unknown>;
-    };
-    expect(caps.extensions).toBeDefined();
-    expect(caps.extensions).toHaveProperty(CLIENT_CREDENTIALS_EXTENSION_KEY);
-    expect(caps.extensions).not.toHaveProperty(ENTERPRISE_MANAGED_AUTH_EXTENSION_KEY);
-  });
-
-  it('declares the enterprise-managed-authorization extension when requested', () => {
-    expect(ENTERPRISE_MANAGED_AUTH_EXTENSION_KEY).toBe(
-      'io.modelcontextprotocol/enterprise-managed-authorization'
-    );
-    const caps = buildClientCapabilities({ enterpriseManagedAuth: true }) as {
-      extensions?: Record<string, unknown>;
-    };
-    expect(caps.extensions).toBeDefined();
-    expect(caps.extensions).toHaveProperty(ENTERPRISE_MANAGED_AUTH_EXTENSION_KEY);
-    expect(caps.extensions).not.toHaveProperty(CLIENT_CREDENTIALS_EXTENSION_KEY);
-  });
-
-  it('omits the enterprise-managed-authorization extension when false', () => {
-    const caps = buildClientCapabilities({ enterpriseManagedAuth: false }) as {
-      extensions?: Record<string, unknown>;
-    };
-    expect(caps.extensions).toBeUndefined();
+  it('does not declare extensions mcpc cannot back up', () => {
+    const caps = buildClientCapabilities() as { extensions?: Record<string, unknown> };
+    // MCP Apps and the 2026-07-28 tasks extension are not implemented; skills is
+    // implemented but declared by servers only, so a client claim would be invented.
+    expect(caps.extensions).not.toHaveProperty(APPS_EXTENSION_KEY);
+    expect(caps.extensions).not.toHaveProperty(TASKS_EXTENSION_KEY);
+    expect(caps.extensions).not.toHaveProperty(SKILLS_EXTENSION_KEY);
   });
 });
