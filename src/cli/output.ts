@@ -1319,9 +1319,8 @@ function findDuplicateTextBlocks(
  * 1. **Content:** — each content block rendered per its type (text blocks
  *    that duplicate `structuredContent` are omitted)
  * 2. **Structured content:** — `structuredContent` as syntax-highlighted JSON,
- *    shown only when there is no visible Content (otherwise it duplicates
- *    information already present and adds noise for LLM consumers; use
- *    `--json` to always get the full payload)
+ *    shown only when there is no visible Content. Otherwise a hint points to
+ *    `--json`, which always includes the full payload.
  * 3. **Metadata:** — `_meta` as syntax-highlighted JSON
  */
 export function formatCallToolResultHuman(result: CallToolResult): string {
@@ -1362,6 +1361,13 @@ export function formatCallToolResultHuman(result: CallToolResult): string {
     lines.push(chalk.bold('Structured content:'));
     const scJson = JSON.stringify(sc, null, 2);
     lines.push(process.stdout.isTTY ? highlightJson(scJson) : scJson);
+  } else if (hasStructuredContent) {
+    lines.push(
+      '',
+      chalk.dim(
+        'Structured content is also available. Use --json to see the structuredContent field.'
+      )
+    );
   }
 
   // Metadata section — syntax-highlighted JSON, shown last
