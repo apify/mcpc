@@ -1436,25 +1436,25 @@ See [CONTRIBUTING](./CONTRIBUTING.md) for development setup, architecture overvi
 
 <!-- Stars, contributors, commits, and activity as of September 2026. -->
 
-| Tool                                                                    | Lang   | Stars | Commits | Contrib | Active | Tools | Resources | Prompts | Tasks | Code mode | Sessions | OAuth | Stdio | HTTP | Tool search | x402 | LLM |
-| ----------------------------------------------------------------------- | ------ | ----: | ------: | ------: | ------ | ----- | --------- | ------- | ----- | --------- | -------- | ----- | ----- | ---- | ----------- | ---- | --- |
-| **[apify/mcpc](https://github.com/apify/mcpc)**                         | TS     |   847 |     758 |      15 | ✅     | ✅    | ✅        | ✅      | ✅    | ✅        | ✅       | ✅    | ✅    | ✅   | ✅          | ✅   | —   |
-| [steipete/mcporter](https://github.com/steipete/mcporter)               | TS     |  5.0k |     942 |      51 | ✅     | ✅    | ✅        | —       | —     | ✅        | ✅       | ✅    | ✅    | ✅   | —           | —    | —   |
-| [knowsuchagency/mcp2cli](https://github.com/knowsuchagency/mcp2cli)     | Python |  2.4k |     168 |      24 | ✅     | ✅    | ✅        | ✅      | —     | ✅        | ✅       | ✅    | ✅    | ✅   | ✅          | —    | —   |
-| [IBM/mcp-cli](https://github.com/IBM/mcp-cli)                           | Python |  2.0k |     800 |      23 | ✅     | ✅    | ✅        | ✅      | —     | ✅        | ✅       | ✅    | ✅    | ✅   | —           | —    | ✅  |
-| [f/mcptools](https://github.com/f/mcptools)                             | Go     |  1.6k |     174 |      16 | ⚠️     | ✅    | ✅        | ✅      | —     | ✅        | —        | —     | ✅    | ✅   | —           | —    | —   |
-| [philschmid/mcp-cli](https://github.com/philschmid/mcp-cli)             | TS     |  1.3k |      30 |       3 | ⚠️     | ✅    | —         | —       | —     | ✅        | ✅       | —     | ✅    | ✅   | ✅          | —    | —   |
-| [adhikasp/mcp-client-cli](https://github.com/adhikasp/mcp-client-cli)   | Python |   677 |     113 |       5 | ⚠️     | ✅    | —         | —       | —     | —         | —        | —     | ✅    | —    | —           | —    | ✅  |
-| [thellimist/clihub](https://github.com/thellimist/clihub)               | Go     |   667 |      60 |       1 | ⚠️     | ✅    | —         | —       | —     | —         | —        | ✅    | ✅    | ✅   | ✅          | —    | —   |
-| [wong2/mcp-cli](https://github.com/wong2/mcp-cli)                       | JS     |   444 |      67 |       6 | ⚠️     | ✅    | ✅        | ✅      | —     | —         | —        | ✅    | ✅    | ✅   | —           | —    | —   |
-| [activeing123/mcptoon](https://github.com/activeing123/mcptoon)         | Python |   197 |     229 |       3 | ✅     | ✅    | —         | —       | —     | ✅        | —        | —     | ✅    | ✅   | —           | —    | —   |
-| [mcpshim/mcpshim](https://github.com/mcpshim/mcpshim)                   | Go     |    64 |      17 |       1 | ✅     | ✅    | —         | —       | —     | ✅        | ✅       | ✅    | —     | ✅   | ✅          | —    | —   |
-| [lydakis/mcpx](https://github.com/lydakis/mcpx)                         | Go     |    52 |     119 |       3 | ✅     | ✅    | —         | —       | —     | ✅        | ✅       | ✅    | ✅    | ✅   | —           | —    | —   |
-| [evantahler/mcpx](https://github.com/evantahler/mcpx)                   | TS     |    33 |     116 |       1 | ✅     | ✅    | ✅        | ✅      | ✅    | ✅        | —        | ✅    | ✅    | ✅   | ✅          | —    | —   |
-| [EstebanForge/mcp-cli-ent](https://github.com/EstebanForge/mcp-cli-ent) | Go     |    15 |      61 |       3 | ✅     | ✅    | —         | —       | —     | ✅        | ✅       | —     | ✅    | ✅   | ✅          | —    | —   |
-| [domdomegg/call-mcp](https://github.com/domdomegg/call-mcp)             | TS     |     3 |      37 |       3 | ✅     | ✅    | —         | —       | —     | ✅        | —        | ✅    | ✅    | ✅   | —           | —    | —   |
+| Tool                                                                    | Lang   | Stars | Commits | Contrib | Active | MCP        | Tools | Resources | Prompts | Tasks | Code mode | Sessions | OAuth | Stdio | HTTP | Tool search | x402 | LLM |
+| ----------------------------------------------------------------------- | ------ | ----: | ------: | ------: | ------ | ---------- | ----- | --------- | ------- | ----- | --------- | -------- | ----- | ----- | ---- | ----------- | ---- | --- |
+| **[apify/mcpc](https://github.com/apify/mcpc)**                         | TS     |   847 |     758 |      15 | ✅     | 2026-07-28 | ✅    | ✅        | ✅      | ✅    | ✅        | ✅       | ✅    | ✅    | ✅   | ✅          | ✅   | —   |
+| [steipete/mcporter](https://github.com/steipete/mcporter)               | TS     |  5.0k |     942 |      51 | ✅     | 2026-07-28 | ✅    | ✅        | —       | —     | ✅        | ✅       | ✅    | ✅    | ✅   | —           | —    | —   |
+| [knowsuchagency/mcp2cli](https://github.com/knowsuchagency/mcp2cli)     | Python |  2.4k |     168 |      24 | ✅     | 2025-11-25 | ✅    | ✅        | ✅      | —     | ✅        | ✅       | ✅    | ✅    | ✅   | ✅          | —    | —   |
+| [IBM/mcp-cli](https://github.com/IBM/mcp-cli)                           | Python |  2.0k |     800 |      23 | ✅     | 2025-06-18 | ✅    | ✅        | ✅      | —     | ✅        | ✅       | ✅    | ✅    | ✅   | —           | —    | ✅  |
+| [f/mcptools](https://github.com/f/mcptools)                             | Go     |  1.6k |     174 |      16 | ⚠️     | 2024-11-05 | ✅    | ✅        | ✅      | —     | ✅        | —        | —     | ✅    | ✅   | —           | —    | —   |
+| [philschmid/mcp-cli](https://github.com/philschmid/mcp-cli)             | TS     |  1.3k |      30 |       3 | ⚠️     | 2025-11-25 | ✅    | —         | —       | —     | ✅        | ✅       | —     | ✅    | ✅   | ✅          | —    | —   |
+| [adhikasp/mcp-client-cli](https://github.com/adhikasp/mcp-client-cli)   | Python |   677 |     113 |       5 | ⚠️     | 2025-06-18 | ✅    | —         | —       | —     | —         | —        | —     | ✅    | —    | —           | —    | ✅  |
+| [thellimist/clihub](https://github.com/thellimist/clihub)               | Go     |   667 |      60 |       1 | ⚠️     | 2025-11-25 | ✅    | —         | —       | —     | —         | —        | ✅    | ✅    | ✅   | ✅          | —    | —   |
+| [wong2/mcp-cli](https://github.com/wong2/mcp-cli)                       | JS     |   444 |      67 |       6 | ⚠️     | 2025-11-25 | ✅    | ✅        | ✅      | —     | —         | —        | ✅    | ✅    | ✅   | —           | —    | —   |
+| [activeing123/mcptoon](https://github.com/activeing123/mcptoon)         | Python |   197 |     229 |       3 | ✅     | 2026-07-28 | ✅    | —         | —       | —     | ✅        | —        | —     | ✅    | ✅   | —           | —    | —   |
+| [mcpshim/mcpshim](https://github.com/mcpshim/mcpshim)                   | Go     |    64 |      17 |       1 | ✅     | 2025-11-25 | ✅    | —         | —       | —     | ✅        | ✅       | ✅    | —     | ✅   | ✅          | —    | —   |
+| [lydakis/mcpx](https://github.com/lydakis/mcpx)                         | Go     |    52 |     119 |       3 | ✅     | 2026-07-28 | ✅    | —         | —       | —     | ✅        | ✅       | ✅    | ✅    | ✅   | —           | —    | —   |
+| [evantahler/mcpx](https://github.com/evantahler/mcpx)                   | TS     |    33 |     116 |       1 | ✅     | 2026-07-28 | ✅    | ✅        | ✅      | ✅    | ✅        | —        | ✅    | ✅    | ✅   | ✅          | —    | —   |
+| [EstebanForge/mcp-cli-ent](https://github.com/EstebanForge/mcp-cli-ent) | Go     |    15 |      61 |       3 | ✅     | 2026-07-28 | ✅    | —         | —       | —     | ✅        | ✅       | —     | ✅    | ✅   | ✅          | —    | —   |
+| [domdomegg/call-mcp](https://github.com/domdomegg/call-mcp)             | TS     |     3 |      37 |       3 | ✅     | 2025-11-25 | ✅    | —         | —       | —     | ✅        | —        | ✅    | ✅    | ✅   | —           | —    | —   |
 
-**Legend:** ✅ = supported, ⚠️ = stale (no commits in 3+ months), **Commits** = total commits, **Contrib** = contributors, **Tasks** = [async tasks](https://modelcontextprotocol.io/specification/latest/basic/utilities/tasks), **x402** = [x402 payment protocol](https://www.x402.org/) support, **LLM** = requires/uses an LLM.
+**Legend:** ✅ = supported, ⚠️ = stale (no commits in 3+ months), **Commits** = total commits, **Contrib** = contributors, **MCP** = latest [MCP protocol version](https://modelcontextprotocol.io/specification/latest/basic/index#protocol-version) the client supports, per its pinned SDK/own implementation, **Tasks** = [async tasks](https://modelcontextprotocol.io/specification/latest/basic/utilities/tasks), **x402** = [x402 payment protocol](https://www.x402.org/) support, **LLM** = requires/uses an LLM.
 
 **Notes:**
 
@@ -1464,6 +1464,8 @@ See [CONTRIBUTING](./CONTRIBUTING.md) for development setup, architecture overvi
 - [IBM/mcp-cli](https://github.com/IBM/mcp-cli) and [mcp-client-cli](https://github.com/adhikasp/mcp-client-cli) integrate an LLM (Ollama, OpenAI, etc.) for chat-style interaction, while the other tools are pure CLI clients.
 - [domdomegg/call-mcp](https://github.com/domdomegg/call-mcp) can also call connectors configured in claude.ai by reusing the Claude Code OAuth token, with no separate login.
 - [lydakis/mcpx](https://github.com/lydakis/mcpx) is a Unix-composable client (`mcpx <server> <tool>`), not [evantahler/mcpx](https://github.com/evantahler/mcpx).
+- [f/mcptools](https://github.com/f/mcptools) depends on a Go MCP library capable of `2025-03-26`, but its own client code hardcodes `2024-11-05` (its README notes HTTP/SSE support is limited to that version).
+- MCP versions for [knowsuchagency/mcp2cli](https://github.com/knowsuchagency/mcp2cli) and [adhikasp/mcp-client-cli](https://github.com/adhikasp/mcp-client-cli) reflect their locked/tested SDK version; both allow a looser dependency range that could resolve to a newer SDK on a fresh install.
 
 ### Code mode and dynamic tool discovery
 
