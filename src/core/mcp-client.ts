@@ -54,10 +54,10 @@ import {
   skillsUnavailableMessage,
   skillsNotDeclaredMessage,
   directoryReadUnavailableMessage,
-  SKILLS_EXTENSION_KEY,
   SERVER_INFO_META_KEY,
   SUPPORTED_PROTOCOL_VERSIONS,
 } from './protocol.js';
+import { SKILLS_EXTENSION_KEY } from './extensions.js';
 import type {
   IMcpClient,
   ListSkillsResult,

@@ -9,6 +9,8 @@
  * against drift on SDK upgrades.
  */
 
+import { SKILLS_EXTENSION_KEY, TASKS_EXTENSION_KEY } from './extensions.js';
+
 /** Modern-era protocol revisions (2026-07-28 and later), newest first. */
 export const MODERN_PROTOCOL_VERSIONS: readonly string[] = ['2026-07-28'];
 
@@ -56,7 +58,7 @@ export function isSupportedProtocolVersion(version: string): boolean {
 export function tasksUnavailableMessage(protocolVersion?: string): string {
   return (
     `Tasks are not available on this connection: MCP ${protocolVersion ?? MODERN_PROTOCOL_VERSIONS[0]} ` +
-    `moved tasks to the io.modelcontextprotocol/tasks extension, which is not supported yet. ` +
+    `moved tasks to the ${TASKS_EXTENSION_KEY} extension, which is not supported yet. ` +
     `Task commands currently work only on servers using protocol 2025-11-25`
   );
 }
@@ -94,15 +96,6 @@ export function discoverUnavailableMessage(protocolVersion?: string, sessionName
     `information. Run "mcpc ${session}" to see it, or "mcpc ${session} ping" to check liveness`
   );
 }
-
-/**
- * Capability key under which servers declare the Skills extension in
- * `capabilities.extensions` (`skills/list`, `skills/get`, and the optional
- * `resources/directory/read`).
- *
- * Spec: https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/stable/skills.mdx
- */
-export const SKILLS_EXTENSION_KEY = 'io.modelcontextprotocol/skills';
 
 /**
  * Explain why skill commands do not work on a legacy connection. The extension is

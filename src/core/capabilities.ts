@@ -3,34 +3,7 @@
  */
 
 import type { ClientCapabilities } from '@modelcontextprotocol/client';
-
-/**
- * Capability key advertising client-credentials auth support, per the MCP extension
- * `io.modelcontextprotocol/oauth-client-credentials`.
- */
-export const CLIENT_CREDENTIALS_EXTENSION_KEY = 'io.modelcontextprotocol/oauth-client-credentials';
-
-/**
- * Capability key advertising enterprise-managed authorization support (SEP-990,
- * ID-JAG), per the MCP extension `io.modelcontextprotocol/enterprise-managed-authorization`.
- */
-export const ENTERPRISE_MANAGED_AUTH_EXTENSION_KEY =
-  'io.modelcontextprotocol/enterprise-managed-authorization';
-
-/** Options influencing the advertised client capabilities for a given connection. */
-export interface BuildClientCapabilitiesOptions {
-  /**
-   * Declare the `io.modelcontextprotocol/oauth-client-credentials` extension. Set
-   * only for connections that authenticate with the client-credentials grant, so we
-   * don't claim machine-to-machine auth on connections that don't use it.
-   */
-  clientCredentials?: boolean;
-  /**
-   * Declare the `io.modelcontextprotocol/enterprise-managed-authorization` extension.
-   * Set only for connections that authenticate with the id_jag grant.
-   */
-  enterpriseManagedAuth?: boolean;
-}
+import { clientExtensionDeclarations } from './extensions.js';
 
 /**
  * Build the MCP client capabilities mcpc advertises to servers.
@@ -40,25 +13,24 @@ export interface BuildClientCapabilitiesOptions {
  * `sampling/createMessage` and registers no `roots/list` handler, so declaring
  * them would invite server requests that can only fail with "Method not found".
  *
+ * The `extensions` map comes from `src/core/extensions.ts`, which tracks every official
+ * MCP extension and mcpc's support for it. Extensions a client cannot declare (skills is
+ * server-declared only) or does not implement (MCP Apps, the 2026-07-28 tasks extension)
+ * are absent by construction.
+ *
  * Kept as a single source of truth so it can evolve per protocol generation:
- * `tasks` will move into the negotiated `extensions` map (a reverse-DNS id) once the SDK
- * exposes the `2026-07-28` Tasks extension — this is the single place to make that switch.
+ * `tasks` will move into the negotiated `extensions` map once the SDK exposes the
+ * `2026-07-28` Tasks extension — this is the single place to make that switch.
  *
  * Capabilities are declared before the protocol version is negotiated, so this cannot
  * branch on the server's version.
  */
-export function buildClientCapabilities(
-  options: BuildClientCapabilitiesOptions = {}
-): ClientCapabilities {
-  const extensions: NonNullable<ClientCapabilities['extensions']> = {
-    ...(options.clientCredentials ? { [CLIENT_CREDENTIALS_EXTENSION_KEY]: {} } : {}),
-    ...(options.enterpriseManagedAuth ? { [ENTERPRISE_MANAGED_AUTH_EXTENSION_KEY]: {} } : {}),
-  };
+export function buildClientCapabilities(): ClientCapabilities {
   return {
     tasks: {
       list: {},
       cancel: {},
     },
-    ...(Object.keys(extensions).length > 0 ? { extensions } : {}),
+    extensions: clientExtensionDeclarations(),
   };
 }

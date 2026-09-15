@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `skills-list` and `skills-get` now speak the MCP Skills extension as specified (`skills/list`, `skills/get`), replacing the earlier draft that discovered skills through a `skill://index.json` file. `skills-get` also reads a skill's supporting files (`mcpc @session skills-get <skill> references/FORMS.md`) and verifies everything it prints against the skill's published manifest — size, digest, and the SKILL.md frontmatter — so content that does not match is refused instead of shown. Requires a server on MCP 2026-07-28 or later that declares the extension.
 - New `resources-directory-read <uri>` command lists the direct children of a directory resource, for servers that declare `"directoryRead": true`.
+- `mcpc @session` now names every other [MCP extension](https://modelcontextprotocol.io/extensions/client-matrix) a server declares too, and says which of them mcpc can actually use, instead of dropping them from the capability list.
 - New [REFERENCE.md](docs/REFERENCE.md) with the full `--help` output of every mcpc command, generated from the CLI itself so it always matches the release.
 - `mcpc @session` and `server-discover` now show the description and website URL a server advertises about itself, right below its name.
 - x402 settlement receipts now reach the caller: a paid tool result carries the server's receipt at `_meta["x402/payment-response"]`, so a payment can be reconciled against its on-chain settlement instead of inferred from the tool output. The receipt used to be dropped when the server sent it as a `PAYMENT-RESPONSE` header. (#394)
@@ -29,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- mcpc now tells every server that it supports the [OAuth client credentials](https://modelcontextprotocol.io/extensions/auth/oauth-client-credentials) and [enterprise-managed authorization](https://modelcontextprotocol.io/extensions/auth/enterprise-managed-authorization) extensions, rather than only on connections already using those grants. Servers that gate access on what a client supports can now see it before any token is issued.
 - Updated bundled dependencies to their latest versions, which picks up security fixes in the HTTP stack (`undici`) and the OS keychain binding (`@napi-rs/keyring`).
 
 ### Security

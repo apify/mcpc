@@ -924,6 +924,26 @@ Both clients are pre-registered by your IT team: `--idp-client-id` at the enterp
 MCP server's authorization server. The SSO session is kept alive with the IdP's refresh token;
 when it expires, affected sessions turn `unauthorized` with a re-login hint.
 
+#### MCP extensions
+
+Extensions are the optional, modular parts of MCP, negotiated through the `extensions` field of
+client and server capabilities. Where `mcpc` stands on the
+[official ones](https://modelcontextprotocol.io/extensions/client-matrix):
+
+| **Extension**                                                                                                  | **Identifier**                                             | **Status**                                                                    |
+|:----------------------------------------------------------------------------------------------------------------|:------------------------------------------------------------|:--------------------------------------------------------------------------------|
+| [OAuth client credentials](https://modelcontextprotocol.io/extensions/auth/oauth-client-credentials)           | `io.modelcontextprotocol/oauth-client-credentials`         | ✅ `mcpc login <server> --grant client-credentials`                            |
+| [Enterprise-managed authorization](https://modelcontextprotocol.io/extensions/auth/enterprise-managed-authorization) | `io.modelcontextprotocol/enterprise-managed-authorization` | ✅ `mcpc login <server> --grant id-jag`                                        |
+| [Skills](https://modelcontextprotocol.io/extensions/skills/overview)                                           | `io.modelcontextprotocol/skills`                           | ✅ [`skills-list`, `skills-get`, `resources-directory-read`](#skills) (MCP 2026-07-28 servers) |
+| [MCP Apps](https://modelcontextprotocol.io/extensions/apps/overview)                                           | `io.modelcontextprotocol/ui`                               | ❌ Interactive HTML interfaces have no equivalent on a terminal                |
+| [Tasks](https://modelcontextprotocol.io/extensions/tasks/overview)                                             | `io.modelcontextprotocol/tasks`                            | 🚧 Task commands work on 2025-11-25 servers, where tasks are part of the core protocol |
+
+The two auth extensions are the ones a client declares: `mcpc` declares both to every server it
+connects to, so a server can tell what this client can do before any token is issued. Skills is
+declared by servers only — a client issues `skills/list` and `skills/get` once it sees that
+declaration. `mcpc @session` lists what a server declares in return, and says which of those
+`mcpc` can use.
+
 #### Server instructions
 
 MCP servers can provide instructions describing their capabilities and usage. These are displayed when you connect to a server or show its session overview:

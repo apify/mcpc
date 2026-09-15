@@ -54,6 +54,7 @@ const NO_TOOLS = process.env.NO_TOOLS === 'true';
 const NO_RESOURCES = process.env.NO_RESOURCES === 'true';
 const NO_PROMPTS = process.env.NO_PROMPTS === 'true';
 const WITH_SKILLS = process.env.WITH_SKILLS === 'true';
+const WITH_OTHER_EXTENSIONS = process.env.WITH_OTHER_EXTENSIONS === 'true';
 const SKILLS_TAMPER = process.env.SKILLS_TAMPER;
 const WITH_OAUTH = process.env.WITH_OAUTH === 'true';
 const OAUTH_CLIENT_ID = process.env.OAUTH_CLIENT_ID || 'test-client';
@@ -116,6 +117,16 @@ function createTestServer(): Server {
   // later, so index.ts (2025-11-25) serves none.
   if (WITH_SKILLS && !NO_RESOURCES) {
     capabilities.extensions = { 'io.modelcontextprotocol/skills': { directoryRead: true } };
+  }
+
+  // Extensions beyond the ones mcpc implements. A server declares what it serves on its
+  // own terms, so the client has to name these without offering commands for them.
+  if (WITH_OTHER_EXTENSIONS) {
+    capabilities.extensions = {
+      ...((capabilities.extensions as Record<string, unknown>) || {}),
+      'io.modelcontextprotocol/ui': { mimeTypes: ['text/html;profile=mcp-app'] },
+      'com.example/widgets': {},
+    };
   }
 
   const server = new Server(

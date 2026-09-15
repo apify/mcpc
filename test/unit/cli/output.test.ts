@@ -1480,6 +1480,49 @@ describe('formatServerDetails', () => {
 
     expect(output).not.toContain('skills-list');
   });
+
+  it('names an advertised extension mcpc does not support, without offering commands', () => {
+    const details: ServerDetails = {
+      capabilities: {
+        tools: {},
+        extensions: { 'io.modelcontextprotocol/ui': { mimeTypes: ['text/html;profile=mcp-app'] } },
+      } as ServerDetails['capabilities'],
+      serverInfo: { name: 'Apps Server', version: '1.0.0' },
+    };
+
+    const output = formatServerDetails(details, '@apps');
+
+    expect(output).toContain('MCP Apps (extension, not supported by mcpc)');
+  });
+
+  it('lists an unrecognized extension by its identifier', () => {
+    const details: ServerDetails = {
+      capabilities: {
+        tools: {},
+        extensions: { 'com.example/widgets': {} },
+      } as ServerDetails['capabilities'],
+      serverInfo: { name: 'Vendor Server', version: '1.0.0' },
+    };
+
+    const output = formatServerDetails(details, '@v');
+
+    expect(output).toContain('com.example/widgets (unknown extension)');
+  });
+
+  it('does not report unrelated experimental capabilities as extensions', () => {
+    const details: ServerDetails = {
+      capabilities: {
+        tools: {},
+        experimental: { someVendorFlag: true },
+      } as ServerDetails['capabilities'],
+      serverInfo: { name: 'Experimental Server', version: '1.0.0' },
+    };
+
+    const output = formatServerDetails(details, '@x');
+
+    expect(output).not.toContain('someVendorFlag');
+    expect(output).not.toContain('unknown extension');
+  });
 });
 
 describe('formatDiscoverResult', () => {

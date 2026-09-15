@@ -31,11 +31,8 @@ import type { DecodedResourceContent } from '../lib/resource-content.js';
 import { extractAllTextContent } from './tool-result.js';
 import { getSession } from '../lib/sessions.js';
 import { getBridgeLogPath } from '../lib/log-reader.js';
-import {
-  isModernProtocolVersion,
-  SERVER_INFO_META_KEY,
-  SKILLS_EXTENSION_KEY,
-} from '../core/protocol.js';
+import { isModernProtocolVersion, SERVER_INFO_META_KEY } from '../core/protocol.js';
+import { findMcpExtension, SKILLS_EXTENSION_KEY } from '../core/extensions.js';
 
 // Re-export for external use
 export { extractAllTextContent } from './tool-result.js';
@@ -1744,6 +1741,30 @@ function skillsExtensionSettings(
 }
 
 /**
+ * One capability line per *other* extension the server declares — skills has its own line
+ * above, with the settings it was declared with.
+ *
+ * Extensions are opt-in on both sides, so a server declaring one says nothing about what
+ * mcpc can do with it: the annotation is what keeps the list from reading as a promise.
+ * Extensions mcpc does not know are still listed, by identifier — a server offering
+ * something new is worth seeing, even when mcpc can only name it.
+ */
+function formatExtensionList(capabilities: ServerCapabilities | undefined): string[] {
+  const bullet = chalk.dim('*');
+  const caps = capabilities as { extensions?: Record<string, unknown> } | undefined;
+  return Object.keys(caps?.extensions ?? {})
+    .filter((id) => id !== SKILLS_EXTENSION_KEY)
+    .map((id) => {
+      const extension = findMcpExtension(id);
+      if (!extension) {
+        return `${bullet} ${id} ${chalk.gray('(unknown extension)')}`;
+      }
+      const note = extension.support === 'full' ? 'extension' : 'extension, not supported by mcpc';
+      return `${bullet} ${extension.label} ${chalk.gray(`(${note})`)}`;
+    });
+}
+
+/**
  * Bullet list of the capabilities a server actually exposes (empty when it exposes none).
  *
  * Some capabilities are era-dependent: a 2026-07-28 server may still advertise `logging`
@@ -1801,6 +1822,8 @@ function formatCapabilityList(
       : ` ${chalk.gray(`(not usable on MCP ${protocolVersion})`)}`;
     list.push(`${bullet} skills${note}`);
   }
+
+  list.push(...formatExtensionList(capabilities));
 
   return list;
 }
