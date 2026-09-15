@@ -1741,19 +1741,23 @@ function skillsExtensionSettings(
 }
 
 /**
- * One capability line per *other* extension the server declares — skills has its own line
- * above, with the settings it was declared with.
+ * One capability line per extension the server declares, minus the `rendered` ids the
+ * caller has already put on the screen itself (skills, which gets a line carrying the
+ * settings it was declared with).
  *
  * Extensions are opt-in on both sides, so a server declaring one says nothing about what
  * mcpc can do with it: the annotation is what keeps the list from reading as a promise.
  * Extensions mcpc does not know are still listed, by identifier — a server offering
  * something new is worth seeing, even when mcpc can only name it.
  */
-function formatExtensionList(capabilities: ServerCapabilities | undefined): string[] {
+function formatExtensionList(
+  capabilities: ServerCapabilities | undefined,
+  rendered: readonly string[] = []
+): string[] {
   const bullet = chalk.dim('*');
   const caps = capabilities as { extensions?: Record<string, unknown> } | undefined;
   return Object.keys(caps?.extensions ?? {})
-    .filter((id) => id !== SKILLS_EXTENSION_KEY)
+    .filter((id) => !rendered.includes(id))
     .map((id) => {
       const extension = findMcpExtension(id);
       if (!extension) {
@@ -1823,7 +1827,8 @@ function formatCapabilityList(
     list.push(`${bullet} skills${note}`);
   }
 
-  list.push(...formatExtensionList(capabilities));
+  // Everything else the server declared, minus the skills line just written above.
+  list.push(...formatExtensionList(capabilities, skills ? [SKILLS_EXTENSION_KEY] : []));
 
   return list;
 }

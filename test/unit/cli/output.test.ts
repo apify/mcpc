@@ -1416,6 +1416,29 @@ describe('formatServerDetails', () => {
     expect(output).toContain('mcpc @skills resources-directory-read <uri>');
   });
 
+  it('lists skills once, on the line carrying its settings', () => {
+    // The skills line is written by the capability list itself, so the generic extension
+    // list is told to skip it — otherwise the same extension appears twice.
+    const details: ServerDetails = {
+      protocolVersion: '2026-07-28',
+      capabilities: {
+        resources: {},
+        extensions: {
+          'io.modelcontextprotocol/skills': { directoryRead: true },
+          'com.example/widgets': {},
+        },
+      } as ServerDetails['capabilities'],
+      serverInfo: { name: 'Skills Server', version: '1.0.0' },
+    };
+
+    const output = formatServerDetails(details, '@skills');
+
+    expect(output.match(/^\* skills/gm)).toHaveLength(1);
+    expect(output).toContain('skills (with directory reads)');
+    // The other declaration still goes through the generic list
+    expect(output).toContain('com.example/widgets (unknown extension)');
+  });
+
   it('annotates the extension but hides its commands on a legacy connection', () => {
     // The extension is specified against 2026-07-28 and later, so its commands would
     // only error out on a 2025-era connection.
