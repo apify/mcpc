@@ -180,6 +180,11 @@ export interface SessionData {
    * Absent / undefined means x402 is disabled.
    */
   x402?: X402SchemePreference;
+  /**
+   * Local spend limit in USD (`--x402-max-amount`), applied to every single payment.
+   * Absent / undefined means payments are capped only by what the server asks for.
+   */
+  x402MaxAmountUsd?: number;
   insecure?: boolean; // Skip TLS certificate verification
   pid?: number; // Bridge process PID
   protocolVersion?: string; // Negotiated MCP version

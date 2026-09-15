@@ -19,6 +19,7 @@ import {
 import { ClientError } from '../errors.js';
 import { createLogger } from '../logger.js';
 import type { X402SchemePreference } from '../types.js';
+import { USDC_DECIMALS, X402PaymentLimitError, formatUsdAmount } from './limits.js';
 
 const logger = createLogger('x402-signer');
 
@@ -27,7 +28,6 @@ const logger = createLogger('x402-signer');
 // ---------------------------------------------------------------------------
 
 export const X402_VERSION = 2;
-const USDC_DECIMALS = 6;
 
 /** Fallback expiry when neither the caller nor the `accept` advertise one. */
 export const DEFAULT_PAYMENT_EXPIRY_SECONDS = 3600;
@@ -171,6 +171,12 @@ export interface SignPaymentInput {
    * approvals yourself.
    */
   skipPermit2Approval?: boolean;
+  /**
+   * Local spend limit in atomic units. When set, signing a payment that authorizes
+   * more than this throws `X402PaymentLimitError` instead — for the `upto` scheme
+   * that caps the maximum authorization, not the amount finally captured.
+   */
+  maxAmountAtomicUnits?: bigint;
 }
 
 export interface SignPaymentResult {
@@ -311,11 +317,40 @@ export function parsePaymentRequired(
 // ---------------------------------------------------------------------------
 
 /**
+ * Refuse a payment that authorizes more than the session's `--x402-max-amount`.
+ *
+ * Runs before any scheme-specific signing so every automatic payment path — proactive
+ * `_meta.x402` signing, the HTTP 402 fallback, and the bridge's payment-required retry —
+ * is capped by the same check, whatever terms the server sends.
+ */
+function assertWithinSpendLimit(input: SignPaymentInput): void {
+  const { accept, amountOverride, maxAmountAtomicUnits } = input;
+  if (maxAmountAtomicUnits === undefined) return;
+
+  let amountAtomicUnits: bigint;
+  try {
+    amountAtomicUnits = amountOverride ?? BigInt(accept.amount);
+  } catch {
+    throw new X402PaymentLimitError(
+      `x402 payment refused: amount "${accept.amount}" is not a valid atomic-unit integer, so it cannot be checked against --x402-max-amount.`
+    );
+  }
+
+  if (amountAtomicUnits <= maxAmountAtomicUnits) return;
+  throw new X402PaymentLimitError(
+    `x402 payment refused: ${formatUsdAmount(amountAtomicUnits)} to ${accept.payTo} exceeds the ` +
+      `${formatUsdAmount(maxAmountAtomicUnits)} limit set by --x402-max-amount. ` +
+      `To allow it, reconnect the session with a higher --x402-max-amount.`
+  );
+}
+
+/**
  * Sign an x402 payment and return a base64-encoded PAYMENT-SIGNATURE header value.
  * Delegates to scheme-specific signers based on `accept.scheme`.
  */
 export async function signPayment(input: SignPaymentInput): Promise<SignPaymentResult> {
   const { accept } = input;
+  assertWithinSpendLimit(input);
   logger.debug(
     `Signing x402 payment: scheme=${accept.scheme} network=${accept.network} amount=${accept.amount} asset=${accept.asset} payTo=${accept.payTo} facilitator=${accept.extra?.facilitatorAddress ?? '<n/a>'}`
   );
