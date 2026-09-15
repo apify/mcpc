@@ -1556,10 +1556,26 @@ class BridgeProcess {
           };
 
           // Execute with automatic x402 payment retry on payment-required tool results
-          result = await executeToolCall();
-          const retry = await this.handlePaymentRequiredRetry(params.name, result, executeToolCall);
-          if (retry.handled) {
-            result = retry.result;
+          try {
+            result = await executeToolCall();
+            const retry = await this.handlePaymentRequiredRetry(
+              params.name,
+              result,
+              executeToolCall
+            );
+            if (retry.handled) {
+              result = retry.result;
+            }
+          } finally {
+            // Hand the caller the x402 settlement receipt for this call. Runs on the error
+            // path too: the assignment is then discarded with the exception, but consuming
+            // the receipt is what keeps a call that failed after its payment settled from
+            // handing its receipt to the next call to the same tool. The slot stays empty
+            // without x402, so such a session never loads the (viem-backed) x402 module.
+            if (this.x402PaymentCache.lastSettlement) {
+              const { withSettlementReceipt } = await import('../lib/x402/fetch-middleware.js');
+              result = withSettlementReceipt(result, this.x402PaymentCache, params.name);
+            }
           }
           break;
         }

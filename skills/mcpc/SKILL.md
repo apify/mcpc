@@ -260,6 +260,8 @@ mcpc @apify skills-get <name> --raw    # print the SKILL.md markdown (pipe to a 
 `mcpc` also has experimental `--x402` auto-payment for paid MCP tools — see `mcpc help x402`.
 When spending unattended, add `--x402-max-amount <usd>` (e.g. `--x402-max-amount 0.50`): any single
 payment above it is refused instead of signed, and the cap survives session restarts.
+A paid tool result carries the server's settlement receipt at `_meta["x402/payment-response"]`;
+one receipt is held at a time, so run paid calls sequentially if you need every one of them.
 
 ## Debugging
 
