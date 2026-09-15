@@ -12,6 +12,7 @@ import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import {
   createX402FetchMiddleware,
   extractAcceptFromPaymentRequired,
+  withSettlementReceipt,
   type X402PaymentCache,
 } from '../../../../src/lib/x402/fetch-middleware.js';
 import type { PaymentRequiredAccept, SignerWallet } from '../../../../src/lib/x402/signer.js';
@@ -335,5 +336,178 @@ describe('extractAcceptFromPaymentRequired', () => {
     const uptoOnly = { x402Version: 2, accepts: [UPTO_ACCEPT] };
     const result = extractAcceptFromPaymentRequired(uptoOnly, 'exact');
     expect(result).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// settlement receipts — PAYMENT-RESPONSE header → _meta["x402/payment-response"]
+// ---------------------------------------------------------------------------
+
+describe('settlement receipts (PAYMENT-RESPONSE)', () => {
+  const paymentRequiredHeader = Buffer.from(
+    JSON.stringify({ x402Version: 2, accepts: [EXACT_ACCEPT] })
+  ).toString('base64');
+
+  const RECEIPT = {
+    success: true,
+    transaction: '0xdeadbeef',
+    network: 'eip155:8453',
+    payer: WALLET.address,
+  };
+
+  function paymentResponseHeader(receipt: unknown): string {
+    return Buffer.from(JSON.stringify(receipt)).toString('base64');
+  }
+
+  function paidResponse(receipt: unknown): Response {
+    return new Response('', {
+      status: 200,
+      headers: { 'PAYMENT-RESPONSE': paymentResponseHeader(receipt) },
+    });
+  }
+
+  it('captures the receipt from the retry after a 402 and attaches it to the tool result', async () => {
+    const cache: X402PaymentCache = { signature: null };
+    const baseFetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response('', { status: 402, headers: { 'PAYMENT-REQUIRED': paymentRequiredHeader } })
+      )
+      .mockResolvedValueOnce(paidResponse(RECEIPT));
+    const fetchFn = createX402FetchMiddleware(baseFetch as never, {
+      wallet: WALLET,
+      getToolByName: () => undefined,
+      paymentCache: cache,
+    });
+
+    await fetchFn('https://example.test/mcp', { method: 'POST', body: toolsCallBody('paid-tool') });
+
+    const result = withSettlementReceipt({ content: [] }, cache, 'paid-tool');
+    expect(result).toEqual({
+      content: [],
+      _meta: { 'x402/payment-response': RECEIPT },
+    });
+  });
+
+  it('captures the receipt on a proactively signed call', async () => {
+    const cache: X402PaymentCache = { signature: null };
+    const baseFetch = vi.fn().mockResolvedValue(paidResponse(RECEIPT));
+    const fetchFn = createX402FetchMiddleware(baseFetch as never, {
+      wallet: WALLET,
+      getToolByName: () => makePaidTool({ accepts: [EXACT_ACCEPT] }),
+      paymentCache: cache,
+    });
+
+    await fetchFn('https://example.test/mcp', { method: 'POST', body: toolsCallBody('paid-tool') });
+
+    expect(cache.lastSettlement).toEqual({ toolName: 'paid-tool', receipt: RECEIPT });
+  });
+
+  it('consumes the receipt once, so a later unpaid call does not claim it', () => {
+    const cache: X402PaymentCache = {
+      signature: null,
+      lastSettlement: { toolName: 'paid-tool', receipt: RECEIPT },
+    };
+
+    expect(withSettlementReceipt({ content: [] }, cache, 'paid-tool')).toHaveProperty('_meta', {
+      'x402/payment-response': RECEIPT,
+    });
+    expect(withSettlementReceipt({ content: [] }, cache, 'paid-tool')).toEqual({ content: [] });
+  });
+
+  it('keeps a receipt the server reported over the MCP channel', () => {
+    const serverReceipt = { success: true, transaction: '0xserver', network: 'eip155:8453' };
+    const cache: X402PaymentCache = {
+      signature: null,
+      lastSettlement: { toolName: 'paid-tool', receipt: RECEIPT },
+    };
+
+    const result = withSettlementReceipt(
+      { content: [], _meta: { 'x402/payment-response': serverReceipt } },
+      cache,
+      'paid-tool'
+    );
+
+    expect(result._meta['x402/payment-response']).toBe(serverReceipt);
+    // Still consumed, so it cannot resurface on the next call to the same tool
+    expect(cache.lastSettlement).toBeUndefined();
+  });
+
+  it('preserves other _meta keys on the tool result', () => {
+    const cache: X402PaymentCache = {
+      signature: null,
+      lastSettlement: { toolName: 'paid-tool', receipt: RECEIPT },
+    };
+
+    const result = withSettlementReceipt(
+      { content: [], _meta: { trace: 'abc' } },
+      cache,
+      'paid-tool'
+    );
+
+    expect(result._meta).toEqual({ trace: 'abc', 'x402/payment-response': RECEIPT });
+  });
+
+  it.each([
+    ['not base64-encoded JSON', 'not-base64-json!!'],
+    ['a JSON array', Buffer.from('[1,2,3]').toString('base64')],
+    ['a JSON scalar', Buffer.from('"paid"').toString('base64')],
+  ])(
+    'fails open when the server sends %s, leaving the result untouched',
+    async (_label, header) => {
+      const cache: X402PaymentCache = { signature: null };
+      const baseFetch = vi
+        .fn()
+        .mockResolvedValue(
+          new Response('', { status: 200, headers: { 'PAYMENT-RESPONSE': header } })
+        );
+      const fetchFn = createX402FetchMiddleware(baseFetch as never, {
+        wallet: WALLET,
+        getToolByName: () => makePaidTool({ accepts: [EXACT_ACCEPT] }),
+        paymentCache: cache,
+      });
+
+      const response = await fetchFn('https://example.test/mcp', {
+        method: 'POST',
+        body: toolsCallBody('paid-tool'),
+      });
+
+      expect(response.status).toBe(200);
+      expect(cache.lastSettlement).toBeUndefined();
+      expect(withSettlementReceipt({ content: [] }, cache, 'paid-tool')).toEqual({ content: [] });
+    }
+  );
+
+  it('records nothing when the server omits the header', async () => {
+    const cache: X402PaymentCache = { signature: null };
+    const baseFetch = vi.fn().mockResolvedValue(new Response('', { status: 200 }));
+    const fetchFn = createX402FetchMiddleware(baseFetch as never, {
+      wallet: WALLET,
+      getToolByName: () => makePaidTool({ accepts: [EXACT_ACCEPT] }),
+      paymentCache: cache,
+    });
+
+    await fetchFn('https://example.test/mcp', { method: 'POST', body: toolsCallBody('paid-tool') });
+
+    expect(cache.lastSettlement).toBeUndefined();
+  });
+
+  it('drops an oversized receipt instead of attaching it to every tool result', async () => {
+    const cache: X402PaymentCache = { signature: null };
+    const huge = Buffer.from(JSON.stringify({ success: true, pad: 'x'.repeat(100_000) })).toString(
+      'base64'
+    );
+    const baseFetch = vi
+      .fn()
+      .mockResolvedValue(new Response('', { status: 200, headers: { 'PAYMENT-RESPONSE': huge } }));
+    const fetchFn = createX402FetchMiddleware(baseFetch as never, {
+      wallet: WALLET,
+      getToolByName: () => makePaidTool({ accepts: [EXACT_ACCEPT] }),
+      paymentCache: cache,
+    });
+
+    await fetchFn('https://example.test/mcp', { method: 'POST', body: toolsCallBody('paid-tool') });
+
+    expect(cache.lastSettlement).toBeUndefined();
   });
 });

@@ -10,6 +10,15 @@
  * - HTTP header: PAYMENT-SIGNATURE (base64-encoded payment payload)
  * - JSON-RPC body: params._meta["x402/payment"] (payment payload object)
  *
+ * The settlement receipt comes back through the mirror image of those two channels:
+ * - HTTP header: PAYMENT-RESPONSE (base64-encoded SettlementResponse)
+ * - tool result: _meta["x402/payment-response"] (SettlementResponse object)
+ *
+ * The second one reaches the caller on its own (mcpc prints tool results verbatim), the
+ * first is consumed by the transport and would otherwise be dropped. So this middleware
+ * captures it and `withSettlementReceipt()` re-attaches it under the MCP key, giving code
+ * mode one place to look for the receipt whichever channel the server used.
+ *
  * The cache is shared with the bridge layer, which invalidates it when the server
  * returns a payment-required tool result and signs a fresh payment before retrying.
  *
@@ -33,6 +42,16 @@ const logger = createLogger('x402-middleware');
 
 /** MCP _meta key for x402 payment (per x402 MCP spec) */
 const MCP_PAYMENT_META_KEY = 'x402/payment';
+
+/** MCP _meta key for the x402 settlement receipt (per x402 MCP spec) */
+export const MCP_PAYMENT_RESPONSE_META_KEY = 'x402/payment-response';
+
+/**
+ * Maximum size of a PAYMENT-RESPONSE header we will decode, in base64 characters.
+ * A settlement receipt is a handful of hashes and addresses; anything near this cap is
+ * a server bug or an attempt to bloat every tool result, and is dropped rather than parsed.
+ */
+const MAX_SETTLEMENT_RECEIPT_BASE64_CHARS = 64 * 1024;
 
 /**
  * Payment information from tool's `_meta.x402`.
@@ -82,6 +101,21 @@ export interface X402PaymentCache {
    * free ones) for the retry after a challenge to carry payment.
    */
   paymentRequiredTools?: Set<string>;
+
+  /**
+   * The settlement receipt from the last paid response's `PAYMENT-RESPONSE` header, with
+   * the tool it paid for, until `withSettlementReceipt()` attaches it to that tool's
+   * result. Kept exactly as the server encoded it: mcpc does not validate or normalize
+   * the spec's `success`/`transaction`/`network` fields, so a caller reconciles against
+   * the server's receipt rather than our reading of it.
+   *
+   * One slot, and the tool name is what keeps a paid tool's receipt off a free tool's
+   * result. Concurrent paid calls are the one case it does not serve: the newer receipt
+   * wins and the older is logged and dropped. Holding both would not fix it — correlating
+   * a receipt to one of two in-flight calls to the *same* tool needs a per-call id on the
+   * wire, which is not worth sending to every server for this.
+   */
+  lastSettlement?: { toolName: string; receipt: Record<string, unknown> };
 }
 
 /**
@@ -90,6 +124,105 @@ export interface X402PaymentCache {
  */
 export function recordPaymentRequiredTool(cache: X402PaymentCache, toolName: string): void {
   (cache.paymentRequiredTools ??= new Set<string>()).add(toolName);
+}
+
+/**
+ * Decode a base64 `PAYMENT-RESPONSE` header into a settlement receipt.
+ *
+ * Fails open on everything: a server that omits the header, sends something that is not
+ * base64 JSON, or sends a JSON value that is not an object gets no receipt and no error.
+ * The payment already succeeded at this point — a malformed receipt must never turn a
+ * paid-for tool result into a failure.
+ */
+function decodeSettlementReceipt(encodedBase64: string): Record<string, unknown> | undefined {
+  if (encodedBase64.length > MAX_SETTLEMENT_RECEIPT_BASE64_CHARS) {
+    logger.warn(
+      `Ignoring PAYMENT-RESPONSE header: ${encodedBase64.length} base64 chars exceeds the ${MAX_SETTLEMENT_RECEIPT_BASE64_CHARS} cap`
+    );
+    return undefined;
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(Buffer.from(encodedBase64, 'base64').toString('utf-8'));
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      logger.debug('Ignoring PAYMENT-RESPONSE header: decoded value is not a JSON object');
+      return undefined;
+    }
+    return parsed as Record<string, unknown>;
+  } catch (error) {
+    logger.debug('Ignoring PAYMENT-RESPONSE header: not base64-encoded JSON:', error);
+    return undefined;
+  }
+}
+
+/**
+ * Capture the settlement receipt from a paid response, if the server sent one.
+ *
+ * Called only for requests this middleware attached a payment to, so a receipt is never
+ * recorded against a call that did not pay for anything.
+ */
+function captureSettlementReceipt(
+  cache: X402PaymentCache,
+  init: RequestInit | undefined,
+  response: Response
+): void {
+  // Headers.get() is case-insensitive, so this matches any casing the server used
+  const encoded = response.headers.get('PAYMENT-RESPONSE');
+  if (!encoded) {
+    return;
+  }
+
+  const receipt = decodeSettlementReceipt(encoded);
+  if (!receipt) {
+    return;
+  }
+
+  const toolName = extractToolCallName(init?.body);
+  if (!toolName) {
+    // A 402 on initialize or another non-tools/call request: there is no tool result to
+    // carry the receipt, so log it and move on rather than mislabel it as some tool's.
+    logger.debug('Received PAYMENT-RESPONSE on a non-tools/call request:', receipt);
+    return;
+  }
+
+  if (cache.lastSettlement) {
+    logger.debug(
+      `Dropping an unclaimed settlement receipt for tool "${cache.lastSettlement.toolName}"`
+    );
+  }
+  cache.lastSettlement = { toolName, receipt };
+  logger.debug(`Captured x402 settlement receipt for tool "${toolName}"`);
+}
+
+/**
+ * Attach the settlement receipt captured for `toolName`, if any, to a tool result.
+ *
+ * Returns a copy of the result with the receipt at `_meta["x402/payment-response"]`, the
+ * key the x402 MCP transport defines for it. A receipt the server already delivered
+ * through that channel wins — mcpc never overwrites what the server itself reported. The
+ * receipt is consumed either way, so it cannot leak onto a later call to the same tool.
+ */
+export function withSettlementReceipt<T>(result: T, cache: X402PaymentCache, toolName: string): T {
+  if (cache.lastSettlement?.toolName !== toolName) {
+    return result;
+  }
+  const { receipt } = cache.lastSettlement;
+  delete cache.lastSettlement;
+
+  if (!result || typeof result !== 'object') {
+    return result;
+  }
+
+  const meta = (result as { _meta?: Record<string, unknown> })._meta;
+  if (meta && MCP_PAYMENT_RESPONSE_META_KEY in meta) {
+    logger.debug(`Tool "${toolName}" reported its own settlement receipt, keeping it verbatim`);
+    return result;
+  }
+
+  return {
+    ...result,
+    _meta: { ...meta, [MCP_PAYMENT_RESPONSE_META_KEY]: receipt },
+  };
 }
 
 /**
@@ -142,6 +275,7 @@ export function createX402FetchMiddleware(
 
       // If payment succeeded (not HTTP 402), return immediately
       if (response.status !== 402) {
+        captureSettlementReceipt(paymentCache, init, response);
         return response;
       }
 
@@ -316,7 +450,9 @@ async function handle402Fallback(
 
     // Retry with payment signature (once only)
     const retryInit = injectPayment(originalInit, result.paymentSignatureBase64);
-    return await baseFetch(url, retryInit);
+    const retryResponse = await baseFetch(url, retryInit);
+    captureSettlementReceipt(paymentCache, originalInit, retryResponse);
+    return retryResponse;
   } catch (error) {
     logger.warn('402 fallback signing failed:', error);
     return response402;

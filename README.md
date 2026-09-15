@@ -765,6 +765,24 @@ Two schemes are supported, both signed by your local wallet:
 
 Flow: server returns HTTP 402 with a `PAYMENT-REQUIRED` header → `mcpc` picks the best scheme per your preference, signs, and retries with `PAYMENT-SIGNATURE` → server verifies and fulfills. Tools that advertise pricing in `_meta.x402` are signed proactively, skipping the 402 round-trip.
 
+### Settlement receipts
+
+When the server reports the settlement result — as a `PAYMENT-RESPONSE` header or on the tool
+result itself — `mcpc` hands it to you at `_meta["x402/payment-response"]` of the tool result,
+so a paid call can be reconciled against the on-chain settlement instead of inferred from the
+payload. The receipt is passed through exactly as the server sent it:
+
+```bash
+mcpc --json @paid tools-call search query:="web crawler" | jq '._meta["x402/payment-response"]'
+# { "success": true, "transaction": "0x…", "network": "eip155:8453", "payer": "0x…" }
+```
+
+Servers are not required to send one, and a missing or malformed receipt never fails the call.
+
+**Run paid calls sequentially if you need every receipt.** `mcpc` holds one receipt at a time per
+session, so when paid calls overlap only the most recent receipt is attached — the others are
+dropped (and recorded in the bridge log).
+
 ### Wallet setup
 
 `mcpc` stores a single wallet in `~/.mcpc/wallets.json` (file permissions `0600`).

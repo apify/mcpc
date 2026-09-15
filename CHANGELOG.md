@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - New [REFERENCE.md](docs/REFERENCE.md) with the full `--help` output of every mcpc command, generated from the CLI itself so it always matches the release.
 - `mcpc @session` and `server-discover` now show the description and website URL a server advertises about itself, right below its name.
+- x402 settlement receipts now reach the caller: a paid tool result carries the server's receipt at `_meta["x402/payment-response"]`, so a payment can be reconciled against its on-chain settlement instead of inferred from the tool output. The receipt used to be dropped when the server sent it as a `PAYMENT-RESPONSE` header. (#394)
 
 ### Fixed
 
