@@ -50,6 +50,7 @@ import {
   formatPromptDetail,
   formatSkills,
   formatSkillDetail,
+  formatDirectoryChildren,
   formatSessionLine,
   formatHuman,
   logTarget,
@@ -66,7 +67,9 @@ import type {
   Prompt,
   ServerDetails,
   SessionData,
+  Skill,
 } from '../../../src/lib/types.js';
+import type { DecodedResourceContent } from '../../../src/lib/resource-content.js';
 
 describe('extractAllTextContent', () => {
   it('should return text for single text content item', () => {
@@ -1378,14 +1381,11 @@ describe('formatServerDetails', () => {
     expect(output).toContain('prompts-get');
   });
 
-  it('surfaces the skills extension when capabilities.extensions advertises it', () => {
+  it('surfaces the skills extension when a modern connection declares it', () => {
     const details: ServerDetails = {
+      protocolVersion: '2026-07-28',
       capabilities: {
         resources: {},
-        // The skills extension is reported as a non-standard capability
-        // under `extensions["io.modelcontextprotocol/skills"]`. The mcpc
-        // overview should detect it and list both the capability line and
-        // the corresponding session commands.
         extensions: { 'io.modelcontextprotocol/skills': {} },
       } as ServerDetails['capabilities'],
       serverInfo: { name: 'Skills Server', version: '1.0.0' },
@@ -1393,13 +1393,50 @@ describe('formatServerDetails', () => {
 
     const output = formatServerDetails(details, '@skills');
 
-    expect(output).toContain('skills (experimental extension)');
+    expect(output).toContain('* skills');
     expect(output).toContain('mcpc @skills skills-list');
     expect(output).toContain('mcpc @skills skills-get');
+    // directoryRead defaults to false, so the directory command stays hidden
+    expect(output).not.toContain('resources-directory-read');
+  });
+
+  it('surfaces the directory-read command only when the server declares it', () => {
+    const details: ServerDetails = {
+      protocolVersion: '2026-07-28',
+      capabilities: {
+        resources: {},
+        extensions: { 'io.modelcontextprotocol/skills': { directoryRead: true } },
+      } as ServerDetails['capabilities'],
+      serverInfo: { name: 'Skills Server', version: '1.0.0' },
+    };
+
+    const output = formatServerDetails(details, '@skills');
+
+    expect(output).toContain('skills (with directory reads)');
+    expect(output).toContain('mcpc @skills resources-directory-read <uri>');
+  });
+
+  it('annotates the extension but hides its commands on a legacy connection', () => {
+    // The extension is specified against 2026-07-28 and later, so its commands would
+    // only error out on a 2025-era connection.
+    const details: ServerDetails = {
+      protocolVersion: '2025-11-25',
+      capabilities: {
+        resources: {},
+        extensions: { 'io.modelcontextprotocol/skills': {} },
+      } as ServerDetails['capabilities'],
+      serverInfo: { name: 'Legacy Skills', version: '1.0.0' },
+    };
+
+    const output = formatServerDetails(details, '@legacy');
+
+    expect(output).toContain('skills (not usable on MCP 2025-11-25)');
+    expect(output).not.toContain('skills-list');
   });
 
   it('does not surface skills when the extension is absent', () => {
     const details: ServerDetails = {
+      protocolVersion: '2026-07-28',
       capabilities: {
         resources: {},
       },
@@ -1408,13 +1445,13 @@ describe('formatServerDetails', () => {
 
     const output = formatServerDetails(details, '@plain');
 
-    expect(output).not.toContain('skills (experimental extension)');
     expect(output).not.toContain('skills-list');
     expect(output).not.toContain('skills-get');
   });
 
   it('does not surface skills when extensions is present but empty', () => {
     const details: ServerDetails = {
+      protocolVersion: '2026-07-28',
       capabilities: {
         resources: {},
         extensions: {},
@@ -1427,12 +1464,11 @@ describe('formatServerDetails', () => {
     expect(output).not.toContain('skills');
   });
 
-  it('also surfaces skills when advertised under capabilities.experimental', () => {
-    // The current MCP SDK strips unknown fields like `extensions` but
-    // preserves `experimental` — the long-standing escape hatch for
-    // non-standard capabilities. mcpc accepts the skills extension under
-    // either key for forward compatibility.
+  it('ignores the extension when declared only under capabilities.experimental', () => {
+    // `extensions` is where the spec puts extension declarations; `experimental` is a
+    // different, unrelated capability field.
     const details: ServerDetails = {
+      protocolVersion: '2026-07-28',
       capabilities: {
         resources: {},
         experimental: { 'io.modelcontextprotocol/skills': {} },
@@ -1442,8 +1478,7 @@ describe('formatServerDetails', () => {
 
     const output = formatServerDetails(details, '@exp');
 
-    expect(output).toContain('skills (experimental extension)');
-    expect(output).toContain('mcpc @exp skills-list');
+    expect(output).not.toContain('skills-list');
   });
 });
 
@@ -1852,81 +1887,59 @@ describe('formatPromptDetail', () => {
 });
 
 describe('formatSkills', () => {
-  it('formats a list of skills with name and description', () => {
-    const skills = [
-      {
-        name: 'git-workflow',
-        description: 'Helpers for Git workflows',
-        type: 'skill-md',
-        url: 'skill://git-workflow/SKILL.md',
-      },
-      {
-        name: 'pdf',
-        description: 'PDF processing skill',
-        type: 'skill-md',
-        url: 'skill://pdf/SKILL.md',
-      },
-    ];
+  const skill = (
+    name: string,
+    description: string,
+    uri: string,
+    files: { uri: string; size: number }[] = [{ uri, size: 2314 }]
+  ): Skill => ({
+    uri,
+    frontmatter: { name, description },
+    resources: files.map((file) => ({ ...file, digest: `sha256:${'a'.repeat(64)}` })),
+  });
 
-    const output = formatSkills(skills, '@test');
+  it('lists every skill with its description, URI and manifest summary', () => {
+    const output = formatSkills(
+      [
+        skill('git-workflow', 'Helpers for Git workflows', 'skill://git-workflow/SKILL.md'),
+        skill('refunds', 'Process refunds', 'skill://acme/billing/refunds/SKILL.md', [
+          { uri: 'skill://acme/billing/refunds/SKILL.md', size: 1024 },
+          { uri: 'skill://acme/billing/refunds/examples/email.md', size: 1024 },
+        ]),
+      ],
+      '@test'
+    );
 
     expect(output).toContain('Skills (2):');
     expect(output).toContain('git-workflow');
     expect(output).toContain('Helpers for Git workflows');
-    expect(output).toContain('pdf');
-    expect(output).toContain('PDF processing skill');
-    // skill-md is the default; not surfaced
-    expect(output).not.toContain('[skill-md]');
-    // Hint references the session
+    expect(output).toContain('skill://acme/billing/refunds/SKILL.md');
+    expect(output).toContain('(1 file, 2.3 KB)');
+    expect(output).toContain('(2 files, 2.0 KB)');
     expect(output).toContain('mcpc @test skills-get');
     expect(output).toContain('--raw');
   });
 
-  it('flags non-default types like mcp-resource-template', () => {
-    const skills = [
-      {
-        name: 'paramd',
-        description: 'Parameterized',
-        type: 'mcp-resource-template',
-        url: 'skill://paramd/{id}/SKILL.md',
-      },
-    ];
-    const output = formatSkills(skills, '@test');
-    expect(output).toContain('[mcp-resource-template]');
+  it('marks a dynamic skill as publishing no digests', () => {
+    const entry = skill('daily', 'Live report', 'skill://reports/daily/SKILL.md');
+    const output = formatSkills([{ ...entry, resources: 'dynamic' }], '@test');
+    expect(output).toContain('dynamic, no digests published');
   });
 
-  it('returns a helpful empty message when no skills are found', () => {
+  it('says an empty listing is not proof there are no skills', () => {
     const output = formatSkills([], '@test');
-    expect(output).toContain('no skills found');
-    // Mentions both discovery paths so users know what to expect
-    expect(output).toContain('skill://index.json');
-    expect(output).toContain('SKILL.md');
+    expect(output).toContain('no skills listed');
+    expect(output).toContain('mcpc @test skills-get skill://<name>/SKILL.md');
   });
 
   it('omits the get hint when no session is provided', () => {
-    const skills = [
-      {
-        name: 'x',
-        description: 'y',
-        type: 'skill-md',
-        url: 'skill://x/SKILL.md',
-      },
-    ];
-    const output = formatSkills(skills);
+    const output = formatSkills([skill('x', 'y', 'skill://x/SKILL.md')]);
     expect(output).toContain('Skills (1):');
     expect(output).not.toContain('skills-get');
   });
 
   it('handles skills without descriptions', () => {
-    const skills = [
-      {
-        name: 'minimal',
-        description: '',
-        type: 'skill-md',
-        url: 'skill://minimal/SKILL.md',
-      },
-    ];
-    const output = formatSkills(skills);
+    const output = formatSkills([skill('minimal', '', 'skill://minimal/SKILL.md')]);
     expect(output).toContain('minimal');
     // Should not produce a stray dash when description is empty
     expect(output).not.toMatch(/`minimal`.*-\s*$/m);
@@ -1934,50 +1947,137 @@ describe('formatSkills', () => {
 });
 
 describe('formatSkillDetail', () => {
-  it('renders a skill with markdown body in a code fence', () => {
-    const result = {
-      contents: [
-        {
-          uri: 'skill://git-workflow/SKILL.md',
-          mimeType: 'text/markdown',
-          text: '---\nname: git-workflow\ndescription: Helpers\n---\n\n# Body',
-        },
-      ],
-    };
+  const SKILL_MD = '---\nname: git-workflow\ndescription: Helpers\n---\n\n# Body';
 
-    const output = formatSkillDetail('skill://git-workflow/SKILL.md', result);
+  const entry: Skill = {
+    uri: 'skill://git-workflow/SKILL.md',
+    frontmatter: { name: 'git-workflow', description: 'Helpers' },
+    resources: [
+      {
+        uri: 'skill://git-workflow/SKILL.md',
+        digest: `sha256:${'a'.repeat(64)}`,
+        size: SKILL_MD.length,
+      },
+      {
+        uri: 'skill://git-workflow/references/notes.md',
+        digest: `sha256:${'b'.repeat(64)}`,
+        size: 4096,
+      },
+    ],
+  };
+
+  const content = (text: string, mimeType = 'text/markdown'): DecodedResourceContent => ({
+    uri: 'skill://git-workflow/SKILL.md',
+    mimeType,
+    data: Buffer.from(text, 'utf-8'),
+    binary: false,
+    totalContents: 1,
+  });
+
+  it('renders the SKILL.md in a code fence with its verification status', () => {
+    const output = formatSkillDetail(entry, entry.uri, content(SKILL_MD), {
+      sessionName: '@test',
+    });
+
     expect(output).toContain('Skill:');
+    expect(output).toContain('git-workflow');
     expect(output).toContain('skill://git-workflow/SKILL.md');
     expect(output).toContain('text/markdown');
+    expect(output).toContain('verified against the skill manifest');
     expect(output).toContain('````');
     expect(output).toContain('# Body');
-    expect(output).toContain('name: git-workflow');
   });
 
-  it('omits MIME type when not provided', () => {
-    const result = {
-      contents: [{ uri: 'skill://x/SKILL.md', text: 'body' }],
-    };
-    const output = formatSkillDetail('skill://x/SKILL.md', result);
-    expect(output).not.toContain('MIME type:');
-    expect(output).toContain('body');
+  it('lists the supporting files from the manifest and how to read one', () => {
+    const output = formatSkillDetail(entry, entry.uri, content(SKILL_MD), {
+      sessionName: '@test',
+    });
+
+    expect(output).toContain('Supporting files (1):');
+    expect(output).toContain('references/notes.md');
+    expect(output).toContain('(4.0 KB)');
+    expect(output).toContain('mcpc @test skills-get git-workflow references/notes.md');
   });
 
-  it('shows a placeholder when there is no text content', () => {
-    const result = {
-      contents: [{ uri: 'skill://x/SKILL.md', blob: 'aGk=', mimeType: 'application/octet-stream' }],
-    };
-    const output = formatSkillDetail('skill://x/SKILL.md', result);
-    expect(output).toContain('non-text content');
+  it('renders a supporting file on its own, named relative to the skill root', () => {
+    const fileUri = 'skill://git-workflow/references/notes.md';
+    const output = formatSkillDetail(entry, fileUri, {
+      ...content('notes'),
+      uri: fileUri,
+    });
+
+    expect(output).toContain('Skill file:');
+    expect(output).toContain('references/notes.md');
+    expect(output).toContain('(skill git-workflow)');
+    expect(output).toContain('notes');
+    expect(output).not.toContain('Supporting files');
+  });
+
+  it('says a dynamic skill is unverified rather than claiming verification', () => {
+    const output = formatSkillDetail(
+      { ...entry, resources: 'dynamic' },
+      entry.uri,
+      content(SKILL_MD)
+    );
+    expect(output).toContain('dynamic skill');
+    expect(output).toContain('unverified');
+  });
+
+  it('summarizes binary content instead of dumping it', () => {
+    const output = formatSkillDetail(
+      entry,
+      'skill://git-workflow/logo.png',
+      {
+        uri: 'skill://git-workflow/logo.png',
+        mimeType: 'image/png',
+        data: Buffer.from([0x89, 0x50, 0x4e, 0x47]),
+        binary: true,
+        totalContents: 1,
+      },
+      { sessionName: '@test' }
+    );
+    expect(output).toContain('binary content not shown');
+    expect(output).toContain('resources-read skill://git-workflow/logo.png -o <file>');
   });
 
   it('truncates the body when maxChars is provided', () => {
-    const result = {
-      contents: [{ uri: 'skill://x/SKILL.md', text: 'A'.repeat(10000) }],
-    };
-    const output = formatSkillDetail('skill://x/SKILL.md', result, { maxChars: 200 });
+    const output = formatSkillDetail(entry, entry.uri, content('A'.repeat(10000)), {
+      maxChars: 200,
+    });
     expect(output.length).toBeLessThan(500);
     expect(output).toContain('output truncated');
+  });
+});
+
+describe('formatDirectoryChildren', () => {
+  const children: Resource[] = [
+    { uri: 'skill://pdf/templates/invoice.md', name: 'invoice.md', mimeType: 'text/markdown' },
+    { uri: 'skill://pdf/templates/regional', name: 'regional', mimeType: 'inode/directory' },
+  ];
+
+  it('lists children and marks subdirectories', () => {
+    const output = formatDirectoryChildren('skill://pdf/templates', children, '@test');
+
+    expect(output).toContain('Directory skill://pdf/templates (2):');
+    expect(output).toContain('invoice.md');
+    expect(output).toContain('text/markdown');
+    expect(output).toContain('regional');
+    expect(output).toContain('skill://pdf/templates/regional');
+  });
+
+  it('points at the subdirectory to descend into', () => {
+    const output = formatDirectoryChildren('skill://pdf/templates', children, '@test');
+    expect(output).toContain('mcpc @test resources-directory-read skill://pdf/templates/regional');
+  });
+
+  it('suggests reading a file when there is no subdirectory', () => {
+    const output = formatDirectoryChildren('skill://pdf/templates', [children[0]!], '@test');
+    expect(output).toContain('mcpc @test resources-read <uri>');
+  });
+
+  it('reports an empty directory', () => {
+    const output = formatDirectoryChildren('skill://pdf/empty', [], '@test');
+    expect(output).toContain('(empty)');
   });
 });
 

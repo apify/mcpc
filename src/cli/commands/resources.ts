@@ -3,7 +3,13 @@
  */
 
 import chalk from 'chalk';
-import { formatOutput, formatSuccess, formatWarning, formatResourceContents } from '../output.js';
+import {
+  formatOutput,
+  formatSuccess,
+  formatWarning,
+  formatResourceContents,
+  formatDirectoryChildren,
+} from '../output.js';
 import { withMcpClient } from '../helpers.js';
 import { resolvePath, fetchAllPages } from '../../lib/utils.js';
 import { selectResourceContent, writeResourceFile } from '../../lib/resource-content.js';
@@ -136,6 +142,38 @@ export async function getResource(
     console.log(
       formatResourceContents(uri, result, {
         sessionName: target,
+        ...(options.maxChars && { maxChars: options.maxChars }),
+      })
+    );
+  });
+}
+
+/**
+ * List the direct children of a directory resource (`resources/directory/read`).
+ *
+ * Defined by the skills extension for the case a skill's instructions point at a
+ * directory ("pick a template from `templates/`") rather than a file. It is a live view
+ * of the server's tree, which may be ahead of or behind a skill's published manifest —
+ * for a skill that has one, the manifest is what `skills-get` verifies reads against.
+ */
+export async function readResourceDirectory(
+  target: string,
+  uri: string,
+  options: CommandOptions
+): Promise<void> {
+  await withMcpClient(target, options, async (client, _context) => {
+    const children = await fetchAllPages(
+      (cursor) => client.readResourceDirectory(uri, cursor),
+      (page) => page.resources
+    );
+
+    if (options.outputMode === 'json') {
+      console.log(formatOutput(children, 'json'));
+      return;
+    }
+
+    console.log(
+      formatDirectoryChildren(uri, children, target, {
         ...(options.maxChars && { maxChars: options.maxChars }),
       })
     );

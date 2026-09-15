@@ -1638,6 +1638,24 @@ class BridgeProcess {
           break;
         }
 
+        case 'listSkills': {
+          const cursor = message.params as string | undefined;
+          result = await this.client.listSkills(cursor);
+          break;
+        }
+
+        case 'getSkill': {
+          const params = message.params as { uri: string };
+          result = await this.client.getSkill(params.uri);
+          break;
+        }
+
+        case 'readResourceDirectory': {
+          const params = message.params as { uri: string; cursor?: string };
+          result = await this.client.readResourceDirectory(params.uri, params.cursor);
+          break;
+        }
+
         case 'listPrompts': {
           const cursor = message.params as string | undefined;
           result = await this.client.listPrompts(cursor);

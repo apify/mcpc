@@ -64,6 +64,11 @@ they need no such scaffolding.
 implements no elicitation (it never prompts for input, the same reason sampling
 is unsupported).
 
+The `io.modelcontextprotocol/skills` extension has no client scenario upstream
+yet. It is exercised by `test/e2e/suites/basic/skills.test.sh` (against the
+2026-07-28 test server) in the meantime; wire up a scenario here as soon as one
+appears in `list --client`.
+
 Note that the framework's client scenarios currently top out at protocol
 `2025-11-25`, so these runs exercise mcpc's legacy fallback path rather than the
 `2026-07-28` era it negotiates by default.
