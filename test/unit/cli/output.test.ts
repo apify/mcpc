@@ -2577,9 +2577,7 @@ describe('formatCallToolResultHuman', () => {
     const output = formatCallToolResultHuman(result);
     expect(output).toContain('Content:');
     expect(output).toContain('data');
-    expect(output).toContain(
-      'Structured content is also available. Use --json to see the structuredContent field.'
-    );
+    expect(output).toContain('To see the `structuredContent` field, re-run with --json');
     expect(output).not.toContain('"key"');
     expect(output).not.toContain('"value"');
   });
@@ -2662,6 +2660,23 @@ describe('formatCallToolResultHuman', () => {
     const output = formatCallToolResultHuman(result);
     expect(output).not.toContain('Content:');
     expect(output).toContain('Structured content:');
+  });
+
+  it.each([
+    { label: 'an array', sc: ['a', 'b'] },
+    { label: 'a number', sc: 42 },
+    { label: 'a string', sc: 'done' },
+    { label: 'a boolean', sc: false },
+  ])('should skip the duplicate text block for $label structuredContent', ({ sc }) => {
+    const result = {
+      content: [{ type: 'text' as const, text: JSON.stringify(sc) }],
+      structuredContent: sc,
+    };
+    const output = formatCallToolResultHuman(result);
+    // Nothing is hidden, so nothing is left to point at --json for
+    expect(output).not.toContain('Content:');
+    expect(output).toContain('Structured content:');
+    expect(output).not.toContain('--json');
   });
 
   it('should keep non-matching text blocks and suppress structuredContent', () => {
