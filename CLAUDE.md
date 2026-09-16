@@ -148,10 +148,10 @@ mcpc/
 - `mcpc @<session>` - Show session info, server capabilities, and authentication details
 - `mcpc @<session> <command>` - Execute MCP command (e.g., `mcpc @apify tools-list`)
   - Tools: `tools-list`, `tools-get`, `tools-call` (with `--task`/`--detach` for async tasks, `--schema`/`--schema-mode` for schema validation)
-  - Resources: `resources-list`, `resources-read`, `resources-subscribe`, `resources-unsubscribe`, `resources-templates-list`
+  - Resources: `resources-list`, `resources-read`, `resources-subscribe`, `resources-unsubscribe`, `resources-templates-list`, `resources-directory-read`
   - Prompts: `prompts-list`, `prompts-get`
   - Tasks: `tasks-list`, `tasks-get`, `tasks-result`, `tasks-cancel`
-  - Skills: `skills-list`, `skills-get`
+  - Skills: `skills-list`, `skills-get` (io.modelcontextprotocol/skills extension, 2026-07-28+)
   - Other: `grep`, `logs`, `ping`, `logging-set-level`, `restart`, `close`, `help`
 - `mcpc connect <server> @<name>` - Create a named persistent session (also bulk: `mcpc connect <file>` for all config entries, `mcpc connect` for auto-discovered configs; `--proxy` exposes the session as a local MCP HTTP server)
 - `mcpc login <server> [--profile <name>]` - Login via OAuth and save auth profile (`--grant client-credentials` for non-interactive M2M auth, `--grant id-jag` for enterprise-managed authorization via the corporate IdP)
@@ -716,10 +716,10 @@ Bridge logs location: `~/.mcpc/logs/bridge-<session>.log`
 - **Environment Variables**: MCPC_HOME_DIR, MCPC_VERBOSE, MCPC_JSON support
 - **Command Handlers**: All MCP commands fully functional
   - `tools-list`, `tools-get`, `tools-call` (incl. `--task`/`--detach` async execution and `--schema` validation)
-  - `resources-list`, `resources-read`, `resources-subscribe`, `resources-unsubscribe`, `resources-templates-list`
+  - `resources-list`, `resources-read`, `resources-subscribe`, `resources-unsubscribe`, `resources-templates-list`, `resources-directory-read`
   - `prompts-list`, `prompts-get`
   - `tasks-list`, `tasks-get`, `tasks-result`, `tasks-cancel`
-  - `skills-list`, `skills-get`
+  - `skills-list`, `skills-get` (skills extension: manifest-verified reads)
   - `grep` (per-session and global), `logs` (with `--follow`)
   - `logging-set-level`
   - `ping` (with roundtrip timing)

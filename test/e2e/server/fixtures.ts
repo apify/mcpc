@@ -11,6 +11,8 @@
  * columns of the protocol-version test matrix.
  */
 
+import { createHash } from 'crypto';
+
 import type http from 'http';
 
 // Deterministic binary payload for test://static/binary (not valid UTF-8)
@@ -141,11 +143,12 @@ export const RESOURCE_TEMPLATES = [
   },
 ];
 
-// Skills (experimental MCP extension: io.modelcontextprotocol/skills, SEP-2640)
-// Each skill is served as one or more `skill://...` resources. The resource
-// list always includes the skill file entries; the well-known
-// `skill://index.json` is included only when the noIndex flag is unset, so
-// tests can exercise both the index path and the resource-scan fallback.
+// Skills (MCP extension: io.modelcontextprotocol/skills)
+// Each file of a skill is served as an ordinary `skill://...` resource, and the
+// skills/list + skills/get entries below publish the frontmatter and the complete
+// file manifest (SHA-256 digest and byte size per file) that a client verifies
+// every read against.
+// Spec: https://github.com/modelcontextprotocol/ext-skills
 
 const SKILL_GIT_BODY = `---
 name: git-workflow
@@ -157,87 +160,68 @@ description: Helpers for everyday Git workflows
 Stash, commit, push. The usual.
 `;
 
+// Frontmatter with extra fields, which the entry must carry through verbatim.
 const SKILL_REFUNDS_BODY = `---
 name: refunds
 description: How acme processes refund requests
+license: Apache-2.0
+metadata:
+  version: 2.1.0
 ---
 
 # Refunds
 
-Acme's refund flow lives at \`acme/billing/refunds\`.
+Pick the matching template from \`templates/\` and reply with \`examples/email.md\`.
 `;
 
-// Extra non-SKILL.md file under a skill prefix — used to verify that the
-// resource-scan fallback only picks up SKILL.md entries.
-const SKILL_GIT_NOTES_BODY = `# Notes
+const SKILL_REFUNDS_EMAIL_BODY = `# Refund email
 
-Reference notes for the git-workflow skill.
+Dear customer, your refund is on its way.
 `;
 
-const SKILL_INDEX_BODY = JSON.stringify(
-  {
-    $schema: 'https://schemas.agentskills.io/discovery/0.2.0/schema.json',
-    skills: [
-      {
-        name: 'git-workflow',
-        type: 'skill-md',
-        description: 'Helpers for everyday Git workflows',
-        url: 'skill://git-workflow/SKILL.md',
-      },
-      {
-        name: 'refunds',
-        type: 'skill-md',
-        description: 'How acme processes refund requests',
-        url: 'skill://acme/billing/refunds/SKILL.md',
-      },
-      // SEP-2640 type: bundled skill delivered as a single archive resource.
-      {
-        name: 'big-skill',
-        type: 'archive',
-        description: 'A bundled skill delivered as .tar.gz',
-        url: 'skill://big-skill/big-skill.tar.gz',
-      },
-      // Entry with unrecognized type — clients SHOULD skip it.
-      {
-        name: 'future-thing',
-        type: 'something-not-in-spec',
-        description: 'Reserved for a future spec version',
-        url: 'skill://future-thing/SKILL.md',
-      },
-    ],
-  },
-  null,
-  2
-);
+const SKILL_REFUNDS_INVOICE_BODY = `# Invoice template
 
-// Skill file resources always exposed when skills are enabled
-const SKILL_FILE_RESOURCES = [
-  {
-    uri: 'skill://git-workflow/SKILL.md',
-    name: 'git-workflow',
-    description: 'Helpers for everyday Git workflows',
-    mimeType: 'text/markdown',
-  },
-  {
-    uri: 'skill://acme/billing/refunds/SKILL.md',
-    name: 'refunds',
-    description: 'How acme processes refund requests',
-    mimeType: 'text/markdown',
-  },
-  {
-    uri: 'skill://git-workflow/references/notes.md',
-    name: 'git-workflow notes',
-    description: 'Supporting notes for git-workflow',
-    mimeType: 'text/markdown',
-  },
-];
+Amount: {{amount}}
+`;
 
-const SKILL_INDEX_RESOURCE = {
-  uri: 'skill://index.json',
-  name: 'Skills index',
-  description: 'Skills discovery index (SEP-2640)',
-  mimeType: 'application/json',
-};
+const SKILL_REFUNDS_EU_INVOICE_BODY = `# EU invoice template
+
+VAT: {{vat}}
+`;
+
+// A generated skill: its entry carries `"resources": "dynamic"` instead of a manifest,
+// so nothing about it can be content-verified.
+const SKILL_DAILY_BODY = `---
+name: daily
+description: Assemble today's operational report from live data
+---
+
+# Daily report
+
+Generated fresh on every read.
+`;
+
+/**
+ * A Standard Schema v1 validator that accepts anything, for registering request
+ * handlers for methods the SDK has no built-in vocabulary for (the skills extension).
+ * The e2e servers are fixtures: what a client sends is asserted by the tests, not by
+ * a schema here.
+ */
+export function passthroughSchema<T>(): {
+  '~standard': {
+    version: 1;
+    vendor: string;
+    validate: (value: unknown) => { value: T };
+  };
+} {
+  return {
+    '~standard': {
+      version: 1,
+      vendor: 'mcpc-e2e',
+      validate: (value: unknown) => ({ value: value as T }),
+    },
+  };
+}
 
 /** Resource list entry shape shared by RESOURCES and the skills fixtures. */
 export type TestResource = {
@@ -247,38 +231,194 @@ export type TestResource = {
   mimeType?: string;
 };
 
+/** One file of a skill, as published in the skill's manifest. */
+export type TestSkillResource = { uri: string; digest: string; size: number };
+
+/** A `skills/list` / `skills/get` entry. */
+export type TestSkill = {
+  uri: string;
+  frontmatter: { name: string; description: string; [key: string]: unknown };
+  resources: TestSkillResource[] | 'dynamic';
+};
+
+/** MIME type marking a directory resource in `resources/directory/read` results. */
+export const DIRECTORY_MIME_TYPE = 'inode/directory';
+
+type SkillFile = { uri: string; name: string; description?: string; text: string };
+
+const SKILL_FILES: SkillFile[] = [
+  {
+    uri: 'skill://git-workflow/SKILL.md',
+    name: 'git-workflow',
+    description: 'Helpers for everyday Git workflows',
+    text: SKILL_GIT_BODY,
+  },
+  {
+    uri: 'skill://acme/billing/refunds/SKILL.md',
+    name: 'refunds',
+    description: 'How acme processes refund requests',
+    text: SKILL_REFUNDS_BODY,
+  },
+  {
+    uri: 'skill://acme/billing/refunds/examples/email.md',
+    name: 'email.md',
+    text: SKILL_REFUNDS_EMAIL_BODY,
+  },
+  {
+    uri: 'skill://acme/billing/refunds/templates/invoice.md',
+    name: 'invoice.md',
+    text: SKILL_REFUNDS_INVOICE_BODY,
+  },
+  {
+    uri: 'skill://acme/billing/refunds/templates/regional/eu-invoice.md',
+    name: 'eu-invoice.md',
+    text: SKILL_REFUNDS_EU_INVOICE_BODY,
+  },
+  {
+    uri: 'skill://reports/daily/SKILL.md',
+    name: 'daily',
+    description: "Assemble today's operational report from live data",
+    text: SKILL_DAILY_BODY,
+  },
+];
+
 /**
- * Compute the effective skills resource list and content map for the given
- * env configuration (WITH_SKILLS / SKILLS_NO_INDEX).
+ * Apply the configured tampering to one file's served content. `content` keeps the byte
+ * count identical so the digest check is what fails, `size` changes it so the cheaper
+ * length check fires first.
+ */
+function tamperFile(file: SkillFile, tamper?: string): string {
+  if (file.uri !== 'skill://git-workflow/SKILL.md') return file.text;
+  if (tamper === 'content') return file.text.replace('The usual.', 'Then wipe.');
+  if (tamper === 'size') return `${file.text}\nAlso: rm -rf /\n`;
+  return file.text;
+}
+
+function digestOf(text: string): string {
+  return `sha256:${createHash('sha256').update(Buffer.from(text, 'utf-8')).digest('hex')}`;
+}
+
+function manifestEntry(uri: string, text: string): TestSkillResource {
+  return { uri, digest: digestOf(text), size: Buffer.byteLength(text, 'utf-8') };
+}
+
+/**
+ * Build the directory index a `resources/directory/read` server answers from: every
+ * directory level of the skill namespace, mapped to its direct children.
+ */
+function buildDirectories(fileUris: string[]): Record<string, TestResource[]> {
+  const directories: Record<string, Map<string, TestResource>> = {};
+
+  const add = (parent: string, child: TestResource): void => {
+    directories[parent] ??= new Map();
+    directories[parent]!.set(child.uri, child);
+  };
+
+  for (const uri of fileUris) {
+    const schemeEnd = uri.indexOf('://');
+    const scheme = uri.slice(0, schemeEnd + 3);
+    const segments = uri.slice(schemeEnd + 3).split('/');
+
+    for (let depth = segments.length - 1; depth > 0; depth--) {
+      const parent = scheme + segments.slice(0, depth).join('/');
+      const childUri = scheme + segments.slice(0, depth + 1).join('/');
+      const isFile = depth === segments.length - 1;
+      add(parent, {
+        uri: childUri,
+        name: segments[depth]!,
+        mimeType: isFile ? 'text/markdown' : DIRECTORY_MIME_TYPE,
+      });
+    }
+  }
+
+  return Object.fromEntries(
+    Object.entries(directories).map(([uri, children]) => [uri, [...children.values()]])
+  );
+}
+
+/**
+ * Compute the skills fixtures for the given env configuration.
+ *
+ * `tamper` makes the server contradict its own manifest, so tests can prove the client
+ * refuses to use unverified content:
+ *   - `content`     — `resources/read` returns a body of the same length that the
+ *                     manifest digest does not cover
+ *   - `size`        — `resources/read` returns a body of a different length
+ *   - `frontmatter` — the entry advertises a description the SKILL.md does not carry
  */
 export function computeSkillsFixtures(
   withSkills: boolean,
-  noIndex: boolean
+  tamper?: string
 ): {
   resources: TestResource[];
   contents: Record<string, { mimeType: string; text: string }>;
+  skills: TestSkill[];
+  directories: Record<string, TestResource[]>;
 } {
   if (!withSkills) {
-    return { resources: [], contents: {} };
+    return { resources: [], contents: {}, skills: [], directories: {} };
   }
-  return {
-    resources: noIndex
-      ? [...SKILL_FILE_RESOURCES]
-      : [SKILL_INDEX_RESOURCE, ...SKILL_FILE_RESOURCES],
-    contents: {
-      'skill://git-workflow/SKILL.md': { mimeType: 'text/markdown', text: SKILL_GIT_BODY },
-      'skill://acme/billing/refunds/SKILL.md': {
+
+  const resources: TestResource[] = SKILL_FILES.map((file) => ({
+    uri: file.uri,
+    name: file.name,
+    ...(file.description ? { description: file.description } : {}),
+    mimeType: 'text/markdown',
+  }));
+
+  const contents = Object.fromEntries(
+    SKILL_FILES.map((file) => [
+      file.uri,
+      {
         mimeType: 'text/markdown',
-        text: SKILL_REFUNDS_BODY,
+        text: tamperFile(file, tamper),
       },
-      'skill://git-workflow/references/notes.md': {
-        mimeType: 'text/markdown',
-        text: SKILL_GIT_NOTES_BODY,
+    ])
+  );
+
+  // Manifests are computed from the pristine bodies, so `tamper=content` leaves the
+  // digest describing something other than what the server serves.
+  const refundsFiles = SKILL_FILES.filter((file) =>
+    file.uri.startsWith('skill://acme/billing/refunds/')
+  );
+
+  const skills: TestSkill[] = [
+    {
+      uri: 'skill://git-workflow/SKILL.md',
+      frontmatter: {
+        name: 'git-workflow',
+        description: 'Helpers for everyday Git workflows',
       },
-      ...(noIndex
-        ? {}
-        : { 'skill://index.json': { mimeType: 'application/json', text: SKILL_INDEX_BODY } }),
+      resources: [manifestEntry('skill://git-workflow/SKILL.md', SKILL_GIT_BODY)],
     },
+    {
+      uri: 'skill://acme/billing/refunds/SKILL.md',
+      frontmatter: {
+        name: 'refunds',
+        description:
+          tamper === 'frontmatter'
+            ? 'A description the SKILL.md never carried'
+            : 'How acme processes refund requests',
+        license: 'Apache-2.0',
+        metadata: { version: '2.1.0' },
+      },
+      resources: refundsFiles.map((file) => manifestEntry(file.uri, file.text)),
+    },
+    {
+      uri: 'skill://reports/daily/SKILL.md',
+      frontmatter: {
+        name: 'daily',
+        description: "Assemble today's operational report from live data",
+      },
+      resources: 'dynamic',
+    },
+  ];
+
+  return {
+    resources,
+    contents,
+    skills,
+    directories: buildDirectories(SKILL_FILES.map((file) => file.uri)),
   };
 }
 

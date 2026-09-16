@@ -128,14 +128,6 @@ class BridgeProcess {
   // client-credentials / id-jag provider.
   private authProvider: AuthProvider | OAuthClientProvider | null = null;
 
-  // True when authProvider is a client-credentials provider — drives the
-  // `oauth-client-credentials` extension capability declaration on initialize.
-  private usesClientCredentials = false;
-
-  // True when authProvider is an enterprise-managed-authorization (id_jag) provider —
-  // drives the `enterprise-managed-authorization` extension capability declaration.
-  private usesIdJag = false;
-
   // HTTP headers (received via IPC, stored in memory only)
   private headers: Record<string, string> | null = null;
 
@@ -254,7 +246,6 @@ class BridgeProcess {
           },
         },
       });
-      this.usesIdJag = true;
       logger.debug('Enterprise-managed authorization (id-jag) provider created for SDK transport');
     } else if (credentials.oauthGrant === 'client_credentials' && credentials.clientId) {
       // Client-credentials grant: build the SDK provider that fetches + refreshes
@@ -267,7 +258,6 @@ class BridgeProcess {
         ...(credentials.scope ? { scope: credentials.scope } : {}),
         ...(credentials.tokenEndpoint ? { tokenEndpoint: credentials.tokenEndpoint } : {}),
       });
-      this.usesClientCredentials = true;
       logger.debug('Client-credentials provider created for SDK transport');
       // Set up OAuth token manager if refresh token and client ID are provided
     } else if (credentials.refreshToken && credentials.clientId) {
@@ -729,10 +719,7 @@ class BridgeProcess {
     const clientConfig: CreateMcpClientOptions = {
       clientInfo: { name: 'mcpc', version: mcpcVersion },
       serverConfig,
-      capabilities: buildClientCapabilities({
-        clientCredentials: this.usesClientCredentials,
-        enterpriseManagedAuth: this.usesIdJag,
-      }),
+      capabilities: buildClientCapabilities(),
       // Pass auth provider for automatic token refresh (HTTP transport only)
       ...(this.authProvider && { authProvider: this.authProvider }),
       // Pass session ID for resumption (HTTP transport only)
@@ -1652,6 +1639,24 @@ class BridgeProcess {
             );
           });
           result = { uri: params.uri, file: entry.filePath };
+          break;
+        }
+
+        case 'listSkills': {
+          const cursor = message.params as string | undefined;
+          result = await this.client.listSkills(cursor);
+          break;
+        }
+
+        case 'getSkill': {
+          const params = message.params as { uri: string };
+          result = await this.client.getSkill(params.uri);
+          break;
+        }
+
+        case 'readResourceDirectory': {
+          const params = message.params as { uri: string; cursor?: string };
+          result = await this.client.readResourceDirectory(params.uri, params.cursor);
           break;
         }
 

@@ -1,6 +1,7 @@
 /**
- * Tests for the skills command module — implementation of the experimental
- * MCP skills extension (SEP-2640).
+ * Tests for the skills command module — the MCP Skills extension
+ * (io.modelcontextprotocol/skills): name resolution, relative file references,
+ * and the manifest/frontmatter verification that gates what gets printed.
  */
 
 // Mock chalk to return plain strings (the runner can't import chalk's ESM
@@ -32,475 +33,269 @@ vi.mock('../../../src/lib/sessions.js', () => ({
   getSession: vi.fn().mockResolvedValue(null),
 }));
 
-import type { ReadResourceResult, Resource } from '@modelcontextprotocol/sdk/types.js';
+import { createHash } from 'crypto';
 
 import {
-  SKILLS_INDEX_URI,
-  SKILLS_EXTENSION_KEY,
   resolveSkillUri,
-  parseIndex,
-  skillsFromResources,
-  extractTextContent,
-  discoverSkills,
+  resolveSkillFileUri,
+  verifyAgainstManifest,
+  verifyFrontmatter,
 } from '../../../src/cli/commands/skills.js';
-import { ServerError } from '../../../src/lib/errors.js';
+import { ClientError, ServerError } from '../../../src/lib/errors.js';
+import type { IMcpClient, ListSkillsResult, Skill } from '../../../src/lib/types.js';
 
-describe('skills constants', () => {
-  it('matches the spec', () => {
-    expect(SKILLS_INDEX_URI).toBe('skill://index.json');
-    expect(SKILLS_EXTENSION_KEY).toBe('io.modelcontextprotocol/skills');
-  });
-});
+const SKILL_MD = `---
+name: pdf-processing
+description: Extract, fill, and assemble PDF documents
+---
+
+# PDF processing
+`;
+
+function digestOf(text: string): string {
+  return `sha256:${createHash('sha256').update(Buffer.from(text, 'utf-8')).digest('hex')}`;
+}
+
+function skillEntry(overrides: Partial<Skill> = {}): Skill {
+  return {
+    uri: 'skill://pdf-processing/SKILL.md',
+    frontmatter: {
+      name: 'pdf-processing',
+      description: 'Extract, fill, and assemble PDF documents',
+    },
+    resources: [
+      {
+        uri: 'skill://pdf-processing/SKILL.md',
+        digest: digestOf(SKILL_MD),
+        size: Buffer.byteLength(SKILL_MD),
+      },
+    ],
+    ...overrides,
+  };
+}
+
+/** Minimal IMcpClient stub that only answers `skills/list`. */
+function clientListing(skills: Skill[]): IMcpClient {
+  const listSkills = vi.fn().mockResolvedValue({ skills } as ListSkillsResult);
+  return { listSkills } as unknown as IMcpClient;
+}
 
 describe('resolveSkillUri', () => {
-  it('resolves a bare name to skill://<name>/SKILL.md', () => {
-    expect(resolveSkillUri('git-workflow')).toBe('skill://git-workflow/SKILL.md');
+  it('passes through a SKILL.md URI without consulting the listing', async () => {
+    const client = clientListing([]);
+    await expect(resolveSkillUri(client, 'skill://git-workflow/SKILL.md')).resolves.toBe(
+      'skill://git-workflow/SKILL.md'
+    );
+    expect(client.listSkills).not.toHaveBeenCalled();
   });
 
-  it('resolves a nested path', () => {
-    expect(resolveSkillUri('acme/billing/refunds')).toBe('skill://acme/billing/refunds/SKILL.md');
-  });
-
-  it('passes through a full skill:// URI ending in a filename', () => {
-    expect(resolveSkillUri('skill://git-workflow/SKILL.md')).toBe('skill://git-workflow/SKILL.md');
-  });
-
-  it('passes through a non-SKILL.md file URI unchanged', () => {
-    expect(resolveSkillUri('skill://pdf/references/FORMS.md')).toBe(
-      'skill://pdf/references/FORMS.md'
+  it('appends SKILL.md to a URI naming the skill directory', async () => {
+    const client = clientListing([]);
+    await expect(resolveSkillUri(client, 'skill://git-workflow')).resolves.toBe(
+      'skill://git-workflow/SKILL.md'
+    );
+    await expect(resolveSkillUri(client, 'skill://acme/billing/refunds/')).resolves.toBe(
+      'skill://acme/billing/refunds/SKILL.md'
     );
   });
 
-  it('appends SKILL.md when given a skill:// directory URI', () => {
-    expect(resolveSkillUri('skill://git-workflow')).toBe('skill://git-workflow/SKILL.md');
-    expect(resolveSkillUri('skill://acme/billing')).toBe('skill://acme/billing/SKILL.md');
+  it('accepts a non-skill:// scheme, since no scheme is privileged', async () => {
+    const client = clientListing([]);
+    await expect(
+      resolveSkillUri(client, 'github://acme/repo/skills/refunds/SKILL.md')
+    ).resolves.toBe('github://acme/repo/skills/refunds/SKILL.md');
   });
 
-  it('appends SKILL.md when given a trailing-slash skill:// URI', () => {
-    expect(resolveSkillUri('skill://git-workflow/')).toBe('skill://git-workflow/SKILL.md');
+  it('resolves a bare name through the listing', async () => {
+    const client = clientListing([
+      skillEntry({
+        uri: 'skill://acme/billing/refunds/SKILL.md',
+        frontmatter: { name: 'refunds', description: 'Process refunds' },
+      }),
+    ]);
+    await expect(resolveSkillUri(client, 'refunds')).resolves.toBe(
+      'skill://acme/billing/refunds/SKILL.md'
+    );
   });
 
-  it('strips surrounding slashes from bare paths', () => {
-    expect(resolveSkillUri('/git-workflow/')).toBe('skill://git-workflow/SKILL.md');
+  it('resolves a skill path through the listing', async () => {
+    const client = clientListing([
+      skillEntry({
+        uri: 'skill://acme/billing/refunds/SKILL.md',
+        frontmatter: { name: 'refunds', description: 'Process refunds' },
+      }),
+    ]);
+    await expect(resolveSkillUri(client, 'acme/billing/refunds')).resolves.toBe(
+      'skill://acme/billing/refunds/SKILL.md'
+    );
   });
 
-  it('trims surrounding whitespace', () => {
-    expect(resolveSkillUri('  git-workflow  ')).toBe('skill://git-workflow/SKILL.md');
+  it('refuses to pick between two skills sharing a name', async () => {
+    const client = clientListing([
+      skillEntry({
+        uri: 'skill://acme/billing/refunds/SKILL.md',
+        frontmatter: { name: 'refunds', description: 'Billing refunds' },
+      }),
+      skillEntry({
+        uri: 'skill://acme/support/refunds/SKILL.md',
+        frontmatter: { name: 'refunds', description: 'Support refunds' },
+      }),
+    ]);
+    await expect(resolveSkillUri(client, 'refunds')).rejects.toThrow(ClientError);
+    await expect(resolveSkillUri(client, 'refunds')).rejects.toThrow(
+      /skill:\/\/acme\/support\/refunds\/SKILL\.md/
+    );
   });
 
-  it('throws on empty input', () => {
-    expect(() => resolveSkillUri('')).toThrow();
-    expect(() => resolveSkillUri('   ')).toThrow();
+  it('falls back to the conventional URI for a name absent from the listing', async () => {
+    const client = clientListing([]);
+    await expect(resolveSkillUri(client, 'git-workflow')).resolves.toBe(
+      'skill://git-workflow/SKILL.md'
+    );
   });
 
-  it('throws when bare name resolves to nothing after stripping slashes', () => {
-    expect(() => resolveSkillUri('//')).toThrow();
-  });
-});
-
-describe('parseIndex', () => {
-  it('parses a well-formed index', () => {
-    const text = JSON.stringify({
-      $schema: 'https://schemas.agentskills.io/discovery/0.2.0/schema.json',
-      skills: [
-        {
-          name: 'git-workflow',
-          type: 'skill-md',
-          description: 'Git workflow helpers',
-          url: 'skill://git-workflow/SKILL.md',
-        },
-        {
-          name: 'pdf',
-          type: 'skill-md',
-          description: 'Read PDFs',
-          url: 'skill://pdf/SKILL.md',
-        },
-      ],
-    });
-
-    const skills = parseIndex(text);
-    expect(skills).toHaveLength(2);
-    expect(skills[0]).toEqual({
-      name: 'git-workflow',
-      type: 'skill-md',
-      description: 'Git workflow helpers',
-      url: 'skill://git-workflow/SKILL.md',
-    });
-    expect(skills[1]?.name).toBe('pdf');
-  });
-
-  it('preserves the type field including mcp-resource-template', () => {
-    const text = JSON.stringify({
-      skills: [
-        {
-          name: 'paramd',
-          type: 'mcp-resource-template',
-          description: 'Templates',
-          url: 'skill://paramd/{id}/SKILL.md',
-        },
-      ],
-    });
-    const skills = parseIndex(text);
-    expect(skills[0]?.type).toBe('mcp-resource-template');
-  });
-
-  it('defaults missing type to skill-md', () => {
-    // SEP-2640 says `type` is required, but for forwards-compat with older
-    // drafts that omitted it, mcpc treats a missing `type` as `skill-md`.
-    const text = JSON.stringify({
-      skills: [{ name: 'x', description: 'y', url: 'skill://x/SKILL.md' }],
-    });
-    const skills = parseIndex(text);
-    expect(skills[0]?.type).toBe('skill-md');
-  });
-
-  it('treats missing description as empty string', () => {
-    const text = JSON.stringify({
-      skills: [{ name: 'x', url: 'skill://x/SKILL.md' }],
-    });
-    const skills = parseIndex(text);
-    expect(skills[0]?.description).toBe('');
-  });
-
-  it('drops entries missing url, or skill-md entries missing name', () => {
-    const text = JSON.stringify({
-      skills: [
-        // valid skill-md
-        {
-          name: 'good',
-          type: 'skill-md',
-          description: 'ok',
-          url: 'skill://good/SKILL.md',
-        },
-        // skill-md without name → dropped per spec
-        { type: 'skill-md', description: 'no name', url: 'skill://x/SKILL.md' },
-        // entry without url → dropped regardless of type
-        { name: 'no-url', description: 'no url' },
-        null,
-        'not-an-object',
-        // wrong type for name → treated as missing (and no type means skill-md)
-        { name: 123, url: 'skill://x/SKILL.md' },
-      ],
-    });
-    const skills = parseIndex(text);
-    expect(skills).toHaveLength(1);
-    expect(skills[0]?.name).toBe('good');
-  });
-
-  it('keeps `archive` entries with name (requires same as skill-md)', () => {
-    const text = JSON.stringify({
-      skills: [
-        {
-          name: 'big-skill',
-          type: 'archive',
-          description: 'Bundled as .tar.gz',
-          url: 'skill://big-skill/big-skill.tar.gz',
-        },
-        // archive without name → dropped per spec
-        {
-          type: 'archive',
-          description: 'no name',
-          url: 'skill://x/x.tar.gz',
-        },
-      ],
-    });
-    const skills = parseIndex(text);
-    expect(skills).toHaveLength(1);
-    expect(skills[0]?.name).toBe('big-skill');
-    expect(skills[0]?.type).toBe('archive');
-  });
-
-  it('skips entries with an unrecognized `type` (per SEP-2640)', () => {
-    const text = JSON.stringify({
-      skills: [
-        {
-          name: 'ok',
-          type: 'skill-md',
-          description: 'kept',
-          url: 'skill://ok/SKILL.md',
-        },
-        {
-          name: 'bad',
-          type: 'something-new',
-          description: 'dropped',
-          url: 'skill://bad/SKILL.md',
-        },
-      ],
-    });
-    const skills = parseIndex(text);
-    expect(skills).toHaveLength(1);
-    expect(skills[0]?.name).toBe('ok');
-  });
-
-  it('keeps mcp-resource-template entries without a name (spec allows it)', () => {
-    // Per SEP-2640, `name` is required for `skill-md` entries but optional
-    // for `mcp-resource-template` namespaces. mcpc derives a display name
-    // from the URL for nameless templates.
-    const text = JSON.stringify({
-      skills: [
-        {
-          type: 'mcp-resource-template',
-          description: 'Per-product docs',
-          url: 'skill://docs/{product}/SKILL.md',
-        },
-        {
-          type: 'mcp-resource-template',
-          description: 'No SKILL.md suffix',
-          url: 'skill://templates/{kind}',
-        },
-      ],
-    });
-    const skills = parseIndex(text);
-    expect(skills).toHaveLength(2);
-    // For URLs ending in SKILL.md, name = segment before SKILL.md
-    expect(skills[0]?.name).toBe('{product}');
-    expect(skills[0]?.type).toBe('mcp-resource-template');
-    // For URLs not ending in SKILL.md, name = last path segment
-    expect(skills[1]?.name).toBe('{kind}');
-  });
-
-  it('treats an empty `name` on skill-md as missing', () => {
-    const text = JSON.stringify({
-      skills: [{ name: '', type: 'skill-md', description: 'x', url: 'skill://x/SKILL.md' }],
-    });
-    expect(parseIndex(text)).toEqual([]);
-  });
-
-  it('returns empty list when skills field is absent or non-array', () => {
-    expect(parseIndex(JSON.stringify({}))).toEqual([]);
-    expect(parseIndex(JSON.stringify({ skills: null }))).toEqual([]);
-    expect(parseIndex(JSON.stringify({ skills: 'not-an-array' }))).toEqual([]);
-  });
-
-  it('throws ServerError on invalid JSON', () => {
-    expect(() => parseIndex('{not json')).toThrow(ServerError);
-    expect(() => parseIndex('{not json')).toThrow(/not valid JSON/);
-  });
-
-  it('throws ServerError when JSON is null or a primitive', () => {
-    expect(() => parseIndex('"hello"')).toThrow(ServerError);
-    expect(() => parseIndex('42')).toThrow(ServerError);
-    expect(() => parseIndex('null')).toThrow(ServerError);
-  });
-
-  it('treats a top-level array as an object with no skills field', () => {
-    // typeof [] === 'object' so the index-shape check passes, but the
-    // `skills` field is absent — return empty rather than throwing, since
-    // the spec asks hosts to be permissive about index shape.
-    expect(parseIndex('[]')).toEqual([]);
+  it('rejects an empty name', async () => {
+    const client = clientListing([]);
+    await expect(resolveSkillUri(client, '   ')).rejects.toThrow(ClientError);
   });
 });
 
-describe('skillsFromResources', () => {
-  it('extracts skills from SKILL.md resource URIs', () => {
-    const resources: Resource[] = [
-      {
-        uri: 'skill://git-workflow/SKILL.md',
-        name: 'Git Workflow',
-        description: 'Git helpers',
-        mimeType: 'text/markdown',
-      },
-      {
-        uri: 'skill://pdf/SKILL.md',
-        name: 'PDF',
-        description: 'PDFs',
-        mimeType: 'text/markdown',
-      },
-    ];
-    const skills = skillsFromResources(resources);
-    expect(skills).toHaveLength(2);
-    expect(skills[0]).toEqual({
-      name: 'Git Workflow',
-      description: 'Git helpers',
-      type: 'skill-md',
-      url: 'skill://git-workflow/SKILL.md',
-    });
+describe('resolveSkillFileUri', () => {
+  it('resolves a relative reference against the skill root', () => {
+    expect(resolveSkillFileUri('skill://pdf-processing/SKILL.md', 'references/FORMS.md')).toBe(
+      'skill://pdf-processing/references/FORMS.md'
+    );
   });
 
-  it('uses the final path segment as name when resource name is missing', () => {
-    const resources: Resource[] = [
-      { uri: 'skill://git-workflow/SKILL.md', name: '' },
-    ] as Resource[];
-    const skills = skillsFromResources(resources);
-    expect(skills[0]?.name).toBe('git-workflow');
+  it('resolves against a nested skill root', () => {
+    expect(resolveSkillFileUri('skill://acme/billing/refunds/SKILL.md', 'examples/email.md')).toBe(
+      'skill://acme/billing/refunds/examples/email.md'
+    );
   });
 
-  it('uses the final path segment for nested skill paths', () => {
-    const resources: Resource[] = [{ uri: 'skill://acme/billing/refunds/SKILL.md' } as Resource];
-    const skills = skillsFromResources(resources);
-    expect(skills).toHaveLength(1);
-    expect(skills[0]?.name).toBe('refunds');
-    expect(skills[0]?.url).toBe('skill://acme/billing/refunds/SKILL.md');
+  it('tolerates ./ and leading slashes', () => {
+    expect(resolveSkillFileUri('skill://pdf/SKILL.md', './scripts/x.py')).toBe(
+      'skill://pdf/scripts/x.py'
+    );
+    expect(resolveSkillFileUri('skill://pdf/SKILL.md', '/scripts/x.py')).toBe(
+      'skill://pdf/scripts/x.py'
+    );
   });
 
-  it('ignores non-skill URIs', () => {
-    const resources: Resource[] = [
-      { uri: 'file:///etc/hosts', name: 'hosts' } as Resource,
-      { uri: 'skill://git-workflow/SKILL.md', name: 'gw' } as Resource,
-      { uri: 'http://example.com', name: 'http' } as Resource,
-    ];
-    const skills = skillsFromResources(resources);
-    expect(skills).toHaveLength(1);
-    expect(skills[0]?.url).toBe('skill://git-workflow/SKILL.md');
+  it('rejects a path escaping the skill directory', () => {
+    expect(() => resolveSkillFileUri('skill://pdf/SKILL.md', '../other/SKILL.md')).toThrow(
+      ClientError
+    );
   });
 
-  it('ignores non-SKILL.md files under skill:// prefix', () => {
-    const resources: Resource[] = [
-      { uri: 'skill://pdf/SKILL.md', name: 'pdf' } as Resource,
-      { uri: 'skill://pdf/references/FORMS.md', name: 'forms' } as Resource,
-      { uri: 'skill://index.json', name: 'index' } as Resource,
-    ];
-    const skills = skillsFromResources(resources);
-    expect(skills).toHaveLength(1);
-    expect(skills[0]?.url).toBe('skill://pdf/SKILL.md');
+  it('rejects an empty path', () => {
+    expect(() => resolveSkillFileUri('skill://pdf/SKILL.md', '  ')).toThrow(ClientError);
   });
 });
 
-describe('extractTextContent', () => {
-  it('returns the text of the first text content block', () => {
-    const result: ReadResourceResult = {
-      contents: [{ uri: 'skill://x/SKILL.md', mimeType: 'text/markdown', text: 'hello' }],
-    };
-    expect(extractTextContent(result)).toBe('hello');
+describe('verifyAgainstManifest', () => {
+  it('accepts content matching the manifest digest and size', () => {
+    expect(() =>
+      verifyAgainstManifest(
+        skillEntry(),
+        'skill://pdf-processing/SKILL.md',
+        Buffer.from(SKILL_MD, 'utf-8')
+      )
+    ).not.toThrow();
   });
 
-  it('returns undefined when there is no text content', () => {
-    const result: ReadResourceResult = {
-      contents: [{ uri: 'skill://x/SKILL.md', mimeType: 'application/octet-stream', blob: 'aGk=' }],
-    };
-    expect(extractTextContent(result)).toBeUndefined();
-  });
-
-  it('skips blob entries to find a later text entry', () => {
-    const result: ReadResourceResult = {
-      contents: [
-        { uri: 'skill://x/SKILL.md', mimeType: 'application/octet-stream', blob: 'aGk=' },
-        { uri: 'skill://x/extra.md', mimeType: 'text/markdown', text: 'second' },
-      ],
-    };
-    expect(extractTextContent(result)).toBe('second');
-  });
-});
-
-/**
- * Build a minimal mock IMcpClient covering only the methods discoverSkills
- * touches. Returned object is cast to IMcpClient via `unknown`.
- */
-function makeMockClient(opts: {
-  /** Body returned from readResource(skill://index.json), or null to throw. */
-  index?: string | null;
-  /** Resources returned by listResources (single page). */
-  resources?: Resource[];
-  /** Multiple pages of resources, simulating pagination. */
-  resourcePages?: Array<{ resources: Resource[]; nextCursor?: string }>;
-}): {
-  client: import('../../../src/lib/types.js').IMcpClient;
-  readResourceCalls: string[];
-  listResourcesCalls: Array<string | undefined>;
-} {
-  const readResourceCalls: string[] = [];
-  const listResourcesCalls: Array<string | undefined> = [];
-
-  const readResource = vi.fn(async (uri: string): Promise<ReadResourceResult> => {
-    readResourceCalls.push(uri);
-    if (uri === 'skill://index.json') {
-      if (opts.index === null) {
-        throw new Error('not found');
-      }
-      if (typeof opts.index === 'string') {
-        return {
-          contents: [{ uri, mimeType: 'application/json', text: opts.index }],
-        };
-      }
-    }
-    throw new Error(`unexpected uri: ${uri}`);
-  });
-
-  const listResources = vi.fn(async (cursor?: string) => {
-    listResourcesCalls.push(cursor);
-    if (opts.resourcePages) {
-      const page = opts.resourcePages.shift();
-      if (!page) return { resources: [] };
-      return page;
-    }
-    return { resources: opts.resources ?? [] };
-  });
-
-  const client = {
-    readResource,
-    listResources,
-  } as unknown as import('../../../src/lib/types.js').IMcpClient;
-
-  return { client, readResourceCalls, listResourcesCalls };
-}
-
-describe('discoverSkills', () => {
-  it('returns parsed index when skill://index.json is available', async () => {
-    const indexBody = JSON.stringify({
-      skills: [
-        {
-          name: 'git-workflow',
-          type: 'skill-md',
-          description: 'Git helpers',
-          url: 'skill://git-workflow/SKILL.md',
-        },
-      ],
-    });
-    const { client, readResourceCalls, listResourcesCalls } = makeMockClient({
-      index: indexBody,
-    });
-
-    const skills = await discoverSkills(client);
-    expect(skills).toHaveLength(1);
-    expect(skills[0]?.name).toBe('git-workflow');
-
-    // Only the index was read; no resource fallback when index succeeds
-    expect(readResourceCalls).toEqual(['skill://index.json']);
-    expect(listResourcesCalls).toHaveLength(0);
-  });
-
-  it('falls back to scanning resources when index read throws', async () => {
-    const { client, readResourceCalls, listResourcesCalls } = makeMockClient({
-      index: null, // throw
+  it('rejects content whose digest differs', () => {
+    const tampered = Buffer.from(SKILL_MD.replace('Extract', 'Exfiltrate'), 'utf-8');
+    const entry = skillEntry({
       resources: [
-        { uri: 'skill://git-workflow/SKILL.md', name: 'GW' } as Resource,
-        { uri: 'file:///other', name: 'other' } as Resource,
-      ],
-    });
-
-    const skills = await discoverSkills(client);
-    expect(skills).toHaveLength(1);
-    expect(skills[0]?.url).toBe('skill://git-workflow/SKILL.md');
-    expect(readResourceCalls).toEqual(['skill://index.json']);
-    expect(listResourcesCalls.length).toBeGreaterThanOrEqual(1);
-  });
-
-  it('drains all pages of resources during fallback', async () => {
-    const { client, listResourcesCalls } = makeMockClient({
-      index: null,
-      resourcePages: [
         {
-          resources: [{ uri: 'skill://a/SKILL.md', name: 'a' } as Resource],
-          nextCursor: 'cursor1',
-        },
-        {
-          resources: [{ uri: 'skill://b/SKILL.md', name: 'b' } as Resource],
+          uri: 'skill://pdf-processing/SKILL.md',
+          digest: digestOf(SKILL_MD),
+          size: tampered.length,
         },
       ],
     });
-
-    const skills = await discoverSkills(client);
-    expect(skills.map((s) => s.name).sort()).toEqual(['a', 'b']);
-    // Two pages consumed, with the second call passing the cursor
-    expect(listResourcesCalls).toEqual([undefined, 'cursor1']);
+    expect(() => verifyAgainstManifest(entry, 'skill://pdf-processing/SKILL.md', tampered)).toThrow(
+      ServerError
+    );
   });
 
-  it('returns empty list when neither index nor matching resources exist', async () => {
-    const { client } = makeMockClient({
-      index: null,
-      resources: [{ uri: 'file:///nope', name: 'nope' } as Resource],
+  it('rejects content whose byte length differs from the manifest', () => {
+    expect(() =>
+      verifyAgainstManifest(
+        skillEntry(),
+        'skill://pdf-processing/SKILL.md',
+        Buffer.from(`${SKILL_MD}\n`, 'utf-8')
+      )
+    ).toThrow(/bytes/);
+  });
+
+  it('rejects a file that is not listed in the manifest', () => {
+    expect(() =>
+      verifyAgainstManifest(
+        skillEntry(),
+        'skill://pdf-processing/scripts/evil.py',
+        Buffer.from('print(1)', 'utf-8')
+      )
+    ).toThrow(/not part of the skill's file manifest/);
+  });
+
+  it('skips verification for a dynamic skill, which publishes no digests', () => {
+    expect(() =>
+      verifyAgainstManifest(
+        skillEntry({ resources: 'dynamic' }),
+        'skill://pdf-processing/anything.md',
+        Buffer.from('whatever', 'utf-8')
+      )
+    ).not.toThrow();
+  });
+});
+
+describe('verifyFrontmatter', () => {
+  it('accepts a SKILL.md whose frontmatter matches the entry', () => {
+    expect(() => verifyFrontmatter(skillEntry(), SKILL_MD)).not.toThrow();
+  });
+
+  it('rejects a description that differs from the entry', () => {
+    const entry = skillEntry({
+      frontmatter: { name: 'pdf-processing', description: 'Something else entirely' },
     });
-    const skills = await discoverSkills(client);
-    expect(skills).toEqual([]);
+    expect(() => verifyFrontmatter(entry, SKILL_MD)).toThrow(/description/);
+  });
+
+  it('rejects a SKILL.md carrying a field the entry never advertised', () => {
+    const withExtra = SKILL_MD.replace(
+      'description: Extract, fill, and assemble PDF documents',
+      'description: Extract, fill, and assemble PDF documents\nallowed-tools: [Bash]'
+    );
+    expect(() => verifyFrontmatter(skillEntry(), withExtra)).toThrow(/allowed-tools/);
+  });
+
+  it('reports a SKILL.md with no frontmatter block', () => {
+    expect(() => verifyFrontmatter(skillEntry(), '# Just markdown\n')).toThrow(
+      /could not be parsed/
+    );
+  });
+
+  it('matches extra frontmatter fields the server passed through verbatim', () => {
+    const document = `---
+name: pdf-processing
+description: Extract, fill, and assemble PDF documents
+license: Apache-2.0
+metadata:
+  version: 2.1.0
+---
+
+# PDF processing
+`;
+    const entry = skillEntry({
+      frontmatter: {
+        name: 'pdf-processing',
+        description: 'Extract, fill, and assemble PDF documents',
+        license: 'Apache-2.0',
+        metadata: { version: '2.1.0' },
+      },
+    });
+    expect(() => verifyFrontmatter(entry, document)).not.toThrow();
   });
 });

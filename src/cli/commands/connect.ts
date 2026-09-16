@@ -8,7 +8,7 @@
  */
 
 import { createServer } from 'net';
-import { relative, sep } from 'path';
+import { sep } from 'path';
 import {
   OutputMode,
   isValidSessionName,
@@ -1104,17 +1104,40 @@ function formatEnvVarRefs(envVars: string[]): string {
 }
 
 /**
+ * Spell a discovered config file the way the `mcpc connect <file>` hint below should show it.
+ *
+ * Discovery stores absolute paths; a file found in the current directory reads better relative
+ * to it (`./.mcp.json`), and the `./` also keeps parseServerArg from reading the name as a
+ * hostname. The relative form always uses forward slashes, on Windows too: the result goes into
+ * a command the user pastes into a shell, where a `.\` prefix is swallowed as an escape by
+ * POSIX-style shells (Git Bash, WSL), while `./` works in cmd, PowerShell and bash alike — and
+ * Node accepts forward slashes in paths on every platform. Files outside the current directory
+ * keep their absolute, platform-native spelling.
+ *
+ * `cwd` and `pathSep` are injectable so the Windows spelling can be unit-tested on any host —
+ * Windows itself is only exercised by the release CI.
+ */
+export function formatDiscoveredConfigPath(
+  file: string,
+  cwd: string = process.cwd(),
+  pathSep: string = sep
+): string {
+  if (!file.startsWith(cwd + pathSep)) return file;
+  return `./${file
+    .slice(cwd.length + pathSep.length)
+    .split(pathSep)
+    .join('/')}`;
+}
+
+/**
  * The footer note under an auto-discovery listing that skipped project-scope entries for
  * reading environment variables: why, and the explicit command that connects each file.
  * The command names the file (not `--stdio`-style flag) because naming it is the trust step —
  * it is the same command that already connects a config file the user chose.
  */
 function formatProjectEnvNote(skipped: SkippedEntry[]): string {
-  // Discovery stores absolute paths; a project file reads better relative to the cwd it was
-  // found in (`./.mcp.json`), and the `./` keeps parseServerArg from reading it as a hostname.
-  const cwd = process.cwd();
   const files = [...new Set(skipped.map((s) => s.configFile))].map((f) =>
-    f.startsWith(cwd + sep) ? `.${sep}${relative(cwd, f)}` : f
+    formatDiscoveredConfigPath(f)
   );
   const lines = [
     `Config files in the current directory are not trusted to read environment variables — a`,

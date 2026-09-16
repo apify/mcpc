@@ -22,7 +22,13 @@
  * state; suites that need them are legacy-era-specific.
  */
 
-import { Server, createMcpHandler, type ServerCapabilities } from '@modelcontextprotocol/server';
+import {
+  Server,
+  createMcpHandler,
+  ProtocolError,
+  INVALID_PARAMS,
+  type ServerCapabilities,
+} from '@modelcontextprotocol/server';
 import { toNodeHandler } from '@modelcontextprotocol/node';
 import http from 'http';
 import {
@@ -31,6 +37,7 @@ import {
   RESOURCE_TEMPLATES,
   PROMPTS,
   computeSkillsFixtures,
+  passthroughSchema,
   paginate,
   callTestTool,
   readTestResource,
@@ -47,7 +54,8 @@ const NO_TOOLS = process.env.NO_TOOLS === 'true';
 const NO_RESOURCES = process.env.NO_RESOURCES === 'true';
 const NO_PROMPTS = process.env.NO_PROMPTS === 'true';
 const WITH_SKILLS = process.env.WITH_SKILLS === 'true';
-const SKILLS_NO_INDEX = process.env.SKILLS_NO_INDEX === 'true';
+const WITH_OTHER_EXTENSIONS = process.env.WITH_OTHER_EXTENSIONS === 'true';
+const SKILLS_TAMPER = process.env.SKILLS_TAMPER;
 const WITH_OAUTH = process.env.WITH_OAUTH === 'true';
 const OAUTH_CLIENT_ID = process.env.OAUTH_CLIENT_ID || 'test-client';
 const OAUTH_CLIENT_SECRET = process.env.OAUTH_CLIENT_SECRET || 's3cr3t';
@@ -62,10 +70,12 @@ let failNextCount = 0;
 let counterValue = 0;
 
 // Compute the effective skills resource list and content map at startup.
-const { resources: SKILLS_RESOURCES, contents: SKILL_CONTENTS } = computeSkillsFixtures(
-  WITH_SKILLS,
-  SKILLS_NO_INDEX
-);
+const {
+  resources: SKILLS_RESOURCES,
+  contents: SKILL_CONTENTS,
+  skills: SKILLS,
+  directories: SKILL_DIRECTORIES,
+} = computeSkillsFixtures(WITH_SKILLS, SKILLS_TAMPER);
 
 // Helper for artificial latency
 async function maybeDelay(): Promise<void> {
@@ -102,12 +112,21 @@ function createTestServer(): Server {
   if (!NO_PROMPTS) {
     capabilities.prompts = { listChanged: true };
   }
-  // Advertise the experimental skills extension when skill resources are
-  // exposed (SEP-2640), mirroring index.ts.
+  // Declare the skills extension, with directory reads, when skills are served.
+  // Skills are modern-era only: the extension is specified against 2026-07-28 and
+  // later, so index.ts (2025-11-25) serves none.
   if (WITH_SKILLS && !NO_RESOURCES) {
-    const SKILLS_KEY = 'io.modelcontextprotocol/skills';
-    capabilities.extensions = { [SKILLS_KEY]: {} };
-    capabilities.experimental = { [SKILLS_KEY]: {} };
+    capabilities.extensions = { 'io.modelcontextprotocol/skills': { directoryRead: true } };
+  }
+
+  // Extensions beyond the ones mcpc implements. A server declares what it serves on its
+  // own terms, so the client has to name these without offering commands for them.
+  if (WITH_OTHER_EXTENSIONS) {
+    capabilities.extensions = {
+      ...((capabilities.extensions as Record<string, unknown>) || {}),
+      'io.modelcontextprotocol/ui': { mimeTypes: ['text/html;profile=mcp-app'] },
+      'com.example/widgets': {},
+    };
   }
 
   const server = new Server(
@@ -214,6 +233,65 @@ function createTestServer(): Server {
 
       return {};
     });
+
+    // Skills extension: skills/list, skills/get and the optional
+    // resources/directory/read. Registered with explicit schemas because the SDK
+    // carries no built-in vocabulary for extension methods.
+    if (WITH_SKILLS) {
+      server.setRequestHandler(
+        'skills/list',
+        { params: passthroughSchema<{ cursor?: string }>() },
+        async (params) => {
+          await maybeDelay();
+          if (shouldFail()) {
+            throw new Error('Simulated failure');
+          }
+
+          const { items, nextCursor } = paginate(SKILLS, params?.cursor, PAGINATION_SIZE);
+          return {
+            skills: items,
+            ...(nextCursor !== undefined ? { nextCursor } : {}),
+            ttlMs: 300000,
+            cacheScope: 'public',
+          };
+        }
+      );
+
+      server.setRequestHandler(
+        'skills/get',
+        { params: passthroughSchema<{ uri: string }>() },
+        async (params) => {
+          await maybeDelay();
+          if (shouldFail()) {
+            throw new Error('Simulated failure');
+          }
+
+          const skill = SKILLS.find((entry) => entry.uri === params.uri);
+          if (!skill) {
+            throw new ProtocolError(INVALID_PARAMS, `No skill is served at ${params.uri}`);
+          }
+          return { skill, ttlMs: 300000, cacheScope: 'public' };
+        }
+      );
+
+      server.setRequestHandler(
+        'resources/directory/read',
+        { params: passthroughSchema<{ uri: string; cursor?: string }>() },
+        async (params) => {
+          await maybeDelay();
+          if (shouldFail()) {
+            throw new Error('Simulated failure');
+          }
+
+          const children = SKILL_DIRECTORIES[params.uri];
+          if (!children) {
+            throw new ProtocolError(INVALID_PARAMS, `${params.uri} is not a directory resource`);
+          }
+          const { items, nextCursor } = paginate(children, params.cursor, PAGINATION_SIZE);
+          return { resources: items, ...(nextCursor !== undefined ? { nextCursor } : {}) };
+        }
+      );
+    }
   }
 
   // Prompts (only register handlers if capability is enabled)
@@ -405,7 +483,7 @@ async function main() {
     if (NO_RESOURCES) console.log(`  Resources: DISABLED`);
     if (NO_PROMPTS) console.log(`  Prompts: DISABLED`);
     if (WITH_SKILLS) {
-      console.log(`  Skills: ENABLED${SKILLS_NO_INDEX ? ' (index OFF, fallback only)' : ''}`);
+      console.log(`  Skills: ENABLED${SKILLS_TAMPER ? ` (tampered: ${SKILLS_TAMPER})` : ''}`);
     }
   });
 

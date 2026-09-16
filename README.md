@@ -176,8 +176,9 @@ MCP session commands (after connecting):
   <@session> resources-subscribe <uri> <file>
   <@session> resources-unsubscribe <uri>
   <@session> resources-templates-list
+  <@session> resources-directory-read <uri>
   <@session> skills-list
-  <@session> skills-get <name> [--raw]
+  <@session> skills-get <skill> [file] [--raw]
   <@session> logging-set-level <level>
   <@session> ping
   <@session> server-discover
@@ -742,8 +743,8 @@ mcpc help --skill > ~/.claude/skills/mcpc/SKILL.md
 
 That copy is a snapshot; re-run it after upgrading mcpc to refresh it.
 
-Separately, `mcpc` also acts as a **client for skills served by MCP servers** (experimental,
-SEP-2640) — see [Skills](#skills) for the `skills-list` / `skills-get` commands.
+Separately, `mcpc` also acts as a **client for skills served by MCP servers** — see
+[Skills](#skills) for the `skills-list` / `skills-get` commands.
 
 ## Agentic payments (x402)
 
@@ -906,7 +907,7 @@ Where `mcpc` stands on each part of the MCP specification:
 | ⏳ [**Async tasks**](#async-tasks)                   | ✅ Supported (2025-11-25 servers; 2026-07-28 tasks extension planned) |
 | 💬 [**Prompts**](#prompts)                           | ✅ Supported (incl. list changed notifications)                   |
 | 📦 [**Resources**](#resources)                       | ✅ Supported (incl. subscriptions and list changed notifications) |
-| 🧠 [**Skills**](#skills)                             | 🧪 Experimental (SEP-2640)                                       |
+| 🧠 [**Skills**](#skills)                             | ✅ Supported (skills extension, 2026-07-28 servers)              |
 | 📝 [**Logging**](#server-logs)                       | ⚠️ Deprecated (removed by MCP 2026-07-28)                         |
 | 🔔 [**Notifications**](#list-change-notifications)   | ✅ Supported                                                      |
 | 📄 [**Pagination**](#pagination)                     | ✅ Supported                                                      |
@@ -940,6 +941,26 @@ Both clients are pre-registered by your IT team: `--idp-client-id` at the enterp
 (add `--idp-client-secret` for confidential clients), `--client-id`/`--client-secret` at the
 MCP server's authorization server. The SSO session is kept alive with the IdP's refresh token;
 when it expires, affected sessions turn `unauthorized` with a re-login hint.
+
+#### MCP extensions
+
+Extensions are the optional, modular parts of MCP, negotiated through the `extensions` field of
+client and server capabilities. Where `mcpc` stands on the
+[official ones](https://modelcontextprotocol.io/extensions/client-matrix):
+
+| **Extension**                                                                                                  | **Identifier**                                             | **Status**                                                                    |
+|:----------------------------------------------------------------------------------------------------------------|:------------------------------------------------------------|:--------------------------------------------------------------------------------|
+| [OAuth client credentials](https://modelcontextprotocol.io/extensions/auth/oauth-client-credentials)           | `io.modelcontextprotocol/oauth-client-credentials`         | ✅ `mcpc login <server> --grant client-credentials`                            |
+| [Enterprise-managed authorization](https://modelcontextprotocol.io/extensions/auth/enterprise-managed-authorization) | `io.modelcontextprotocol/enterprise-managed-authorization` | ✅ `mcpc login <server> --grant id-jag`                                        |
+| [Skills](https://modelcontextprotocol.io/extensions/skills/overview)                                           | `io.modelcontextprotocol/skills`                           | ✅ [`skills-list`, `skills-get`, `resources-directory-read`](#skills) (MCP 2026-07-28 servers) |
+| [MCP Apps](https://modelcontextprotocol.io/extensions/apps/overview)                                           | `io.modelcontextprotocol/ui`                               | ❌ Interactive HTML interfaces have no equivalent on a terminal                |
+| [Tasks](https://modelcontextprotocol.io/extensions/tasks/overview)                                             | `io.modelcontextprotocol/tasks`                            | 🚧 Task commands work on 2025-11-25 servers, where tasks are part of the core protocol |
+
+The two auth extensions are the ones a client declares: `mcpc` declares both to every server it
+connects to, so a server can tell what this client can do before any token is issued. Skills is
+declared by servers only — a client issues `skills/list` and `skills/get` once it sees that
+declaration. `mcpc @session` lists what a server declares in return, and says which of those
+`mcpc` can use.
 
 #### Server instructions
 
@@ -1032,8 +1053,9 @@ server's current tools.
 - **Safety annotations**: `read-only`, `destructive`, `idempotent`, and `open-world` hints are shown
   right next to each tool, so a human or an agent can tell a harmless query from a dangerous mutation
   before calling it.
-- **Structured output**: `structuredContent` is pretty-printed as JSON and output schemas are shown
-  with `--full`, so scripts can rely on machine-readable results, not just text.
+- **Structured output**: tool results show `structuredContent` as JSON when no other content remains
+  after removing duplicate text blocks. Otherwise a hint points to `--json`, which includes the full
+  result. Output schemas are shown with `tools-list --full` and `tools-get`.
 - **Rich result content**: text, images, audio, and [resource links or embedded resources](#resources)
   in tool results are all rendered (binary is summarized, never dumped to your terminal).
 - **Async tasks**: long-running tools can run in the background as [async tasks](#async-tasks); each
@@ -1095,38 +1117,47 @@ mcpc @apify resources-unsubscribe "file:///config.json"
 
 #### Skills
 
-> 🧪 **Experimental.** Implements the draft [MCP skills extension (SEP-2640)](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2640).
-> The spec is in active iteration; the index shape, recognized entry types, and capability key may change.
+Implements the [MCP Skills extension](https://github.com/modelcontextprotocol/ext-skills)
+(`io.modelcontextprotocol/skills`), which requires MCP `2026-07-28` or later.
 
-[Agent Skills](https://agentskills.io/) are reusable markdown workflow instructions (`SKILL.md` with YAML frontmatter)
-that AI agents load on demand. `mcpc` lets you discover and pull skills served by any MCP server that exposes
-them under the `skill://` URI convention — no SDK changes required, since skills are just resources:
+[Agent Skills](https://agentskills.io/) are reusable markdown workflow instructions (`SKILL.md` with YAML
+frontmatter, plus any supporting files) that AI agents load on demand. A server that declares the extension
+publishes them over `skills/list` and `skills/get`, and serves their files as ordinary `skill://` resources:
 
 ```bash
-# List skills exposed by the server (tries skill://index.json, falls back to scanning skill://*/SKILL.md)
+# List the skills the server serves, with their file manifests
 mcpc @apify skills-list
 
-# Read a skill's SKILL.md by bare name, nested path, or full URI
+# Read a skill's SKILL.md by name, path, or the URI of its SKILL.md
 mcpc @apify skills-get git-workflow
 mcpc @apify skills-get acme/billing/refunds
 mcpc @apify skills-get skill://git-workflow/SKILL.md
 
-# Print just the markdown (no header/fences) — pipe straight to an LLM or a file
-mcpc @apify skills-get git-workflow --raw > /tmp/skill.md
+# Read one of the skill's supporting files
+mcpc @apify skills-get pdf-processing references/FORMS.md
 
-# JSON for scripts: [{ name, description, type, url }]
-mcpc --json @apify skills-list | jq '.[].name'
+# Print just the content (no header/fences) — pipe straight to an LLM or a file
+mcpc @apify skills-get git-workflow --raw > /tmp/SKILL.md
+
+# JSON for scripts: [{ uri, frontmatter: { name, description, ... }, resources }]
+mcpc --json @apify skills-list | jq -r '.[].frontmatter.name'
+
+# List a directory inside a skill (servers that declare "directoryRead": true)
+mcpc @apify resources-directory-read skill://pdf-processing/templates
 ```
 
-Recognized index entry types (per SEP-2640): `skill-md` (concrete skill), `mcp-resource-template`
-(parameterized namespace), and `archive` (`.tar.gz`/`.zip` bundle — fetch the URL via `resources-read`).
-Entries with an unrecognized `type` are silently skipped.
+Every entry from `skills-list` is complete: the skill's verbatim frontmatter plus a manifest of every
+file with its SHA-256 digest and byte size. `skills-get` uses that manifest as the spec requires —
+it fetches the entry, reads the file, and checks the bytes against the declared size and digest (and, for
+a `SKILL.md`, that the document's frontmatter is what the entry advertised). **Content that fails any of
+those checks is not printed**, and a file missing from the manifest is refused rather than read. Skills
+whose content is generated carry `"resources": "dynamic"` instead of a manifest; `mcpc` reads them but
+labels them unverified.
 
-Skills appear under capabilities in `mcpc @session` output when a server advertises the extension
-under either `capabilities.extensions["io.modelcontextprotocol/skills"]` (per spec) or
-`capabilities.experimental["io.modelcontextprotocol/skills"]` (the SDK-preserved escape hatch some
-SDKs still use). Skill content is treated as untrusted input — `mcpc` only reads and prints it; it
-never executes hooks, scripts, or other frontmatter-declared behavior.
+Skills appear under capabilities in `mcpc @session` output when a server declares the extension in
+`capabilities.extensions["io.modelcontextprotocol/skills"]`. Skill content is treated as untrusted
+input — `mcpc` only reads and prints it; it never executes hooks, scripts, or other frontmatter-declared
+behavior, and `allowed-tools` grants nothing.
 
 #### List change notifications
 
@@ -1472,25 +1503,25 @@ See [CONTRIBUTING](./CONTRIBUTING.md) for development setup, architecture overvi
 
 <!-- Stars, contributors, commits, and activity as of September 2026. -->
 
-| Tool                                                                    | Lang   | Stars | Commits | Contrib | Active | MCP        | Tools | Resources | Prompts | Tasks | Code mode | Sessions | OAuth | Stdio | HTTP | Tool search | x402 | LLM |
-| ----------------------------------------------------------------------- | ------ | ----: | ------: | ------: | ------ | ---------- | ----- | --------- | ------- | ----- | --------- | -------- | ----- | ----- | ---- | ----------- | ---- | --- |
-| **[apify/mcpc](https://github.com/apify/mcpc)**                         | TS     |   847 |     758 |      15 | ✅     | 2026-07-28 | ✅    | ✅        | ✅      | ✅    | ✅        | ✅       | ✅    | ✅    | ✅   | ✅          | ✅   | —   |
-| [steipete/mcporter](https://github.com/steipete/mcporter)               | TS     |  5.0k |     942 |      51 | ✅     | 2026-07-28 | ✅    | ✅        | —       | —     | ✅        | ✅       | ✅    | ✅    | ✅   | —           | —    | —   |
-| [knowsuchagency/mcp2cli](https://github.com/knowsuchagency/mcp2cli)     | Python |  2.4k |     168 |      24 | ✅     | 2025-11-25 | ✅    | ✅        | ✅      | —     | ✅        | ✅       | ✅    | ✅    | ✅   | ✅          | —    | —   |
-| [IBM/mcp-cli](https://github.com/IBM/mcp-cli)                           | Python |  2.0k |     800 |      23 | ✅     | 2025-06-18 | ✅    | ✅        | ✅      | —     | ✅        | ✅       | ✅    | ✅    | ✅   | —           | —    | ✅  |
-| [f/mcptools](https://github.com/f/mcptools)                             | Go     |  1.6k |     174 |      16 | ⚠️     | 2024-11-05 | ✅    | ✅        | ✅      | —     | ✅        | —        | —     | ✅    | ✅   | —           | —    | —   |
-| [philschmid/mcp-cli](https://github.com/philschmid/mcp-cli)             | TS     |  1.3k |      30 |       3 | ⚠️     | 2025-11-25 | ✅    | —         | —       | —     | ✅        | ✅       | —     | ✅    | ✅   | ✅          | —    | —   |
-| [adhikasp/mcp-client-cli](https://github.com/adhikasp/mcp-client-cli)   | Python |   677 |     113 |       5 | ⚠️     | 2025-06-18 | ✅    | —         | —       | —     | —         | —        | —     | ✅    | —    | —           | —    | ✅  |
-| [thellimist/clihub](https://github.com/thellimist/clihub)               | Go     |   667 |      60 |       1 | ⚠️     | 2025-11-25 | ✅    | —         | —       | —     | —         | —        | ✅    | ✅    | ✅   | ✅          | —    | —   |
-| [wong2/mcp-cli](https://github.com/wong2/mcp-cli)                       | JS     |   444 |      67 |       6 | ⚠️     | 2025-11-25 | ✅    | ✅        | ✅      | —     | —         | —        | ✅    | ✅    | ✅   | —           | —    | —   |
-| [activeing123/mcptoon](https://github.com/activeing123/mcptoon)         | Python |   197 |     229 |       3 | ✅     | 2026-07-28 | ✅    | —         | —       | —     | ✅        | —        | —     | ✅    | ✅   | —           | —    | —   |
-| [mcpshim/mcpshim](https://github.com/mcpshim/mcpshim)                   | Go     |    64 |      17 |       1 | ✅     | 2025-11-25 | ✅    | —         | —       | —     | ✅        | ✅       | ✅    | —     | ✅   | ✅          | —    | —   |
-| [lydakis/mcpx](https://github.com/lydakis/mcpx)                         | Go     |    52 |     119 |       3 | ✅     | 2026-07-28 | ✅    | —         | —       | —     | ✅        | ✅       | ✅    | ✅    | ✅   | —           | —    | —   |
-| [evantahler/mcpx](https://github.com/evantahler/mcpx)                   | TS     |    33 |     116 |       1 | ✅     | 2026-07-28 | ✅    | ✅        | ✅      | ✅    | ✅        | —        | ✅    | ✅    | ✅   | ✅          | —    | —   |
-| [EstebanForge/mcp-cli-ent](https://github.com/EstebanForge/mcp-cli-ent) | Go     |    15 |      61 |       3 | ✅     | 2026-07-28 | ✅    | —         | —       | —     | ✅        | ✅       | —     | ✅    | ✅   | ✅          | —    | —   |
-| [domdomegg/call-mcp](https://github.com/domdomegg/call-mcp)             | TS     |     3 |      37 |       3 | ✅     | 2025-11-25 | ✅    | —         | —       | —     | ✅        | —        | ✅    | ✅    | ✅   | —           | —    | —   |
+| Tool                                                                    | Lang   | Stars | Commits | Contrib | Active | MCP        | Tools | Resources | Prompts | Tasks | Skills | Code mode | Sessions | OAuth | Stdio | HTTP | Tool search | x402 | LLM |
+| ----------------------------------------------------------------------- | ------ | ----: | ------: | ------: | ------ | ---------- | ----- | --------- | ------- | ----- | ------ | --------- | -------- | ----- | ----- | ---- | ----------- | ---- | --- |
+| **[apify/mcpc](https://github.com/apify/mcpc)**                         | TS     |   847 |     758 |      15 | ✅     | 2026-07-28 | ✅    | ✅        | ✅      | ✅    | ✅     | ✅        | ✅       | ✅    | ✅    | ✅   | ✅          | ✅   | —   |
+| [steipete/mcporter](https://github.com/steipete/mcporter)               | TS     |  5.0k |     942 |      51 | ✅     | 2026-07-28 | ✅    | ✅        | —       | —     | —      | ✅        | ✅       | ✅    | ✅    | ✅   | —           | —    | —   |
+| [knowsuchagency/mcp2cli](https://github.com/knowsuchagency/mcp2cli)     | Python |  2.4k |     168 |      24 | ✅     | 2025-11-25 | ✅    | ✅        | ✅      | —     | —      | ✅        | ✅       | ✅    | ✅    | ✅   | ✅          | —    | —   |
+| [IBM/mcp-cli](https://github.com/IBM/mcp-cli)                           | Python |  2.0k |     800 |      23 | ✅     | 2025-06-18 | ✅    | ✅        | ✅      | —     | —      | ✅        | ✅       | ✅    | ✅    | ✅   | —           | —    | ✅  |
+| [f/mcptools](https://github.com/f/mcptools)                             | Go     |  1.6k |     174 |      16 | ⚠️     | 2024-11-05 | ✅    | ✅        | ✅      | —     | —      | ✅        | —        | —     | ✅    | ✅   | —           | —    | —   |
+| [philschmid/mcp-cli](https://github.com/philschmid/mcp-cli)             | TS     |  1.3k |      30 |       3 | ⚠️     | 2025-11-25 | ✅    | —         | —       | —     | —      | ✅        | ✅       | —     | ✅    | ✅   | ✅          | —    | —   |
+| [adhikasp/mcp-client-cli](https://github.com/adhikasp/mcp-client-cli)   | Python |   677 |     113 |       5 | ⚠️     | 2025-06-18 | ✅    | —         | —       | —     | —      | —         | —        | —     | ✅    | —    | —           | —    | ✅  |
+| [thellimist/clihub](https://github.com/thellimist/clihub)               | Go     |   667 |      60 |       1 | ⚠️     | 2025-11-25 | ✅    | —         | —       | —     | —      | —         | —        | ✅    | ✅    | ✅   | ✅          | —    | —   |
+| [wong2/mcp-cli](https://github.com/wong2/mcp-cli)                       | JS     |   444 |      67 |       6 | ⚠️     | 2025-11-25 | ✅    | ✅        | ✅      | —     | —      | —         | —        | ✅    | ✅    | ✅   | —           | —    | —   |
+| [activeing123/mcptoon](https://github.com/activeing123/mcptoon)         | Python |   197 |     229 |       3 | ✅     | 2026-07-28 | ✅    | —         | —       | —     | —      | ✅        | —        | —     | ✅    | ✅   | —           | —    | —   |
+| [mcpshim/mcpshim](https://github.com/mcpshim/mcpshim)                   | Go     |    64 |      17 |       1 | ✅     | 2025-11-25 | ✅    | —         | —       | —     | —      | ✅        | ✅       | ✅    | —     | ✅   | ✅          | —    | —   |
+| [lydakis/mcpx](https://github.com/lydakis/mcpx)                         | Go     |    52 |     119 |       3 | ✅     | 2026-07-28 | ✅    | —         | —       | —     | —      | ✅        | ✅       | ✅    | ✅    | ✅   | —           | —    | —   |
+| [evantahler/mcpx](https://github.com/evantahler/mcpx)                   | TS     |    33 |     116 |       1 | ✅     | 2026-07-28 | ✅    | ✅        | ✅      | ✅    | —      | ✅        | —        | ✅    | ✅    | ✅   | ✅          | —    | —   |
+| [EstebanForge/mcp-cli-ent](https://github.com/EstebanForge/mcp-cli-ent) | Go     |    15 |      61 |       3 | ✅     | 2026-07-28 | ✅    | —         | —       | —     | —      | ✅        | ✅       | —     | ✅    | ✅   | ✅          | —    | —   |
+| [domdomegg/call-mcp](https://github.com/domdomegg/call-mcp)             | TS     |     3 |      37 |       3 | ✅     | 2025-11-25 | ✅    | —         | —       | —     | —      | ✅        | —        | ✅    | ✅    | ✅   | —           | —    | —   |
 
-**Legend:** ✅ = supported, ⚠️ = stale (no commits in 3+ months), **Commits** = total commits, **Contrib** = contributors, **MCP** = latest [MCP protocol version](https://modelcontextprotocol.io/specification/latest/basic/index#protocol-version) the client supports, per its pinned SDK/own implementation, **Tasks** = [async tasks](https://modelcontextprotocol.io/specification/latest/basic/utilities/tasks), **x402** = [x402 payment protocol](https://www.x402.org/) support, **LLM** = requires/uses an LLM.
+**Legend:** ✅ = supported, ⚠️ = stale (no commits in 3+ months), **Commits** = total commits, **Contrib** = contributors, **MCP** = latest [MCP protocol version](https://modelcontextprotocol.io/specification/latest/basic/index#protocol-version) the client supports, per its pinned SDK/own implementation, **Tasks** = [async tasks](https://modelcontextprotocol.io/specification/latest/basic/utilities/tasks), **Skills** = [skills extension](https://modelcontextprotocol.io/extensions/skills/overview), **x402** = [x402 payment protocol](https://www.x402.org/) support, **LLM** = requires/uses an LLM.
 
 **Notes:**
 

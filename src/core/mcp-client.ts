@@ -38,6 +38,11 @@ import {
   GetTaskResultSchema,
   CancelTaskResultSchema,
 } from '@modelcontextprotocol/core';
+import {
+  ListSkillsResultSchema,
+  GetSkillResultSchema,
+  ReadResourceDirectoryResultSchema,
+} from './skills-schema.js';
 import { createNoOpLogger, type Logger } from '../lib/logger.js';
 import { ClientError, ServerError, NetworkError, isShutdownError } from '../lib/errors.js';
 import { fetchAllPages } from '../lib/utils.js';
@@ -46,11 +51,18 @@ import {
   isSupportedProtocolVersion,
   discoverUnavailableMessage,
   tasksUnavailableMessage,
+  skillsUnavailableMessage,
+  skillsNotDeclaredMessage,
+  directoryReadUnavailableMessage,
   SERVER_INFO_META_KEY,
   SUPPORTED_PROTOCOL_VERSIONS,
 } from './protocol.js';
+import { SKILLS_EXTENSION_KEY } from './extensions.js';
 import type {
   IMcpClient,
+  ListSkillsResult,
+  GetSkillResult,
+  ReadResourceDirectoryResult,
   ServerDetails,
   ConnectionMode,
   TransportKind,
@@ -879,6 +891,125 @@ export class McpClient implements IMcpClient {
         delayMillis = Math.min(delayMillis * 2, RELISTEN_MAX_DELAY_MILLIS);
         this.logger.debug(`${label} re-listen failed, retrying in ${delayMillis}ms:`, error);
       }
+    }
+  }
+
+  /**
+   * Settings the server declared for the skills extension, or `undefined` when it did
+   * not declare the extension at all. An empty object means "supported, no optional
+   * features", which is why presence and content are distinguished here.
+   */
+  private getSkillsExtension(): Record<string, unknown> | undefined {
+    const capabilities = this.client.getServerCapabilities() as
+      { extensions?: Record<string, unknown> } | undefined;
+    const declared = capabilities?.extensions?.[SKILLS_EXTENSION_KEY];
+    if (declared === undefined) return undefined;
+    return typeof declared === 'object' && declared !== null
+      ? (declared as Record<string, unknown>)
+      : {};
+  }
+
+  /**
+   * Refuse skill traffic the server has not promised to serve. The extension is
+   * specified against 2026-07-28 and later, and a client issues `skills/list` /
+   * `skills/get` only after observing the server's declaration — so both conditions are
+   * checked here rather than discovered as a "method not found" round trip.
+   *
+   * Called *outside* the try blocks below, so the message reaches the user as-is instead
+   * of nested in a "Failed to ..." wrapper.
+   */
+  private assertSkillsAvailable(): void {
+    if (this.getProtocolEra() !== 'modern') {
+      throw new ServerError(skillsUnavailableMessage(this.negotiatedProtocolVersion));
+    }
+    if (this.getSkillsExtension() === undefined) {
+      throw new ServerError(skillsNotDeclaredMessage());
+    }
+  }
+
+  /** As above, plus the `directoryRead` setting `resources/directory/read` is gated on. */
+  private assertDirectoryReadAvailable(): void {
+    this.assertSkillsAvailable();
+    if (this.getSkillsExtension()?.directoryRead !== true) {
+      throw new ServerError(directoryReadUnavailableMessage());
+    }
+  }
+
+  /**
+   * List the skills the server serves (`skills/list`).
+   *
+   * Each entry is a complete manifest — frontmatter plus every file with its digest and
+   * size — so a caller never has to follow up with `skills/get` to complete an entry.
+   * The listing MAY be empty or partial: that is not proof the server serves no skills,
+   * and a skill missing from it is still retrievable by URI.
+   */
+  async listSkills(cursor?: string): Promise<ListSkillsResult> {
+    this.assertSkillsAvailable();
+    try {
+      this.logger.debug('Listing skills...', cursor ? { cursor } : {});
+      const result = await this.client.request(
+        { method: 'skills/list', ...(cursor ? { params: { cursor } } : {}) },
+        ListSkillsResultSchema,
+        this.getRequestOptions()
+      );
+      this.logger.debug(`Found ${result.skills.length} skills`);
+      return result;
+    } catch (error) {
+      this.logger.error('Failed to list skills:', error);
+      throw new ServerError(`Failed to list skills: ${(error as Error).message}`, {
+        originalError: error,
+      });
+    }
+  }
+
+  /**
+   * Get one skill's entry by the URI of its SKILL.md (`skills/get`).
+   *
+   * Servers answer for every skill they serve, listed or not, and return -32602 for a
+   * URI that identifies no skill.
+   */
+  async getSkill(uri: string): Promise<GetSkillResult> {
+    this.assertSkillsAvailable();
+    try {
+      this.logger.debug(`Getting skill: ${uri}`);
+      const result = await this.client.request(
+        { method: 'skills/get', params: { uri } },
+        GetSkillResultSchema,
+        this.getRequestOptions()
+      );
+      this.logger.debug(`Got skill ${result.skill.frontmatter.name}`);
+      return result;
+    } catch (error) {
+      this.logger.error(`Failed to get skill ${uri}:`, error);
+      throw new ServerError(`Failed to get skill ${uri}: ${(error as Error).message}`, {
+        originalError: error,
+      });
+    }
+  }
+
+  /**
+   * Read the direct children of a directory resource (`resources/directory/read`).
+   *
+   * A live observation of the server's directory tree, not an extension of any skill
+   * manifest: the two can legitimately disagree when a skill changed after its entry
+   * was fetched.
+   */
+  async readResourceDirectory(uri: string, cursor?: string): Promise<ReadResourceDirectoryResult> {
+    this.assertDirectoryReadAvailable();
+    try {
+      this.logger.debug(`Reading directory: ${uri}`, cursor ? { cursor } : {});
+      const result = await this.client.request(
+        { method: 'resources/directory/read', params: { uri, ...(cursor ? { cursor } : {}) } },
+        ReadResourceDirectoryResultSchema,
+        this.getRequestOptions()
+      );
+      this.logger.debug(`Directory ${uri} has ${result.resources.length} children`);
+      return result;
+    } catch (error) {
+      this.logger.error(`Failed to read directory ${uri}:`, error);
+      throw new ServerError(`Failed to read directory ${uri}: ${(error as Error).message}`, {
+        originalError: error,
+      });
     }
   }
 

@@ -29,6 +29,9 @@ import type {
   CancelTaskResult,
   ResourceSyncResult,
   ResourceUnsubscribeResult,
+  ListSkillsResult,
+  GetSkillResult,
+  ReadResourceDirectoryResult,
 } from './types.js';
 import type { ListResourceTemplatesResult } from '@modelcontextprotocol/client';
 import { BridgeClient } from './bridge-client.js';
@@ -253,6 +256,42 @@ export class SessionClient implements IMcpClient {
           this.requestTimeoutSecs
         ) as Promise<ReadResourceResult>,
       'readResource'
+    );
+  }
+
+  async listSkills(cursor?: string): Promise<ListSkillsResult> {
+    return this.withRetry(
+      () =>
+        this.bridgeClient.request(
+          'listSkills',
+          cursor,
+          this.requestTimeoutSecs
+        ) as Promise<ListSkillsResult>,
+      'listSkills'
+    );
+  }
+
+  async getSkill(uri: string): Promise<GetSkillResult> {
+    return this.withRetry(
+      () =>
+        this.bridgeClient.request(
+          'getSkill',
+          { uri },
+          this.requestTimeoutSecs
+        ) as Promise<GetSkillResult>,
+      'getSkill'
+    );
+  }
+
+  async readResourceDirectory(uri: string, cursor?: string): Promise<ReadResourceDirectoryResult> {
+    return this.withRetry(
+      () =>
+        this.bridgeClient.request(
+          'readResourceDirectory',
+          { uri, ...(cursor ? { cursor } : {}) },
+          this.requestTimeoutSecs
+        ) as Promise<ReadResourceDirectoryResult>,
+      'readResourceDirectory'
     );
   }
 

@@ -445,6 +445,63 @@ export interface TaskUpdate {
 }
 
 /**
+ * A file belonging to a skill, with the digest and size of its content
+ * (`io.modelcontextprotocol/skills`).
+ */
+export interface SkillResource {
+  /** Resource URI of the file. */
+  uri: string;
+  /** SHA-256 digest of the file's raw bytes, as `sha256:<64 lowercase hex chars>`. */
+  digest: string;
+  /** Length in bytes of the file's raw content — the same bytes `digest` covers. */
+  size: number;
+}
+
+/**
+ * The entry for a single skill, as returned by `skills/list` and `skills/get`.
+ * Identical in shape and meaning in each.
+ */
+export interface Skill {
+  /** Resource URI of the skill's SKILL.md, readable via `resources/read`. */
+  uri: string;
+  /**
+   * The skill's SKILL.md YAML frontmatter, verbatim. `name` and `description` are
+   * always present; every other field the author wrote passes through unchanged.
+   */
+  frontmatter: {
+    name: string;
+    description: string;
+    [key: string]: unknown;
+  };
+  /**
+   * The skill's complete file manifest (SKILL.md included), or the string `"dynamic"`
+   * when the content is generated such that stable digests cannot be published.
+   */
+  resources: SkillResource[] | 'dynamic';
+}
+
+/** Result of `skills/list` (paginated; `ttlMs`/`cacheScope` are the caching hints). */
+export interface ListSkillsResult {
+  skills: Skill[];
+  nextCursor?: string;
+  ttlMs?: number;
+  cacheScope?: string;
+}
+
+/** Result of `skills/get`. */
+export interface GetSkillResult {
+  skill: Skill;
+  ttlMs?: number;
+  cacheScope?: string;
+}
+
+/** Result of `resources/directory/read`: the direct children of a directory resource. */
+export interface ReadResourceDirectoryResult {
+  resources: Resource[];
+  nextCursor?: string;
+}
+
+/**
  * IPC message structure
  */
 export interface IpcMessage {
@@ -593,6 +650,15 @@ export interface IMcpClient {
   // Note: resource subscriptions (resources-subscribe/-unsubscribe) are not part of this
   // interface — they sync files via the persistent bridge process and live on SessionClient.
   // McpClient keeps the raw protocol ops (subscribeResource/unsubscribeResource) for the bridge.
+  /**
+   * Skills extension (`io.modelcontextprotocol/skills`): list the skills the server
+   * serves, get one skill's entry by the URI of its SKILL.md, and read a directory
+   * resource's direct children. All three require the server to declare the extension
+   * (the last one additionally `directoryRead: true`) on a 2026-07-28+ connection.
+   */
+  listSkills(cursor?: string): Promise<ListSkillsResult>;
+  getSkill(uri: string): Promise<GetSkillResult>;
+  readResourceDirectory(uri: string, cursor?: string): Promise<ReadResourceDirectoryResult>;
   listPrompts(cursor?: string): Promise<ListPromptsResult>;
   getPrompt(name: string, args?: Record<string, string>): Promise<GetPromptResult>;
   setLoggingLevel(level: LoggingLevel): Promise<void>;

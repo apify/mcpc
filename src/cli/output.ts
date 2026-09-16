@@ -26,11 +26,14 @@ import type {
   CallToolResult,
   ResourceSubscriptionEntry,
   TransportKind,
+  Skill,
 } from '../lib/types.js';
+import type { DecodedResourceContent } from '../lib/resource-content.js';
 import { extractAllTextContent } from './tool-result.js';
 import { getSession } from '../lib/sessions.js';
 import { getBridgeLogPath } from '../lib/log-reader.js';
 import { isModernProtocolVersion, SERVER_INFO_META_KEY } from '../core/protocol.js';
+import { findMcpExtension, SKILLS_EXTENSION_KEY } from '../core/extensions.js';
 
 // Re-export for external use
 export { extractAllTextContent } from './tool-result.js';
@@ -915,29 +918,47 @@ export function formatResourceContents(
 }
 
 /**
- * Skill entry as exposed by the MCP skills extension.
- * Imported indirectly to avoid coupling output.ts to commands/skills.ts.
+ * Human-readable byte size for skill manifests: `2.3 KB`, `18.0 KB`, `1.2 MB`.
  */
-interface SkillSummary {
-  name: string;
-  description: string;
-  type?: string;
-  url: string;
+function formatByteSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 /**
- * Format a list of skills with Markdown-like display.
- * Used by `skills-list` in human mode.
+ * One line describing a skill's file manifest: how many files it has and how much they
+ * weigh, or that the skill is generated and publishes no manifest at all.
+ */
+function formatManifestSummary(skill: Skill): string {
+  if (skill.resources === 'dynamic') return 'dynamic, no digests published';
+  const count = skill.resources.length;
+  const bytes = skill.resources.reduce((total, file) => total + file.size, 0);
+  return `${count} ${count === 1 ? 'file' : 'files'}, ${formatByteSize(bytes)}`;
+}
+
+/**
+ * Format the `skills/list` result.
+ *
+ * Each skill gets its URI on a second line: names are labels rather than identifiers, so
+ * two skills served under different prefixes can share one, and the URI is what tells
+ * them apart (and what `skills-get` accepts when they do).
  */
 export function formatSkills(
-  skills: SkillSummary[],
+  skills: Skill[],
   sessionName?: string,
   options?: FormatOptions
 ): string {
   if (skills.length === 0) {
-    return chalk.gray(
-      '(no skills found — server does not expose `skill://index.json` and no `skill://*/SKILL.md` resources are listed)'
-    );
+    const lines = [chalk.gray('(no skills listed)')];
+    if (sessionName) {
+      lines.push(
+        chalk.dim(
+          `↳ a listing may be empty or partial — a skill you know the URI of is still readable: mcpc ${sessionName} skills-get skill://<name>/SKILL.md`
+        )
+      );
+    }
+    return lines.join('\n');
   }
 
   const lines: string[] = [];
@@ -945,16 +966,17 @@ export function formatSkills(
 
   lines.push(chalk.bold(`Skills (${skills.length}):`));
   for (const skill of skills) {
-    const typeSuffix =
-      skill.type && skill.type !== 'skill-md' ? ` ${chalk.gray(`[${skill.type}]`)}` : '';
-    const desc = skill.description ? ` ${chalk.dim('-')} ${skill.description}` : '';
-    lines.push(`${bullet} ${inBackticks(skill.name)}${typeSuffix}${desc}`);
+    const desc = skill.frontmatter.description
+      ? ` ${chalk.dim('-')} ${skill.frontmatter.description}`
+      : '';
+    lines.push(`${bullet} ${inBackticks(skill.frontmatter.name)}${desc}`);
+    lines.push(`  ${chalk.gray(skill.uri)} ${chalk.gray(`(${formatManifestSummary(skill)})`)}`);
   }
 
   if (sessionName) {
     lines.push('');
     lines.push(
-      `For full skill content, run \`mcpc ${sessionName} skills-get <name>\` (use --raw for the markdown only).`
+      `For a skill's instructions, run \`mcpc ${sessionName} skills-get <name>\` (use --raw for the markdown only).`
     );
   }
 
@@ -966,39 +988,80 @@ export function formatSkills(
 }
 
 /**
- * Format a single skill (`skills-get` output) with the SKILL.md text inlined
- * in a code block, prefixed with the resolved URI.
+ * Format one verified skill file (`skills-get`): the skill's `SKILL.md` with its
+ * supporting files listed underneath, or a single supporting file on its own.
  */
 export function formatSkillDetail(
+  skill: Skill,
   uri: string,
-  result: ReadResourceResult,
-  options?: { maxChars?: number }
+  content: DecodedResourceContent,
+  options?: { sessionName?: string; maxChars?: number }
 ): string {
   const lines: string[] = [];
-  lines.push(`${chalk.bold('Skill:')} ${inBackticks(uri)}`);
+  const bullet = chalk.dim('*');
+  const isSkillFile = uri === skill.uri;
+  const verified =
+    skill.resources === 'dynamic'
+      ? chalk.gray('(dynamic skill — the server publishes no digests, so it is unverified)')
+      : chalk.gray('(verified against the skill manifest)');
 
-  let body: string | undefined;
-  let mimeType: string | undefined;
-  for (const item of result.contents) {
-    if ('text' in item && typeof item.text === 'string') {
-      body = item.text;
-      mimeType = item.mimeType;
-      break;
-    }
+  if (isSkillFile) {
+    lines.push(`${chalk.bold('Skill:')} ${inBackticks(skill.frontmatter.name)}`);
+  } else {
+    const name = uri.startsWith(`${skillRootOf(skill.uri)}/`)
+      ? uri.slice(skillRootOf(skill.uri).length + 1)
+      : uri;
+    lines.push(
+      `${chalk.bold('Skill file:')} ${inBackticks(name)} ${chalk.gray(`(skill ${skill.frontmatter.name})`)}`
+    );
   }
+  lines.push(`${chalk.bold('URI:')} ${chalk.gray(uri)}`);
+  lines.push(
+    `${chalk.bold('Size:')} ${formatByteSize(content.data.length)}${content.mimeType ? `, ${content.mimeType}` : ''} ${verified}`
+  );
 
-  if (mimeType) {
-    lines.push(`${chalk.bold('MIME type:')} ${chalk.yellow(mimeType)}`);
-  }
-
-  if (body !== undefined) {
+  if (content.binary) {
     lines.push('');
-    lines.push(chalk.gray('````'));
-    lines.push(body);
-    lines.push(chalk.gray('````'));
+    lines.push(chalk.gray('(binary content not shown)'));
+    if (options?.sessionName) {
+      lines.push(
+        chalk.dim(`↳ save to a file: mcpc ${options.sessionName} resources-read ${uri} -o <file>`)
+      );
+    }
   } else {
     lines.push('');
-    lines.push(chalk.gray('(skill returned non-text content)'));
+    lines.push(chalk.gray('````'));
+    lines.push(content.data.toString('utf-8'));
+    lines.push(chalk.gray('````'));
+  }
+
+  // The manifest is the authoritative list of the skill's files, so show it with the
+  // SKILL.md rather than making the reader guess what `templates/` holds.
+  if (isSkillFile && skill.resources !== 'dynamic') {
+    const supporting = skill.resources.filter((file) => file.uri !== skill.uri);
+    if (supporting.length > 0) {
+      const root = skillRootOf(skill.uri);
+      lines.push('');
+      lines.push(chalk.bold(`Supporting files (${supporting.length}):`));
+      for (const file of supporting) {
+        const name = file.uri.startsWith(`${root}/`) ? file.uri.slice(root.length + 1) : file.uri;
+        lines.push(
+          `${bullet} ${inBackticks(name)} ${chalk.gray(`(${formatByteSize(file.size)})`)}`
+        );
+      }
+      if (options?.sessionName) {
+        const first = supporting[0]!;
+        const name = first.uri.startsWith(`${root}/`)
+          ? first.uri.slice(root.length + 1)
+          : first.uri;
+        lines.push('');
+        lines.push(
+          chalk.dim(
+            `To read one, run: mcpc ${options.sessionName} skills-get ${skill.frontmatter.name} ${name}`
+          )
+        );
+      }
+    }
   }
 
   let output = lines.join('\n');
@@ -1006,6 +1069,63 @@ export function formatSkillDetail(
     output = truncateOutput(output, options.maxChars);
   }
   return output;
+}
+
+/** MIME type that marks a resource as a directory rather than a file. */
+const DIRECTORY_MIME_TYPE = 'inode/directory';
+
+/**
+ * Format the `resources/directory/read` result: the direct children of one directory,
+ * with subdirectories marked so a reader knows what can be descended into.
+ */
+export function formatDirectoryChildren(
+  uri: string,
+  children: Resource[],
+  sessionName?: string,
+  options?: FormatOptions
+): string {
+  const lines: string[] = [];
+  const bullet = chalk.dim('*');
+
+  if (children.length === 0) {
+    lines.push(`${chalk.bold('Directory:')} ${chalk.gray(uri)}`);
+    lines.push(chalk.gray('(empty)'));
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold(`Directory ${uri} (${children.length}):`));
+  for (const child of children) {
+    const isDirectory = child.mimeType === DIRECTORY_MIME_TYPE;
+    const name = child.name || child.uri.slice(child.uri.lastIndexOf('/') + 1);
+    const suffix = isDirectory
+      ? chalk.gray('/')
+      : child.mimeType
+        ? ` ${chalk.gray(`(${child.mimeType})`)}`
+        : '';
+    lines.push(`${bullet} ${inBackticks(name)}${suffix}`);
+    lines.push(`  ${chalk.gray(child.uri)}`);
+  }
+
+  if (sessionName) {
+    const directory = children.find((child) => child.mimeType === DIRECTORY_MIME_TYPE);
+    lines.push('');
+    lines.push(
+      directory
+        ? `To descend, run: mcpc ${sessionName} resources-directory-read ${directory.uri}`
+        : `To read a file, run: mcpc ${sessionName} resources-read <uri>`
+    );
+  }
+
+  let output = lines.join('\n');
+  if (options?.maxChars) {
+    output = truncateOutput(output, options.maxChars);
+  }
+  return output;
+}
+
+/** A skill's root directory: its `SKILL.md` URI with the file name removed. */
+function skillRootOf(skillUri: string): string {
+  return skillUri.replace(/\/SKILL\.md$/, '');
 }
 
 /**
@@ -1320,9 +1440,8 @@ function findDuplicateTextBlocks(
  * 1. **Content:** — each content block rendered per its type (text blocks
  *    that duplicate `structuredContent` are omitted)
  * 2. **Structured content:** — `structuredContent` as syntax-highlighted JSON,
- *    shown only when there is no visible Content (otherwise it duplicates
- *    information already present and adds noise for LLM consumers; use
- *    `--json` to always get the full payload)
+ *    shown only when there is no visible Content. Otherwise a hint points to
+ *    `--json`, which always includes the full payload.
  * 3. **Metadata:** — `_meta` as syntax-highlighted JSON
  */
 export function formatCallToolResultHuman(result: CallToolResult): string {
@@ -1363,6 +1482,13 @@ export function formatCallToolResultHuman(result: CallToolResult): string {
     lines.push(chalk.bold('Structured content:'));
     const scJson = JSON.stringify(sc, null, 2);
     lines.push(process.stdout.isTTY ? highlightJson(scJson) : scJson);
+  } else if (hasStructuredContent) {
+    lines.push(
+      '',
+      chalk.dim(
+        'Structured content is also available. Use --json to see the structuredContent field.'
+      )
+    );
   }
 
   // Metadata section — syntax-highlighted JSON, shown last
@@ -1611,21 +1737,47 @@ function formatTransportKind(transport: TransportKind): string {
 }
 
 /**
- * Whether the server advertises the experimental skills extension (SEP-2640).
- *
- * The spec advertises it under `capabilities.extensions`, but the current MCP SDK strips
- * unknown capability fields. The SDK does preserve `capabilities.experimental` — the
- * long-standing escape hatch for non-standard capabilities — so both locations are
- * checked, to support today's servers and forward-compatible SDKs.
+ * Settings the server declared for the skills extension, or `undefined` when it did not
+ * declare it at all. Only `capabilities.extensions` counts — that is where the extension
+ * is declared — and an empty object means "supported, with no optional features".
  */
-function hasSkillsExtension(capabilities?: ServerCapabilities): boolean {
-  const caps = capabilities as
-    { extensions?: Record<string, unknown>; experimental?: Record<string, unknown> } | undefined;
-  const SKILLS_KEY = 'io.modelcontextprotocol/skills';
-  return (
-    (!!caps?.extensions && Object.prototype.hasOwnProperty.call(caps.extensions, SKILLS_KEY)) ||
-    (!!caps?.experimental && Object.prototype.hasOwnProperty.call(caps.experimental, SKILLS_KEY))
-  );
+function skillsExtensionSettings(
+  capabilities?: ServerCapabilities
+): Record<string, unknown> | undefined {
+  const caps = capabilities as { extensions?: Record<string, unknown> } | undefined;
+  const declared = caps?.extensions?.[SKILLS_EXTENSION_KEY];
+  if (declared === undefined) return undefined;
+  return typeof declared === 'object' && declared !== null
+    ? (declared as Record<string, unknown>)
+    : {};
+}
+
+/**
+ * One capability line per extension the server declares, minus the `rendered` ids the
+ * caller has already put on the screen itself (skills, which gets a line carrying the
+ * settings it was declared with).
+ *
+ * Extensions are opt-in on both sides, so a server declaring one says nothing about what
+ * mcpc can do with it: the annotation is what keeps the list from reading as a promise.
+ * Extensions mcpc does not know are still listed, by identifier — a server offering
+ * something new is worth seeing, even when mcpc can only name it.
+ */
+function formatExtensionList(
+  capabilities: ServerCapabilities | undefined,
+  rendered: readonly string[] = []
+): string[] {
+  const bullet = chalk.dim('*');
+  const caps = capabilities as { extensions?: Record<string, unknown> } | undefined;
+  return Object.keys(caps?.extensions ?? {})
+    .filter((id) => !rendered.includes(id))
+    .map((id) => {
+      const extension = findMcpExtension(id);
+      if (!extension) {
+        return `${bullet} ${id} ${chalk.gray('(unknown extension)')}`;
+      }
+      const note = extension.support === 'full' ? 'extension' : 'extension, not supported by mcpc';
+      return `${bullet} ${extension.label} ${chalk.gray(`(${note})`)}`;
+    });
 }
 
 /**
@@ -1675,9 +1827,20 @@ function formatCapabilityList(
     list.push(`${bullet} tasks${featureStr}${note}`);
   }
 
-  if (hasSkillsExtension(capabilities)) {
-    list.push(`${bullet} skills ${chalk.gray('(experimental extension)')}`);
+  const skills = skillsExtensionSettings(capabilities);
+  if (skills) {
+    // The extension is specified against 2026-07-28 and later, so on a legacy connection
+    // its commands would only error out — say so rather than advertise them.
+    const note = isModern
+      ? skills.directoryRead === true
+        ? ' (with directory reads)'
+        : ''
+      : ` ${chalk.gray(`(not usable on MCP ${protocolVersion})`)}`;
+    list.push(`${bullet} skills${note}`);
   }
+
+  // Everything else the server declared, minus the skills line just written above.
+  list.push(...formatExtensionList(capabilities, skills ? [SKILLS_EXTENSION_KEY] : []));
 
   return list;
 }
@@ -1809,7 +1972,7 @@ export function formatServerDetails(
 
   // Capabilities - only show what the server actually exposes, annotated for the era
   const isModern = !!protocolVersion && isModernProtocolVersion(protocolVersion);
-  const hasSkills = hasSkillsExtension(capabilities);
+  const skills = skillsExtensionSettings(capabilities);
 
   lines.push(chalk.bold('Capabilities:'));
   const capabilityList = formatCapabilityList(capabilities, protocolVersion);
@@ -1865,12 +2028,14 @@ export function formatServerDetails(
     }
   }
 
-  // Surface skills commands when the server advertises the extension, OR
-  // unconditionally as a hint when resources are supported (the spec lets a
-  // server expose `skill://*` resources without advertising the extension).
-  if (hasSkills) {
+  // Skills commands need the server's declaration and a connection that can carry the
+  // extension; directory reads need the optional setting on top of that.
+  if (skills && isModern) {
     commands.push(`${bullet} ${bt}mcpc ${target} skills-list${bt}`);
-    commands.push(`${bullet} ${bt}mcpc ${target} skills-get <name> [--raw]${bt}`);
+    commands.push(`${bullet} ${bt}mcpc ${target} skills-get <name> [file] [--raw]${bt}`);
+    if (skills.directoryRead === true) {
+      commands.push(`${bullet} ${bt}mcpc ${target} resources-directory-read <uri>${bt}`);
+    }
   }
 
   if (capabilities?.prompts) {
