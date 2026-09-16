@@ -53,6 +53,7 @@ import {
   formatDirectoryChildren,
   formatSessionLine,
   formatHuman,
+  formatOutput,
   logTarget,
   formatToolCallExample,
   formatToolHints,
@@ -2516,6 +2517,7 @@ describe('formatCallToolResultHuman', () => {
     expect(output).toContain('Content:');
     expect(output).toContain('````');
     expect(output).toContain('Hello world');
+    expect(output).not.toContain('--json');
   });
 
   it('should format multiple text content blocks separately', () => {
@@ -2564,19 +2566,22 @@ describe('formatCallToolResultHuman', () => {
     expect(output).toContain('Structured content:');
     expect(output).toContain('"key"');
     expect(output).toContain('"value"');
+    expect(output).not.toContain('--json');
   });
 
-  it('should skip structuredContent when visible Content is present', () => {
+  it('should hint how to retrieve structuredContent when visible Content is present', () => {
     const result = {
       content: [{ type: 'text' as const, text: 'data' }],
       structuredContent: { key: 'value' },
     };
     const output = formatCallToolResultHuman(result);
-    // Content already conveys the result — Structured content is redundant
-    // verbose output and is suppressed (use --json for the full payload).
     expect(output).toContain('Content:');
     expect(output).toContain('data');
-    expect(output).not.toContain('Structured content');
+    expect(output).toContain(
+      'Structured content is also available. Use --json to see the structuredContent field.'
+    );
+    expect(output).not.toContain('"key"');
+    expect(output).not.toContain('"value"');
   });
 
   it('should not show structuredContent section when empty', () => {
@@ -2619,7 +2624,9 @@ describe('formatCallToolResultHuman', () => {
     const output = formatCallToolResultHuman(result);
     expect(output).toContain('Content:');
     expect(output).toContain('summary');
-    expect(output).not.toContain('Structured content');
+    expect(output).toContain('--json');
+    expect(output).toContain('structuredContent');
+    expect(output).not.toContain('Structured content:');
   });
 
   it('should treat a null structuredContent as absent (SEP-2106)', () => {
@@ -2643,6 +2650,7 @@ describe('formatCallToolResultHuman', () => {
     expect(output).not.toContain('Content:');
     expect(output).toContain('Structured content:');
     expect(output).toContain('"results"');
+    expect(output).not.toContain('--json');
   });
 
   it('should skip duplicate text block even when pretty-printed', () => {
@@ -2664,7 +2672,8 @@ describe('formatCallToolResultHuman', () => {
     const output = formatCallToolResultHuman(result);
     expect(output).toContain('Content:');
     expect(output).toContain('Human-readable summary');
-    expect(output).not.toContain('Structured content');
+    expect(output).toContain('--json');
+    expect(output).not.toContain('"results"');
   });
 
   it('should show structuredContent when there are no content blocks', () => {
@@ -2689,10 +2698,55 @@ describe('formatCallToolResultHuman', () => {
     };
     const output = formatCallToolResultHuman(result);
     // The first text block (non-matching) is kept; the JSON duplicate is omitted.
-    // Since visible Content remains, Structured content is suppressed too.
+    // Since visible Content remains, show a retrieval hint for the structured data.
     expect(output).toContain('Content:');
     expect(output).toContain('Summary');
-    expect(output).not.toContain('Structured content');
+    expect(output).toContain('--json');
+    expect(output).toContain('structuredContent');
+    expect(output).not.toContain('"key"');
+    expect(output.match(/````/g)).toHaveLength(2);
+  });
+
+  it.each([0, false, '', ['a', 'b']].map((structuredContent) => ({ structuredContent })))(
+    'should hint about non-object structuredContent $structuredContent alongside visible content',
+    ({ structuredContent }) => {
+      const output = formatCallToolResultHuman({
+        content: [{ type: 'text', text: 'Summary' }],
+        structuredContent,
+      });
+      expect(output).toContain('Summary');
+      expect(output).toContain('--json');
+      expect(output).toContain('structuredContent');
+      expect(output).not.toContain('Structured content:');
+    }
+  );
+
+  it('should hint about structuredContent alongside non-text content', () => {
+    const output = formatCallToolResultHuman({
+      content: [{ type: 'image', data: 'aGVsbG8=', mimeType: 'image/png' }],
+      structuredContent: { caption: 'An image' },
+    });
+    expect(output).toContain('[Image: image/png');
+    expect(output).toContain('--json');
+    expect(output).toContain('structuredContent');
+    expect(output).not.toContain('"caption"');
+  });
+
+  it('should preserve the full JSON result after hiding duplicate text in human output', () => {
+    const result = {
+      content: [
+        { type: 'text' as const, text: 'Summary' },
+        { type: 'text' as const, text: '{"answer":42}' },
+      ],
+      structuredContent: { answer: 42 },
+      _meta: { cost: 0.01 },
+      isError: true,
+    };
+    const expectedJson = JSON.stringify(result);
+    const human = formatCallToolResultHuman(result);
+    expect(human).toContain('--json');
+    expect(human).not.toContain('"answer"');
+    expect(JSON.parse(formatOutput(result, 'json'))).toEqual(JSON.parse(expectedJson));
   });
 
   it('should format resource_link content blocks', () => {
@@ -2792,11 +2846,12 @@ describe('formatCallToolResultHuman', () => {
     expect(output).toContain('Resource link');
     expect(output).toContain('Metadata:');
     expect(output).toContain('"cost"');
-    // Structured content is redundant when Content already conveys the result
-    expect(output).not.toContain('Structured content');
+    expect(output).toContain('--json');
+    expect(output).not.toContain('"parsed"');
 
-    // Correct ordering: Content → Metadata
-    expect(output.indexOf('Content:')).toBeLessThan(output.indexOf('Metadata:'));
+    // Correct ordering: Content → structured content hint → Metadata
+    expect(output.indexOf('Content:')).toBeLessThan(output.indexOf('--json'));
+    expect(output.indexOf('--json')).toBeLessThan(output.indexOf('Metadata:'));
   });
 
   it('should show Structured content and Metadata when content is empty', () => {
