@@ -1413,10 +1413,14 @@ function formatContentBlock(block: ContentBlock, lines: string[]): void {
  * `structuredContent`.  Per the MCP spec, servers SHOULD include such a block
  * for backwards compatibility — we skip those blocks from the Content section
  * so the better-formatted Structured content section is the canonical view.
+ *
+ * `structuredContent` may be any JSON value since 2026-07-28 (SEP-2106), and a
+ * server serializing an array or a primitive duplicates itself just as much as
+ * one serializing an object, so the comparison is on the canonical JSON.
  */
 function findDuplicateTextBlocks(
   content: CallToolResult['content'],
-  structuredContent: Record<string, unknown>
+  structuredContent: unknown
 ): Set<number> {
   const dupes = new Set<number>();
   const canonical = JSON.stringify(structuredContent);
@@ -1448,8 +1452,8 @@ export function formatCallToolResultHuman(result: CallToolResult): string {
   const lines: string[] = [];
 
   // Identify text blocks that are just a JSON dump of structuredContent.
-  // Since protocol 2026-07-28 (SEP-2106), structuredContent may be any JSON value,
-  // so narrow to a plain object before key-based duplicate detection.
+  // Since protocol 2026-07-28 (SEP-2106), structuredContent may be any JSON value;
+  // an empty object carries nothing, so it counts as absent.
   const sc = result.structuredContent;
   const scObject =
     typeof sc === 'object' && sc !== null && !Array.isArray(sc)
@@ -1460,8 +1464,8 @@ export function formatCallToolResultHuman(result: CallToolResult): string {
     : sc !== undefined && sc !== null;
   const content = result.content;
   let skipIndices = new Set<number>();
-  if (hasStructuredContent && content && scObject) {
-    skipIndices = findDuplicateTextBlocks(content, scObject);
+  if (hasStructuredContent && content) {
+    skipIndices = findDuplicateTextBlocks(content, sc);
   }
 
   const visibleContent = content?.filter((_, i) => !skipIndices.has(i)) ?? [];
@@ -1483,12 +1487,7 @@ export function formatCallToolResultHuman(result: CallToolResult): string {
     const scJson = JSON.stringify(sc, null, 2);
     lines.push(process.stdout.isTTY ? highlightJson(scJson) : scJson);
   } else if (hasStructuredContent) {
-    lines.push(
-      '',
-      chalk.dim(
-        'Structured content is also available. Use --json to see the structuredContent field.'
-      )
-    );
+    lines.push('', chalk.dim('To see the `structuredContent` field, re-run with --json'));
   }
 
   // Metadata section — syntax-highlighted JSON, shown last

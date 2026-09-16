@@ -190,8 +190,8 @@ Run "mcpc --json" to get the same data as `{ sessions: [...], profiles: [...] }`
 Agent guide: mcpc help --skill
 ```
 
-For the full `--help` output of every command, see [REFERENCE.md](docs/REFERENCE.md)
-(also available in your terminal via `mcpc help <command>`).
+[REFERENCE.md](docs/REFERENCE.md) collects the full `--help` output of every command in one page.
+In your terminal, run `mcpc help <command>` to see the same help for a single command.
 
 ### General actions
 
