@@ -2577,7 +2577,7 @@ describe('formatCallToolResultHuman', () => {
     const output = formatCallToolResultHuman(result);
     expect(output).toContain('Content:');
     expect(output).toContain('data');
-    expect(output).toContain('To see the structuredContent field, re-run with --json');
+    expect(output).toContain('To see the `structuredContent` field, re-run with --json');
     expect(output).not.toContain('"key"');
     expect(output).not.toContain('"value"');
   });

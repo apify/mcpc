@@ -1486,7 +1486,7 @@ export function formatCallToolResultHuman(result: CallToolResult): string {
     const scJson = JSON.stringify(sc, null, 2);
     lines.push(process.stdout.isTTY ? highlightJson(scJson) : scJson);
   } else if (hasStructuredContent) {
-    lines.push('', chalk.dim('To see the structuredContent field, re-run with --json'));
+    lines.push('', chalk.dim('To see the `structuredContent` field, re-run with --json'));
   }
 
   // Metadata section — syntax-highlighted JSON, shown last
