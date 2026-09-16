@@ -877,6 +877,16 @@ HTTP 402 challenges, and payment-required tool results.
 The cap is stored in `sessions.json` and reused on every reconnect and restart, so a crashed
 session comes back capped. To change it, close the session and connect again.
 
+A single call can set its own cap, which replaces the session's for that call only:
+
+```bash
+# Allow this one call up to $2, whatever the session's cap is
+mcpc @apify tools-call expensive-tool --x402-max-amount 2 query:="hello"
+```
+
+Because the per-call value may also be higher than the session's, the session cap is a default
+rather than a ceiling — it does not constrain a caller that composes its own command lines.
+
 ### Supported networks
 
 | Network              | Status       |

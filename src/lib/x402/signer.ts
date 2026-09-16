@@ -177,6 +177,12 @@ export interface SignPaymentInput {
    * that caps the maximum authorization, not the amount finally captured.
    */
   maxAmountAtomicUnits?: bigint;
+  /**
+   * Where `maxAmountAtomicUnits` came from, so a refusal can tell the caller what to
+   * change: the session's `connect --x402-max-amount` (default), or a single call's
+   * `tools-call --x402-max-amount`.
+   */
+  maxAmountScope?: 'session' | 'call';
 }
 
 export interface SignPaymentResult {
@@ -337,10 +343,12 @@ function assertWithinSpendLimit(input: SignPaymentInput): void {
   }
 
   if (amountAtomicUnits <= maxAmountAtomicUnits) return;
+  const perCall = input.maxAmountScope === 'call';
   throw new X402PaymentLimitError(
     `x402 payment refused: ${formatUsdAmount(amountAtomicUnits)} to ${accept.payTo} exceeds the ` +
-      `${formatUsdAmount(maxAmountAtomicUnits)} limit set by --x402-max-amount. ` +
-      `To allow it, reconnect the session with a higher --x402-max-amount.`
+      `${formatUsdAmount(maxAmountAtomicUnits)} limit set by --x402-max-amount for this ` +
+      `${perCall ? 'call' : 'session'}. To allow it, ` +
+      `${perCall ? 'raise --x402-max-amount on the call' : 'reconnect the session with a higher --x402-max-amount'}.`
   );
 }
 

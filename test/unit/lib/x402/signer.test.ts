@@ -351,6 +351,25 @@ describe('signPayment', () => {
     await expect(attempt).rejects.toThrow('$0.50 limit');
   });
 
+  it('names which --x402-max-amount refused the payment', async () => {
+    const session = signPayment({
+      wallet: MOCK_WALLET,
+      accept: VALID_EXACT_ACCEPT,
+      maxAmountAtomicUnits: 500_000n,
+    });
+    await expect(session).rejects.toThrow('for this session');
+    await expect(session).rejects.toThrow('reconnect the session');
+
+    const call = signPayment({
+      wallet: MOCK_WALLET,
+      accept: VALID_EXACT_ACCEPT,
+      maxAmountAtomicUnits: 500_000n,
+      maxAmountScope: 'call',
+    });
+    await expect(call).rejects.toThrow('for this call');
+    await expect(call).rejects.toThrow('raise --x402-max-amount on the call');
+  });
+
   it('caps the upto scheme by its maximum authorization', async () => {
     await expect(
       signPayment({

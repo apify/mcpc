@@ -51,6 +51,7 @@ export class SessionClient implements IMcpClient {
   private bridgeClient: BridgeClient;
   private sessionName: string;
   private requestTimeoutSecs?: number; // Per-request timeout in seconds
+  private x402MaxAmountUsd?: number;
 
   constructor(sessionName: string, bridgeClient: BridgeClient) {
     this.sessionName = sessionName;
@@ -62,6 +63,19 @@ export class SessionClient implements IMcpClient {
    */
   setRequestTimeout(timeoutSecs: number): void {
     this.requestTimeoutSecs = timeoutSecs;
+  }
+
+  /**
+   * Set the x402 spend limit for the tool calls this client makes (`tools-call
+   * --x402-max-amount`, in USD), replacing the session's own limit for them.
+   */
+  setX402MaxAmountUsd(maxAmountUsd: number): void {
+    this.x402MaxAmountUsd = maxAmountUsd;
+  }
+
+  /** The per-call x402 limit as IPC message fields, empty when the caller set none. */
+  private x402LimitFields(): { x402MaxAmountUsd?: number } {
+    return this.x402MaxAmountUsd === undefined ? {} : { x402MaxAmountUsd: this.x402MaxAmountUsd };
   }
 
   /**
@@ -216,7 +230,9 @@ export class SessionClient implements IMcpClient {
         this.bridgeClient.request(
           'callTool',
           params,
-          this.requestTimeoutSecs
+          this.requestTimeoutSecs,
+          undefined,
+          this.x402LimitFields()
         ) as Promise<CallToolResult>,
       'callTool',
       { idempotent: false }
@@ -400,7 +416,8 @@ export class SessionClient implements IMcpClient {
             'callTool',
             { name, arguments: args, useTask: true, ...(meta && { _meta: meta }) },
             this.requestTimeoutSecs,
-            id
+            id,
+            this.x402LimitFields()
           )
           .then((result) => {
             cleanup();
@@ -474,7 +491,9 @@ export class SessionClient implements IMcpClient {
         this.bridgeClient.request(
           'callTool',
           { name, arguments: args, useTask: true, detach: true, ...(meta && { _meta: meta }) },
-          this.requestTimeoutSecs
+          this.requestTimeoutSecs,
+          undefined,
+          this.x402LimitFields()
         ) as Promise<TaskUpdate>,
       'callToolDetached',
       { idempotent: false }

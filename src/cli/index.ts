@@ -150,9 +150,10 @@ function getOptionsFromCommand(command: Command): HandlerOptions {
     }
     options.x402 = opts.x402 as X402SchemePreference;
   }
+  // Pairing with --x402 is checked where the flag lands: connectSession() for a new
+  // session, withMcpClient() for a tools-call against an existing one.
   if (opts.x402MaxAmount !== undefined) {
     options.x402MaxAmountUsd = parseMaxAmountUsd(opts.x402MaxAmount as string);
-    if (!options.x402) throw new ClientError('--x402-max-amount requires --x402.');
   }
   if (opts.insecure) options.insecure = true;
   if (opts.schema) options.schema = opts.schema;
@@ -1191,13 +1192,11 @@ ${chalk.bold('JSON output (--json):')}
   program
     .command('tools-call <name> [args...]')
     .description('Call an MCP tool with arguments.')
-    .option(
-      '--task',
-      'Use async task execution; Ctrl+C prints the task ID and exits (experimental)'
-    )
+    .option('--task', 'Use async task execution (see below)')
     .option('--detach', 'Start task and return immediately with task ID (implies --task)')
     .option('--schema <file>', 'Validate tool schema against expected schema before calling')
     .option('--schema-mode <mode>', 'Schema validation mode: strict, compatible (default), ignore')
+    .option('--x402-max-amount <usd>', 'Spend limit for this call (see below)')
     .addHelpText(
       'after',
       `
@@ -1210,10 +1209,10 @@ ${chalk.bold('Arguments:')}
   To force a string, wrap in quotes: id:='"123"'
   Tip: mcpc ${session} tools-call <tool> --help prints the tool's parameter schema.
 
-${chalk.bold('Async tasks (--task, --detach):')}
+${chalk.bold('Async tasks (--task, --detach) — experimental:')}
   --task shows a progress spinner while the task runs on the server.
-  If you press Ctrl+C, the task keeps running and a hint with the task ID
-  is printed so you can fetch or cancel it later.
+  Pressing Ctrl+C leaves the task running and prints a hint with its task ID,
+  so you can fetch or cancel it later.
   --detach returns the task ID immediately without waiting.
   Both flags require a server that advertises the tasks capability and uses
   MCP protocol 2025-11-25 (on 2026-07-28 servers tasks are an extension not
@@ -1225,6 +1224,12 @@ ${chalk.bold('Async tasks (--task, --detach):')}
 ${chalk.bold('Schema validation:')}
   --schema <file>       Validate tool schema before calling (save with tools-get --json)
   --schema-mode <mode>  strict | compatible (default) | ignore
+
+${chalk.bold('x402 spend limit (--x402-max-amount <usd>):')}
+  Caps what this one call may pay, e.g. --x402-max-amount 0.50. It replaces the
+  session's own --x402-max-amount for this call and may be higher or lower, so the
+  session value is a default rather than a ceiling. Requires a session connected
+  with --x402.
 ${toolsCallCombinedJsonHelp}`
     )
     .action(async (name, args, options, command) => {

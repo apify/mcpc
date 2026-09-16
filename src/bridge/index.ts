@@ -79,6 +79,7 @@ import type { X402PaymentCache } from '../lib/x402/fetch-middleware.js';
 import type { SignerWallet } from '../lib/x402/signer.js';
 // Spend-limit helpers are deliberately dependency-free, so they stay a static import.
 import { X402PaymentLimitError, parseMaxAmountUsd, usdToAtomicUnits } from '../lib/x402/limits.js';
+import { getScopedPaymentLimit, runWithPaymentLimit } from '../lib/x402/payment-scope.js';
 import type { FetchLike } from '@modelcontextprotocol/client';
 import { IpcLineBuffer } from '../lib/ipc-line-buffer.js';
 
@@ -1370,13 +1371,18 @@ class BridgeProcess {
     // Invalidate cache and sign fresh
     this.x402PaymentCache.signature = null;
     const { signPayment } = await import('../lib/x402/signer.js');
-    const maxAmountAtomicUnits = this.x402MaxAmountAtomicUnits();
+    // The call in progress may have set its own limit (tools-call --x402-max-amount)
+    const scopedMaxAmountAtomicUnits = getScopedPaymentLimit();
+    const maxAmountAtomicUnits = scopedMaxAmountAtomicUnits ?? this.x402MaxAmountAtomicUnits();
     try {
       const signed = await signPayment({
         wallet: this.x402Wallet,
         accept: parsed.accept,
         resource: parsed.resource,
-        ...(maxAmountAtomicUnits !== undefined && { maxAmountAtomicUnits }),
+        ...(maxAmountAtomicUnits !== undefined && {
+          maxAmountAtomicUnits,
+          maxAmountScope: scopedMaxAmountAtomicUnits === undefined ? 'session' : 'call',
+        }),
       });
       this.x402PaymentCache.signature = signed.paymentSignatureBase64;
       logger.debug(
@@ -1543,26 +1549,38 @@ class BridgeProcess {
           };
 
           // Execute with automatic x402 payment retry on payment-required tool results
-          try {
-            result = await executeToolCall();
-            const retry = await this.handlePaymentRequiredRetry(
-              params.name,
-              result,
-              executeToolCall
-            );
-            if (retry.handled) {
-              result = retry.result;
+          const runToolCall = async (): Promise<void> => {
+            try {
+              result = await executeToolCall();
+              const retry = await this.handlePaymentRequiredRetry(
+                params.name,
+                result,
+                executeToolCall
+              );
+              if (retry.handled) {
+                result = retry.result;
+              }
+            } finally {
+              // Hand the caller the x402 settlement receipt for this call. Runs on the error
+              // path too: the assignment is then discarded with the exception, but consuming
+              // the receipt is what keeps a call that failed after its payment settled from
+              // handing its receipt to the next call to the same tool. The slot stays empty
+              // without x402, so such a session never loads the (viem-backed) x402 module.
+              if (this.x402PaymentCache.lastSettlement) {
+                const { withSettlementReceipt } = await import('../lib/x402/fetch-middleware.js');
+                result = withSettlementReceipt(result, this.x402PaymentCache, params.name);
+              }
             }
-          } finally {
-            // Hand the caller the x402 settlement receipt for this call. Runs on the error
-            // path too: the assignment is then discarded with the exception, but consuming
-            // the receipt is what keeps a call that failed after its payment settled from
-            // handing its receipt to the next call to the same tool. The slot stays empty
-            // without x402, so such a session never loads the (viem-backed) x402 module.
-            if (this.x402PaymentCache.lastSettlement) {
-              const { withSettlementReceipt } = await import('../lib/x402/fetch-middleware.js');
-              result = withSettlementReceipt(result, this.x402PaymentCache, params.name);
-            }
+          };
+
+          // `tools-call --x402-max-amount` replaces the session limit for this call only.
+          // The scope has to reach the fetch middleware, which signs long after this line
+          // and concurrently with other calls, so it travels in async context rather than
+          // on a shared field (see payment-scope.ts).
+          if (message.x402MaxAmountUsd !== undefined) {
+            await runWithPaymentLimit(usdToAtomicUnits(message.x402MaxAmountUsd), runToolCall);
+          } else {
+            await runToolCall();
           }
           break;
         }

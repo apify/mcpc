@@ -639,11 +639,12 @@ Usage: mcpc @<session> tools-call [options] <name> [args...]
 Call an MCP tool with arguments.
 
 Options:
-  --task                Use async task execution; Ctrl+C prints the task ID and exits (experimental)
-  --detach              Start task and return immediately with task ID (implies --task)
-  --schema <file>       Validate tool schema against expected schema before calling
-  --schema-mode <mode>  Schema validation mode: strict, compatible (default), ignore
-  --json                Output in JSON format
+  --task                   Use async task execution (see below)
+  --detach                 Start task and return immediately with task ID (implies --task)
+  --schema <file>          Validate tool schema against expected schema before calling
+  --schema-mode <mode>     Schema validation mode: strict, compatible (default), ignore
+  --x402-max-amount <usd>  Spend limit for this call (see below)
+  --json                   Output in JSON format
 
 Arguments:
   key:=value pairs    mcpc @<session> tools-call search query:=hello limit:=10
@@ -654,10 +655,10 @@ Arguments:
   To force a string, wrap in quotes: id:='"123"'
   Tip: mcpc @<session> tools-call <tool> --help prints the tool's parameter schema.
 
-Async tasks (--task, --detach):
+Async tasks (--task, --detach) — experimental:
   --task shows a progress spinner while the task runs on the server.
-  If you press Ctrl+C, the task keeps running and a hint with the task ID
-  is printed so you can fetch or cancel it later.
+  Pressing Ctrl+C leaves the task running and prints a hint with its task ID,
+  so you can fetch or cancel it later.
   --detach returns the task ID immediately without waiting.
   Both flags require a server that advertises the tasks capability and uses
   MCP protocol 2025-11-25 (on 2026-07-28 servers tasks are an extension not
@@ -669,6 +670,12 @@ Async tasks (--task, --detach):
 Schema validation:
   --schema <file>       Validate tool schema before calling (save with tools-get --json)
   --schema-mode <mode>  strict | compatible (default) | ignore
+
+x402 spend limit (--x402-max-amount <usd>):
+  Caps what this one call may pay, e.g. --x402-max-amount 0.50. It replaces the
+  session's own --x402-max-amount for this call and may be higher or lower, so the
+  session value is a default rather than a ceiling. Requires a session connected
+  with --x402.
 
 JSON output (--json):
   `CallToolResult` object:

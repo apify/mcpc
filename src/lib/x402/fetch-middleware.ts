@@ -35,8 +35,10 @@ import {
   type PaymentRequiredAccept,
   type PaymentRequiredHeader,
   type SchemePreference,
+  type SignPaymentInput,
 } from './signer.js';
 import { X402PaymentLimitError } from './limits.js';
+import { getScopedPaymentLimit } from './payment-scope.js';
 import { createLogger } from '../logger.js';
 
 const logger = createLogger('x402-middleware');
@@ -247,8 +249,9 @@ export interface X402FetchMiddlewareOptions {
   schemePreference?: SchemePreference;
 
   /**
-   * Local spend limit in atomic units (`--x402-max-amount`). Payments authorizing more
-   * than this are refused instead of signed. Absent means no limit.
+   * The session's local spend limit in atomic units (`connect --x402-max-amount`). Payments
+   * authorizing more than this are refused instead of signed. A single tool call can replace
+   * it through `payment-scope.ts`; absent here and unscoped means no limit.
    */
   maxAmountAtomicUnits?: bigint;
 }
@@ -324,6 +327,19 @@ export function createX402FetchMiddleware(
 }
 
 /**
+ * The spend limit to sign against: the limit the tool call in progress set for itself, or the
+ * session's own. Returns the `signPayment` fields, empty when neither applies.
+ */
+function spendLimitInput(
+  sessionMaxAmountAtomicUnits?: bigint
+): Pick<SignPaymentInput, 'maxAmountAtomicUnits' | 'maxAmountScope'> {
+  const scoped = getScopedPaymentLimit();
+  const maxAmountAtomicUnits = scoped ?? sessionMaxAmountAtomicUnits;
+  if (maxAmountAtomicUnits === undefined) return {};
+  return { maxAmountAtomicUnits, maxAmountScope: scoped === undefined ? 'session' : 'call' };
+}
+
+/**
  * Get a cached payment signature or sign a fresh one for a tools/call request.
  * Returns the base64-encoded PAYMENT-SIGNATURE, or undefined if the request
  * is not a tools/call for a payment-required tool.
@@ -395,7 +411,7 @@ async function getOrSignPayment(
     const result = await signPayment({
       wallet,
       accept,
-      ...(maxAmountAtomicUnits !== undefined && { maxAmountAtomicUnits }),
+      ...spendLimitInput(maxAmountAtomicUnits),
     });
     logger.debug(
       `Fresh payment signed: scheme=${accept.scheme} amount=$${result.amountUsd.toFixed(6)} to=${result.to} network=${result.networkLabel}`
@@ -451,7 +467,7 @@ async function handle402Fallback(
       wallet,
       accept,
       resource: header.resource,
-      ...(maxAmountAtomicUnits !== undefined && { maxAmountAtomicUnits }),
+      ...spendLimitInput(maxAmountAtomicUnits),
     });
 
     logger.debug(

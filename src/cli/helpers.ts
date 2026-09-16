@@ -168,6 +168,7 @@ export async function withMcpClient<T>(
     verbose?: boolean;
     hideTarget?: boolean;
     timeoutSecs?: number;
+    x402MaxAmountUsd?: number;
   },
   callback: (client: SessionClient, context: McpClientContext) => Promise<T>
 ): Promise<T> {
@@ -199,8 +200,27 @@ export async function withMcpClient<T>(
     console.log(`[${formatSessionLine(session)}]\n`);
   }
 
+  // A spend limit caps nothing on a session that never pays, so say so rather than accept a
+  // flag that would do nothing. A session that does not exist falls through to the regular
+  // not-found error below, which is the more useful message.
+  if (options.x402MaxAmountUsd !== undefined && session && !session.x402) {
+    throw new ClientError(
+      `--x402-max-amount needs a session with x402 payments enabled.\n` +
+        `Reconnect with: mcpc connect <server> ${target} --x402`
+    );
+  }
+
   // Use session client (SessionClient implements IMcpClient interface)
   const sessionOpts =
     options.timeoutSecs !== undefined ? { timeoutSecs: options.timeoutSecs } : undefined;
-  return await withSessionClient(target, (client) => callback(client, context), sessionOpts);
+  return await withSessionClient(
+    target,
+    (client) => {
+      if (options.x402MaxAmountUsd !== undefined) {
+        client.setX402MaxAmountUsd(options.x402MaxAmountUsd);
+      }
+      return callback(client, context);
+    },
+    sessionOpts
+  );
 }

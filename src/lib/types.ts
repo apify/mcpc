@@ -510,6 +510,8 @@ export interface IpcMessage {
   method?: string; // MCP method name
   params?: unknown; // Method parameters
   timeoutSecs?: number; // Per-request timeout in seconds (overrides default)
+  /** Per-call x402 spend limit in USD (`tools-call --x402-max-amount`), replacing the session's. */
+  x402MaxAmountUsd?: number;
   result?: unknown; // Response result
   taskUpdate?: TaskUpdate; // Task progress update (for type='task-update')
   authCredentials?: AuthCredentials; // Auth credentials (for type='set-auth-credentials')
@@ -540,6 +542,8 @@ export interface CommandOptions {
   schema?: string; // Path to expected schema file for validation
   schemaMode?: 'strict' | 'compatible' | 'ignore'; // Schema validation mode
   maxChars?: number; // Maximum output characters for tool/prompt results (truncate if exceeded)
+  /** Per-call x402 spend limit in USD (`tools-call --x402-max-amount`), replacing the session's. */
+  x402MaxAmountUsd?: number;
 }
 
 /**
