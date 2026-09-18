@@ -77,6 +77,9 @@ import type { ProxyConfig } from '../lib/types.js';
 // only here and load the implementations lazily at the x402-gated call sites.
 import type { X402PaymentCache } from '../lib/x402/fetch-middleware.js';
 import type { SignerWallet } from '../lib/x402/signer.js';
+// Spend-limit helpers are deliberately dependency-free, so they stay a static import.
+import { X402PaymentLimitError, parseMaxAmountUsd, usdToAtomicUnits } from '../lib/x402/limits.js';
+import { getScopedPaymentLimit, runWithPaymentLimit } from '../lib/x402/payment-scope.js';
 import type { FetchLike } from '@modelcontextprotocol/client';
 import { IpcLineBuffer } from '../lib/ipc-line-buffer.js';
 
@@ -99,6 +102,8 @@ interface BridgeOptions {
   protocolVersion?: string; // Protocol version negotiated by the resumed session (only set with mcpSessionId)
   /** x402 scheme preference; presence enables x402 auto-payment, absence disables. */
   x402?: X402SchemePreference;
+  /** Local spend limit in USD applied to every single x402 payment. */
+  x402MaxAmountUsd?: number;
   insecure?: boolean; // Skip TLS certificate verification
 }
 
@@ -702,11 +707,13 @@ class BridgeProcess {
         return this.client?.getCachedTools()?.find((t: Tool) => t.name === name);
       };
       const { createX402FetchMiddleware } = await import('../lib/x402/fetch-middleware.js');
+      const maxAmountAtomicUnits = this.x402MaxAmountAtomicUnits();
       customFetch = createX402FetchMiddleware(proxyFetch, {
         wallet,
         getToolByName,
         paymentCache: this.x402PaymentCache,
         ...(this.options.x402 && { schemePreference: this.options.x402 }),
+        ...(maxAmountAtomicUnits !== undefined && { maxAmountAtomicUnits }),
       });
     }
 
@@ -1321,6 +1328,12 @@ class BridgeProcess {
     }
   }
 
+  /** The session's `--x402-max-amount` in atomic units, or undefined when uncapped. */
+  private x402MaxAmountAtomicUnits(): bigint | undefined {
+    const maxAmountUsd = this.options.x402MaxAmountUsd;
+    return maxAmountUsd === undefined ? undefined : usdToAtomicUnits(maxAmountUsd);
+  }
+
   /**
    * Handle a tool result that contains x402 payment-required data.
    * Signs a fresh payment, caches it, and retries the tool call once.
@@ -1357,18 +1370,28 @@ class BridgeProcess {
 
     // Invalidate cache and sign fresh
     this.x402PaymentCache.signature = null;
+    const { signPayment } = await import('../lib/x402/signer.js');
+    // The call in progress may have set its own limit (tools-call --x402-max-amount)
+    const scopedMaxAmountAtomicUnits = getScopedPaymentLimit();
+    const maxAmountAtomicUnits = scopedMaxAmountAtomicUnits ?? this.x402MaxAmountAtomicUnits();
     try {
-      const { signPayment } = await import('../lib/x402/signer.js');
       const signed = await signPayment({
         wallet: this.x402Wallet,
         accept: parsed.accept,
         resource: parsed.resource,
+        ...(maxAmountAtomicUnits !== undefined && {
+          maxAmountAtomicUnits,
+          maxAmountScope: scopedMaxAmountAtomicUnits === undefined ? 'session' : 'call',
+        }),
       });
       this.x402PaymentCache.signature = signed.paymentSignatureBase64;
       logger.debug(
         `Fresh payment signed for retry: $${signed.amountUsd.toFixed(6)} to ${signed.to} on ${signed.networkLabel}`
       );
     } catch (signError) {
+      // Refusing to exceed the spend limit must reach the caller — returning the
+      // payment-required result instead would read as "the server wants payment".
+      if (signError instanceof X402PaymentLimitError) throw signError;
       logger.warn('Failed to sign fresh payment for 402 retry:', signError);
       return { handled: false };
     }
@@ -1526,26 +1549,38 @@ class BridgeProcess {
           };
 
           // Execute with automatic x402 payment retry on payment-required tool results
-          try {
-            result = await executeToolCall();
-            const retry = await this.handlePaymentRequiredRetry(
-              params.name,
-              result,
-              executeToolCall
-            );
-            if (retry.handled) {
-              result = retry.result;
+          const runToolCall = async (): Promise<void> => {
+            try {
+              result = await executeToolCall();
+              const retry = await this.handlePaymentRequiredRetry(
+                params.name,
+                result,
+                executeToolCall
+              );
+              if (retry.handled) {
+                result = retry.result;
+              }
+            } finally {
+              // Hand the caller the x402 settlement receipt for this call. Runs on the error
+              // path too: the assignment is then discarded with the exception, but consuming
+              // the receipt is what keeps a call that failed after its payment settled from
+              // handing its receipt to the next call to the same tool. The slot stays empty
+              // without x402, so such a session never loads the (viem-backed) x402 module.
+              if (this.x402PaymentCache.lastSettlement) {
+                const { withSettlementReceipt } = await import('../lib/x402/fetch-middleware.js');
+                result = withSettlementReceipt(result, this.x402PaymentCache, params.name);
+              }
             }
-          } finally {
-            // Hand the caller the x402 settlement receipt for this call. Runs on the error
-            // path too: the assignment is then discarded with the exception, but consuming
-            // the receipt is what keeps a call that failed after its payment settled from
-            // handing its receipt to the next call to the same tool. The slot stays empty
-            // without x402, so such a session never loads the (viem-backed) x402 module.
-            if (this.x402PaymentCache.lastSettlement) {
-              const { withSettlementReceipt } = await import('../lib/x402/fetch-middleware.js');
-              result = withSettlementReceipt(result, this.x402PaymentCache, params.name);
-            }
+          };
+
+          // `tools-call --x402-max-amount` replaces the session limit for this call only.
+          // The scope has to reach the fetch middleware, which signs long after this line
+          // and concurrently with other calls, so it travels in async context rather than
+          // on a shared field (see payment-scope.ts).
+          if (message.x402MaxAmountUsd !== undefined) {
+            await runWithPaymentLimit(usdToAtomicUnits(message.x402MaxAmountUsd), runToolCall);
+          } else {
+            await runToolCall();
           }
           break;
         }
@@ -1953,7 +1988,7 @@ async function main(): Promise<void> {
 
   if (args.length < 2) {
     console.error(
-      'Usage: mcpc-bridge <sessionName> <transportConfigJson> [--verbose] [--profile <name>] [--proxy-host <host>] [--proxy-port <port>] [--mcp-session-id <id>] [--protocol-version <version>] [--x402 <auto|upto|exact>] [--insecure]'
+      'Usage: mcpc-bridge <sessionName> <transportConfigJson> [--verbose] [--profile <name>] [--proxy-host <host>] [--proxy-port <port>] [--mcp-session-id <id>] [--protocol-version <version>] [--x402 <auto|upto|exact>] [--x402-max-amount <usd>] [--insecure]'
     );
     process.exit(1);
   }
@@ -2009,6 +2044,18 @@ async function main(): Promise<void> {
     x402 = value as X402SchemePreference;
   }
 
+  // Parse `--x402-max-amount <usd>` (local spend limit for every single payment).
+  let x402MaxAmountUsd: number | undefined;
+  const x402MaxAmountIndex = args.indexOf('--x402-max-amount');
+  if (x402MaxAmountIndex !== -1) {
+    try {
+      x402MaxAmountUsd = parseMaxAmountUsd(args[x402MaxAmountIndex + 1] ?? '');
+    } catch (error) {
+      console.error((error as Error).message);
+      process.exit(1);
+    }
+  }
+
   // Parse --insecure flag (skip TLS certificate verification)
   const insecure = args.includes('--insecure');
 
@@ -2036,6 +2083,9 @@ async function main(): Promise<void> {
     }
     if (x402) {
       bridgeOptions.x402 = x402;
+    }
+    if (x402MaxAmountUsd !== undefined) {
+      bridgeOptions.x402MaxAmountUsd = x402MaxAmountUsd;
     }
     if (insecure) {
       bridgeOptions.insecure = true;

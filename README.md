@@ -859,6 +859,34 @@ mcpc @apify restart
 When `--x402` is active, a fetch middleware wraps all HTTP requests to the MCP server.
 If any request returns HTTP 402, the middleware transparently signs and retries. Your scheme preference is persisted in `sessions.json` and reused on every reconnect or restart.
 
+### Limiting how much a session can spend
+
+Without a limit, a session pays whatever a tool call turns out to cost. `--x402-max-amount <usd>`
+caps every single payment — the price the server asks for, or for the `upto` scheme the maximum
+authorization you sign:
+
+```bash
+# Never sign a single payment above $0.50
+mcpc connect mcp.apify.com @apify --x402 --x402-max-amount 0.50
+```
+
+A payment above the cap is refused locally, before anything is signed, and the tool call fails with
+the amount that was asked for. The check covers all three payment paths: proactively priced tools,
+HTTP 402 challenges, and payment-required tool results.
+
+The cap is stored in `sessions.json` and reused on every reconnect and restart, so a crashed
+session comes back capped. To change it, close the session and connect again.
+
+A single call can set its own cap, which replaces the session's for that call only:
+
+```bash
+# Allow this one call up to $2, whatever the session's cap is
+mcpc @apify tools-call expensive-tool --x402-max-amount 2 query:="hello"
+```
+
+Because the per-call value may also be higher than the session's, the session cap is a default
+rather than a ceiling — it does not constrain a caller that composes its own command lines.
+
 ### Supported networks
 
 | Network              | Status       |

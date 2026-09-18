@@ -180,6 +180,11 @@ export interface SessionData {
    * Absent / undefined means x402 is disabled.
    */
   x402?: X402SchemePreference;
+  /**
+   * Local spend limit in USD (`--x402-max-amount`), applied to every single payment.
+   * Absent / undefined means payments are capped only by what the server asks for.
+   */
+  x402MaxAmountUsd?: number;
   insecure?: boolean; // Skip TLS certificate verification
   pid?: number; // Bridge process PID
   protocolVersion?: string; // Negotiated MCP version
@@ -505,6 +510,8 @@ export interface IpcMessage {
   method?: string; // MCP method name
   params?: unknown; // Method parameters
   timeoutSecs?: number; // Per-request timeout in seconds (overrides default)
+  /** Per-call x402 spend limit in USD (`tools-call --x402-max-amount`), replacing the session's. */
+  x402MaxAmountUsd?: number;
   result?: unknown; // Response result
   taskUpdate?: TaskUpdate; // Task progress update (for type='task-update')
   authCredentials?: AuthCredentials; // Auth credentials (for type='set-auth-credentials')
@@ -535,6 +542,8 @@ export interface CommandOptions {
   schema?: string; // Path to expected schema file for validation
   schemaMode?: 'strict' | 'compatible' | 'ignore'; // Schema validation mode
   maxChars?: number; // Maximum output characters for tool/prompt results (truncate if exceeded)
+  /** Per-call x402 spend limit in USD (`tools-call --x402-max-amount`), replacing the session's. */
+  x402MaxAmountUsd?: number;
 }
 
 /**

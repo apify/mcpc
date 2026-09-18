@@ -36,6 +36,7 @@ import { clean } from './commands/clean.js';
 import { MCPC_OAUTH_CALLBACK_HOSTS, MCPC_OAUTH_CALLBACK_PORTS } from '../lib/auth/oauth-utils.js';
 import type { OutputMode, X402SchemePreference } from '../lib/index.js';
 import { X402_SCHEME_PREFERENCES } from '../lib/index.js';
+import { parseMaxAmountUsd } from '../lib/x402/limits.js';
 import {
   extractOptions,
   preProcessSkillArgv,
@@ -90,6 +91,8 @@ interface HandlerOptions {
    * `--x402` (no value) resolves to `'auto'` (prefer upto, fall back to exact).
    */
   x402?: X402SchemePreference;
+  /** Local spend limit in USD applied to every single x402 payment. */
+  x402MaxAmountUsd?: number;
   insecure?: boolean;
   schema?: string;
   schemaMode?: 'strict' | 'compatible' | 'ignore';
@@ -146,6 +149,11 @@ function getOptionsFromCommand(command: Command): HandlerOptions {
       );
     }
     options.x402 = opts.x402 as X402SchemePreference;
+  }
+  // Pairing with --x402 is checked where the flag lands: connectSession() for a new
+  // session, withMcpClient() for a tools-call against an existing one.
+  if (opts.x402MaxAmount !== undefined) {
+    options.x402MaxAmountUsd = parseMaxAmountUsd(opts.x402MaxAmount as string);
   }
   if (opts.insecure) options.insecure = true;
   if (opts.schema) options.schema = opts.schema;
@@ -491,6 +499,7 @@ Full docs: ${docsUrl}`
     .option('--stdio', 'Launch all local stdio servers from selected config files')
     .option('--protocol-version <version>', 'Pin the MCP protocol version (see below)')
     .option('--x402 [scheme]', 'Enable x402 auto-payment (see below)')
+    .option('--x402-max-amount <usd>', 'Refuse any single x402 payment above this amount')
     .addHelpText(
       'after',
       `
@@ -529,6 +538,10 @@ ${chalk.bold('Protocol version:')}
 ${chalk.bold('x402 payments (experimental):')}
   --x402 pays for paid tool calls from the wallet set up with mcpc x402.
   Schemes: auto (default, prefers upto), upto, exact.
+  --x402-max-amount <usd> caps every single payment, e.g. --x402-max-amount 0.50.
+  A payment above the cap fails instead of being signed, whatever the server asks
+  for. The cap is stored with the session and reused on restart; close the session
+  to change it.
 ${outputHelp([
   'For a single server, shows session, server info, capabilities, and tools.',
   'Bulk connects list every session with its state, then a summary.',
@@ -560,6 +573,9 @@ ${outputHelp([
           ...(opts.stdio && { stdio: true }),
           ...(opts.protocolVersion && { protocolVersion: opts.protocolVersion as string }),
           ...(globalOpts.x402 && { x402: globalOpts.x402 }),
+          ...(globalOpts.x402MaxAmountUsd !== undefined && {
+            x402MaxAmountUsd: globalOpts.x402MaxAmountUsd,
+          }),
           ...(globalOpts.insecure && { insecure: true }),
         });
         // Trailing blank line to match the spacing of other commands (human mode only).
@@ -592,6 +608,9 @@ ${outputHelp([
           ...(opts.stdio && { stdio: true }),
           ...(opts.protocolVersion && { protocolVersion: opts.protocolVersion as string }),
           ...(globalOpts.x402 && { x402: globalOpts.x402 }),
+          ...(globalOpts.x402MaxAmountUsd !== undefined && {
+            x402MaxAmountUsd: globalOpts.x402MaxAmountUsd,
+          }),
           ...(globalOpts.insecure && { insecure: true }),
         });
         return;
@@ -617,6 +636,9 @@ ${outputHelp([
           proxyBearerToken: opts.proxyBearerToken,
           ...(opts.protocolVersion && { protocolVersion: opts.protocolVersion as string }),
           ...(globalOpts.x402 && { x402: globalOpts.x402 }),
+          ...(globalOpts.x402MaxAmountUsd !== undefined && {
+            x402MaxAmountUsd: globalOpts.x402MaxAmountUsd,
+          }),
           ...(globalOpts.insecure && { insecure: true }),
         });
       } else {
@@ -627,6 +649,9 @@ ${outputHelp([
           proxyBearerToken: opts.proxyBearerToken,
           ...(opts.protocolVersion && { protocolVersion: opts.protocolVersion as string }),
           ...(globalOpts.x402 && { x402: globalOpts.x402 }),
+          ...(globalOpts.x402MaxAmountUsd !== undefined && {
+            x402MaxAmountUsd: globalOpts.x402MaxAmountUsd,
+          }),
           ...(globalOpts.insecure && { insecure: true }),
         });
       }
@@ -1167,13 +1192,11 @@ ${chalk.bold('JSON output (--json):')}
   program
     .command('tools-call <name> [args...]')
     .description('Call an MCP tool with arguments.')
-    .option(
-      '--task',
-      'Use async task execution; Ctrl+C prints the task ID and exits (experimental)'
-    )
+    .option('--task', 'Use async task execution (see below)')
     .option('--detach', 'Start task and return immediately with task ID (implies --task)')
     .option('--schema <file>', 'Validate tool schema against expected schema before calling')
     .option('--schema-mode <mode>', 'Schema validation mode: strict, compatible (default), ignore')
+    .option('--x402-max-amount <usd>', 'Spend limit for this call (see below)')
     .addHelpText(
       'after',
       `
@@ -1186,10 +1209,10 @@ ${chalk.bold('Arguments:')}
   To force a string, wrap in quotes: id:='"123"'
   Tip: mcpc ${session} tools-call <tool> --help prints the tool's parameter schema.
 
-${chalk.bold('Async tasks (--task, --detach):')}
+${chalk.bold('Async tasks (--task, --detach) — experimental:')}
   --task shows a progress spinner while the task runs on the server.
-  If you press Ctrl+C, the task keeps running and a hint with the task ID
-  is printed so you can fetch or cancel it later.
+  Pressing Ctrl+C leaves the task running and prints a hint with its task ID,
+  so you can fetch or cancel it later.
   --detach returns the task ID immediately without waiting.
   Both flags require a server that advertises the tasks capability and uses
   MCP protocol 2025-11-25 (on 2026-07-28 servers tasks are an extension not
@@ -1201,6 +1224,12 @@ ${chalk.bold('Async tasks (--task, --detach):')}
 ${chalk.bold('Schema validation:')}
   --schema <file>       Validate tool schema before calling (save with tools-get --json)
   --schema-mode <mode>  strict | compatible (default) | ignore
+
+${chalk.bold('x402 spend limit (--x402-max-amount <usd>):')}
+  Caps what this one call may pay, e.g. --x402-max-amount 0.50. It replaces the
+  session's own --x402-max-amount for this call and may be higher or lower, so the
+  session value is a default rather than a ceiling. Requires a session connected
+  with --x402.
 ${toolsCallCombinedJsonHelp}`
     )
     .action(async (name, args, options, command) => {

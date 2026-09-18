@@ -35,7 +35,10 @@ import {
   type PaymentRequiredAccept,
   type PaymentRequiredHeader,
   type SchemePreference,
+  type SignPaymentInput,
 } from './signer.js';
+import { X402PaymentLimitError } from './limits.js';
+import { getScopedPaymentLimit } from './payment-scope.js';
 import { createLogger } from '../logger.js';
 
 const logger = createLogger('x402-middleware');
@@ -244,6 +247,13 @@ export interface X402FetchMiddlewareOptions {
 
   /** Payment scheme preference when multiple accepts are available (default: auto) */
   schemePreference?: SchemePreference;
+
+  /**
+   * The session's local spend limit in atomic units (`connect --x402-max-amount`). Payments
+   * authorizing more than this are refused instead of signed. A single tool call can replace
+   * it through `payment-scope.ts`; absent here and unscoped means no limit.
+   */
+  maxAmountAtomicUnits?: bigint;
 }
 
 /**
@@ -258,7 +268,7 @@ export function createX402FetchMiddleware(
   baseFetch: FetchLike,
   options: X402FetchMiddlewareOptions
 ): FetchLike {
-  const { wallet, getToolByName, paymentCache, schemePreference } = options;
+  const { wallet, getToolByName, paymentCache, schemePreference, maxAmountAtomicUnits } = options;
 
   return async (url: string | URL, init?: RequestInit): Promise<Response> => {
     // Try to get a payment signature (cached or freshly signed) for tools/call requests
@@ -267,7 +277,8 @@ export function createX402FetchMiddleware(
       wallet,
       getToolByName,
       paymentCache,
-      schemePreference
+      schemePreference,
+      maxAmountAtomicUnits
     );
     if (paymentSignature) {
       const enhancedInit = injectPayment(init, paymentSignature);
@@ -289,7 +300,8 @@ export function createX402FetchMiddleware(
         baseFetch,
         wallet,
         paymentCache,
-        schemePreference
+        schemePreference,
+        maxAmountAtomicUnits
       );
     }
 
@@ -305,12 +317,26 @@ export function createX402FetchMiddleware(
         baseFetch,
         wallet,
         paymentCache,
-        schemePreference
+        schemePreference,
+        maxAmountAtomicUnits
       );
     }
 
     return response;
   };
+}
+
+/**
+ * The spend limit to sign against: the limit the tool call in progress set for itself, or the
+ * session's own. Returns the `signPayment` fields, empty when neither applies.
+ */
+function spendLimitInput(
+  sessionMaxAmountAtomicUnits?: bigint
+): Pick<SignPaymentInput, 'maxAmountAtomicUnits' | 'maxAmountScope'> {
+  const scoped = getScopedPaymentLimit();
+  const maxAmountAtomicUnits = scoped ?? sessionMaxAmountAtomicUnits;
+  if (maxAmountAtomicUnits === undefined) return {};
+  return { maxAmountAtomicUnits, maxAmountScope: scoped === undefined ? 'session' : 'call' };
 }
 
 /**
@@ -323,7 +349,8 @@ async function getOrSignPayment(
   wallet: SignerWallet,
   getToolByName: ((name: string) => Tool | undefined) | undefined,
   paymentCache: X402PaymentCache,
-  schemePreference?: SchemePreference
+  schemePreference?: SchemePreference,
+  maxAmountAtomicUnits?: bigint
 ): Promise<string | undefined> {
   if (!init?.body) {
     return undefined;
@@ -381,13 +408,20 @@ async function getOrSignPayment(
   }
 
   try {
-    const result = await signPayment({ wallet, accept });
+    const result = await signPayment({
+      wallet,
+      accept,
+      ...spendLimitInput(maxAmountAtomicUnits),
+    });
     logger.debug(
       `Fresh payment signed: scheme=${accept.scheme} amount=$${result.amountUsd.toFixed(6)} to=${result.to} network=${result.networkLabel}`
     );
     paymentCache.signature = result.paymentSignatureBase64;
     return result.paymentSignatureBase64;
   } catch (error) {
+    // Over the spend limit is a decision, not a failure to sign: surface it instead of
+    // letting the call go out unpaid and get charged through the 402 path.
+    if (error instanceof X402PaymentLimitError) throw error;
     logger.warn(`Payment signing failed for tool "${toolName}":`, error);
     return undefined;
   }
@@ -404,7 +438,8 @@ async function handle402Fallback(
   baseFetch: FetchLike,
   wallet: SignerWallet,
   paymentCache: X402PaymentCache,
-  schemePreference?: SchemePreference
+  schemePreference?: SchemePreference,
+  maxAmountAtomicUnits?: bigint
 ): Promise<Response> {
   // Extract PAYMENT-REQUIRED header (case-insensitive)
   const paymentRequiredBase64 =
@@ -432,6 +467,7 @@ async function handle402Fallback(
       wallet,
       accept,
       resource: header.resource,
+      ...spendLimitInput(maxAmountAtomicUnits),
     });
 
     logger.debug(
@@ -454,6 +490,9 @@ async function handle402Fallback(
     captureSettlementReceipt(paymentCache, originalInit, retryResponse);
     return retryResponse;
   } catch (error) {
+    // The caller asked for the payment to be refused above the limit — returning the 402
+    // here would hide that behind the server's own "payment required" message.
+    if (error instanceof X402PaymentLimitError) throw error;
     logger.warn('402 fallback signing failed:', error);
     return response402;
   }
