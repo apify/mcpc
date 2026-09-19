@@ -151,6 +151,64 @@ folded: >-
   });
 });
 
+describe('hostile or malformed input', () => {
+  const parse = (yaml: string): Record<string, unknown> => parseYamlMapping(yaml.split('\n'));
+
+  it('splits a key with a long interior run of spaces in linear time', () => {
+    // The former regex-based split backtracked quadratically on the spaces between
+    // the key and the colon: 0.5 s at 20k, hours within the 10 MB IPC cap.
+    const run = ' '.repeat(200_000);
+    const started = performance.now();
+    expect(parse(`a${run}b: v`)).toEqual({ [`a${run}b`]: 'v' });
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+
+  it('still accepts quoted keys with colons and plain keys with interior spaces', () => {
+    expect(parse('"a: b": 1\nmy key: 2\n\'c: d\': 3')).toEqual({
+      'a: b': 1,
+      'my key': 2,
+      'c: d': 3,
+    });
+  });
+
+  it('rejects a colon that is not followed by whitespace as a key separator', () => {
+    expect(() => parse('http://example.com: x')).toThrow(FrontmatterParseError);
+  });
+
+  it('rejects flow collections nested deeper than the limit', () => {
+    const deep = `x: ${'['.repeat(100)}${']'.repeat(100)}`;
+    expect(() => parse(deep)).toThrow(FrontmatterParseError);
+    expect(() => parse(deep)).toThrow(/nested deeper than 32 levels/);
+  });
+
+  it('rejects block mappings nested deeper than the limit', () => {
+    const deep = Array.from({ length: 100 }, (_, i) => `${' '.repeat(i)}k${i}:`).join('\n');
+    expect(() => parse(deep)).toThrow(/nested deeper than 32 levels/);
+  });
+
+  it('accepts nesting well within the limit', () => {
+    const nested = Array.from({ length: 10 }, (_, i) => `${' '.repeat(i)}k${i}:`).join('\n');
+    expect(parse(`${nested} leaf`)).toEqual(
+      Array.from({ length: 10 }).reduceRight<unknown>(
+        (inner, _, i) => ({ [`k${i}`]: inner }),
+        'leaf'
+      )
+    );
+  });
+
+  it('rejects a field indented less than the first field instead of dropping it', () => {
+    expect(() => parse('  name: a\n  description: b\nallowed-tools: [Bash]')).toThrow(
+      /indented less than the first field/
+    );
+  });
+
+  it("rejects a list item field indented less than the item's first field", () => {
+    expect(() => parse('hooks:\n  - event: pre\n   run: x\nname: a')).toThrow(
+      /indented less than the item's first field/
+    );
+  });
+});
+
 describe('diffFrontmatter', () => {
   it('reports no differences for identical fields', () => {
     expect(

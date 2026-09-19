@@ -73,7 +73,7 @@ README (`README.md:1354`) and CLAUDE.md promise "no credentials logged even in v
 
 ### H5. Token refresh rediscovers the token endpoint from the MCP server, not the authorization server used at login
 
-**Status: mostly fixed** in [#388](https://github.com/apify/mcpc/pull/388) and [#389](https://github.com/apify/mcpc/pull/389). The client secret is sent (Basic or post, following the method the authorization server advertises), the authorization server discovered at login is persisted as the profile's `oauthIssuer` and is the only place a refresh goes, and a non-HTTPS token endpoint is refused. Still open: the `resource` parameter (RFC 8707) is not sent on refresh, and the discovery fallback used by profiles written before the issuer was recorded still accepts metadata without checking the `issuer` echo (RFC 8414 §3.3).
+**Status: fixed** in [#388](https://github.com/apify/mcpc/pull/388), [#389](https://github.com/apify/mcpc/pull/389) and [#398](https://github.com/apify/mcpc/pull/398). The client secret is sent (Basic or post, following the method the authorization server advertises), the authorization server discovered at login is persisted as the profile's `oauthIssuer` and is the only place a refresh goes, a non-HTTPS token endpoint is refused, and the RFC 8707 `resource` indicator the login sent is repeated on refresh (#398 also routes a 401 through a bearer-token `AuthProvider` that refreshes and retries once). Residual: the discovery fallback used by profiles written before the issuer was recorded still accepts metadata without checking the `issuer` echo (RFC 8414 §3.3); such profiles are pinned on their next `mcpc login`.
 
 - At login the SDK discovers the authorization server via RFC 9728 protected-resource metadata and validates the `issuer` echo, but mcpc keeps that only in memory (`src/lib/auth/oauth-provider.ts:388-394`) and stores `oauthIssuer: ''` on the profile (`:317`).
 - At refresh time, `discoverAndRefreshToken` (`src/lib/auth/oauth-utils.ts:293-304`) calls `discoverTokenEndpoint` → `discoverAuthServerMetadata(serverUrl)` (`:94-125`), which probes `<mcp-server>/.well-known/oauth-authorization-server` and `openid-configuration` at the path and at the origin root, and accepts any JSON with a `token_endpoint` (`:131-147`). No `issuer` check (RFC 8414 §3.3), no HTTPS requirement (`:257`; compare the SDK's `assertSecureTokenEndpoint`, `index.mjs:523`), no `resource` parameter (RFC 8707; the SDK sends it at login).
@@ -100,6 +100,8 @@ README (`README.md:1354`) and CLAUDE.md promise "no credentials logged even in v
 `src/lib/auth/oauth-flow.ts:668-680` deletes or overwrites the stored client info before `sdkAuth()` runs. If the user presses Esc, closes the browser, or the exchange fails, the still-valid tokens of the existing profile can no longer be refreshed (`token-refresh.ts:107-113` → "OAuth client ID not found in keychain"). Keep the old registration in memory and write the new one only after `saveTokens` succeeds.
 
 ### M3. Refresh has no single-flight guard or cross-process lock, and transient errors are treated as authentication failures
+
+**Status: partly fixed** in [#398](https://github.com/apify/mcpc/pull/398): concurrent refreshes within one bridge share a single in-flight promise, and a forced refresh within 5 s of a successful one is deduplicated. Still open: no cross-process lock between two bridges (or a bridge and a direct CLI call) on the same profile, and network/5xx errors during refresh are still reported as authentication failures.
 
 - `src/lib/auth/oauth-token-manager.ts:119-221`: two concurrent `tokens()` calls that both see an expired access token both POST the same refresh token. With rotation and reuse detection (Okta, Auth0, Entra) the second gets 400 → `AuthError` → `src/bridge/index.ts:431-436` exits the bridge as `unauthorized`; some IdPs revoke the whole token family. Two bridges on one profile, or a bridge plus a direct CLI call, race the same way.
 - `oauth-utils.ts:142-146` swallows fetch errors during discovery and returns "Could not find OAuth token endpoint" as an `AuthError`; `:276` maps 5xx and 429 to `AuthError`. A brief outage destroys the session and tells the user to log in again.
@@ -132,6 +134,8 @@ README (`README.md:1354`) and CLAUDE.md promise "no credentials logged even in v
 `bridge-manager.ts:812-822` sets `lastConnectionAttemptAt` but never checks it (the cooldown exists only in `sessions.ts:418-443`). Two `mcpc @s ...` commands, or one plus the fire-and-forget `reconnectCrashedSessions` (`:855-873`), both restart the bridge; the last `updateSession({pid})` wins and the other bridge is never referenced again. It keeps an authenticated connection open, keeps writing `lastSeenAt`, and both bridges re-subscribe and rewrite the same resource-sync files. Take a "restarting" lease under the sessions lock, and have a bridge exit when `sessions.json` shows a different live PID for its session.
 
 ### M9. IPC framing decodes UTF-8 per socket chunk
+
+**Status: fixed** in [#390](https://github.com/apify/mcpc/pull/390): both ends of the IPC socket decode through one `StringDecoder` per connection (`src/lib/ipc-line-buffer.ts`).
 
 `src/bridge/index.ts:1249` and `src/lib/bridge-client.ts:178` do `buffer += data.toString()`. A multi-byte character straddling a 64 KB read boundary becomes U+FFFD on both sides of the split; the JSON stays valid so nothing errors. Tool results or arguments with CJK or emoji over 64 KB arrive corrupted. Use `string_decoder.StringDecoder` or split on `\n` at the byte level.
 
@@ -228,6 +232,17 @@ Help (`src/cli/index.ts:824`, `docs/REFERENCE.md:311`): "Remove stale/crashed se
 - Dead code: `grep.ts:494` `sessionRef` fallback, `utils.ts` `isValidResourceUri`/`parseJson`/`stringifyJson`, `output.ts:1580` `logTarget`, the unreachable `tokenManager` branch in `updateTransportAuth` (`bridge/index.ts:410-421`).
 
 ---
+
+## Addendum: v0.7.0-beta.0 (19 September 2026)
+
+Release-time review of tag `v0.7.0-beta.0` (commit `66fa93f`) against v0.6.0. Dependencies: `pnpm audit` reports 0 advisories (v0.6.0's lockfile carried 57, 33 of them in runtime packages — undici, hono, fast-uri, ip-address, qs, body-parser); the release-time age gate passes; the published tarball carries SLSA provenance for this commit and is reproduced byte-for-byte by a clean build of the tag. The only new runtime package is `chalk@6`; `@napi-rs/keyring` moved to 2.0 with provenance and no install script, and mcpc's wrapper already matches its null/boolean return semantics.
+
+The new skills extension code (`skills-list`, `skills-get`, `resources-directory-read`) was reviewed with server data treated as hostile. Nothing lets a server write to the local filesystem, execute code, or pollute prototypes; the digest algorithm is pinned to SHA-256, the same bytes are sized, hashed, frontmatter-checked and printed, and an unlisted or mismatching file is refused before anything is output. Two issues, both fixed in the PR that adds this addendum:
+
+- **Quadratic regex in the frontmatter key parser (Medium, availability).** `splitKey` and `isMappingEntry` in `src/lib/frontmatter.ts` matched `[^:#]+?\s*:\s` — the lazy key, the whitespace before the colon and the whitespace after it overlap on spaces, so a `SKILL.md` line with a long interior run of spaces inside a field name backtracked in O(n²): 0.5 s at 20k spaces, quadrupling per doubling, with the 10 MB IPC cap allowing hours. The hang was in the CLI process, in every output mode, since verification precedes printing. Replaced by a single-pass split; a nesting-depth cap (32) also turns a stack overflow on deeply nested flow or block collections into a parse error, and lines indented left of their block's first field are refused instead of silently dropped from the compared frontmatter.
+- **`skills-get --json` printed unverified content (Medium, integrity of the verified promise).** Only the `contents[]` item matching the target URI was checked against the manifest, but JSON mode emitted the whole array the server returned, so a second item at `contents[0]` — the element the e2e suite itself reads — reached the caller unverified. JSON mode now emits a single item rebuilt from the verified bytes.
+
+Lower-severity observations left open: block scalars lose blank lines, comment-looking lines and relative indentation, so an honest server can get a spurious frontmatter mismatch; next-step hints interpolate the server-controlled skill name into a suggested `mcpc … skills-get <name>` command (an extension of M10); `--raw` gives no signal that a `dynamic` skill's content is unverified; and the agent skill now pre-approves `Bash(npx @apify/mcpc:*)` and recommends `npx -y @apify/mcpc@latest`, which bypasses the release-age quarantine the project applies to its own dependencies (extends M17).
 
 ## Alignment with MCP security guidance (2026-07-28)
 
