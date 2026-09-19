@@ -1396,7 +1396,7 @@ ${chalk.bold('Arguments:')}
 ${chalk.bold('Notes:')}
   Content is checked against the skill's manifest (size, digest, and for
   SKILL.md its frontmatter) and is not printed when the check fails.
-  With --json, --raw is ignored.
+  With --json, --raw is ignored and \`contents\` holds only the verified item.
 
 ${chalk.bold('Examples:')}
   mcpc ${session} skills-get pdf-processing

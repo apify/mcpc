@@ -39,6 +39,14 @@ const FRONTMATTER_FENCE = /^---\s*$/;
 const DOCUMENT_END = /^\.\.\.\s*$/;
 
 /**
+ * Deepest nesting of block or flow collections the parser accepts. Agent Skills
+ * frontmatter is a few levels deep at most; the cap keeps a hostile document from
+ * driving the recursive descent into a stack overflow, which would surface as a raw
+ * `RangeError` instead of a parse error.
+ */
+const MAX_NESTING_DEPTH = 32;
+
+/**
  * Split a `SKILL.md` into its frontmatter fields and body.
  *
  * @throws FrontmatterParseError when the document has no frontmatter block, or its YAML
@@ -72,7 +80,15 @@ export function parseSkillDocument(text: string): ParsedFrontmatter {
 export function parseYamlMapping(rawLines: string[]): Record<string, unknown> {
   const lines = toLines(rawLines);
   if (lines.length === 0) return {};
-  const { value } = parseBlock(lines, 0, lines[0]!.indent);
+  const { value, next } = parseBlock(lines, 0, lines[0]!.indent, 0);
+  if (next < lines.length) {
+    // A line indented less than the first field ends the block early; YAML calls
+    // that a bad indentation, and silently dropping the rest would let a document
+    // carry fields the comparison never sees.
+    throw new FrontmatterParseError(
+      `line ${lines[next]!.number}: field is indented less than the first field`
+    );
+  }
   if (value === null) return {};
   if (typeof value !== 'object' || Array.isArray(value)) {
     throw new FrontmatterParseError(
@@ -109,19 +125,30 @@ function toLines(rawLines: string[]): Line[] {
 function parseBlock(
   lines: Line[],
   start: number,
-  indent: number
+  indent: number,
+  depth: number
 ): { value: unknown; next: number } {
   const first = lines[start];
   if (!first) return { value: null, next: start };
+  assertDepth(depth, first.number);
   return first.text.startsWith('- ') || first.text === '-'
-    ? parseSequence(lines, start, indent)
-    : parseMapping(lines, start, indent);
+    ? parseSequence(lines, start, indent, depth)
+    : parseMapping(lines, start, indent, depth);
+}
+
+function assertDepth(depth: number, lineNumber: number): void {
+  if (depth > MAX_NESTING_DEPTH) {
+    throw new FrontmatterParseError(
+      `line ${lineNumber}: frontmatter is nested deeper than ${MAX_NESTING_DEPTH} levels`
+    );
+  }
 }
 
 function parseMapping(
   lines: Line[],
   start: number,
-  indent: number
+  indent: number,
+  depth: number
 ): { value: Record<string, unknown>; next: number } {
   const result: Record<string, unknown> = {};
   let index = start;
@@ -147,7 +174,7 @@ function parseMapping(
     }
 
     if (rest.length > 0) {
-      result[key] = parseScalarOrFlow(rest, line.number);
+      result[key] = parseScalarOrFlow(rest, line.number, depth + 1);
       index += 1;
       continue;
     }
@@ -156,7 +183,7 @@ function parseMapping(
     // dashes sit at the key's own indentation, which YAML also allows.
     const child = lines[index + 1];
     if (child && child.indent > indent) {
-      const { value, next } = parseBlock(lines, index + 1, child.indent);
+      const { value, next } = parseBlock(lines, index + 1, child.indent, depth + 1);
       result[key] = value;
       index = next;
     } else if (
@@ -164,7 +191,7 @@ function parseMapping(
       child.indent === indent &&
       (child.text.startsWith('- ') || child.text === '-')
     ) {
-      const { value, next } = parseSequence(lines, index + 1, indent);
+      const { value, next } = parseSequence(lines, index + 1, indent, depth + 1);
       result[key] = value;
       index = next;
     } else {
@@ -179,7 +206,8 @@ function parseMapping(
 function parseSequence(
   lines: Line[],
   start: number,
-  indent: number
+  indent: number,
+  depth: number
 ): { value: unknown[]; next: number } {
   const result: unknown[] = [];
   let index = start;
@@ -197,7 +225,7 @@ function parseSequence(
     if (rest.length === 0) {
       const child = lines[index + 1];
       if (child && child.indent > indent) {
-        const { value, next } = parseBlock(lines, index + 1, child.indent);
+        const { value, next } = parseBlock(lines, index + 1, child.indent, depth + 1);
         result.push(value);
         index = next;
       } else {
@@ -216,13 +244,20 @@ function parseSequence(
         nested.push(lines[scan]!);
         scan += 1;
       }
-      const { value } = parseMapping(nested, 0, nested[0]!.indent);
+      const { value, next } = parseMapping(nested, 0, nested[0]!.indent, depth + 1);
+      if (next < nested.length) {
+        // A later field of this item sits left of its first field: bad indentation,
+        // not a line to drop.
+        throw new FrontmatterParseError(
+          `line ${nested[next]!.number}: field is indented less than the item's first field`
+        );
+      }
       result.push(value);
       index = scan;
       continue;
     }
 
-    result.push(parseScalarOrFlow(rest, line.number));
+    result.push(parseScalarOrFlow(rest, line.number, depth + 1));
     index += 1;
   }
 
@@ -231,21 +266,61 @@ function parseSequence(
 
 /** Split `key: value` into its parts, rejecting keys the subset does not cover. */
 function splitKey(line: Line): { key: string; rest: string } {
-  const match = /^("([^"]*)"|'([^']*)'|[^:#]+?)\s*:(\s+.*|\s*)$/.exec(line.text);
-  if (!match) {
+  const split = splitKeyValue(line.text);
+  if (!split) {
     throw new FrontmatterParseError(
       `line ${line.number}: expected a "key: value" field, got "${line.text}"`
     );
   }
-  const key = (match[2] ?? match[3] ?? match[1] ?? '').trim();
+  const key = split.key.trim();
   if (key.length === 0) {
     throw new FrontmatterParseError(`line ${line.number}: empty field name`);
   }
-  return { key, rest: stripComment(match[4] ?? '').trim() };
+  return { key, rest: stripComment(split.rest).trim() };
 }
 
 function isMappingEntry(text: string): boolean {
-  return /^("[^"]*"|'[^']*'|[^:#]+?)\s*:(\s|$)/.test(text);
+  return splitKeyValue(text) !== undefined;
+}
+
+/**
+ * Locate the `:` that separates a mapping key from its value: the first colon, which
+ * must be followed by whitespace or end the line, after a key that is either quoted
+ * (`"a: b"`) or a plain run without `:` or `#`. Returns undefined when the line is not
+ * a `key: value` entry.
+ *
+ * Deliberately a single pass rather than a regex: the key, the whitespace before the
+ * colon and the whitespace after it overlap in a pattern such as `[^:#]+?\\s*:\\s`, and a
+ * backtracking engine walks that in quadratic time — a SKILL.md line with a long run of
+ * spaces inside a field name kept the CLI busy for hours before it was refused.
+ */
+function splitKeyValue(text: string): { key: string; rest: string } | undefined {
+  let keyEnd: number;
+  let colon: number;
+
+  const quote = text[0];
+  if (quote === '"' || quote === "'") {
+    const closing = text.indexOf(quote, 1);
+    if (closing === -1) return undefined;
+    keyEnd = closing + 1;
+    colon = keyEnd;
+    while (colon < text.length && isSpace(text[colon]!)) colon += 1;
+    if (text[colon] !== ':') return undefined;
+  } else {
+    colon = text.indexOf(':');
+    if (colon === -1 || text.slice(0, colon).includes('#')) return undefined;
+    keyEnd = colon;
+  }
+
+  const after = text[colon + 1];
+  if (after !== undefined && !isSpace(after)) return undefined;
+
+  const key = quote === '"' || quote === "'" ? text.slice(1, keyEnd - 1) : text.slice(0, keyEnd);
+  return { key, rest: text.slice(colon + 1) };
+}
+
+function isSpace(char: string): boolean {
+  return char === ' ' || char === '\t';
 }
 
 /** Block scalar header: `|`, `>`, with optional chomping/indentation indicators. */
@@ -290,9 +365,10 @@ function stripComment(text: string): string {
 }
 
 /** Parse a scalar, a flow sequence (`[a, b]`) or a flow mapping (`{a: 1}`). */
-function parseScalarOrFlow(text: string, lineNumber: number): unknown {
+function parseScalarOrFlow(text: string, lineNumber: number, depth: number): unknown {
   if (text.startsWith('[') || text.startsWith('{')) {
-    return parseFlow(text, lineNumber);
+    assertDepth(depth, lineNumber);
+    return parseFlow(text, lineNumber, depth);
   }
   return parseScalar(text, lineNumber);
 }
@@ -301,7 +377,7 @@ function parseScalarOrFlow(text: string, lineNumber: number): unknown {
  * Parse a flow collection of scalars. Nested flow collections are supported; anything
  * else (a flow collection spanning several lines) is rejected.
  */
-function parseFlow(text: string, lineNumber: number): unknown {
+function parseFlow(text: string, lineNumber: number, depth: number): unknown {
   const open = text[0]!;
   const close = open === '[' ? ']' : '}';
   if (!text.endsWith(close)) {
@@ -315,7 +391,7 @@ function parseFlow(text: string, lineNumber: number): unknown {
 
   const parts = splitFlowItems(inner, lineNumber);
   if (open === '[') {
-    return parts.map((part) => parseScalarOrFlow(part, lineNumber));
+    return parts.map((part) => parseScalarOrFlow(part, lineNumber, depth + 1));
   }
 
   const map: Record<string, unknown> = {};
@@ -327,7 +403,7 @@ function parseFlow(text: string, lineNumber: number): unknown {
       );
     }
     const key = unquote(part.slice(0, separator).trim());
-    map[key] = parseScalarOrFlow(part.slice(separator + 1).trim(), lineNumber);
+    map[key] = parseScalarOrFlow(part.slice(separator + 1).trim(), lineNumber, depth + 1);
   }
   return map;
 }

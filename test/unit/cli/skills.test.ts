@@ -33,16 +33,23 @@ vi.mock('../../../src/lib/sessions.js', () => ({
   getSession: vi.fn().mockResolvedValue(null),
 }));
 
+// The command handlers reach the server through withMcpClient; hand them a stub client.
+vi.mock('../../../src/cli/helpers.js', () => ({
+  withMcpClient: vi.fn(),
+}));
+
 import { createHash } from 'crypto';
 
 import {
+  getSkill,
   resolveSkillUri,
   resolveSkillFileUri,
   verifyAgainstManifest,
   verifyFrontmatter,
 } from '../../../src/cli/commands/skills.js';
+import { withMcpClient } from '../../../src/cli/helpers.js';
 import { ClientError, ServerError } from '../../../src/lib/errors.js';
-import type { IMcpClient, ListSkillsResult, Skill } from '../../../src/lib/types.js';
+import type { IMcpClient, ListSkillsResult, Skill, SkillResource } from '../../../src/lib/types.js';
 
 const SKILL_MD = `---
 name: pdf-processing
@@ -248,6 +255,67 @@ describe('verifyAgainstManifest', () => {
         Buffer.from('whatever', 'utf-8')
       )
     ).not.toThrow();
+  });
+});
+
+describe('getSkill --json', () => {
+  /** Route the command's withMcpClient call to a stub client and capture stdout. */
+  async function runJson(
+    client: Partial<IMcpClient>,
+    file?: string
+  ): Promise<Record<string, unknown>> {
+    vi.mocked(withMcpClient).mockImplementation(async (_target, _options, callback) =>
+      callback(client as never, {} as never)
+    );
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await getSkill('@s', 'skill://pdf-processing/SKILL.md', file, { outputMode: 'json' });
+      expect(log).toHaveBeenCalledTimes(1);
+      return JSON.parse(log.mock.calls[0]![0] as string) as Record<string, unknown>;
+    } finally {
+      log.mockRestore();
+    }
+  }
+
+  it('emits only the content item that was verified against the manifest', async () => {
+    const printed = await runJson({
+      getSkill: vi.fn().mockResolvedValue({ skill: skillEntry() }),
+      readResource: vi.fn().mockResolvedValue({
+        contents: [
+          // Not in the manifest, never verified — must not reach the caller.
+          { uri: 'skill://pdf-processing/other', text: 'unverified instructions' },
+          { uri: 'skill://pdf-processing/SKILL.md', mimeType: 'text/markdown', text: SKILL_MD },
+        ],
+      }),
+    });
+    expect(printed.contents).toEqual([
+      { uri: 'skill://pdf-processing/SKILL.md', mimeType: 'text/markdown', text: SKILL_MD },
+    ]);
+    expect(JSON.stringify(printed)).not.toContain('unverified instructions');
+  });
+
+  it('re-encodes verified binary content as a blob', async () => {
+    // A blob cannot carry frontmatter, so read a supporting file rather than SKILL.md.
+    const bytes = Buffer.from([0, 1, 2, 255]);
+    const fileUri = 'skill://pdf-processing/templates/form.pdf';
+    const entry = skillEntry();
+    (entry.resources as SkillResource[]).push({
+      uri: fileUri,
+      digest: `sha256:${createHash('sha256').update(bytes).digest('hex')}`,
+      size: bytes.length,
+    });
+    const printed = await runJson(
+      {
+        getSkill: vi.fn().mockResolvedValue({ skill: entry }),
+        readResource: vi.fn().mockResolvedValue({
+          contents: [{ uri: fileUri, mimeType: 'application/pdf', blob: bytes.toString('base64') }],
+        }),
+      },
+      'templates/form.pdf'
+    );
+    expect(printed.contents).toEqual([
+      { uri: fileUri, mimeType: 'application/pdf', blob: bytes.toString('base64') },
+    ]);
   });
 });
 

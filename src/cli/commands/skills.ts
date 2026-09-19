@@ -276,7 +276,18 @@ export async function getSkill(
     }
 
     if (options.outputMode === 'json') {
-      console.log(formatOutput({ skill, contents: result.contents }, 'json'));
+      // Emit only the item that was verified, rebuilt from the verified bytes. The
+      // server's `resources/read` answer may carry further items — a directory URI
+      // expanding to several files, or content the manifest never lists — and passing
+      // the array through verbatim would print those under the same verified banner.
+      const verifiedItem = {
+        uri: content.uri,
+        ...(content.mimeType && { mimeType: content.mimeType }),
+        ...(content.binary
+          ? { blob: content.data.toString('base64') }
+          : { text: content.data.toString('utf-8') }),
+      };
+      console.log(formatOutput({ skill, contents: [verifiedItem] }, 'json'));
       return;
     }
 
