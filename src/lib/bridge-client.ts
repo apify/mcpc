@@ -264,7 +264,8 @@ export class BridgeClient extends EventEmitter {
     method: string,
     params?: unknown,
     timeoutSecs?: number,
-    requestId?: string
+    requestId?: string,
+    extra?: Pick<IpcMessage, 'x402MaxAmountUsd'>
   ): Promise<unknown> {
     if (!this.socket) {
       throw new NetworkError('Not connected to bridge');
@@ -278,6 +279,7 @@ export class BridgeClient extends EventEmitter {
       method,
       params,
       ...(timeoutSecs !== undefined && { timeoutSecs }),
+      ...extra,
     };
 
     logger.debug('Sending request:', { id, method });
