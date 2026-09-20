@@ -581,6 +581,13 @@ On failure, the error message includes instructions on how to login. This ensure
 // session:<name>:headers (per-session headers), session:<name>:proxy-bearer-token
 ```
 
+A value too long for one keychain entry is stored as several: the account holds a
+`mcpc:chunked:v1:<count>` header and the parts live in `<account>#0`, `<account>#1`, …
+Windows Credential Manager caps a credential at 2560 bytes, and the keyring crate
+stores passwords as UTF-16, so anything over 1280 characters — most OAuth token blobs
+— is rejected outright (#409). Chunking runs on every platform, not just Windows, so
+there is a single code path to keep correct.
+
 ## State and Data Storage
 
 All state files are stored in `~/.mcpc/` directory (unless overridden by `MCPC_HOME_DIR` environment variable):

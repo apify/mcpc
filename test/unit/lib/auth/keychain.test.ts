@@ -31,11 +31,24 @@ const keychainStore = new Map<string, string>();
 /** When true, all keychain operations throw to simulate a missing keyring daemon */
 let keychainThrows = false;
 
+/**
+ * Windows Credential Manager caps a credential blob at 2560 bytes, and the
+ * keyring crate stores passwords as UTF-16 — so 1280 UTF-16 code units is the
+ * tightest limit any supported platform imposes (#409). The mock enforces it on
+ * every platform so the whole suite guards against writing an oversized entry.
+ */
+const MAX_UTF16_UNITS = 1280;
+
 vi.mock('@napi-rs/keyring', () => ({
   Entry: vi.fn(function (_service: string, account: string) {
     return {
       setPassword(value: string) {
         if (keychainThrows) throw new Error('No keyring daemon');
+        if (value.length > MAX_UTF16_UNITS) {
+          throw new Error(
+            "Attribute 'password encoded as UTF-16' is longer than platform limit of 2560 chars"
+          );
+        }
         keychainStore.set(account, value);
       },
       getPassword(): string | null {
@@ -194,6 +207,111 @@ describe('OS keychain available', () => {
       'cc-client'
     );
     expect(keychainStore.size).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests: values too long for a single keychain entry (#409)
+// ---------------------------------------------------------------------------
+
+describe('values longer than the platform entry limit', () => {
+  /** A token blob of the size real OAuth servers hand out — well over the Windows limit. */
+  const longToken = (seed: string) => seed.repeat(Math.ceil(4000 / seed.length)).slice(0, 4000);
+
+  it('stores and reads back a token blob larger than a single entry', async () => {
+    const { storeKeychainOAuthTokenInfo, readKeychainOAuthTokenInfo } = await loadKeychain();
+
+    const tokens = {
+      accessToken: longToken('access-'),
+      refreshToken: longToken('refresh-'),
+      tokenType: 'Bearer',
+    };
+    await storeKeychainOAuthTokenInfo('https://example.com', 'default', tokens);
+
+    expect(await readKeychainOAuthTokenInfo('https://example.com', 'default')).toEqual(tokens);
+
+    // Stored as a header entry plus parts, none of which exceeds the platform limit.
+    const base = 'auth-profile:example.com:default:tokens';
+    expect(keychainStore.get(base)).toMatch(/^mcpc:chunked:v1:\d+$/);
+    expect(keychainStore.size).toBeGreaterThan(1);
+    for (const value of keychainStore.values()) {
+      expect(value.length).toBeLessThanOrEqual(MAX_UTF16_UNITS);
+    }
+  });
+
+  it('keeps short values in a single plain entry', async () => {
+    const { storeKeychainProxyBearerToken } = await loadKeychain();
+
+    await storeKeychainProxyBearerToken('s', 'short-token');
+    expect(keychainStore.size).toBe(1);
+    expect(keychainStore.get('session:s:proxy-bearer-token')).toBe('short-token');
+  });
+
+  it('round-trips a value that looks like a chunk header', async () => {
+    const { storeKeychainProxyBearerToken, readKeychainProxyBearerToken } = await loadKeychain();
+
+    await storeKeychainProxyBearerToken('s', 'mcpc:chunked:v1:2');
+    expect(await readKeychainProxyBearerToken('s')).toBe('mcpc:chunked:v1:2');
+  });
+
+  it('round-trips values containing astral characters', async () => {
+    const { storeKeychainSessionHeaders, readKeychainSessionHeaders } = await loadKeychain();
+
+    // Emoji are surrogate pairs; a chunk boundary must never cut one in half.
+    const headers = { 'X-Long': '😀'.repeat(2000) };
+    await storeKeychainSessionHeaders('s', headers);
+
+    expect(await readKeychainSessionHeaders('s')).toEqual(headers);
+  });
+
+  it('removes stale parts when a long value is replaced by a shorter one', async () => {
+    const { storeKeychainSessionHeaders, readKeychainSessionHeaders } = await loadKeychain();
+
+    await storeKeychainSessionHeaders('s', { Authorization: longToken('Bearer-') });
+    expect(keychainStore.size).toBeGreaterThan(1);
+
+    await storeKeychainSessionHeaders('s', { Authorization: 'Bearer short' });
+    expect(keychainStore.size).toBe(1);
+    expect(await readKeychainSessionHeaders('s')).toEqual({ Authorization: 'Bearer short' });
+  });
+
+  it('deletes every part of a chunked credential', async () => {
+    const {
+      storeKeychainOAuthTokenInfo,
+      removeKeychainOAuthTokenInfo,
+      readKeychainOAuthTokenInfo,
+    } = await loadKeychain();
+
+    await storeKeychainOAuthTokenInfo('https://example.com', 'default', {
+      accessToken: longToken('access-'),
+      tokenType: 'Bearer',
+    });
+    expect(await removeKeychainOAuthTokenInfo('https://example.com', 'default')).toBe(true);
+
+    expect(keychainStore.size).toBe(0);
+    expect(await readKeychainOAuthTokenInfo('https://example.com', 'default')).toBeUndefined();
+  });
+
+  it('treats a chunked credential with a missing part as absent', async () => {
+    const { storeKeychainOAuthTokenInfo, readKeychainOAuthTokenInfo } = await loadKeychain();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+      await storeKeychainOAuthTokenInfo('https://example.com', 'default', {
+        accessToken: longToken('access-'),
+        tokenType: 'Bearer',
+      });
+
+      // Simulate a partially wiped keychain (e.g. the user deleted one entry).
+      keychainStore.delete('auth-profile:example.com:default:tokens#1');
+
+      expect(await readKeychainOAuthTokenInfo('https://example.com', 'default')).toBeUndefined();
+      expect(
+        errorSpy.mock.calls.filter((call) => String(call[0]).includes('is incomplete'))
+      ).toHaveLength(1);
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 });
 
