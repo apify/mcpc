@@ -37,6 +37,19 @@ wait_for "$MCPC $SESSION ping >/dev/null 2>&1"
 
 run_mcpc "$SESSION" ping
 assert_success
+
+# Which store actually held it. mcpc only writes credentials.json when the OS
+# keychain is unavailable, so its absence means the value went through the real
+# keychain — and on Windows, where the entry limit is what #409 is about, that
+# is the whole point of this suite, so falling back there is itself a failure.
+if [[ -f "$MCPC_HOME_DIR/credentials.json" ]]; then
+  echo "# credential store: file fallback (this runner has no usable OS keychain)"
+  if is_windows; then
+    test_fail "fell back to file storage on Windows instead of Credential Manager"
+  fi
+else
+  echo "# credential store: OS keychain"
+fi
 test_pass
 
 # =============================================================================
