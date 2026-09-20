@@ -130,7 +130,6 @@ function parseBlock(
 ): { value: unknown; next: number } {
   const first = lines[start];
   if (!first) return { value: null, next: start };
-  assertDepth(depth, first.number);
   return first.text.startsWith('- ') || first.text === '-'
     ? parseSequence(lines, start, indent, depth)
     : parseMapping(lines, start, indent, depth);
@@ -150,6 +149,12 @@ function parseMapping(
   indent: number,
   depth: number
 ): { value: Record<string, unknown>; next: number } {
+  // The depth cap lives in parseMapping and parseSequence, not in parseBlock: the two
+  // recurse into each other directly (a `key:` followed by a same-indent `- item` list,
+  // and a `- key: value` item), so a chain alternating them would never pass through
+  // parseBlock and would overflow the stack instead of hitting the cap.
+  const first = lines[start];
+  if (first) assertDepth(depth, first.number);
   const result: Record<string, unknown> = {};
   let index = start;
 
@@ -209,6 +214,8 @@ function parseSequence(
   indent: number,
   depth: number
 ): { value: unknown[]; next: number } {
+  const first = lines[start];
+  if (first) assertDepth(depth, first.number);
   const result: unknown[] = [];
   let index = start;
 
