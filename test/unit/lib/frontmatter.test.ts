@@ -186,6 +186,20 @@ describe('hostile or malformed input', () => {
     expect(() => parse(deep)).toThrow(/nested deeper than 32 levels/);
   });
 
+  it('rejects a chain alternating `- key:` items and nested lists deeper than the limit', () => {
+    // `- k0:` starts a mapping whose `k0:` value is a list at the mapping's own indent,
+    // whose item starts another mapping, and so on: parseMapping and parseSequence call
+    // each other directly on this path, so the cap must hold there too. Before the check
+    // moved into both, a ~9 MB SKILL.md of this shape (inside the IPC cap) overflowed the
+    // stack with a RangeError instead of a parse error.
+    const deep = [
+      'a:',
+      ...Array.from({ length: 100 }, (_, i) => `${' '.repeat(2 * i + 2)}- k${i}:`),
+    ].join('\n');
+    expect(() => parse(deep)).toThrow(FrontmatterParseError);
+    expect(() => parse(deep)).toThrow(/nested deeper than 32 levels/);
+  });
+
   it('accepts nesting well within the limit', () => {
     const nested = Array.from({ length: 10 }, (_, i) => `${' '.repeat(i)}k${i}:`).join('\n');
     expect(parse(`${nested} leaf`)).toEqual(
