@@ -11,12 +11,12 @@
 </style>
 <rect class="bg" width="1137" height="748"/>
 <rect class="hl" x="16" y="150" width="1105" height="36"/>
-<text class="bold" transform="translate(252 140) rotate(-90)">Lang</text>
-<text class="bold" transform="translate(310.5 140) rotate(-90)">Stars</text>
-<text class="bold" transform="translate(357.5 140) rotate(-90)">Commits</text>
-<text class="bold" transform="translate(398 140) rotate(-90)">Contrib</text>
-<text class="bold" transform="translate(436 140) rotate(-90)">Active</text>
-<text class="bold" transform="translate(503 140) rotate(-90)">MCP</text>
+<text class="bold" transform="translate(267 140) rotate(-90)">MCP</text>
+<text class="bold" transform="translate(334 140) rotate(-90)">Active</text>
+<text class="bold" transform="translate(386 140) rotate(-90)">Lang</text>
+<text class="bold" transform="translate(444.5 140) rotate(-90)">Stars</text>
+<text class="bold" transform="translate(491.5 140) rotate(-90)">Commits</text>
+<text class="bold" transform="translate(532 140) rotate(-90)">Contrib</text>
 <text class="bold" transform="translate(570 140) rotate(-90)">Tools</text>
 <text class="bold" transform="translate(608 140) rotate(-90)">Resources</text>
 <text class="bold" transform="translate(646 140) rotate(-90)">Prompts</text>
@@ -33,12 +33,12 @@
 <text class="bold" transform="translate(1064 140) rotate(-90)">x402</text>
 <text class="bold" transform="translate(1102 140) rotate(-90)">LLM</text>
 <text class="bold" x="26" y="168" text-anchor="start">apify/mcpc</text>
-<text class="bold" x="229" y="168" text-anchor="start">TS</text>
-<text class="bold" x="326" y="168" text-anchor="end">847</text>
-<text class="bold" x="369" y="168" text-anchor="end">758</text>
-<text class="bold" x="407" y="168" text-anchor="end">15</text>
-<rect class="ok" x="427" y="159" width="18" height="18" rx="4"/><path class="mark" d="M431 168.5 l3.5 3.5 l6.5 -7.5"/>
-<text class="bold" x="465" y="168" text-anchor="start">2026-07-28</text>
+<text class="bold" x="229" y="168" text-anchor="start">2026-07-28</text>
+<rect class="ok" x="325" y="159" width="18" height="18" rx="4"/><path class="mark" d="M329 168.5 l3.5 3.5 l6.5 -7.5"/>
+<text class="bold" x="363" y="168" text-anchor="start">TS</text>
+<text class="bold" x="460" y="168" text-anchor="end">847</text>
+<text class="bold" x="503" y="168" text-anchor="end">758</text>
+<text class="bold" x="541" y="168" text-anchor="end">15</text>
 <rect class="ok" x="561" y="159" width="18" height="18" rx="4"/><path class="mark" d="M565 168.5 l3.5 3.5 l6.5 -7.5"/>
 <rect class="ok" x="599" y="159" width="18" height="18" rx="4"/><path class="mark" d="M603 168.5 l3.5 3.5 l6.5 -7.5"/>
 <rect class="ok" x="637" y="159" width="18" height="18" rx="4"/><path class="mark" d="M641 168.5 l3.5 3.5 l6.5 -7.5"/>
@@ -55,12 +55,12 @@
 <rect class="ok" x="1055" y="159" width="18" height="18" rx="4"/><path class="mark" d="M1059 168.5 l3.5 3.5 l6.5 -7.5"/>
 <text class="dim" x="1102" y="168" text-anchor="middle">—</text>
 <text x="26" y="204" text-anchor="start">steipete/mcporter</text>
-<text x="229" y="204" text-anchor="start">TS</text>
-<text x="326" y="204" text-anchor="end">5.0k</text>
-<text x="369" y="204" text-anchor="end">942</text>
-<text x="407" y="204" text-anchor="end">51</text>
-<rect class="ok" x="427" y="195" width="18" height="18" rx="4"/><path class="mark" d="M431 204.5 l3.5 3.5 l6.5 -7.5"/>
-<text x="465" y="204" text-anchor="start">2026-07-28</text>
+<text x="229" y="204" text-anchor="start">2026-07-28</text>
+<rect class="ok" x="325" y="195" width="18" height="18" rx="4"/><path class="mark" d="M329 204.5 l3.5 3.5 l6.5 -7.5"/>
+<text x="363" y="204" text-anchor="start">TS</text>
+<text x="460" y="204" text-anchor="end">5.0k</text>
+<text x="503" y="204" text-anchor="end">942</text>
+<text x="541" y="204" text-anchor="end">51</text>
 <rect class="ok" x="561" y="195" width="18" height="18" rx="4"/><path class="mark" d="M565 204.5 l3.5 3.5 l6.5 -7.5"/>
 <rect class="ok" x="599" y="195" width="18" height="18" rx="4"/><path class="mark" d="M603 204.5 l3.5 3.5 l6.5 -7.5"/>
 <text class="dim" x="646" y="204" text-anchor="middle">—</text>
@@ -77,12 +77,12 @@
 <text class="dim" x="1064" y="204" text-anchor="middle">—</text>
 <text class="dim" x="1102" y="204" text-anchor="middle">—</text>
 <text x="26" y="240" text-anchor="start">knowsuchagency/mcp2cli</text>
-<text x="229" y="240" text-anchor="start">Python</text>
-<text x="326" y="240" text-anchor="end">2.4k</text>
-<text x="369" y="240" text-anchor="end">168</text>
-<text x="407" y="240" text-anchor="end">24</text>
-<rect class="ok" x="427" y="231" width="18" height="18" rx="4"/><path class="mark" d="M431 240.5 l3.5 3.5 l6.5 -7.5"/>
-<text x="465" y="240" text-anchor="start">2025-11-25</text>
+<text x="229" y="240" text-anchor="start">2025-11-25</text>
+<rect class="ok" x="325" y="231" width="18" height="18" rx="4"/><path class="mark" d="M329 240.5 l3.5 3.5 l6.5 -7.5"/>
+<text x="363" y="240" text-anchor="start">Python</text>
+<text x="460" y="240" text-anchor="end">2.4k</text>
+<text x="503" y="240" text-anchor="end">168</text>
+<text x="541" y="240" text-anchor="end">24</text>
 <rect class="ok" x="561" y="231" width="18" height="18" rx="4"/><path class="mark" d="M565 240.5 l3.5 3.5 l6.5 -7.5"/>
 <rect class="ok" x="599" y="231" width="18" height="18" rx="4"/><path class="mark" d="M603 240.5 l3.5 3.5 l6.5 -7.5"/>
 <rect class="ok" x="637" y="231" width="18" height="18" rx="4"/><path class="mark" d="M641 240.5 l3.5 3.5 l6.5 -7.5"/>
@@ -99,12 +99,12 @@
 <text class="dim" x="1064" y="240" text-anchor="middle">—</text>
 <text class="dim" x="1102" y="240" text-anchor="middle">—</text>
 <text x="26" y="276" text-anchor="start">IBM/mcp-cli</text>
-<text x="229" y="276" text-anchor="start">Python</text>
-<text x="326" y="276" text-anchor="end">2.0k</text>
-<text x="369" y="276" text-anchor="end">800</text>
-<text x="407" y="276" text-anchor="end">23</text>
-<rect class="ok" x="427" y="267" width="18" height="18" rx="4"/><path class="mark" d="M431 276.5 l3.5 3.5 l6.5 -7.5"/>
-<text x="465" y="276" text-anchor="start">2025-06-18</text>
+<text x="229" y="276" text-anchor="start">2025-06-18</text>
+<rect class="ok" x="325" y="267" width="18" height="18" rx="4"/><path class="mark" d="M329 276.5 l3.5 3.5 l6.5 -7.5"/>
+<text x="363" y="276" text-anchor="start">Python</text>
+<text x="460" y="276" text-anchor="end">2.0k</text>
+<text x="503" y="276" text-anchor="end">800</text>
+<text x="541" y="276" text-anchor="end">23</text>
 <rect class="ok" x="561" y="267" width="18" height="18" rx="4"/><path class="mark" d="M565 276.5 l3.5 3.5 l6.5 -7.5"/>
 <rect class="ok" x="599" y="267" width="18" height="18" rx="4"/><path class="mark" d="M603 276.5 l3.5 3.5 l6.5 -7.5"/>
 <rect class="ok" x="637" y="267" width="18" height="18" rx="4"/><path class="mark" d="M641 276.5 l3.5 3.5 l6.5 -7.5"/>
@@ -121,12 +121,12 @@
 <text class="dim" x="1064" y="276" text-anchor="middle">—</text>
 <rect class="ok" x="1093" y="267" width="18" height="18" rx="4"/><path class="mark" d="M1097 276.5 l3.5 3.5 l6.5 -7.5"/>
 <text x="26" y="312" text-anchor="start">f/mcptools</text>
-<text x="229" y="312" text-anchor="start">Go</text>
-<text x="326" y="312" text-anchor="end">1.6k</text>
-<text x="369" y="312" text-anchor="end">174</text>
-<text x="407" y="312" text-anchor="end">16</text>
-<path class="warn" d="M436 303 L446 320 L426 320 Z" stroke-linejoin="round"/><rect class="warn-mark" x="435" y="309" width="2" height="6" rx="1"/><circle class="warn-mark" cx="436" cy="317" r="1.2"/>
-<text x="465" y="312" text-anchor="start">2024-11-05</text>
+<text x="229" y="312" text-anchor="start">2024-11-05</text>
+<path class="warn" d="M334 303 L344 320 L324 320 Z" stroke-linejoin="round"/><rect class="warn-mark" x="333" y="309" width="2" height="6" rx="1"/><circle class="warn-mark" cx="334" cy="317" r="1.2"/>
+<text x="363" y="312" text-anchor="start">Go</text>
+<text x="460" y="312" text-anchor="end">1.6k</text>
+<text x="503" y="312" text-anchor="end">174</text>
+<text x="541" y="312" text-anchor="end">16</text>
 <rect class="ok" x="561" y="303" width="18" height="18" rx="4"/><path class="mark" d="M565 312.5 l3.5 3.5 l6.5 -7.5"/>
 <rect class="ok" x="599" y="303" width="18" height="18" rx="4"/><path class="mark" d="M603 312.5 l3.5 3.5 l6.5 -7.5"/>
 <rect class="ok" x="637" y="303" width="18" height="18" rx="4"/><path class="mark" d="M641 312.5 l3.5 3.5 l6.5 -7.5"/>
@@ -143,12 +143,12 @@
 <text class="dim" x="1064" y="312" text-anchor="middle">—</text>
 <text class="dim" x="1102" y="312" text-anchor="middle">—</text>
 <text x="26" y="348" text-anchor="start">philschmid/mcp-cli</text>
-<text x="229" y="348" text-anchor="start">TS</text>
-<text x="326" y="348" text-anchor="end">1.3k</text>
-<text x="369" y="348" text-anchor="end">30</text>
-<text x="407" y="348" text-anchor="end">3</text>
-<path class="warn" d="M436 339 L446 356 L426 356 Z" stroke-linejoin="round"/><rect class="warn-mark" x="435" y="345" width="2" height="6" rx="1"/><circle class="warn-mark" cx="436" cy="353" r="1.2"/>
-<text x="465" y="348" text-anchor="start">2025-11-25</text>
+<text x="229" y="348" text-anchor="start">2025-11-25</text>
+<path class="warn" d="M334 339 L344 356 L324 356 Z" stroke-linejoin="round"/><rect class="warn-mark" x="333" y="345" width="2" height="6" rx="1"/><circle class="warn-mark" cx="334" cy="353" r="1.2"/>
+<text x="363" y="348" text-anchor="start">TS</text>
+<text x="460" y="348" text-anchor="end">1.3k</text>
+<text x="503" y="348" text-anchor="end">30</text>
+<text x="541" y="348" text-anchor="end">3</text>
 <rect class="ok" x="561" y="339" width="18" height="18" rx="4"/><path class="mark" d="M565 348.5 l3.5 3.5 l6.5 -7.5"/>
 <text class="dim" x="608" y="348" text-anchor="middle">—</text>
 <text class="dim" x="646" y="348" text-anchor="middle">—</text>
@@ -165,12 +165,12 @@
 <text class="dim" x="1064" y="348" text-anchor="middle">—</text>
 <text class="dim" x="1102" y="348" text-anchor="middle">—</text>
 <text x="26" y="384" text-anchor="start">adhikasp/mcp-client-cli</text>
-<text x="229" y="384" text-anchor="start">Python</text>
-<text x="326" y="384" text-anchor="end">677</text>
-<text x="369" y="384" text-anchor="end">113</text>
-<text x="407" y="384" text-anchor="end">5</text>
-<path class="warn" d="M436 375 L446 392 L426 392 Z" stroke-linejoin="round"/><rect class="warn-mark" x="435" y="381" width="2" height="6" rx="1"/><circle class="warn-mark" cx="436" cy="389" r="1.2"/>
-<text x="465" y="384" text-anchor="start">2025-06-18</text>
+<text x="229" y="384" text-anchor="start">2025-06-18</text>
+<path class="warn" d="M334 375 L344 392 L324 392 Z" stroke-linejoin="round"/><rect class="warn-mark" x="333" y="381" width="2" height="6" rx="1"/><circle class="warn-mark" cx="334" cy="389" r="1.2"/>
+<text x="363" y="384" text-anchor="start">Python</text>
+<text x="460" y="384" text-anchor="end">677</text>
+<text x="503" y="384" text-anchor="end">113</text>
+<text x="541" y="384" text-anchor="end">5</text>
 <rect class="ok" x="561" y="375" width="18" height="18" rx="4"/><path class="mark" d="M565 384.5 l3.5 3.5 l6.5 -7.5"/>
 <text class="dim" x="608" y="384" text-anchor="middle">—</text>
 <text class="dim" x="646" y="384" text-anchor="middle">—</text>
@@ -187,12 +187,12 @@
 <text class="dim" x="1064" y="384" text-anchor="middle">—</text>
 <rect class="ok" x="1093" y="375" width="18" height="18" rx="4"/><path class="mark" d="M1097 384.5 l3.5 3.5 l6.5 -7.5"/>
 <text x="26" y="420" text-anchor="start">thellimist/clihub</text>
-<text x="229" y="420" text-anchor="start">Go</text>
-<text x="326" y="420" text-anchor="end">667</text>
-<text x="369" y="420" text-anchor="end">60</text>
-<text x="407" y="420" text-anchor="end">1</text>
-<path class="warn" d="M436 411 L446 428 L426 428 Z" stroke-linejoin="round"/><rect class="warn-mark" x="435" y="417" width="2" height="6" rx="1"/><circle class="warn-mark" cx="436" cy="425" r="1.2"/>
-<text x="465" y="420" text-anchor="start">2025-11-25</text>
+<text x="229" y="420" text-anchor="start">2025-11-25</text>
+<path class="warn" d="M334 411 L344 428 L324 428 Z" stroke-linejoin="round"/><rect class="warn-mark" x="333" y="417" width="2" height="6" rx="1"/><circle class="warn-mark" cx="334" cy="425" r="1.2"/>
+<text x="363" y="420" text-anchor="start">Go</text>
+<text x="460" y="420" text-anchor="end">667</text>
+<text x="503" y="420" text-anchor="end">60</text>
+<text x="541" y="420" text-anchor="end">1</text>
 <rect class="ok" x="561" y="411" width="18" height="18" rx="4"/><path class="mark" d="M565 420.5 l3.5 3.5 l6.5 -7.5"/>
 <text class="dim" x="608" y="420" text-anchor="middle">—</text>
 <text class="dim" x="646" y="420" text-anchor="middle">—</text>
@@ -209,12 +209,12 @@
 <text class="dim" x="1064" y="420" text-anchor="middle">—</text>
 <text class="dim" x="1102" y="420" text-anchor="middle">—</text>
 <text x="26" y="456" text-anchor="start">wong2/mcp-cli</text>
-<text x="229" y="456" text-anchor="start">JS</text>
-<text x="326" y="456" text-anchor="end">444</text>
-<text x="369" y="456" text-anchor="end">67</text>
-<text x="407" y="456" text-anchor="end">6</text>
-<path class="warn" d="M436 447 L446 464 L426 464 Z" stroke-linejoin="round"/><rect class="warn-mark" x="435" y="453" width="2" height="6" rx="1"/><circle class="warn-mark" cx="436" cy="461" r="1.2"/>
-<text x="465" y="456" text-anchor="start">2025-11-25</text>
+<text x="229" y="456" text-anchor="start">2025-11-25</text>
+<path class="warn" d="M334 447 L344 464 L324 464 Z" stroke-linejoin="round"/><rect class="warn-mark" x="333" y="453" width="2" height="6" rx="1"/><circle class="warn-mark" cx="334" cy="461" r="1.2"/>
+<text x="363" y="456" text-anchor="start">JS</text>
+<text x="460" y="456" text-anchor="end">444</text>
+<text x="503" y="456" text-anchor="end">67</text>
+<text x="541" y="456" text-anchor="end">6</text>
 <rect class="ok" x="561" y="447" width="18" height="18" rx="4"/><path class="mark" d="M565 456.5 l3.5 3.5 l6.5 -7.5"/>
 <rect class="ok" x="599" y="447" width="18" height="18" rx="4"/><path class="mark" d="M603 456.5 l3.5 3.5 l6.5 -7.5"/>
 <rect class="ok" x="637" y="447" width="18" height="18" rx="4"/><path class="mark" d="M641 456.5 l3.5 3.5 l6.5 -7.5"/>
@@ -231,12 +231,12 @@
 <text class="dim" x="1064" y="456" text-anchor="middle">—</text>
 <text class="dim" x="1102" y="456" text-anchor="middle">—</text>
 <text x="26" y="492" text-anchor="start">activeing123/mcptoon</text>
-<text x="229" y="492" text-anchor="start">Python</text>
-<text x="326" y="492" text-anchor="end">197</text>
-<text x="369" y="492" text-anchor="end">229</text>
-<text x="407" y="492" text-anchor="end">3</text>
-<rect class="ok" x="427" y="483" width="18" height="18" rx="4"/><path class="mark" d="M431 492.5 l3.5 3.5 l6.5 -7.5"/>
-<text x="465" y="492" text-anchor="start">2026-07-28</text>
+<text x="229" y="492" text-anchor="start">2026-07-28</text>
+<rect class="ok" x="325" y="483" width="18" height="18" rx="4"/><path class="mark" d="M329 492.5 l3.5 3.5 l6.5 -7.5"/>
+<text x="363" y="492" text-anchor="start">Python</text>
+<text x="460" y="492" text-anchor="end">197</text>
+<text x="503" y="492" text-anchor="end">229</text>
+<text x="541" y="492" text-anchor="end">3</text>
 <rect class="ok" x="561" y="483" width="18" height="18" rx="4"/><path class="mark" d="M565 492.5 l3.5 3.5 l6.5 -7.5"/>
 <text class="dim" x="608" y="492" text-anchor="middle">—</text>
 <text class="dim" x="646" y="492" text-anchor="middle">—</text>
@@ -253,12 +253,12 @@
 <text class="dim" x="1064" y="492" text-anchor="middle">—</text>
 <text class="dim" x="1102" y="492" text-anchor="middle">—</text>
 <text x="26" y="528" text-anchor="start">mcpshim/mcpshim</text>
-<text x="229" y="528" text-anchor="start">Go</text>
-<text x="326" y="528" text-anchor="end">64</text>
-<text x="369" y="528" text-anchor="end">17</text>
-<text x="407" y="528" text-anchor="end">1</text>
-<rect class="ok" x="427" y="519" width="18" height="18" rx="4"/><path class="mark" d="M431 528.5 l3.5 3.5 l6.5 -7.5"/>
-<text x="465" y="528" text-anchor="start">2025-11-25</text>
+<text x="229" y="528" text-anchor="start">2025-11-25</text>
+<rect class="ok" x="325" y="519" width="18" height="18" rx="4"/><path class="mark" d="M329 528.5 l3.5 3.5 l6.5 -7.5"/>
+<text x="363" y="528" text-anchor="start">Go</text>
+<text x="460" y="528" text-anchor="end">64</text>
+<text x="503" y="528" text-anchor="end">17</text>
+<text x="541" y="528" text-anchor="end">1</text>
 <rect class="ok" x="561" y="519" width="18" height="18" rx="4"/><path class="mark" d="M565 528.5 l3.5 3.5 l6.5 -7.5"/>
 <text class="dim" x="608" y="528" text-anchor="middle">—</text>
 <text class="dim" x="646" y="528" text-anchor="middle">—</text>
@@ -275,12 +275,12 @@
 <text class="dim" x="1064" y="528" text-anchor="middle">—</text>
 <text class="dim" x="1102" y="528" text-anchor="middle">—</text>
 <text x="26" y="564" text-anchor="start">lydakis/mcpx</text>
-<text x="229" y="564" text-anchor="start">Go</text>
-<text x="326" y="564" text-anchor="end">52</text>
-<text x="369" y="564" text-anchor="end">119</text>
-<text x="407" y="564" text-anchor="end">3</text>
-<rect class="ok" x="427" y="555" width="18" height="18" rx="4"/><path class="mark" d="M431 564.5 l3.5 3.5 l6.5 -7.5"/>
-<text x="465" y="564" text-anchor="start">2026-07-28</text>
+<text x="229" y="564" text-anchor="start">2026-07-28</text>
+<rect class="ok" x="325" y="555" width="18" height="18" rx="4"/><path class="mark" d="M329 564.5 l3.5 3.5 l6.5 -7.5"/>
+<text x="363" y="564" text-anchor="start">Go</text>
+<text x="460" y="564" text-anchor="end">52</text>
+<text x="503" y="564" text-anchor="end">119</text>
+<text x="541" y="564" text-anchor="end">3</text>
 <rect class="ok" x="561" y="555" width="18" height="18" rx="4"/><path class="mark" d="M565 564.5 l3.5 3.5 l6.5 -7.5"/>
 <text class="dim" x="608" y="564" text-anchor="middle">—</text>
 <text class="dim" x="646" y="564" text-anchor="middle">—</text>
@@ -297,12 +297,12 @@
 <text class="dim" x="1064" y="564" text-anchor="middle">—</text>
 <text class="dim" x="1102" y="564" text-anchor="middle">—</text>
 <text x="26" y="600" text-anchor="start">evantahler/mcpx</text>
-<text x="229" y="600" text-anchor="start">TS</text>
-<text x="326" y="600" text-anchor="end">33</text>
-<text x="369" y="600" text-anchor="end">116</text>
-<text x="407" y="600" text-anchor="end">1</text>
-<rect class="ok" x="427" y="591" width="18" height="18" rx="4"/><path class="mark" d="M431 600.5 l3.5 3.5 l6.5 -7.5"/>
-<text x="465" y="600" text-anchor="start">2026-07-28</text>
+<text x="229" y="600" text-anchor="start">2026-07-28</text>
+<rect class="ok" x="325" y="591" width="18" height="18" rx="4"/><path class="mark" d="M329 600.5 l3.5 3.5 l6.5 -7.5"/>
+<text x="363" y="600" text-anchor="start">TS</text>
+<text x="460" y="600" text-anchor="end">33</text>
+<text x="503" y="600" text-anchor="end">116</text>
+<text x="541" y="600" text-anchor="end">1</text>
 <rect class="ok" x="561" y="591" width="18" height="18" rx="4"/><path class="mark" d="M565 600.5 l3.5 3.5 l6.5 -7.5"/>
 <rect class="ok" x="599" y="591" width="18" height="18" rx="4"/><path class="mark" d="M603 600.5 l3.5 3.5 l6.5 -7.5"/>
 <rect class="ok" x="637" y="591" width="18" height="18" rx="4"/><path class="mark" d="M641 600.5 l3.5 3.5 l6.5 -7.5"/>
@@ -319,12 +319,12 @@
 <text class="dim" x="1064" y="600" text-anchor="middle">—</text>
 <text class="dim" x="1102" y="600" text-anchor="middle">—</text>
 <text x="26" y="636" text-anchor="start">EstebanForge/mcp-cli-ent</text>
-<text x="229" y="636" text-anchor="start">Go</text>
-<text x="326" y="636" text-anchor="end">15</text>
-<text x="369" y="636" text-anchor="end">61</text>
-<text x="407" y="636" text-anchor="end">3</text>
-<rect class="ok" x="427" y="627" width="18" height="18" rx="4"/><path class="mark" d="M431 636.5 l3.5 3.5 l6.5 -7.5"/>
-<text x="465" y="636" text-anchor="start">2026-07-28</text>
+<text x="229" y="636" text-anchor="start">2026-07-28</text>
+<rect class="ok" x="325" y="627" width="18" height="18" rx="4"/><path class="mark" d="M329 636.5 l3.5 3.5 l6.5 -7.5"/>
+<text x="363" y="636" text-anchor="start">Go</text>
+<text x="460" y="636" text-anchor="end">15</text>
+<text x="503" y="636" text-anchor="end">61</text>
+<text x="541" y="636" text-anchor="end">3</text>
 <rect class="ok" x="561" y="627" width="18" height="18" rx="4"/><path class="mark" d="M565 636.5 l3.5 3.5 l6.5 -7.5"/>
 <text class="dim" x="608" y="636" text-anchor="middle">—</text>
 <text class="dim" x="646" y="636" text-anchor="middle">—</text>
@@ -341,12 +341,12 @@
 <text class="dim" x="1064" y="636" text-anchor="middle">—</text>
 <text class="dim" x="1102" y="636" text-anchor="middle">—</text>
 <text x="26" y="672" text-anchor="start">domdomegg/call-mcp</text>
-<text x="229" y="672" text-anchor="start">TS</text>
-<text x="326" y="672" text-anchor="end">3</text>
-<text x="369" y="672" text-anchor="end">37</text>
-<text x="407" y="672" text-anchor="end">3</text>
-<rect class="ok" x="427" y="663" width="18" height="18" rx="4"/><path class="mark" d="M431 672.5 l3.5 3.5 l6.5 -7.5"/>
-<text x="465" y="672" text-anchor="start">2025-11-25</text>
+<text x="229" y="672" text-anchor="start">2025-11-25</text>
+<rect class="ok" x="325" y="663" width="18" height="18" rx="4"/><path class="mark" d="M329 672.5 l3.5 3.5 l6.5 -7.5"/>
+<text x="363" y="672" text-anchor="start">TS</text>
+<text x="460" y="672" text-anchor="end">3</text>
+<text x="503" y="672" text-anchor="end">37</text>
+<text x="541" y="672" text-anchor="end">3</text>
 <rect class="ok" x="561" y="663" width="18" height="18" rx="4"/><path class="mark" d="M565 672.5 l3.5 3.5 l6.5 -7.5"/>
 <text class="dim" x="608" y="672" text-anchor="middle">—</text>
 <text class="dim" x="646" y="672" text-anchor="middle">—</text>
@@ -362,7 +362,7 @@
 <text class="dim" x="1026" y="672" text-anchor="middle">—</text>
 <text class="dim" x="1064" y="672" text-anchor="middle">—</text>
 <text class="dim" x="1102" y="672" text-anchor="middle">—</text>
-<path class="grid" fill="none" stroke-width="1" d="M16 150H1121M16 186H1121M16 222H1121M16 258H1121M16 294H1121M16 330H1121M16 366H1121M16 402H1121M16 438H1121M16 474H1121M16 510H1121M16 546H1121M16 582H1121M16 618H1121M16 654H1121M16 690H1121M219 16H1121M16 150V690M219 16V690M285 16V690M336 16V690M379 16V690M417 16V690M455 16V690M551 16V690M589 16V690M627 16V690M665 16V690M703 16V690M741 16V690M779 16V690M817 16V690M855 16V690M893 16V690M931 16V690M969 16V690M1007 16V690M1045 16V690M1083 16V690M1121 16V690"/>
+<path class="grid" fill="none" stroke-width="1" d="M16 150H1121M16 186H1121M16 222H1121M16 258H1121M16 294H1121M16 330H1121M16 366H1121M16 402H1121M16 438H1121M16 474H1121M16 510H1121M16 546H1121M16 582H1121M16 618H1121M16 654H1121M16 690H1121M219 16H1121M16 150V690M219 16V690M315 16V690M353 16V690M419 16V690M470 16V690M513 16V690M551 16V690M589 16V690M627 16V690M665 16V690M703 16V690M741 16V690M779 16V690M817 16V690M855 16V690M893 16V690M931 16V690M969 16V690M1007 16V690M1045 16V690M1083 16V690M1121 16V690"/>
 <text x="16" y="718">Legend:</text>
 <rect class="ok" x="78" y="709" width="18" height="18" rx="4"/><path class="mark" d="M82 718.5 l3.5 3.5 l6.5 -7.5"/>
 <text x="102" y="718">= supported,</text>

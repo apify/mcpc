@@ -31,7 +31,13 @@ or workflows), also update the built-in agent skill at [`skills/mcpc/SKILL.md`](
 
 If your change touches any help text, regenerate [`docs/REFERENCE.md`](./docs/REFERENCE.md) with
 `pnpm run build:reference` and commit it — it is captured verbatim from `mcpc --help` and
-`mcpc help <command>`, and CI fails when it has drifted (`pnpm run check:reference`).
+`mcpc help <command>`, and the unit tests fail when it has drifted (`pnpm run check:reference`
+runs the same check on its own).
+
+If your change touches the "MCP CLI clients" table in the README's "Related work" section,
+regenerate the comparison image with `node scripts/generate-related-work-image.mjs` (also part of
+`pnpm run build:readme`) and commit [`docs/images/related-work.svg`](./docs/images/related-work.svg)
+— it is rendered from that table, and the unit tests fail when it has drifted.
 
 ## Development setup
 
