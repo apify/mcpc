@@ -30,19 +30,45 @@ process.setMaxListeners(50);
 const keychainStore = new Map<string, string>();
 /** When true, all keychain operations throw to simulate a missing keyring daemon */
 let keychainThrows = false;
+/** When set, the next setPassword fails with this error (a non-size keychain failure) */
+let failNextSetWith: Error | null = null;
+
+/**
+ * Windows Credential Manager caps a credential blob at 2560 bytes, and the
+ * keyring crate stores passwords as UTF-16 — so 1280 UTF-16 code units is the
+ * tightest limit any supported platform imposes (#409). The mock enforces it on
+ * every platform so the whole suite guards against writing an oversized entry.
+ */
+const MAX_UTF16_UNITS = 1280;
+
+/** Keychain calls the code under test made, so tests can assert it stays cheap. */
+const keychainCalls = { set: 0, get: 0, delete: 0 };
 
 vi.mock('@napi-rs/keyring', () => ({
   Entry: vi.fn(function (_service: string, account: string) {
     return {
       setPassword(value: string) {
+        keychainCalls.set++;
         if (keychainThrows) throw new Error('No keyring daemon');
+        if (failNextSetWith) {
+          const error = failNextSetWith;
+          failNextSetWith = null;
+          throw error;
+        }
+        if (value.length > MAX_UTF16_UNITS) {
+          throw new Error(
+            "Attribute 'password encoded as UTF-16' is longer than platform limit of 2560 chars"
+          );
+        }
         keychainStore.set(account, value);
       },
       getPassword(): string | null {
+        keychainCalls.get++;
         if (keychainThrows) throw new Error('No keyring daemon');
         return keychainStore.get(account) ?? null;
       },
       deletePassword(): boolean {
+        keychainCalls.delete++;
         if (keychainThrows) throw new Error('No keyring daemon');
         const had = keychainStore.has(account);
         keychainStore.delete(account);
@@ -51,6 +77,13 @@ vi.mock('@napi-rs/keyring', () => ({
     };
   }),
 }));
+
+/** Zero the counters — call right before the operation a test measures. */
+function resetKeychainCalls() {
+  keychainCalls.set = 0;
+  keychainCalls.get = 0;
+  keychainCalls.delete = 0;
+}
 
 // ---------------------------------------------------------------------------
 // Mock chalk to keep the test runtime untouched by ANSI codes.
@@ -82,6 +115,8 @@ afterAll(async () => {
 beforeEach(async () => {
   keychainStore.clear();
   keychainThrows = false;
+  failNextSetWith = null;
+  resetKeychainCalls();
   await rm(credFile(), { force: true });
 });
 
@@ -194,6 +229,189 @@ describe('OS keychain available', () => {
       'cc-client'
     );
     expect(keychainStore.size).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests: values too long for a single keychain entry (#409)
+// ---------------------------------------------------------------------------
+
+describe('values longer than the platform entry limit', () => {
+  /** A token blob of the size real OAuth servers hand out — well over the Windows limit. */
+  const longToken = (seed: string) => seed.repeat(Math.ceil(4000 / seed.length)).slice(0, 4000);
+
+  // -------------------------------------------------------------------------
+  // Splitting is a fallback: a credential that fits must cost what it always did
+  // -------------------------------------------------------------------------
+
+  /**
+   * The availability probe writes, reads and deletes once per process. Get it out
+   * of the way before counting, so a measurement covers only the call under test.
+   */
+  async function loadProbedKeychain() {
+    const keychain = await loadKeychain();
+    await keychain.isKeychainAvailable();
+    resetKeychainCalls();
+    return keychain;
+  }
+
+  it('stores a value that fits in exactly one keychain write', async () => {
+    const { storeKeychainProxyBearerToken } = await loadProbedKeychain();
+
+    await storeKeychainProxyBearerToken('s', 'short-token');
+
+    expect(keychainCalls).toEqual({ set: 1, get: 0, delete: 0 });
+  });
+
+  it('reads a value that fits in exactly one keychain read', async () => {
+    const keychain = await loadProbedKeychain();
+    await keychain.storeKeychainProxyBearerToken('s', 'short-token');
+
+    resetKeychainCalls();
+    expect(await keychain.readKeychainProxyBearerToken('s')).toBe('short-token');
+
+    expect(keychainCalls).toEqual({ set: 0, get: 1, delete: 0 });
+  });
+
+  it('splits only after the platform refuses the write', async () => {
+    const { storeKeychainProxyBearerToken } = await loadProbedKeychain();
+
+    await storeKeychainProxyBearerToken('s', longToken('tok-'));
+
+    // One rejected plain write, then 4 parts of 1024 units, then the header.
+    expect(keychainCalls.set).toBe(1 + 4 + 1);
+    // No read: the write path never looks the account up first.
+    expect(keychainCalls.get).toBe(0);
+  });
+
+  it('rethrows a keychain failure that is not about the value size', async () => {
+    const { setKeychainOnly } = await loadProbedKeychain();
+
+    failNextSetWith = new Error('Access denied');
+    await expect(setKeychainOnly('acct', 'short-value')).rejects.toThrow('Access denied');
+
+    // Not mistaken for a size refusal, so nothing was stored in parts.
+    expect(keychainStore.size).toBe(0);
+    expect(keychainCalls.set).toBe(1);
+  });
+
+  it('stores and reads back a token blob larger than a single entry', async () => {
+    const { storeKeychainOAuthTokenInfo, readKeychainOAuthTokenInfo } = await loadKeychain();
+
+    const tokens = {
+      accessToken: longToken('access-'),
+      refreshToken: longToken('refresh-'),
+      tokenType: 'Bearer',
+    };
+    await storeKeychainOAuthTokenInfo('https://example.com', 'default', tokens);
+
+    expect(await readKeychainOAuthTokenInfo('https://example.com', 'default')).toEqual(tokens);
+
+    // Stored as a header entry plus parts, none of which exceeds the platform limit.
+    const base = 'auth-profile:example.com:default:tokens';
+    expect(keychainStore.get(base)).toMatch(/^mcpc:chunked:v1:\d+$/);
+    expect(keychainStore.size).toBeGreaterThan(1);
+    for (const value of keychainStore.values()) {
+      expect(value.length).toBeLessThanOrEqual(MAX_UTF16_UNITS);
+    }
+  });
+
+  it('keeps short values in a single plain entry', async () => {
+    const { storeKeychainProxyBearerToken } = await loadKeychain();
+
+    await storeKeychainProxyBearerToken('s', 'short-token');
+    expect(keychainStore.size).toBe(1);
+    expect(keychainStore.get('session:s:proxy-bearer-token')).toBe('short-token');
+  });
+
+  it('round-trips a value that looks like a chunk header', async () => {
+    const { storeKeychainProxyBearerToken, readKeychainProxyBearerToken } = await loadKeychain();
+
+    await storeKeychainProxyBearerToken('s', 'mcpc:chunked:v1:2');
+    expect(await readKeychainProxyBearerToken('s')).toBe('mcpc:chunked:v1:2');
+  });
+
+  it('round-trips values containing astral characters', async () => {
+    const { storeKeychainSessionHeaders, readKeychainSessionHeaders } = await loadKeychain();
+
+    // Emoji are surrogate pairs; a chunk boundary must never cut one in half.
+    const headers = { 'X-Long': '😀'.repeat(2000) };
+    await storeKeychainSessionHeaders('s', headers);
+
+    expect(await readKeychainSessionHeaders('s')).toEqual(headers);
+  });
+
+  it('deletes every part of a chunked credential', async () => {
+    const {
+      storeKeychainOAuthTokenInfo,
+      removeKeychainOAuthTokenInfo,
+      readKeychainOAuthTokenInfo,
+    } = await loadKeychain();
+
+    await storeKeychainOAuthTokenInfo('https://example.com', 'default', {
+      accessToken: longToken('access-'),
+      tokenType: 'Bearer',
+    });
+    expect(await removeKeychainOAuthTokenInfo('https://example.com', 'default')).toBe(true);
+
+    expect(keychainStore.size).toBe(0);
+    expect(await readKeychainOAuthTokenInfo('https://example.com', 'default')).toBeUndefined();
+  });
+
+  it('refuses a credential far larger than any real one', async () => {
+    const { storeKeychainSessionHeaders } = await loadKeychain();
+
+    // A server handing out an absurd token must not have mcpc write an unbounded
+    // number of keychain entries.
+    const absurd = { Authorization: 'x'.repeat(60 * 1024) };
+    await expect(storeKeychainSessionHeaders('s', absurd)).rejects.toThrow(
+      /exceeds the \d+ character limit/
+    );
+    expect(keychainStore.size).toBe(0);
+  });
+
+  it('still stores a credential just under the limit', async () => {
+    const { storeKeychainProxyBearerToken, readKeychainProxyBearerToken } = await loadKeychain();
+
+    const big = 'y'.repeat(50 * 1024);
+    await storeKeychainProxyBearerToken('s', big);
+    expect(await readKeychainProxyBearerToken('s')).toBe(big);
+  });
+
+  it('deletes every part from a process that never read the credential', async () => {
+    // What `mcpc logout` does: a fresh process removes a credential it has not read.
+    const first = await loadKeychain();
+    await first.storeKeychainOAuthTokenInfo('https://example.com', 'default', {
+      accessToken: longToken('access-'),
+      tokenType: 'Bearer',
+    });
+    expect(keychainStore.size).toBeGreaterThan(1);
+
+    const second = await loadKeychain();
+    expect(await second.removeKeychainOAuthTokenInfo('https://example.com', 'default')).toBe(true);
+    expect(keychainStore.size).toBe(0);
+  });
+
+  it('treats a chunked credential with a missing part as absent', async () => {
+    const { storeKeychainOAuthTokenInfo, readKeychainOAuthTokenInfo } = await loadKeychain();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+      await storeKeychainOAuthTokenInfo('https://example.com', 'default', {
+        accessToken: longToken('access-'),
+        tokenType: 'Bearer',
+      });
+
+      // Simulate a partially wiped keychain (e.g. the user deleted one entry).
+      keychainStore.delete('auth-profile:example.com:default:tokens#1');
+
+      expect(await readKeychainOAuthTokenInfo('https://example.com', 'default')).toBeUndefined();
+      expect(
+        errorSpy.mock.calls.filter((call) => String(call[0]).includes('is incomplete'))
+      ).toHaveLength(1);
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 });
 

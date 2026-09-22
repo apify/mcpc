@@ -9,6 +9,7 @@
  *   PAGINATION_SIZE - items per page, 0 = no pagination (default: 0)
  *   LATENCY_MS - artificial latency in ms (default: 0)
  *   REQUIRE_AUTH - require Authorization header (default: false)
+ *   EXPECTED_BEARER_TOKEN - with REQUIRE_AUTH, the exact token to demand (default: any)
  *   NO_TOOLS - disable tools capability (default: false)
  *   NO_TASKS - serve tools but withhold the tasks capability, so --task/--detach
  *     must be refused rather than silently run synchronously (default: false)
@@ -74,6 +75,9 @@ const PORT = parseInt(process.env.PORT || '13456', 10);
 const PAGINATION_SIZE = parseInt(process.env.PAGINATION_SIZE || '0', 10);
 const LATENCY_MS = parseInt(process.env.LATENCY_MS || '0', 10);
 const REQUIRE_AUTH = process.env.REQUIRE_AUTH === 'true';
+// With REQUIRE_AUTH, demand this exact bearer token rather than any well-formed one,
+// so a test can prove a credential survived storage byte for byte.
+const EXPECTED_BEARER_TOKEN = process.env.EXPECTED_BEARER_TOKEN || '';
 const NO_TOOLS = process.env.NO_TOOLS === 'true';
 // Serve tools but withhold the tasks capability, so `--task`/`--detach` must refuse
 const NO_TASKS = process.env.NO_TASKS === 'true';
@@ -571,6 +575,11 @@ async function main() {
       if (!auth || !auth.startsWith('Bearer ')) {
         res.writeHead(401, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Unauthorized' }));
+        return;
+      }
+      if (EXPECTED_BEARER_TOKEN && auth.slice('Bearer '.length) !== EXPECTED_BEARER_TOKEN) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Unauthorized: unexpected token' }));
         return;
       }
     }

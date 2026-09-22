@@ -17,6 +17,7 @@ import chalk from 'chalk';
 import { createLogger, getJsonMode } from '../logger.js';
 import { getServerHost, getMcpcHome, fileExists } from '../utils.js';
 import { withFileLock } from '../file-lock.js';
+import { ClientError } from '../errors.js';
 import type { IdJagCredentials } from '../types.js';
 
 const logger = createLogger('keychain');
@@ -97,6 +98,114 @@ function getEntry(): Promise<EntryConstructor> {
   return _entryPromise;
 }
 
+// -----------------------------------------------------------------------------
+// Values too long for one entry
+//
+// Windows Credential Manager caps a credential at 2560 bytes, and the keyring
+// crate stores passwords as UTF-16, so it refuses anything over 1280 characters
+// — most OAuth token blobs (#409). Such a value is stored in parts: the account
+// holds a header (`mcpc:chunked:v1:<count>`), the parts live in `<account>#0`,
+// `<account>#1`, ... The write is attempted plain first and split only when the
+// platform refuses it, so a credential that fits costs one write and one read,
+// in the same layout as before.
+//
+// Parts of a credential that later shrank below the limit are not read (the
+// header is gone) and are removed together with the credential.
+// -----------------------------------------------------------------------------
+
+/** The Windows limit — the tightest of the supported platforms. */
+const CHUNK_SIZE_UTF16_UNITS = 1280;
+/** Splitting is unbounded, so a server's absurd token must not fill the keychain. */
+const MAX_VALUE_UTF16_UNITS = 50 * 1024;
+const CHUNK_HEADER_PREFIX = 'mcpc:chunked:v1:';
+
+const chunkAccount = (account: string, index: number): string => `${account}#${index}`;
+
+function assertStorableSize(account: string, value: string): void {
+  if (value.length > MAX_VALUE_UTF16_UNITS) {
+    throw new ClientError(
+      `Refusing to store credential '${account}': ${value.length} characters exceeds the ` +
+        `${MAX_VALUE_UTF16_UNITS} character limit — check what the server returned.`
+    );
+  }
+}
+
+/** Number of parts a chunk header announces, or null for a plain value. */
+function parseChunkHeader(raw: string | null): number | null {
+  if (raw === null || !raw.startsWith(CHUNK_HEADER_PREFIX)) return null;
+  const count = Number(raw.slice(CHUNK_HEADER_PREFIX.length));
+  return Number.isInteger(count) && count > 0 ? count : null;
+}
+
+/** Split into entry-sized parts without cutting a surrogate pair in half. */
+function splitIntoChunks(value: string): string[] {
+  const chunks: string[] = [];
+  for (let start = 0; start < value.length;) {
+    let end = Math.min(start + CHUNK_SIZE_UTF16_UNITS, value.length);
+    const last = value.charCodeAt(end - 1);
+    if (end < value.length && last >= 0xd800 && last <= 0xdbff) end -= 1;
+    chunks.push(value.slice(start, end));
+    start = end;
+  }
+  return chunks;
+}
+
+/** Delete parts from `from` onwards; they are contiguous, so stop at the first missing one. */
+function deleteChunksFrom(EntryClass: EntryConstructor, account: string, from: number): void {
+  for (let i = from; ; i++) {
+    try {
+      if (!new EntryClass(SERVICE_NAME, chunkAccount(account, i)).deletePassword()) return;
+    } catch {
+      return;
+    }
+  }
+}
+
+function entrySet(EntryClass: EntryConstructor, account: string, value: string): void {
+  // A value that would read back as a header is stored in parts however short it is.
+  if (parseChunkHeader(value) === null) {
+    try {
+      new EntryClass(SERVICE_NAME, account).setPassword(value);
+      return;
+    } catch (error) {
+      // Only a value the platform can have refused for its size is worth splitting.
+      if (value.length <= CHUNK_SIZE_UTF16_UNITS) throw error;
+    }
+  }
+  const chunks = splitIntoChunks(value);
+  chunks.forEach((chunk, i) =>
+    new EntryClass(SERVICE_NAME, chunkAccount(account, i)).setPassword(chunk)
+  );
+  // The header goes last: it is what makes the parts readable.
+  new EntryClass(SERVICE_NAME, account).setPassword(`${CHUNK_HEADER_PREFIX}${chunks.length}`);
+  deleteChunksFrom(EntryClass, account, chunks.length); // leftovers of a longer previous value
+}
+
+function entryGet(EntryClass: EntryConstructor, account: string): string | null {
+  const raw = new EntryClass(SERVICE_NAME, account).getPassword() ?? null;
+  const count = parseChunkHeader(raw);
+  if (count === null) return raw;
+
+  const parts: string[] = [];
+  for (let i = 0; i < count; i++) {
+    const part = new EntryClass(SERVICE_NAME, chunkAccount(account, i)).getPassword() ?? null;
+    if (part === null) {
+      logger.warn(
+        `Credential '${account}' is incomplete in the OS keychain ` +
+          `(part ${i + 1} of ${count} is missing); treating it as absent`
+      );
+      return null;
+    }
+    parts.push(part);
+  }
+  return parts.join('');
+}
+
+function entryDelete(EntryClass: EntryConstructor, account: string): boolean {
+  deleteChunksFrom(EntryClass, account, 0);
+  return new EntryClass(SERVICE_NAME, account).deletePassword();
+}
+
 /** Probe the OS keychain by performing a write, read-back, and delete. */
 async function probeKeychain(EntryClass: EntryConstructor): Promise<boolean> {
   const probeAccount = `__mcpc_probe_${Date.now()}_${Math.random().toString(36).slice(2)}__`;
@@ -149,24 +258,23 @@ async function withKeychain<T>(
 }
 
 function keychainSet(account: string, value: string): Promise<void> {
+  assertStorableSize(account, value);
   return withKeychain(
-    (EntryClass) => {
-      new EntryClass(SERVICE_NAME, account).setPassword(value);
-    },
+    (EntryClass) => entrySet(EntryClass, account, value),
     () => fileSet(account, value)
   );
 }
 
 function keychainGet(account: string): Promise<string | null> {
   return withKeychain(
-    (EntryClass) => new EntryClass(SERVICE_NAME, account).getPassword() ?? null,
+    (EntryClass) => entryGet(EntryClass, account),
     () => fileGet(account)
   );
 }
 
 function keychainDelete(account: string): Promise<boolean> {
   return withKeychain(
-    (EntryClass) => new EntryClass(SERVICE_NAME, account).deletePassword(),
+    (EntryClass) => entryDelete(EntryClass, account),
     () => fileDelete(account)
   );
 }
@@ -248,24 +356,22 @@ export async function isKeychainAvailable(): Promise<boolean> {
 }
 
 export async function setKeychainOnly(account: string, value: string): Promise<void> {
+  assertStorableSize(account, value);
   await ensureProbed();
   if (keychainAvailable !== true) throw new Error('Keychain is not available');
-  const EntryClass = await getEntry();
-  new EntryClass(SERVICE_NAME, account).setPassword(value);
+  entrySet(await getEntry(), account, value);
 }
 
 export async function getKeychainOnly(account: string): Promise<string | null> {
   await ensureProbed();
   if (keychainAvailable !== true) throw new Error('Keychain is not available');
-  const EntryClass = await getEntry();
-  return new EntryClass(SERVICE_NAME, account).getPassword() ?? null;
+  return entryGet(await getEntry(), account);
 }
 
 export async function deleteKeychainOnly(account: string): Promise<boolean> {
   await ensureProbed();
   if (keychainAvailable !== true) throw new Error('Keychain is not available');
-  const EntryClass = await getEntry();
-  return new EntryClass(SERVICE_NAME, account).deletePassword();
+  return entryDelete(await getEntry(), account);
 }
 
 /** Store OAuth client registration info for an auth profile. */

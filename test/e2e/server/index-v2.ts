@@ -50,6 +50,9 @@ const PORT = parseInt(process.env.PORT || '13456', 10);
 const PAGINATION_SIZE = parseInt(process.env.PAGINATION_SIZE || '0', 10);
 const LATENCY_MS = parseInt(process.env.LATENCY_MS || '0', 10);
 const REQUIRE_AUTH = process.env.REQUIRE_AUTH === 'true';
+// With REQUIRE_AUTH, demand this exact bearer token rather than any well-formed one,
+// so a test can prove a credential survived storage byte for byte.
+const EXPECTED_BEARER_TOKEN = process.env.EXPECTED_BEARER_TOKEN || '';
 const NO_TOOLS = process.env.NO_TOOLS === 'true';
 const NO_RESOURCES = process.env.NO_RESOURCES === 'true';
 const NO_PROMPTS = process.env.NO_PROMPTS === 'true';
@@ -456,6 +459,11 @@ async function main() {
       if (!auth || !auth.startsWith('Bearer ')) {
         res.writeHead(401, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Unauthorized' }));
+        return;
+      }
+      if (EXPECTED_BEARER_TOKEN && auth.slice('Bearer '.length) !== EXPECTED_BEARER_TOKEN) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Unauthorized: unexpected token' }));
         return;
       }
     }

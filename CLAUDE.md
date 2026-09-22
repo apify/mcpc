@@ -581,6 +581,13 @@ On failure, the error message includes instructions on how to login. This ensure
 // session:<name>:headers (per-session headers), session:<name>:proxy-bearer-token
 ```
 
+Windows Credential Manager refuses a credential over 1280 characters (2560 bytes of
+UTF-16), which most OAuth token blobs exceed (#409). A value the platform refuses is
+stored in parts — the account holds a `mcpc:chunked:v1:<count>` header, the parts live
+in `<account>#0`, `<account>#1`, … — and the write is attempted plain first, so a
+credential that fits still costs one keychain write and one read. Credentials over
+50 K characters are refused outright so a server's absurd token cannot fill the keychain.
+
 ## State and Data Storage
 
 All state files are stored in `~/.mcpc/` directory (unless overridden by `MCPC_HOME_DIR` environment variable):
