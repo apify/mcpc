@@ -7,6 +7,11 @@
  * today only because there is no `files` allowlist and `.npmignore` omits
  * `skills/`; this test fails loudly if that ever changes.
  *
+ * The reverse also matters: repo-only content (docs/ with multi-MB README images,
+ * sources, tests, scripts) must stay out of the tarball to keep every install small.
+ * Nothing in the CLI reads those paths at runtime — README.md links the images by
+ * absolute GitHub URL — so they are pure dead weight in node_modules.
+ *
  * Uses `npm pack --dry-run --json` (npm's documented file-listing interface,
  * pure Node, no external `tar`) rather than pnpm — this is package inspection,
  * not dependency management.
@@ -21,8 +26,12 @@ interface PackResult {
   files: { path: string }[];
 }
 
+const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+
+let cachedPaths: string[] | undefined;
+
 function packedPaths(): string[] {
-  const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+  if (cachedPaths) return cachedPaths;
   // execSync (a shell command line) so Windows resolves the `npm.cmd` shim; args are
   // static literals, so no injection surface.
   const out = execSync('npm pack --dry-run --json', {
@@ -31,7 +40,8 @@ function packedPaths(): string[] {
     stdio: ['ignore', 'pipe', 'ignore'],
   });
   const parsed = JSON.parse(out) as PackResult[];
-  return parsed[0]?.files.map((f) => f.path) ?? [];
+  cachedPaths = parsed[0]?.files.map((f) => f.path) ?? [];
+  return cachedPaths;
 }
 
 describe('published package contents', () => {
@@ -44,8 +54,14 @@ describe('published package contents', () => {
     expect(paths).toContain('dist/lib/x402/viem.js');
   }, 60_000);
 
+  it('does not ship repo-only content (docs, sources, tests, scripts)', () => {
+    const repoOnly = packedPaths().filter(
+      (path) => /^(docs|src|test|scripts)\//.test(path) || path === 'CLAUDE.md'
+    );
+    expect(repoOnly).toEqual([]);
+  }, 60_000);
+
   it('does not ship viem as a runtime dependency (it is bundled at build time)', () => {
-    const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
     const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as {
       dependencies: Record<string, string>;
     };
