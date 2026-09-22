@@ -336,14 +336,15 @@ const COMMON_HOST_PREFIXES = ['mcp.', 'api.', 'www.'];
 /**
  * Sanitize a string into a valid session name part (without @ prefix).
  * Replaces invalid characters with hyphens, collapses consecutive hyphens,
- * and trims leading/trailing hyphens. Truncates to 64 characters.
+ * and trims leading/trailing hyphens and underscores (e.g. `_notion` → `notion`).
+ * Truncates to 64 characters.
  */
 function sanitizeSessionName(raw: string): string {
   return raw
     .toLowerCase()
     .replace(/[^a-z0-9_-]/g, '-') // replace invalid chars with hyphens
     .replace(/-{2,}/g, '-') // collapse consecutive hyphens
-    .replace(/^-+|-+$/g, '') // trim leading/trailing hyphens
+    .replace(/^[-_]+|[-_]+$/g, '') // trim leading/trailing hyphens and underscores
     .slice(0, 64);
 }
 

@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Session names auto-generated from config entries no longer keep leading or trailing underscores, so an entry named `_notion` becomes `@notion` instead of `@_notion`.
 - Human-readable `tools-call` and `tasks-result` output now hints when structured data is hidden behind other content and points to `--json` to retrieve the full result. A text block that merely serializes `structuredContent` is folded away whatever its JSON type, so a result carrying an array or a primitive is no longer printed twice. (#346)
 - `mcpc help tools/list` and other MCP method names now show the command's help instead of failing with "Unknown command" — they already worked as aliases everywhere else.
 - x402 payments now work against servers that only reveal a tool's price when it is called: the payment signed for such a challenge is attached to the retried call, which used to go out unpaid and return the payment-required result again. The signature stays scoped to the tools the server charges for, so calls to free tools never carry a payment.
