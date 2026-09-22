@@ -99,91 +99,49 @@ function getEntry(): Promise<EntryConstructor> {
 }
 
 // -----------------------------------------------------------------------------
-// Long values: split across several keychain entries
+// Values too long for one entry
 //
-// Windows Credential Manager caps a credential blob at CRED_MAX_CREDENTIAL_BLOB_SIZE
-// (2560 bytes) and the keyring crate stores passwords as UTF-16, so a write is
-// rejected once the value exceeds 1280 UTF-16 code units ("Attribute 'password
-// encoded as UTF-16' is longer than platform limit of 2560 chars"). OAuth token
-// blobs (access + refresh token) routinely exceed that, which made `login` and
-// background token refresh fail outright on Windows (#409).
+// Windows Credential Manager caps a credential at 2560 bytes, and the keyring
+// crate stores passwords as UTF-16, so it refuses anything over 1280 characters
+// — most OAuth token blobs (#409). Such a value is stored in parts: the account
+// holds a header (`mcpc:chunked:v1:<count>`), the parts live in `<account>#0`,
+// `<account>#1`, ... The write is attempted plain first and split only when the
+// platform refuses it, so a credential that fits costs one write and one read,
+// in the same layout as before.
 //
-// Splitting is a fallback, not the normal path: a write is attempted as it always
-// was, and only a value the platform rejects for its size is stored as several
-// entries — the account holds a header (`mcpc:chunked:v1:<count>`) and the parts
-// live in `<account>#0`, `<account>#1`, ... So a credential that fits (every
-// credential on macOS and Linux, and the short ones on Windows) still costs one
-// keychain write to store and one read to load, exactly as before, and is stored
-// in the same plain layout, so credentials written by earlier versions read back
-// unchanged.
+// Parts of a credential that later shrank below the limit are not read (the
+// header is gone) and are removed together with the credential.
 // -----------------------------------------------------------------------------
 
-/** Tightest entry size any supported platform allows: 2560 bytes of UTF-16 (Windows). */
-const MAX_ENTRY_UTF16_UNITS = 1280;
-/** Part size once a value has to be split — just under the tightest platform limit. */
-const CHUNK_SIZE_UTF16_UNITS = 1200;
-/**
- * Refuse to store a credential larger than this.
- *
- * Splitting turns one value into as many entries as it takes, so without a
- * ceiling a server handing out an absurd token could have mcpc write an
- * unbounded number of credentials into the user's keychain. 50 K characters is
- * far more than any real credential — tokens run to a few KB — and caps a split
- * value at ~43 entries.
- */
+/** The Windows limit — the tightest of the supported platforms. */
+const CHUNK_SIZE_UTF16_UNITS = 1280;
+/** Splitting is unbounded, so a server's absurd token must not fill the keychain. */
 const MAX_VALUE_UTF16_UNITS = 50 * 1024;
 const CHUNK_HEADER_PREFIX = 'mcpc:chunked:v1:';
 
 const chunkAccount = (account: string, index: number): string => `${account}#${index}`;
 
-/**
- * Accounts this process has seen stored in parts.
- *
- * Writing a value that fits over an account that was split leaves the old parts
- * behind, and finding that out costs a keychain read before every single write.
- * Remembering the accounts we have already read or split keeps the common write
- * path at one keychain call and still cleans up the case that produces stale
- * parts in practice: a token refresh, which reads the stored tokens before it
- * writes the rotated ones. Parts missed that way (a shorter value blindly
- * overwriting a split one in a process that never read it) are removed when the
- * credential is deleted, which always checks.
- */
-const splitAccounts = new Set<string>();
-
-/** Reject an implausibly large credential before it reaches either store. */
 function assertStorableSize(account: string, value: string): void {
   if (value.length > MAX_VALUE_UTF16_UNITS) {
     throw new ClientError(
       `Refusing to store credential '${account}': ${value.length} characters exceeds the ` +
-        `${MAX_VALUE_UTF16_UNITS} character limit. A credential this large is not something ` +
-        `mcpc issued — check what the server returned.`
+        `${MAX_VALUE_UTF16_UNITS} character limit — check what the server returned.`
     );
   }
 }
 
-/** Number of parts a chunk header announces, or null when the value is a plain one. */
+/** Number of parts a chunk header announces, or null for a plain value. */
 function parseChunkHeader(raw: string | null): number | null {
   if (raw === null || !raw.startsWith(CHUNK_HEADER_PREFIX)) return null;
   const count = Number(raw.slice(CHUNK_HEADER_PREFIX.length));
   return Number.isInteger(count) && count > 0 ? count : null;
 }
 
-/** Did the platform reject this write because the value is too big for one entry? */
-function isValueTooLongError(error: unknown, value: string): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  if (/longer than (the )?platform limit|too long/i.test(message)) return true;
-  // Belt and braces: a value over the tightest limit any platform imposes is
-  // treated as rejected for its size whatever the wording, so a reworded error
-  // in some future keyring release cannot bring the Windows failure back.
-  return value.length > MAX_ENTRY_UTF16_UNITS;
-}
-
-/** Split a value into entry-sized parts, never cutting a surrogate pair in half. */
+/** Split into entry-sized parts without cutting a surrogate pair in half. */
 function splitIntoChunks(value: string): string[] {
   const chunks: string[] = [];
   for (let start = 0; start < value.length;) {
     let end = Math.min(start + CHUNK_SIZE_UTF16_UNITS, value.length);
-    // A lone surrogate would not survive the round-trip through the platform store.
     const last = value.charCodeAt(end - 1);
     if (end < value.length && last >= 0xd800 && last <= 0xdbff) end -= 1;
     chunks.push(value.slice(start, end));
@@ -192,58 +150,42 @@ function splitIntoChunks(value: string): string[] {
   return chunks;
 }
 
-/**
- * Delete the parts from `from` onwards. Parts are numbered contiguously, so the
- * scan stops at the first one that is already gone — which keeps this to a single
- * (cheap, missing-entry) lookup when there is nothing to clean up.
- */
+/** Delete parts from `from` onwards; they are contiguous, so stop at the first missing one. */
 function deleteChunksFrom(EntryClass: EntryConstructor, account: string, from: number): void {
   for (let i = from; ; i++) {
     try {
       if (!new EntryClass(SERVICE_NAME, chunkAccount(account, i)).deletePassword()) return;
     } catch {
-      // A leftover part is harmless: it is never read without a header pointing at it.
       return;
     }
   }
 }
 
-/** Store a value in numbered parts, replacing whatever the account held before. */
-function setChunked(EntryClass: EntryConstructor, account: string, value: string): void {
+function entrySet(EntryClass: EntryConstructor, account: string, value: string): void {
+  // A value that would read back as a header is stored in parts however short it is.
+  if (parseChunkHeader(value) === null) {
+    try {
+      new EntryClass(SERVICE_NAME, account).setPassword(value);
+      return;
+    } catch (error) {
+      // Only a value the platform can have refused for its size is worth splitting.
+      if (value.length <= CHUNK_SIZE_UTF16_UNITS) throw error;
+    }
+  }
   const chunks = splitIntoChunks(value);
   chunks.forEach((chunk, i) =>
     new EntryClass(SERVICE_NAME, chunkAccount(account, i)).setPassword(chunk)
   );
-  // The header goes last: it is what makes the new parts readable.
+  // The header goes last: it is what makes the parts readable.
   new EntryClass(SERVICE_NAME, account).setPassword(`${CHUNK_HEADER_PREFIX}${chunks.length}`);
-  splitAccounts.add(account);
-  // Parts of a longer previous value, beyond the ones just overwritten.
-  deleteChunksFrom(EntryClass, account, chunks.length);
-}
-
-function entrySet(EntryClass: EntryConstructor, account: string, value: string): void {
-  // A value that would read back as a header has to be stored in parts, however
-  // short it is, so a header never means anything but "this value is in parts".
-  if (parseChunkHeader(value) === null) {
-    try {
-      // Fast path: the single write this has always been.
-      new EntryClass(SERVICE_NAME, account).setPassword(value);
-      // The value fit, so the account is plain now; drop parts it held before.
-      if (splitAccounts.delete(account)) deleteChunksFrom(EntryClass, account, 0);
-      return;
-    } catch (error) {
-      if (!isValueTooLongError(error, value)) throw error;
-    }
-  }
-  setChunked(EntryClass, account, value);
+  deleteChunksFrom(EntryClass, account, chunks.length); // leftovers of a longer previous value
 }
 
 function entryGet(EntryClass: EntryConstructor, account: string): string | null {
   const raw = new EntryClass(SERVICE_NAME, account).getPassword() ?? null;
   const count = parseChunkHeader(raw);
-  if (count === null) return raw; // one read, as before — the overwhelmingly common case
+  if (count === null) return raw;
 
-  splitAccounts.add(account);
   const parts: string[] = [];
   for (let i = 0; i < count; i++) {
     const part = new EntryClass(SERVICE_NAME, chunkAccount(account, i)).getPassword() ?? null;
@@ -260,11 +202,7 @@ function entryGet(EntryClass: EntryConstructor, account: string): string | null 
 }
 
 function entryDelete(EntryClass: EntryConstructor, account: string): boolean {
-  // Deleting has to be thorough even in a process that never read the value — a
-  // `logout` never does — so this always scans for parts instead of trusting
-  // `splitAccounts`. It costs one missing-entry lookup when there are none.
   deleteChunksFrom(EntryClass, account, 0);
-  splitAccounts.delete(account);
   return new EntryClass(SERVICE_NAME, account).deletePassword();
 }
 

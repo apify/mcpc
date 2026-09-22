@@ -581,18 +581,12 @@ On failure, the error message includes instructions on how to login. This ensure
 // session:<name>:headers (per-session headers), session:<name>:proxy-bearer-token
 ```
 
-Splitting long values is a fallback, never the normal path. Windows Credential Manager
-caps a credential at 2560 bytes and the keyring crate stores passwords as UTF-16, so
-anything over 1280 characters — most OAuth token blobs — is rejected outright (#409).
-A write is attempted exactly as before, and only a value the platform refuses for its
-size is stored as several entries: the account holds a `mcpc:chunked:v1:<count>` header
-and the parts live in `<account>#0`, `<account>#1`, … A credential that fits still costs
-one keychain write to store and one read to load, in the same plain layout as before,
-so nothing about the common path or previously stored credentials changes. Never add a
-lookup to the write path to discover whether an account was split — `splitAccounts` in
-`keychain.ts` remembers that instead, and deletes always scan. Storing a credential over
-50 K characters is refused outright: splitting turns one value into as many entries as it
-takes, so the ceiling keeps a server's absurd token from filling the user's keychain.
+Windows Credential Manager refuses a credential over 1280 characters (2560 bytes of
+UTF-16), which most OAuth token blobs exceed (#409). A value the platform refuses is
+stored in parts — the account holds a `mcpc:chunked:v1:<count>` header, the parts live
+in `<account>#0`, `<account>#1`, … — and the write is attempted plain first, so a
+credential that fits still costs one keychain write and one read. Credentials over
+50 K characters are refused outright so a server's absurd token cannot fill the keychain.
 
 ## State and Data Storage
 

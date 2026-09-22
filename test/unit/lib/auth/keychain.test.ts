@@ -341,17 +341,6 @@ describe('values longer than the platform entry limit', () => {
     expect(await readKeychainSessionHeaders('s')).toEqual(headers);
   });
 
-  it('removes stale parts when a long value is replaced by a shorter one', async () => {
-    const { storeKeychainSessionHeaders, readKeychainSessionHeaders } = await loadKeychain();
-
-    await storeKeychainSessionHeaders('s', { Authorization: longToken('Bearer-') });
-    expect(keychainStore.size).toBeGreaterThan(1);
-
-    await storeKeychainSessionHeaders('s', { Authorization: 'Bearer short' });
-    expect(keychainStore.size).toBe(1);
-    expect(await readKeychainSessionHeaders('s')).toEqual({ Authorization: 'Bearer short' });
-  });
-
   it('deletes every part of a chunked credential', async () => {
     const {
       storeKeychainOAuthTokenInfo,
@@ -401,28 +390,6 @@ describe('values longer than the platform entry limit', () => {
     const second = await loadKeychain();
     expect(await second.removeKeychainOAuthTokenInfo('https://example.com', 'default')).toBe(true);
     expect(keychainStore.size).toBe(0);
-  });
-
-  it('drops stale parts when a later process shortens a split credential', async () => {
-    // What a token refresh does: read the stored tokens, then write the rotated ones.
-    const first = await loadKeychain();
-    await first.storeKeychainOAuthTokenInfo('https://example.com', 'default', {
-      accessToken: longToken('access-'),
-      tokenType: 'Bearer',
-    });
-
-    const second = await loadKeychain();
-    expect(await second.readKeychainOAuthTokenInfo('https://example.com', 'default')).toBeDefined();
-    await second.storeKeychainOAuthTokenInfo('https://example.com', 'default', {
-      accessToken: 'short',
-      tokenType: 'Bearer',
-    });
-
-    expect(keychainStore.size).toBe(1);
-    expect(await second.readKeychainOAuthTokenInfo('https://example.com', 'default')).toEqual({
-      accessToken: 'short',
-      tokenType: 'Bearer',
-    });
   });
 
   it('treats a chunked credential with a missing part as absent', async () => {
