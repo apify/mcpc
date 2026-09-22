@@ -461,6 +461,18 @@ describe('generateSessionName', () => {
       ).toBe('@my-server-name');
     });
 
+    it('should trim leading and trailing underscores', () => {
+      expect(
+        generateSessionName({ type: 'config', file: '/sandbox/mcp.json', entry: '_notion' })
+      ).toBe('@notion');
+      expect(
+        generateSessionName({ type: 'config', file: '~/.vscode/mcp.json', entry: '__my_server_' })
+      ).toBe('@my_server');
+      expect(
+        generateSessionName({ type: 'config', file: '~/.vscode/mcp.json', entry: '___' })
+      ).toBe('@session');
+    });
+
     it('should produce valid session names', () => {
       const entries = ['filesystem', 'my-server', 'puppeteer', 'test_server'];
       for (const entry of entries) {
