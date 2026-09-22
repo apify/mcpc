@@ -2,7 +2,8 @@
 # Updates README.md:
 # 1. Updates Usage section with output from "mcpc --help"
 # 2. Updates table of contents
-# 3. Checks for broken internal links
+# 3. Regenerates the related-work comparison image from the Related work table
+# 4. Checks for broken internal links
 
 set -e
 
@@ -90,7 +91,12 @@ doctoc "$README" --github --notitle --maxlevel 2
 sed '/^- \[mcpc:/d' "$README" > "$README.tmp" && mv "$README.tmp" "$README"
 echo "  Done"
 
-# Step 3: Check for broken internal links
+# Step 3: Regenerate the comparison image (docs/images/related-work.svg)
+echo "Updating related-work image..."
+node "$SCRIPT_DIR/generate-related-work-image.mjs"
+echo "  Done"
+
+# Step 4: Check for broken internal links
 echo "Checking internal links..."
 markdown-link-check "$README" --config "$SCRIPT_DIR/markdown-link-check.json"
 echo "  Done"
