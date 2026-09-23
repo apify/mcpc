@@ -120,6 +120,25 @@ Ten commands run ~45s; there is no hard 30s cap for this flow.
   `mcp.json:filesystem → @filesystem`. No `@name` needed.
 - No-token alternative (public, anonymous): `mcpc connect "https://mcp.apify.com/?tools=search-actors,fetch-actor-details,docs"`.
 
+## Skills demo server (`skills.tape`)
+
+No public server serves the MCP Skills extension yet, so `skills.tape` records
+against the e2e test server (`test/e2e/server/index-v2.ts`, 2026-07-28, which
+serves the `git-workflow` / `refunds` / `daily` skill fixtures) under the name
+`mcp.example.com`. mcpc forces HTTPS for non-localhost hosts, so front it with TLS:
+
+```bash
+WITH_SKILLS=true PORT=13456 pnpm exec tsx test/e2e/server/index-v2.ts &
+echo "127.0.0.1 mcp.example.com" >> /etc/hosts
+openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem -days 2 \
+  -subj "/CN=mcp.example.com" -addext "subjectAltName=DNS:mcp.example.com"
+# then run any small HTTPS → http://127.0.0.1:13456 reverse proxy on 127.0.0.1:443
+export NODE_EXTRA_CA_CERTS="$PWD/cert.pem" NO_PROXY="mcp.example.com,$NO_PROXY"
+cd docs/vhs && vhs skills.tape
+```
+
+The connect stays hidden: its output names the test server ("e2e-test-server").
+
 ## Keychain warning (headless only)
 
 On a box with no keyring, the bearer-token `connect` prints
@@ -206,6 +225,7 @@ old cached copy.
 | `scripting.tape` | `--json` piped through `jq` (code mode) |
 | `grep.tape` | Dynamic tool discovery with `mcpc grep` across two sessions (Apify + filesystem) |
 | `proxy.tape` | MCP proxy / AI sandboxing (keeps a bearer token on purpose) |
+| `skills.tape` | MCP Skills extension: `skills-list` / `skills-get` against the e2e test server served as `mcp.example.com` |
 
 All focused tapes follow the same conventions as the hero (bold `$` prompt,
 bold-white commands, no comments, blank-line separation, `mktemp` home).
