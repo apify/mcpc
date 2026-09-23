@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-23
+
 ### Added
 
 - `skills-list` and `skills-get` now speak the MCP Skills extension as specified (`skills/list`, `skills/get`), replacing the earlier draft that discovered skills through a `skill://index.json` file. `skills-get` also reads a skill's supporting files (`mcpc @session skills-get <skill> references/FORMS.md`) and verifies everything it prints against the skill's published manifest — size, digest, and the SKILL.md frontmatter — so content that does not match is refused instead of shown. Requires a server on MCP 2026-07-28 or later that declares the extension.
@@ -444,7 +446,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Interactive shell mode
 - JSON output mode for scripting
 
-[Unreleased]: https://github.com/apify/mcpc/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/apify/mcpc/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/apify/mcpc/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/apify/mcpc/compare/v0.5.0...v0.6.0
 [0.5.1]: https://github.com/apify/mcpc/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/apify/mcpc/compare/v0.4.0...v0.5.0
