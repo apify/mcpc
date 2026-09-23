@@ -127,7 +127,7 @@ Options:
 Server formats:
   mcp.apify.com                 Remote HTTP server (https:// auto-added)
   ~/.vscode/mcp.json:puppeteer  Config file entry (file:entry)
-  ~/.vscode/mcp.json            Config file — connect every entry
+  ~/.vscode/mcp.json            Config file — bulk connect every entry
   (no server)                   Auto-discover configs and connect everything
 
   Stdio entries run a local command on connect, so only use configs you
