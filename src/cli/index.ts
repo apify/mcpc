@@ -527,6 +527,7 @@ ${chalk.bold('Protocol version:')}
 ${chalk.bold('x402 payments (experimental):')}
   --x402 pays for paid tool calls from the wallet set up with mcpc x402.
   Schemes: auto (default, prefers upto), upto, exact.
+  For more info, run: mcpc help x402
 ${outputHelp([
   'For a single server, shows session, server info, capabilities, and tools.',
   'Bulk connects list every session with its state, then a summary.',
