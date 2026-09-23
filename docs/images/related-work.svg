@@ -36,9 +36,9 @@
 <text class="bold" x="229" y="168" text-anchor="start">2026-07-28</text>
 <rect class="ok" x="325" y="159" width="18" height="18" rx="4"/><path class="mark" d="M329 168.5 l3.5 3.5 l6.5 -7.5"/>
 <text class="bold" x="363" y="168" text-anchor="start">TS</text>
-<text class="bold" x="460" y="168" text-anchor="end">847</text>
-<text class="bold" x="503" y="168" text-anchor="end">758</text>
-<text class="bold" x="541" y="168" text-anchor="end">15</text>
+<text class="bold" x="460" y="168" text-anchor="end">891</text>
+<text class="bold" x="503" y="168" text-anchor="end">779</text>
+<text class="bold" x="541" y="168" text-anchor="end">17</text>
 <rect class="ok" x="561" y="159" width="18" height="18" rx="4"/><path class="mark" d="M565 168.5 l3.5 3.5 l6.5 -7.5"/>
 <rect class="ok" x="599" y="159" width="18" height="18" rx="4"/><path class="mark" d="M603 168.5 l3.5 3.5 l6.5 -7.5"/>
 <rect class="ok" x="637" y="159" width="18" height="18" rx="4"/><path class="mark" d="M641 168.5 l3.5 3.5 l6.5 -7.5"/>
@@ -54,13 +54,13 @@
 <rect class="ok" x="1017" y="159" width="18" height="18" rx="4"/><path class="mark" d="M1021 168.5 l3.5 3.5 l6.5 -7.5"/>
 <rect class="ok" x="1055" y="159" width="18" height="18" rx="4"/><path class="mark" d="M1059 168.5 l3.5 3.5 l6.5 -7.5"/>
 <text class="dim" x="1102" y="168" text-anchor="middle">—</text>
-<text x="26" y="204" text-anchor="start">steipete/mcporter</text>
+<text x="26" y="204" text-anchor="start">openclaw/mcporter</text>
 <text x="229" y="204" text-anchor="start">2026-07-28</text>
 <rect class="ok" x="325" y="195" width="18" height="18" rx="4"/><path class="mark" d="M329 204.5 l3.5 3.5 l6.5 -7.5"/>
 <text x="363" y="204" text-anchor="start">TS</text>
 <text x="460" y="204" text-anchor="end">5.0k</text>
-<text x="503" y="204" text-anchor="end">942</text>
-<text x="541" y="204" text-anchor="end">51</text>
+<text x="503" y="204" text-anchor="end">965</text>
+<text x="541" y="204" text-anchor="end">47</text>
 <rect class="ok" x="561" y="195" width="18" height="18" rx="4"/><path class="mark" d="M565 204.5 l3.5 3.5 l6.5 -7.5"/>
 <rect class="ok" x="599" y="195" width="18" height="18" rx="4"/><path class="mark" d="M603 204.5 l3.5 3.5 l6.5 -7.5"/>
 <text class="dim" x="646" y="204" text-anchor="middle">—</text>
@@ -82,7 +82,7 @@
 <text x="363" y="240" text-anchor="start">Python</text>
 <text x="460" y="240" text-anchor="end">2.4k</text>
 <text x="503" y="240" text-anchor="end">168</text>
-<text x="541" y="240" text-anchor="end">24</text>
+<text x="541" y="240" text-anchor="end">19</text>
 <rect class="ok" x="561" y="231" width="18" height="18" rx="4"/><path class="mark" d="M565 240.5 l3.5 3.5 l6.5 -7.5"/>
 <rect class="ok" x="599" y="231" width="18" height="18" rx="4"/><path class="mark" d="M603 240.5 l3.5 3.5 l6.5 -7.5"/>
 <rect class="ok" x="637" y="231" width="18" height="18" rx="4"/><path class="mark" d="M641 240.5 l3.5 3.5 l6.5 -7.5"/>
@@ -104,7 +104,7 @@
 <text x="363" y="276" text-anchor="start">Python</text>
 <text x="460" y="276" text-anchor="end">2.0k</text>
 <text x="503" y="276" text-anchor="end">800</text>
-<text x="541" y="276" text-anchor="end">23</text>
+<text x="541" y="276" text-anchor="end">22</text>
 <rect class="ok" x="561" y="267" width="18" height="18" rx="4"/><path class="mark" d="M565 276.5 l3.5 3.5 l6.5 -7.5"/>
 <rect class="ok" x="599" y="267" width="18" height="18" rx="4"/><path class="mark" d="M603 276.5 l3.5 3.5 l6.5 -7.5"/>
 <rect class="ok" x="637" y="267" width="18" height="18" rx="4"/><path class="mark" d="M641 276.5 l3.5 3.5 l6.5 -7.5"/>
@@ -148,7 +148,7 @@
 <text x="363" y="348" text-anchor="start">TS</text>
 <text x="460" y="348" text-anchor="end">1.3k</text>
 <text x="503" y="348" text-anchor="end">30</text>
-<text x="541" y="348" text-anchor="end">3</text>
+<text x="541" y="348" text-anchor="end">2</text>
 <rect class="ok" x="561" y="339" width="18" height="18" rx="4"/><path class="mark" d="M565 348.5 l3.5 3.5 l6.5 -7.5"/>
 <text class="dim" x="608" y="348" text-anchor="middle">—</text>
 <text class="dim" x="646" y="348" text-anchor="middle">—</text>
@@ -190,7 +190,7 @@
 <text x="229" y="420" text-anchor="start">2025-11-25</text>
 <path class="warn" d="M334 411 L344 428 L324 428 Z" stroke-linejoin="round"/><rect class="warn-mark" x="333" y="417" width="2" height="6" rx="1"/><circle class="warn-mark" cx="334" cy="425" r="1.2"/>
 <text x="363" y="420" text-anchor="start">Go</text>
-<text x="460" y="420" text-anchor="end">667</text>
+<text x="460" y="420" text-anchor="end">666</text>
 <text x="503" y="420" text-anchor="end">60</text>
 <text x="541" y="420" text-anchor="end">1</text>
 <rect class="ok" x="561" y="411" width="18" height="18" rx="4"/><path class="mark" d="M565 420.5 l3.5 3.5 l6.5 -7.5"/>
@@ -212,9 +212,9 @@
 <text x="229" y="456" text-anchor="start">2025-11-25</text>
 <path class="warn" d="M334 447 L344 464 L324 464 Z" stroke-linejoin="round"/><rect class="warn-mark" x="333" y="453" width="2" height="6" rx="1"/><circle class="warn-mark" cx="334" cy="461" r="1.2"/>
 <text x="363" y="456" text-anchor="start">JS</text>
-<text x="460" y="456" text-anchor="end">444</text>
+<text x="460" y="456" text-anchor="end">446</text>
 <text x="503" y="456" text-anchor="end">67</text>
-<text x="541" y="456" text-anchor="end">6</text>
+<text x="541" y="456" text-anchor="end">7</text>
 <rect class="ok" x="561" y="447" width="18" height="18" rx="4"/><path class="mark" d="M565 456.5 l3.5 3.5 l6.5 -7.5"/>
 <rect class="ok" x="599" y="447" width="18" height="18" rx="4"/><path class="mark" d="M603 456.5 l3.5 3.5 l6.5 -7.5"/>
 <rect class="ok" x="637" y="447" width="18" height="18" rx="4"/><path class="mark" d="M641 456.5 l3.5 3.5 l6.5 -7.5"/>
@@ -234,8 +234,8 @@
 <text x="229" y="492" text-anchor="start">2026-07-28</text>
 <rect class="ok" x="325" y="483" width="18" height="18" rx="4"/><path class="mark" d="M329 492.5 l3.5 3.5 l6.5 -7.5"/>
 <text x="363" y="492" text-anchor="start">Python</text>
-<text x="460" y="492" text-anchor="end">197</text>
-<text x="503" y="492" text-anchor="end">229</text>
+<text x="460" y="492" text-anchor="end">203</text>
+<text x="503" y="492" text-anchor="end">272</text>
 <text x="541" y="492" text-anchor="end">3</text>
 <rect class="ok" x="561" y="483" width="18" height="18" rx="4"/><path class="mark" d="M565 492.5 l3.5 3.5 l6.5 -7.5"/>
 <text class="dim" x="608" y="492" text-anchor="middle">—</text>
@@ -278,8 +278,8 @@
 <text x="229" y="564" text-anchor="start">2026-07-28</text>
 <rect class="ok" x="325" y="555" width="18" height="18" rx="4"/><path class="mark" d="M329 564.5 l3.5 3.5 l6.5 -7.5"/>
 <text x="363" y="564" text-anchor="start">Go</text>
-<text x="460" y="564" text-anchor="end">52</text>
-<text x="503" y="564" text-anchor="end">119</text>
+<text x="460" y="564" text-anchor="end">53</text>
+<text x="503" y="564" text-anchor="end">121</text>
 <text x="541" y="564" text-anchor="end">3</text>
 <rect class="ok" x="561" y="555" width="18" height="18" rx="4"/><path class="mark" d="M565 564.5 l3.5 3.5 l6.5 -7.5"/>
 <text class="dim" x="608" y="564" text-anchor="middle">—</text>
@@ -300,9 +300,9 @@
 <text x="229" y="600" text-anchor="start">2026-07-28</text>
 <rect class="ok" x="325" y="591" width="18" height="18" rx="4"/><path class="mark" d="M329 600.5 l3.5 3.5 l6.5 -7.5"/>
 <text x="363" y="600" text-anchor="start">TS</text>
-<text x="460" y="600" text-anchor="end">33</text>
+<text x="460" y="600" text-anchor="end">32</text>
 <text x="503" y="600" text-anchor="end">116</text>
-<text x="541" y="600" text-anchor="end">1</text>
+<text x="541" y="600" text-anchor="end">3</text>
 <rect class="ok" x="561" y="591" width="18" height="18" rx="4"/><path class="mark" d="M565 600.5 l3.5 3.5 l6.5 -7.5"/>
 <rect class="ok" x="599" y="591" width="18" height="18" rx="4"/><path class="mark" d="M603 600.5 l3.5 3.5 l6.5 -7.5"/>
 <rect class="ok" x="637" y="591" width="18" height="18" rx="4"/><path class="mark" d="M641 600.5 l3.5 3.5 l6.5 -7.5"/>
@@ -324,7 +324,7 @@
 <text x="363" y="636" text-anchor="start">Go</text>
 <text x="460" y="636" text-anchor="end">15</text>
 <text x="503" y="636" text-anchor="end">61</text>
-<text x="541" y="636" text-anchor="end">3</text>
+<text x="541" y="636" text-anchor="end">2</text>
 <rect class="ok" x="561" y="627" width="18" height="18" rx="4"/><path class="mark" d="M565 636.5 l3.5 3.5 l6.5 -7.5"/>
 <text class="dim" x="608" y="636" text-anchor="middle">—</text>
 <text class="dim" x="646" y="636" text-anchor="middle">—</text>
@@ -367,5 +367,5 @@
 <rect class="ok" x="78" y="709" width="18" height="18" rx="4"/><path class="mark" d="M82 718.5 l3.5 3.5 l6.5 -7.5"/>
 <text x="102" y="718">= supported,</text>
 <path class="warn" d="M203 709 L213 726 L193 726 Z" stroke-linejoin="round"/><rect class="warn-mark" x="202" y="715" width="2" height="6" rx="1"/><circle class="warn-mark" cx="203" cy="723" r="1.2"/>
-<text x="218" y="718">= stale (no commits in 3+ months). Full legend and notes: github.com/apify/mcpc#related-work (data as of September 2026)</text>
+<text x="218" y="718">= stale (no commits in 3+ months). Full legend and notes: github.com/apify/mcpc#related-work</text>
 </svg>
