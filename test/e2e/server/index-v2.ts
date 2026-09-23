@@ -69,6 +69,10 @@ const LEGACY_MODE = process.env.LEGACY_MODE === 'stateless' ? 'stateless' : 'rej
 // shared across the per-request server instances the factory creates.
 let failNextCount = 0;
 
+// Client capabilities from the `_meta` envelope of the latest tools/call, so tests can
+// check that mcpc declares its extensions on every request, not just server/discover
+let lastClientCapabilities: unknown = null;
+
 // Mutable counter resource state (bumped via /control/bump-counter)
 let counterValue = 0;
 
@@ -159,6 +163,7 @@ function createTestServer(): Server {
     });
 
     server.setRequestHandler('tools/call', async (request) => {
+      lastClientCapabilities = server.getClientCapabilities() ?? null;
       await maybeDelay();
       if (shouldFail()) {
         throw new Error('Simulated failure');
@@ -367,6 +372,12 @@ async function main() {
         return;
       }
 
+      if (action === 'get-client-capabilities' && req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ capabilities: lastClientCapabilities }));
+        return;
+      }
+
       if (req.method !== 'POST') {
         res.writeHead(404);
         res.end('Unknown control action');
@@ -385,6 +396,7 @@ async function main() {
         case 'reset':
           failNextCount = 0;
           counterValue = 0;
+          lastClientCapabilities = null;
           res.writeHead(200);
           res.end('State reset');
           return;

@@ -1085,6 +1085,12 @@ server_notify_resource_updated() {
   curl -s -X POST "$TEST_SERVER_URL/control/notify-resource-updated?uri=$uri" >/dev/null
 }
 
+# Server control: get the capabilities the client declared on its latest tools/call (JSON)
+# Prints {"capabilities":{...}} ({"capabilities":null} before any tools/call)
+server_get_client_capabilities() {
+  curl -s "$TEST_SERVER_URL/control/get-client-capabilities"
+}
+
 # Server control: get resource URIs subscribed per session (JSON)
 server_get_subscriptions() {
   curl -s "$TEST_SERVER_URL/control/get-subscriptions"

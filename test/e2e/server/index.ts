@@ -29,6 +29,7 @@
  *   GET  /control/get-deleted-sessions - list session IDs that received DELETE
  *   GET  /control/get-active-sessions - list active MCP session IDs
  *   GET  /control/get-subscriptions - resource URIs subscribed per session
+ *   GET  /control/get-client-capabilities - capabilities the client declared (latest tools/call)
  *   POST /control/fail-next?count=N - fail next N MCP requests
  *   POST /control/expire-session - expire current session
  *   POST /control/bump-counter - increment test://dynamic/counter + notify subscribers
@@ -101,6 +102,10 @@ const deletedSessions: string[] = [];
 
 // Mutable counter resource state (bumped via /control/bump-counter)
 let counterValue = 0;
+
+// Client capabilities in effect for the latest tools/call (declared in `initialize`),
+// so tests can check what mcpc advertises on the wire
+let lastClientCapabilities: unknown = null;
 
 // Resource URIs subscribed per MCP server instance (resources/subscribe)
 const serverSubscriptions = new WeakMap<Server, Set<string>>();
@@ -212,6 +217,7 @@ function createMcpServer(): Server {
     });
 
     server.setRequestHandler(CallToolRequestSchema, async (request) => {
+      lastClientCapabilities = server.getClientCapabilities() ?? null;
       await maybeDelay();
       if (shouldFail()) {
         throw new Error('Simulated failure');
@@ -459,6 +465,11 @@ async function main() {
           res.end(JSON.stringify({ activeSessions: Array.from(transports.keys()) }));
           return;
         }
+        if (action === 'get-client-capabilities') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ capabilities: lastClientCapabilities }));
+          return;
+        }
         if (action === 'get-subscriptions') {
           // Resource URIs subscribed per active MCP session
           const subscriptions: Record<string, string[]> = {};
@@ -500,6 +511,7 @@ async function main() {
           sessionExpired = false;
           deletedSessions.length = 0;
           counterValue = 0;
+          lastClientCapabilities = null;
           res.writeHead(200);
           res.end('State reset');
           return;
