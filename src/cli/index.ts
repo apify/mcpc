@@ -503,7 +503,7 @@ ${chalk.bold('Server formats:')}
   Stdio entries run a local command on connect, so only use configs you
   trust. Bulk connects skip them; pass --stdio to include them.
 
-${chalk.bold('Auto-discovery (no server arg):')}
+${chalk.bold('Auto-discovery:')}
   Without <server>, mcpc finds MCP config files in ./ and ~ and connects
   every entry: .mcp.json, mcp.json, mcp_config.json, .cursor/mcp.json,
   .vscode/mcp.json, .kiro/settings/mcp.json, ~/.claude.json,
