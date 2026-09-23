@@ -1,11 +1,17 @@
 #!/bin/bash
-# Test: how a server's MCP extension declarations are reported.
+# Test: mcpc's own MCP extension declarations, and how a server's are reported.
 #
 # Extensions are opt-in on both sides, and a server declares whatever it serves on its own
 # terms. mcpc must name every extension it is offered — including ones it cannot use and
 # ones it has never heard of — without offering commands it would only fail to run. Runs in
 # both protocol eras: the declarations ride the 2026-07-28 discover result and the
 # 2025-11-25 initialize result alike.
+#
+# mcpc's declarations go the other way: https://modelcontextprotocol.io/extensions/client-matrix
+# has clients declare support in the `extensions` field of the client capabilities —
+# `_meta["io.modelcontextprotocol/clientCapabilities"]` on every 2026-07-28 request, the
+# `initialize` capabilities on 2025-11-25. Each extension defines its own settings object;
+# the two auth extensions define none, so each is declared as `{}`.
 
 source "$(dirname "$0")/../../lib/framework.sh"
 test_init "basic/extensions"
@@ -44,6 +50,26 @@ run_mcpc --json "$SESSION"
 assert_success
 assert_json_eq "$STDOUT" '.capabilities.extensions["io.modelcontextprotocol/ui"].mimeTypes[0]' "text/html;profile=mcp-app"
 assert_json "$STDOUT" '.capabilities.extensions | has("com.example/widgets")'
+test_pass
+
+test_case "server receives mcpc's extension declarations on a regular request"
+# A tools/call rather than the connect-time handshake: on 2026-07-28 the capabilities ride
+# every request's _meta, and a server may only see this one.
+run_mcpc "$SESSION" tools-call echo message:=hi
+assert_success
+CLIENT_CAPS=$(server_get_client_capabilities)
+assert_json_eq "$CLIENT_CAPS" '.capabilities.extensions | keys | sort | join(",")' \
+  "io.modelcontextprotocol/enterprise-managed-authorization,io.modelcontextprotocol/oauth-client-credentials"
+assert_json_eq "$CLIENT_CAPS" '.capabilities.extensions["io.modelcontextprotocol/oauth-client-credentials"] | tojson' "{}"
+assert_json_eq "$CLIENT_CAPS" '.capabilities.extensions["io.modelcontextprotocol/enterprise-managed-authorization"] | tojson' "{}"
+test_pass
+
+test_case "mcpc does not declare extensions it does not implement or that servers declare"
+# MCP Apps has no terminal equivalent; skills is declared by servers only, so a client-side
+# claim would be invented; the 2026-07-28 tasks extension is not implemented.
+assert_json "$CLIENT_CAPS" '.capabilities.extensions | has("io.modelcontextprotocol/ui") | not'
+assert_json "$CLIENT_CAPS" '.capabilities.extensions | has("io.modelcontextprotocol/skills") | not'
+assert_json "$CLIENT_CAPS" '.capabilities.extensions | has("io.modelcontextprotocol/tasks") | not'
 test_pass
 
 test_case "cleanup: close session"
