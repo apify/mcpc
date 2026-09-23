@@ -1,4 +1,4 @@
-# mcpc skills — MCP Skills extension (skills-list / skills-get)
+# mcpc skills — MCP Skills extension (skills-list / skills-get / resources-directory-read)
 #
 #   cd docs/vhs && vhs skills.tape
 #
@@ -52,6 +52,12 @@ Type "mcpc @example skills-get refunds"
 Sleep 300ms
 Enter
 Sleep 5000ms
+
+Enter
+Type "mcpc @example resources-directory-read skill://acme/billing/refunds/templates"
+Sleep 300ms
+Enter
+Sleep 3500ms
 
 Enter
 Type "mcpc @example skills-get refunds templates/invoice.md"

@@ -120,7 +120,7 @@ Ten commands run ~45s; there is no hard 30s cap for this flow.
   `mcp.json:filesystem → @filesystem`. No `@name` needed.
 - No-token alternative (public, anonymous): `mcpc connect "https://mcp.apify.com/?tools=search-actors,fetch-actor-details,docs"`.
 
-## Skills demo server (`skills.tape`)
+## Skills demo server (`skills.tape`, `security.tape`)
 
 No public server serves the MCP Skills extension yet, so `skills.tape` records
 against the e2e test server (`test/e2e/server/index-v2.ts`, 2026-07-28, which
@@ -225,7 +225,8 @@ old cached copy.
 | `scripting.tape` | `--json` piped through `jq` (code mode) |
 | `grep.tape` | Dynamic tool discovery with `mcpc grep` across two sessions (Apify + filesystem) |
 | `proxy.tape` | MCP proxy / AI sandboxing (keeps a bearer token on purpose) |
-| `skills.tape` | MCP Skills extension: `skills-list` / `skills-get` against the e2e test server served as `mcp.example.com` |
+| `skills.tape` | MCP Skills extension: `skills-list` / `skills-get` / `resources-directory-read` against the e2e test server served as `mcp.example.com` |
+| `security.tape` | Auto-discovery skipping a checked-in `.mcp.json` entry that reads `${GITHUB_TOKEN}` (fixture: `security.mcp.json`, copied into a `mktemp -d` HOME so no real configs are discovered); needs `mcp.example.com` for the trusted entry |
 
 All focused tapes follow the same conventions as the hero (bold `$` prompt,
 bold-white commands, no comments, blank-line separation, `mktemp` home).

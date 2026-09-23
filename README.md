@@ -252,6 +252,8 @@ read; it also refuses `-H`, which would go to every discovered server. Files und
 directory are your own and expand `${VAR}` as usual. To connect a skipped entry, review the file
 and name it explicitly (`mcpc connect ./.mcp.json`): naming a file is the trust step.
 
+![mcpc connect skipping a checked-in config that reads ${GITHUB_TOKEN}](https://raw.githubusercontent.com/apify/mcpc/main/docs/vhs/security.gif?v=1)
+
 ### MCP commands
 
 All MCP commands go through a named session created with `connect`:
