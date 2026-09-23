@@ -501,9 +501,13 @@ ${chalk.bold('Server formats:')}
   ${chalk.dim('(no server)'.padEnd(28))}  Auto-discover configs and connect everything
 
 ${chalk.bold('Auto-discovery (no server arg):')}
-  Scans ./ and ~ for .mcp.json, mcp.json, mcp_config.json, .cursor/mcp.json,
+  Without <server>, mcpc finds MCP config files in ./ and ~ and connects
+  every entry: .mcp.json, mcp.json, mcp_config.json, .cursor/mcp.json,
   .vscode/mcp.json, .kiro/settings/mcp.json, ~/.claude.json,
   ~/.codeium/windsurf/mcp_config.json, plus VS Code & Claude Desktop configs.
+  For security, stdio entries are skipped (pass --stdio to include them),
+  and configs in ./ are untrusted: entries that reference \${VAR} are
+  skipped and -H is refused. To connect those: mcpc connect ./.mcp.json
 
 ${chalk.bold('Session name:')}
   Omit @session to auto-generate from the server (mcp.apify.com → @apify)
@@ -515,16 +519,10 @@ ${chalk.bold('Stdio servers (command-based, run locally):')}
   later fails — only connect to configs you trust. Bulk connects skip
   stdio by default; pass --stdio to include them.
 
-${chalk.bold('Project configs (auto-discovery only):')}
-  Config files in the current directory are untrusted: entries that
-  reference \${VAR} are skipped and -H is refused. Files under ~ expand
-  \${VAR} as usual. To connect a skipped entry: mcpc connect ./.mcp.json
-
 ${chalk.bold('Protocol version:')}
   mcpc negotiates the newest MCP version both sides support, from
   2026-07-28 down to 2024-10-07. Pass --protocol-version to pin one exact
   version instead — the connection fails if the server does not offer it.
-  Run mcpc @session to see the negotiated version.
 
 ${chalk.bold('x402 payments (experimental):')}
   --x402 pays for paid tool calls from the wallet set up with mcpc x402.
