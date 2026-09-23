@@ -1132,6 +1132,8 @@ mcpc --json @apify skills-list | jq -r '.[].frontmatter.name'
 mcpc @apify resources-directory-read skill://pdf-processing/templates
 ```
 
+![mcpc skills-list and skills-get demo](https://raw.githubusercontent.com/apify/mcpc/main/docs/vhs/skills.gif?v=1)
+
 Every entry from `skills-list` is complete: the skill's verbatim frontmatter plus a manifest of every
 file with its SHA-256 digest and byte size. `skills-get` uses that manifest as the spec requires —
 it fetches the entry, reads the file, and checks the bytes against the declared size and digest (and, for
