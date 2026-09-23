@@ -134,7 +134,7 @@ Server formats:
   trust. Bulk connects skip them; pass --stdio to include them.
 
 Auto-discovery:
-  Without <server>, mcpc finds MCP config files in ./ and ~ and connects
+  Without <server>, mcpc finds MCP config files in ./ and ~ and bulk connects
   every entry: .mcp.json, mcp.json, mcp_config.json, .cursor/mcp.json,
   .vscode/mcp.json, .kiro/settings/mcp.json, ~/.claude.json,
   ~/.codeium/windsurf/mcp_config.json, plus VS Code & Claude Desktop configs.
@@ -152,7 +152,7 @@ Protocol version:
   version instead — the connection fails if the server does not offer it.
 
 x402 payments (experimental):
-  --x402 pays for paid tool calls from the wallet set up with mcpc x402.
+  --x402 pays for paid tool calls from the wallet set up with: mcpc x402
   Schemes: auto (default, prefers upto), upto, exact.
   For more info, run: mcpc help x402
 
