@@ -473,9 +473,13 @@ export interface ExtensionTask {
  */
 export type AnyTask = Task | ExtensionTask;
 
-/** Whether a task came from the 2026-07-28 extension (`ttlMs`) rather than the 2025 core (`ttl`). */
+/**
+ * Whether a task came from the 2026-07-28 extension. Every normalized {@link ExtensionTask}
+ * carries `ttlMs`, and the 2025 core `Task` never does (the SDK's schema strips unknown
+ * fields), so that field alone decides — whatever else a server attached, `ttl` included.
+ */
 export function isExtensionTask(task: AnyTask): task is ExtensionTask {
-  return 'ttlMs' in task && !('ttl' in task);
+  return 'ttlMs' in task;
 }
 
 /**

@@ -179,7 +179,7 @@ mcpc @apify prompts-get <name> arg1:=value1         # same argument syntax as to
 ```bash
 mcpc @apify tools-call <tool> --task <args>     # run as a task with a progress spinner; Ctrl+C (or
                                                 # ESC) leaves it running and prints the task ID
-mcpc @apify tools-call <tool> --detach <args>   # start and print the created Task (taskId, status, ...)
+mcpc @apify tools-call <tool> --detach <args>   # start and print the task ID (--json: the whole Task)
 mcpc @apify tasks-list                          # 2026-07-28: the tasks this session created
 mcpc @apify tasks-get <taskId>                  # status (--json includes the result once completed)
 mcpc @apify tasks-result <taskId>               # block until the final result is ready

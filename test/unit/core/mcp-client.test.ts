@@ -12,7 +12,12 @@
 
 import { vi } from 'vitest';
 import { SdkHttpError, SdkErrorCode } from '@modelcontextprotocol/client';
-import { McpClient, isExpectedProbeRejection } from '../../../src/core/mcp-client.js';
+import {
+  McpClient,
+  isExpectedProbeRejection,
+  isUnknownTaskError,
+  taskPollDelayMillis,
+} from '../../../src/core/mcp-client.js';
 import { ServerError } from '../../../src/lib/errors.js';
 import { Logger } from '../../../src/lib/logger.js';
 
@@ -513,6 +518,60 @@ describe('tasks extension (2026-07-28)', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('clamps the poll interval the server asks for at both ends', () => {
+    const task = (pollIntervalMs?: number) =>
+      ({
+        taskId: 't',
+        status: 'working',
+        createdAt,
+        lastUpdatedAt: createdAt,
+        ttlMs: null,
+        pollIntervalMs,
+      }) as const;
+    expect(taskPollDelayMillis(task(undefined))).toBe(2_000);
+    expect(taskPollDelayMillis(task(0))).toBe(2_000);
+    expect(taskPollDelayMillis(task(Number.NaN))).toBe(2_000);
+    expect(taskPollDelayMillis(task(1))).toBe(100);
+    expect(taskPollDelayMillis(task(5_000))).toBe(5_000);
+    // Node coerces a timer over 2^31-1 ms to 1 ms — a huge hint must not become a busy loop
+    expect(taskPollDelayMillis(task(2 ** 40))).toBe(300_000);
+    expect(taskPollDelayMillis(task(Number.POSITIVE_INFINITY))).toBe(300_000);
+  });
+
+  it('does not poll faster than the capped interval on an oversized hint', async () => {
+    vi.useFakeTimers();
+    try {
+      const client = await connectDeclaringClient();
+      const result = { content: [{ type: 'text', text: 'done' }] };
+      answerTaskGets(
+        working({ pollIntervalMs: 2 ** 40 }),
+        working({ status: 'completed', result })
+      );
+      const pending = client.getTaskResult('t-1');
+      await vi.advanceTimersByTimeAsync(299_999);
+      expect(stubSdkClient.request).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(pending).resolves.toEqual(result);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('tells an unknown-task error apart from any other failure', async () => {
+    const client = await connectDeclaringClient();
+    const unknown = Object.assign(new Error('Unknown task: t-1'), { code: -32602 });
+    stubSdkClient.request = vi.fn().mockRejectedValue(unknown);
+    const error = await client.getTask('t-1').catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ServerError);
+    expect(isUnknownTaskError(error)).toBe(true);
+
+    stubSdkClient.request = vi.fn().mockRejectedValue(new Error('Request timed out'));
+    const timeout = await client.getTask('t-1').catch((e: unknown) => e);
+    expect(isUnknownTaskError(timeout)).toBe(false);
+    expect(isUnknownTaskError(new Error('plain'))).toBe(false);
+    expect(isUnknownTaskError(undefined)).toBe(false);
   });
 
   it('ignores a genuine tool result that merely spells the placeholder meta key', async () => {

@@ -14,6 +14,7 @@ import {
   CreateMcpClientOptions,
   buildClientCapabilities,
   tasksUnsupportedByServerMessage,
+  isUnknownTaskError,
 } from '../core/index.js';
 import type { McpClient } from '../core/index.js';
 import type {
@@ -66,7 +67,7 @@ import { createIdJagProvider } from '../lib/auth/id-jag.js';
 import type { Tool, Resource, Prompt } from '@modelcontextprotocol/client';
 import { ResourceSyncManager } from './resource-sync.js';
 import { isModernProtocolVersion } from '../core/protocol.js';
-import type { AnyTask, TaskUpdate, TasksPage } from '../lib/types.js';
+import type { AnyTask, DetachedToolCall, TaskUpdate, TasksPage } from '../lib/types.js';
 import { createRequire } from 'module';
 const { version: mcpcVersion } = createRequire(import.meta.url)('../../package.json') as {
   version: string;
@@ -1518,12 +1519,19 @@ class BridgeProcess {
             }
           };
 
+          // A detached call answers with a wrapper — { task } or, when a 2026-07-28 server
+          // ran the tool synchronously, { result } — while the x402 helpers below look at
+          // the tool result itself. Unwrap for them and put the wrapper back afterwards.
+          const detached = !!(params.useTask && params.detach);
+          const toolResultOf = (value: unknown): unknown =>
+            detached ? (value as DetachedToolCall).result : value;
+
           // Execute with automatic x402 payment retry on payment-required tool results
           try {
             result = await executeToolCall();
             const retry = await this.handlePaymentRequiredRetry(
               params.name,
-              result,
+              toolResultOf(result),
               executeToolCall
             );
             if (retry.handled) {
@@ -1537,7 +1545,17 @@ class BridgeProcess {
             // without x402, so such a session never loads the (viem-backed) x402 module.
             if (this.x402PaymentCache.lastSettlement) {
               const { withSettlementReceipt } = await import('../lib/x402/fetch-middleware.js');
-              result = withSettlementReceipt(result, this.x402PaymentCache, params.name);
+              const toolResult = toolResultOf(result);
+              const withReceipt = withSettlementReceipt(
+                toolResult,
+                this.x402PaymentCache,
+                params.name
+              );
+              if (!detached) {
+                result = withReceipt;
+              } else if (toolResult !== undefined) {
+                result = { result: withReceipt } as DetachedToolCall;
+              }
             }
           }
           break;
@@ -1772,6 +1790,11 @@ class BridgeProcess {
       try {
         tasks.push(await client.getTask(entry.taskId));
       } catch (error) {
+        // Only the server saying "no such task" is proof the task is gone. A timeout, an
+        // auth failure or a malformed answer says nothing about the task, and dropping
+        // the record on it would lose the session's only handle on a task that is still
+        // running — so those fail the listing instead.
+        if (!isUnknownTaskError(error)) throw error;
         logger.info(
           `Task ${entry.taskId} is no longer known to the server, dropping it from the record: ${(error as Error).message}`
         );

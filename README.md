@@ -1248,9 +1248,9 @@ mcpc @apify tasks-cancel <taskId>
 
 With `--task`, the CLI shows a progress spinner with elapsed time, server status messages,
 and progress notifications. Press **ESC** during execution to detach and get the task ID
-for later retrieval. With `--detach`, the task starts and the created `Task` object (its ID,
-status, TTL and poll interval) is printed immediately. Use `tasks-result <taskId>` to fetch
-the final `CallToolResult` payload once the task completes.
+for later retrieval. With `--detach`, the task starts and its ID is printed immediately
+(`--json` prints the whole created `Task`: ID, status, TTL, poll interval). Use
+`tasks-result <taskId>` to fetch the final `CallToolResult` payload once the task completes.
 
 Tasks exist in two forms, and `mcpc` speaks both behind the same commands:
 

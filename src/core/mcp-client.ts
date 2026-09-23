@@ -5,6 +5,7 @@
 
 import {
   Client as SDKClient,
+  INVALID_PARAMS,
   MAX_CACHE_TTL_MS,
   SdkHttpError,
   type ClientOptions,
@@ -115,16 +116,38 @@ function taskToUpdate(task: AnyTask): TaskUpdate {
 /**
  * Polling cadence for the 2026-07-28 tasks extension. The server's `pollIntervalMs` wins
  * when it sends one (the spec has clients honor it, and servers may rate-limit clients
- * that poll faster), floored so a degenerate hint cannot turn polling into a busy loop;
- * without a hint mcpc polls every 2 seconds, as it does for 2025-11-25 tasks.
+ * that poll faster), clamped at both ends: a floor so a degenerate hint cannot turn
+ * polling into a busy loop, and a ceiling because Node coerces a timer longer than
+ * 2^31-1 ms to 1 ms — which would do the same — and no CLI command is helped by polling
+ * less than every five minutes. Without a hint mcpc polls every 2 seconds, as it does for
+ * 2025-11-25 tasks.
  */
 const DEFAULT_TASK_POLL_INTERVAL_MILLIS = 2_000;
 const MIN_TASK_POLL_INTERVAL_MILLIS = 100;
+const MAX_TASK_POLL_INTERVAL_MILLIS = 300_000;
 
-function taskPollDelayMillis(task: ExtensionTask): number {
+/** @internal exported for tests */
+export function taskPollDelayMillis(task: ExtensionTask): number {
   const requested = task.pollIntervalMs;
   if (typeof requested !== 'number' || !(requested > 0)) return DEFAULT_TASK_POLL_INTERVAL_MILLIS;
-  return Math.max(MIN_TASK_POLL_INTERVAL_MILLIS, requested);
+  return Math.min(
+    MAX_TASK_POLL_INTERVAL_MILLIS,
+    Math.max(MIN_TASK_POLL_INTERVAL_MILLIS, requested)
+  );
+}
+
+/**
+ * Whether a task request failed because the server does not know the task. The tasks
+ * extension has servers answer `tasks/get` for an invalid or expired `taskId` with
+ * JSON-RPC `-32602` (Invalid params), which McpClient wraps in a ServerError carrying the
+ * SDK's error as `originalError`. Any other failure — a timeout, an auth error, a malformed
+ * answer — says nothing about the task itself, and callers must not treat it as if it did.
+ */
+export function isUnknownTaskError(error: unknown): boolean {
+  const details = (error as { details?: unknown } | null)?.details;
+  const original = (details as { originalError?: unknown } | null)?.originalError;
+  const code = (original as { code?: unknown } | null)?.code;
+  return code === INVALID_PARAMS;
 }
 
 /** The methods of the server-to-client requests a task is waiting on (`inputRequests`). */

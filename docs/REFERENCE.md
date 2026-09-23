@@ -649,7 +649,8 @@ Async tasks (--task, --detach):
   --task shows a progress spinner while the task runs on the server.
   If you press Ctrl+C, the task keeps running and a hint with the task ID
   is printed so you can fetch or cancel it later.
-  --detach returns the task ID immediately without waiting.
+  --detach returns as soon as the server hands out a task, printing its ID
+  (the whole Task with --json), without waiting for the tool to finish.
   Both flags need a server with task support and fail otherwise, instead of
   running the tool synchronously (the flags change the output shape):
   - MCP 2025-11-25: the server advertises the tasks capability; tools-list
