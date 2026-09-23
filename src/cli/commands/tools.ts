@@ -24,9 +24,10 @@ import { withMcpClient } from '../helpers.js';
 // Imported directly (not via the core barrel) so the CLI doesn't eagerly load the MCP SDK
 import {
   isModernProtocolVersion,
-  tasksUnavailableMessage,
+  tasksNotDeclaredMessage,
   tasksUnsupportedByServerMessage,
 } from '../../core/protocol.js';
+import { TASKS_EXTENSION_KEY, declaredExtensionSettings } from '../../core/extensions.js';
 import { parseCommandArgs, hasStdinData, readStdinArgs } from '../parser.js';
 import {
   loadSchemaFromFile,
@@ -190,21 +191,25 @@ function formatElapsed(millis: number): string {
  * Decide whether task-augmented execution applies to a tool call, and fail when the
  * caller asked for it but this connection cannot deliver it.
  *
- * `--task`/`--detach` change the shape of the output — `--detach` returns
- * `{ taskId, status }` instead of a `CallToolResult` — so quietly running the tool
- * synchronously instead would leave callers parsing a `taskId` that is not there, with
- * exit code 0. Either reason to fail gets its own message: the protocol has no tasks at
- * all (2026-07-28 moved them to an extension mcpc does not support yet), or the server
- * does not advertise the capability.
+ * `--task`/`--detach` change the shape of the output — `--detach` returns a task instead
+ * of a `CallToolResult` — so quietly running the tool synchronously instead would leave
+ * callers parsing a `taskId` that is not there, with exit code 0. Each protocol era has
+ * its own way of saying "no tasks here", and each gets its own message: a 2026-07-28
+ * server that does not declare the `io.modelcontextprotocol/tasks` extension, or a
+ * 2025-11-25 server that does not advertise the `tasks.requests.tools.call` capability.
  */
 async function shouldUseTask(
   client: import('../../lib/types.js').IMcpClient,
-  async_: boolean | undefined
+  async_: boolean | undefined,
+  target: string
 ): Promise<boolean> {
   if (!async_) return false;
   const details = await client.getServerDetails();
   if (details.protocolVersion && isModernProtocolVersion(details.protocolVersion)) {
-    throw new ServerError(tasksUnavailableMessage(details.protocolVersion));
+    if (!declaredExtensionSettings(details.capabilities, TASKS_EXTENSION_KEY)) {
+      throw new ServerError(tasksNotDeclaredMessage(target));
+    }
+    return true;
   }
   if (!details.capabilities?.tasks?.requests?.tools?.call) {
     throw new ServerError(tasksUnsupportedByServerMessage());
@@ -324,20 +329,40 @@ export async function callTool(
 
     // --detach implies --task. Throws when this connection cannot run tasks — the flags
     // change the output shape, so falling back silently is never the right answer.
-    const useTask = await shouldUseTask(client, options.detach || options.task);
+    const useTask = await shouldUseTask(client, options.detach || options.task, target);
 
     let result;
 
     if (useTask && options.detach) {
-      // Detached execution: start async task and return task ID immediately
-      const taskUpdate = await client.callToolDetached(name, parsedArgs);
+      // Detached execution: return as soon as the server has handed out a task
+      const outcome = await client.callToolDetached(name, parsedArgs);
 
-      if (options.outputMode === 'human') {
-        console.log(formatSuccess(`Task started: ${taskUpdate.taskId}`));
-        console.log(formatTaskCommandsHint(target, taskUpdate.taskId, taskUpdate.status));
-      } else {
-        console.log(formatOutput({ taskId: taskUpdate.taskId, status: taskUpdate.status }, 'json'));
+      if (outcome.task) {
+        if (options.outputMode === 'human') {
+          console.log(formatSuccess(`Task started: ${outcome.task.taskId}`));
+          console.log(formatTaskCommandsHint(target, outcome.task.taskId, outcome.task.status));
+        } else {
+          console.log(formatOutput(outcome.task, 'json'));
+        }
+        return;
       }
+
+      // A 2026-07-28 server decides per call whether to create a task, and this one ran
+      // the tool synchronously instead. The tool has run, so its result is what there is
+      // to show — nothing to detach from.
+      const syncResult = outcome.result ?? { content: [] };
+      if (options.outputMode === 'human') {
+        console.log(
+          formatInfo(
+            'The server ran the tool synchronously instead of creating a task ' +
+              '(MCP 2026-07-28 servers decide that per call), so here is its result:'
+          )
+        );
+      }
+      renderCallToolResult(syncResult, options, {
+        error: `Tool ${name} returned an error`,
+        errorHint: `Run ${chalk.bold(`mcpc ${target} tools-get ${name}`)} to see the tool schema and usage`,
+      });
       return;
     } else if (useTask) {
       // Task-augmented execution with progress display

@@ -178,21 +178,25 @@ mcpc @apify prompts-get <name> arg1:=value1         # same argument syntax as to
 
 ```bash
 mcpc @apify tools-call <tool> --task <args>     # run as a task with a progress spinner; Ctrl+C (or
-                                                # ESC) leaves it running and prints the task ID.
-                                                # Falls back to a normal sync call if the server has no task support.
-mcpc @apify tools-call <tool> --detach <args>   # start and return the task ID immediately
-mcpc @apify tasks-list
-mcpc @apify tasks-get <taskId>                  # status
+                                                # ESC) leaves it running and prints the task ID
+mcpc @apify tools-call <tool> --detach <args>   # start and print the created Task (taskId, status, ...)
+mcpc @apify tasks-list                          # 2026-07-28: the tasks this session created
+mcpc @apify tasks-get <taskId>                  # status (--json includes the result once completed)
 mcpc @apify tasks-result <taskId>               # block until the final result is ready
 mcpc @apify tasks-cancel <taskId>
 ```
 
-Task commands need a server on MCP protocol 2025-11-25 that advertises the tasks
-capability (`tools-list` flags it per tool as `[task:optional|required|forbidden]`).
-Otherwise `--task`/`--detach` and the `tasks-*` commands fail with an error — they
-never silently fall back to a synchronous call, so `--detach` output always has a
-`taskId` or a non-zero exit code. On 2026-07-28 servers tasks are an extension mcpc
-does not support yet.
+Task commands need a server with task support, and fail with an error otherwise — they
+never silently fall back to a synchronous call:
+
+- MCP 2025-11-25: the server advertises the tasks capability (`tools-list` flags per-tool
+  support as `[task:optional|required|forbidden]`); `--detach` output always has a `taskId`.
+- MCP 2026-07-28: the server declares the `io.modelcontextprotocol/tasks` extension and
+  decides per call whether to create a task. A plain `tools-call` that the server turns
+  into a task is waited for automatically. A `--detach` call the server runs synchronously
+  prints the tool result instead of a task — check `--json` output for `taskId` to tell the
+  two apart. A task that stops to ask for input (`input_required`) is reported as an
+  error, since mcpc never prompts; cancel it or wait.
 
 ## Authentication
 

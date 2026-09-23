@@ -21,18 +21,25 @@ import type {
   Prompt,
   SessionData,
   ServerDetails,
-  Task,
+  AnyTask,
+  TaskStatus,
   CallToolResult,
   ResourceSubscriptionEntry,
   TransportKind,
   Skill,
 } from '../lib/types.js';
+import { isExtensionTask } from '../lib/types.js';
 import type { DecodedResourceContent } from '../lib/resource-content.js';
 import { extractAllTextContent } from './tool-result.js';
 import { getSession } from '../lib/sessions.js';
 import { getBridgeLogPath } from '../lib/log-reader.js';
 import { isModernProtocolVersion, SERVER_INFO_META_KEY } from '../core/protocol.js';
-import { findMcpExtension, SKILLS_EXTENSION_KEY } from '../core/extensions.js';
+import {
+  findMcpExtension,
+  declaredExtensionSettings,
+  SKILLS_EXTENSION_KEY,
+  TASKS_EXTENSION_KEY,
+} from '../core/extensions.js';
 
 // Re-export for external use
 export { extractAllTextContent } from './tool-result.js';
@@ -1312,10 +1319,20 @@ function taskStatusLabel(status: string): string {
   }
 }
 
+/** Human-readable duration for the millisecond fields a task carries (TTL, poll interval). */
+function formatMillis(millis: number): string {
+  if (millis < 1000) return `${millis} ms`;
+  if (millis < 60_000) return `${Number((millis / 1000).toFixed(1))} s`;
+  if (millis < 3_600_000) return `${Number((millis / 60_000).toFixed(1))} min`;
+  return `${Number((millis / 3_600_000).toFixed(1))} h`;
+}
+
 /**
- * Format a single task with details
+ * Format a single task with details. Handles both task shapes: the 2025-11-25 core
+ * `Task` and the 2026-07-28 extension's, which inlines the outcome (result, error, or the
+ * input the server is waiting for).
  */
-export function formatTask(task: Task): string {
+export function formatTask(task: AnyTask, options: { sessionName?: string } = {}): string {
   const lines: string[] = [];
 
   lines.push(`${chalk.bold('Task ID:')} ${inBackticks(task.taskId)}`);
@@ -1332,16 +1349,57 @@ export function formatTask(task: Task): string {
     lines.push(`${chalk.bold('Updated:')} ${task.lastUpdatedAt}`);
   }
 
+  const extension = isExtensionTask(task);
+  const ttlMillis = extension ? task.ttlMs : task.ttl;
+  if (ttlMillis !== undefined) {
+    lines.push(
+      `${chalk.bold('TTL:')} ${ttlMillis === null ? 'unlimited' : formatMillis(ttlMillis)}`
+    );
+  }
+  const pollMillis = extension ? task.pollIntervalMs : task.pollInterval;
+  if (typeof pollMillis === 'number') {
+    lines.push(`${chalk.bold('Poll interval:')} ${formatMillis(pollMillis)}`);
+  }
+
+  if (extension) {
+    if (task.status === 'failed' && task.error) {
+      lines.push(
+        `${chalk.bold('Error:')} ${task.error.message} ${chalk.dim(`(code ${task.error.code})`)}`
+      );
+    }
+    if (task.status === 'input_required') {
+      const methods = Object.values(task.inputRequests ?? {}).map((request) => {
+        const method = (request as { method?: unknown } | null)?.method;
+        return typeof method === 'string' ? method : 'unknown request';
+      });
+      lines.push(
+        `${chalk.bold('Waiting for:')} ${methods.join(', ') || 'client input'} ` +
+          chalk.dim('(mcpc cannot answer input requests; cancel the task or wait)')
+      );
+    }
+    if (task.status === 'completed' && task.result) {
+      const session = options.sessionName ?? '@session';
+      lines.push(
+        `${chalk.bold('Result:')} ready ` +
+          chalk.dim(
+            `(run: mcpc ${session} tasks-result ${task.taskId}, or add --json to see it here)`
+          )
+      );
+    }
+  }
+
   return lines.join('\n');
 }
 
 /**
- * Format a list of tasks as a summary table
+ * Format a list of tasks as a summary table. `tracked` marks the 2026-07-28 listing,
+ * which holds the tasks this session created rather than everything the server has.
  */
-export function formatTasks(taskList: Task[]): string {
+export function formatTasks(taskList: AnyTask[], options: { tracked?: boolean } = {}): string {
   const lines: string[] = [];
 
-  lines.push(chalk.bold(`Tasks (${taskList.length}):`));
+  const heading = options.tracked ? 'Tasks started from this session' : 'Tasks';
+  lines.push(chalk.bold(`${heading} (${taskList.length}):`));
 
   const bullet = chalk.dim('*');
   for (const task of taskList) {
@@ -1624,7 +1682,7 @@ export function formatConnectStatusBadge(
 export function formatTaskCommandsHint(
   target: string,
   taskId?: string,
-  status?: Task['status']
+  status?: TaskStatus
 ): string {
   const id = taskId ?? '<taskId>';
   const lines = [
@@ -1747,18 +1805,12 @@ function formatTransportKind(transport: TransportKind): string {
 
 /**
  * Settings the server declared for the skills extension, or `undefined` when it did not
- * declare it at all. Only `capabilities.extensions` counts — that is where the extension
- * is declared — and an empty object means "supported, with no optional features".
+ * declare it at all (an empty object means "supported, with no optional features").
  */
 function skillsExtensionSettings(
   capabilities?: ServerCapabilities
 ): Record<string, unknown> | undefined {
-  const caps = capabilities as { extensions?: Record<string, unknown> } | undefined;
-  const declared = caps?.extensions?.[SKILLS_EXTENSION_KEY];
-  if (declared === undefined) return undefined;
-  return typeof declared === 'object' && declared !== null
-    ? (declared as Record<string, unknown>)
-    : {};
+  return declaredExtensionSettings(capabilities, SKILLS_EXTENSION_KEY);
 }
 
 /**
@@ -1793,9 +1845,11 @@ function formatExtensionList(
  * Bullet list of the capabilities a server actually exposes (empty when it exposes none).
  *
  * Some capabilities are era-dependent: a 2026-07-28 server may still advertise `logging`
- * (log notifications survived) or `tasks`, but the matching mcpc commands don't work there
- * — `logging/setLevel` was removed from the protocol and tasks moved to an extension mcpc
- * doesn't support yet. Annotate those instead of advertising something that only errors out.
+ * (log notifications survived) or the 2025 `tasks` capability, but the matching mcpc
+ * commands don't work there — `logging/setLevel` was removed from the protocol and tasks
+ * moved to the `io.modelcontextprotocol/tasks` extension, which is what the task commands
+ * speak on that connection. Annotate those instead of advertising something that only
+ * errors out.
  */
 function formatCapabilityList(
   capabilities: ServerCapabilities | undefined,
@@ -1836,6 +1890,8 @@ function formatCapabilityList(
     list.push(`${bullet} tasks${featureStr}${note}`);
   }
 
+  const rendered: string[] = [];
+
   const skills = skillsExtensionSettings(capabilities);
   if (skills) {
     // The extension is specified against 2026-07-28 and later, so on a legacy connection
@@ -1846,10 +1902,19 @@ function formatCapabilityList(
         : ''
       : ` ${chalk.gray(`(not usable on MCP ${protocolVersion})`)}`;
     list.push(`${bullet} skills${note}`);
+    rendered.push(SKILLS_EXTENSION_KEY);
   }
 
-  // Everything else the server declared, minus the skills line just written above.
-  list.push(...formatExtensionList(capabilities, skills ? [SKILLS_EXTENSION_KEY] : []));
+  // The tasks extension is likewise a 2026-07-28 thing: on a modern connection the
+  // generic extension line below says it all, while a 2025-era server declaring it gets
+  // the same out-of-era note as skills (its tasks run through the core protocol there).
+  if (!isModern && declaredExtensionSettings(capabilities, TASKS_EXTENSION_KEY)) {
+    list.push(`${bullet} tasks ${chalk.gray(`(extension, not usable on MCP ${protocolVersion})`)}`);
+    rendered.push(TASKS_EXTENSION_KEY);
+  }
+
+  // Everything else the server declared, minus the lines just written above.
+  list.push(...formatExtensionList(capabilities, rendered));
 
   return list;
 }
@@ -2054,8 +2119,10 @@ export function formatServerDetails(
     );
   }
 
-  // Task and logging commands are 2025-era only — see the capabilities note above
-  if (capabilities?.tasks && !isModern) {
+  // Task commands need what the era calls task support: the 2025 `tasks` capability, or
+  // the 2026-07-28 tasks extension. Logging commands are 2025-era only.
+  const tasksExtension = declaredExtensionSettings(capabilities, TASKS_EXTENSION_KEY);
+  if ((capabilities?.tasks && !isModern) || (tasksExtension && isModern)) {
     commands.push(`${bullet} ${bt}mcpc ${target} tasks-list${bt}`);
     commands.push(`${bullet} ${bt}mcpc ${target} tasks-get <taskId>${bt}`);
     commands.push(`${bullet} ${bt}mcpc ${target} tasks-result <taskId>${bt}`);

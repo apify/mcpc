@@ -47,36 +47,70 @@ export function isSupportedProtocolVersion(version: string): boolean {
 }
 
 /**
- * Explain why task commands do not work on a modern connection. Lives here (rather than
- * in the core client) so the CLI — which gates `tools-call --task/--detach` before
- * dispatching, and must not load the SDK at startup — reports the identical reason.
+ * Explain that a 2026-07-28 server never declared the tasks extension. On that protocol
+ * generation tasks exist only as the `io.modelcontextprotocol/tasks` extension, and a
+ * server that does not declare it serves no `tasks/*` request and never hands out a task,
+ * so mcpc says so instead of firing requests the server has no obligation to recognize.
+ * Lives here (rather than in the core client) so the CLI — which gates `tools-call
+ * --task/--detach` before dispatching, and must not load the SDK at startup — reports the
+ * identical reason.
  *
- * Intentionally has no trailing period. Both messages surface either straight from the
- * CLI (where period-less errors are the house style) or relayed from the bridge, which
+ * Intentionally has no trailing period. The task messages surface either straight from
+ * the CLI (where period-less errors are the house style) or relayed from the bridge, which
  * appends ". For details, run: mcpc @session logs" — a period here would double up.
  */
-export function tasksUnavailableMessage(protocolVersion?: string): string {
+export function tasksNotDeclaredMessage(sessionName?: string): string {
+  const session = sessionName ?? '@session';
   return (
-    `Tasks are not available on this connection: MCP ${protocolVersion ?? MODERN_PROTOCOL_VERSIONS[0]} ` +
-    `moved tasks to the ${TASKS_EXTENSION_KEY} extension, which is not supported yet. ` +
-    `Task commands currently work only on servers using protocol 2025-11-25`
+    `This server does not declare the ${TASKS_EXTENSION_KEY} extension, so it cannot run ` +
+    `tools as tasks (--task/--detach) and serves no tasks-* command. ` +
+    `Run "mcpc ${session}" to see what this server supports`
   );
 }
 
 /**
- * Explain that the server itself does not offer task-augmented tool calls, even though
- * the protocol has them. Kept next to {@link tasksUnavailableMessage} for the same
+ * Explain that a 2025-11-25 server does not offer task-augmented tool calls, even though
+ * the protocol has them. Kept next to {@link tasksNotDeclaredMessage} for the same
  * reason: both the CLI and the bridge refuse `--task`/`--detach` with this text.
  *
- * Intentionally has no trailing period. Both messages surface either straight from the
- * CLI (where period-less errors are the house style) or relayed from the bridge, which
- * appends ". For details, run: mcpc @session logs" — a period here would double up.
+ * Same no-trailing-period convention as above.
  */
 export function tasksUnsupportedByServerMessage(): string {
   return (
     `This server does not support task-augmented tool calls ` +
     `(no tasks.requests.tools.call capability), so --task/--detach cannot be used. ` +
     `Re-run the command without them to call the tool synchronously`
+  );
+}
+
+/**
+ * Explain that the 2026-07-28 tasks extension has no `tasks/list`: a client only knows
+ * the tasks it created. mcpc tracks those per session, which is what `tasks-list` shows
+ * there — this message is for the raw protocol path that cannot fall back to that record.
+ *
+ * Same no-trailing-period convention as above.
+ */
+export function tasksListUnavailableMessage(protocolVersion?: string): string {
+  return (
+    `tasks/list does not exist in MCP ${protocolVersion ?? MODERN_PROTOCOL_VERSIONS[0]}: the ` +
+    `${TASKS_EXTENSION_KEY} extension lets a client follow only the tasks it created`
+  );
+}
+
+/**
+ * Explain why a task that asks for input cannot make progress with mcpc: it never
+ * prompts (design rule — no unexpected interaction loops), so the elicitation or sampling
+ * request a task surfaces via `inputRequests` has no one to answer it. `methods` names the
+ * outstanding requests so the user can tell what the server wanted.
+ *
+ * Same no-trailing-period convention as above.
+ */
+export function taskInputRequiredMessage(taskId: string, methods: readonly string[]): string {
+  const wanted = methods.length > 0 ? ` (${methods.join(', ')})` : '';
+  return (
+    `Task ${taskId} is waiting for input from the client${wanted}, which mcpc cannot provide ` +
+    `(it never prompts and has no LLM). The task stays on the server until it is answered, ` +
+    `times out, or is cancelled with tasks-cancel ${taskId}`
   );
 }
 

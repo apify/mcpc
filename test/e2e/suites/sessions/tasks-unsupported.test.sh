@@ -2,23 +2,21 @@
 # Test: --task/--detach and the tasks-* commands fail loudly when this connection
 # cannot run tasks, instead of degrading to a plain synchronous tools/call.
 #
-# The flags change the shape of the output — --detach returns { taskId, status } rather
-# than a CallToolResult — so a silent fallback leaves callers parsing a taskId that is
-# not there, with exit code 0. There are two independent reasons to refuse, and this
-# suite covers one per protocol era:
-#   modern (2026-07-28) - tasks moved to the io.modelcontextprotocol/tasks extension
+# The flags change the shape of the output — --detach returns a task rather than a
+# CallToolResult — so a silent fallback leaves callers parsing a taskId that is not
+# there, with exit code 0. Each protocol era has its own way of saying "no tasks here",
+# and this suite covers one per era, against a server with task support withheld:
+#   modern (2026-07-28) - the server does not declare the io.modelcontextprotocol/tasks
+#                         extension
 #   legacy (2025-11-25) - the server does not advertise tasks.requests.tools.call
 
 source "$(dirname "$0")/../../lib/framework.sh"
 test_init "sessions/tasks-unsupported"
 
+start_test_server NO_TASKS=true
 if [[ "$E2E_SERVER_PROTOCOL" == "modern" ]]; then
-  # Modern server: tasks do not exist in the protocol at all.
-  start_test_server
-  EXPECTED="Tasks are not available on this connection"
+  EXPECTED="does not declare the io.modelcontextprotocol/tasks extension"
 else
-  # Legacy server with the tasks capability withheld.
-  start_test_server NO_TASKS=true
   EXPECTED="does not support task-augmented tool calls"
 fi
 
@@ -56,24 +54,33 @@ assert_json_eq "$STDERR" '.code' '2'
 test_pass
 
 # ── Era-specific: the tasks-* commands on a modern connection ──
+# (On 2025-11-25 the methods are part of the core protocol whatever the server declares;
+# the server's own error answers them there.)
 
 if [[ "$E2E_SERVER_PROTOCOL" == "modern" ]]; then
   for cmd in "tasks-list" "tasks-get some-id" "tasks-result some-id" "tasks-cancel some-id"; do
-    test_case "$cmd reports the tasks extension is unsupported"
+    test_case "$cmd reports that the server does not declare the tasks extension"
     # shellcheck disable=SC2086
     run_mcpc "$SESSION" $cmd
     assert_failure
-    assert_contains "$STDOUT$STDERR" "Tasks are not available on this connection"
-    assert_contains "$STDOUT$STDERR" "io.modelcontextprotocol/tasks extension"
+    assert_contains "$STDOUT$STDERR" "$EXPECTED"
+    assert_contains "$STDOUT$STDERR" "mcpc $SESSION"
     test_pass
   done
 
-  test_case "the era-gate message is not double-wrapped or double-punctuated"
+  test_case "the refusal is not double-wrapped or double-punctuated"
   run_mcpc "$SESSION" tasks-list
   assert_failure
-  # "Failed to list tasks: Tasks are not ... 2025-11-25.. For details" was the old shape
+  # "Failed to list tasks: This server ... supports.. For details" would be the bad shape
   assert_not_contains "$STDOUT$STDERR" "Failed to list tasks"
-  assert_not_contains "$STDOUT$STDERR" "2025-11-25.."
+  assert_not_contains "$STDOUT$STDERR" "supports.."
+  test_pass
+
+  test_case "session overview does not offer the task commands"
+  run_mcpc "$SESSION"
+  assert_success
+  assert_not_contains "$STDOUT" "tasks-list"
+  assert_not_contains "$STDOUT" "tasks (extension)"
   test_pass
 fi
 

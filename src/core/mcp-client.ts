@@ -26,9 +26,6 @@ import type {
   ListPromptsResult,
   GetPromptResult,
   LoggingLevel,
-  GetTaskResult,
-  ListTasksResult,
-  CancelTaskResult,
   Tool,
 } from '@modelcontextprotocol/client';
 import {
@@ -43,21 +40,34 @@ import {
   GetSkillResultSchema,
   ReadResourceDirectoryResultSchema,
 } from './skills-schema.js';
+import {
+  ExtensionTaskSchema,
+  TaskAcknowledgementSchema,
+  isTerminalTaskStatus,
+  validateExtensionTask,
+} from './tasks-schema.js';
+import { TasksTransportShim, aliasTaskMethod } from './tasks-transport-shim.js';
 import { createNoOpLogger, type Logger } from '../lib/logger.js';
 import { ClientError, ServerError, NetworkError, isShutdownError } from '../lib/errors.js';
-import { fetchAllPages } from '../lib/utils.js';
+import { fetchAllPages, sleep } from '../lib/utils.js';
 import {
   isModernProtocolVersion,
   isSupportedProtocolVersion,
   discoverUnavailableMessage,
-  tasksUnavailableMessage,
+  tasksNotDeclaredMessage,
+  tasksListUnavailableMessage,
+  taskInputRequiredMessage,
   skillsUnavailableMessage,
   skillsNotDeclaredMessage,
   directoryReadUnavailableMessage,
   SERVER_INFO_META_KEY,
   SUPPORTED_PROTOCOL_VERSIONS,
 } from './protocol.js';
-import { SKILLS_EXTENSION_KEY } from './extensions.js';
+import {
+  SKILLS_EXTENSION_KEY,
+  TASKS_EXTENSION_KEY,
+  declaredExtensionSettings,
+} from './extensions.js';
 import type {
   IMcpClient,
   ListSkillsResult,
@@ -67,6 +77,10 @@ import type {
   ConnectionMode,
   TransportKind,
   TaskUpdate,
+  AnyTask,
+  ExtensionTask,
+  TasksPage,
+  DetachedToolCall,
 } from '../lib/types.js';
 import type { Task } from '@modelcontextprotocol/client';
 
@@ -82,9 +96,10 @@ function getRootCauseMessage(error: Error): string {
 }
 
 /**
- * Convert an SDK Task to a TaskUpdate, handling exactOptionalPropertyTypes
+ * Convert a task of either era to a TaskUpdate (the progress shape the bridge streams to
+ * the CLI), handling exactOptionalPropertyTypes
  */
-function taskToUpdate(task: Task): TaskUpdate {
+function taskToUpdate(task: AnyTask): TaskUpdate {
   const update: TaskUpdate = {
     taskId: task.taskId,
     status: task.status,
@@ -95,6 +110,29 @@ function taskToUpdate(task: Task): TaskUpdate {
     update.statusMessage = task.statusMessage;
   }
   return update;
+}
+
+/**
+ * Polling cadence for the 2026-07-28 tasks extension. The server's `pollIntervalMs` wins
+ * when it sends one (the spec has clients honor it, and servers may rate-limit clients
+ * that poll faster), floored so a degenerate hint cannot turn polling into a busy loop;
+ * without a hint mcpc polls every 2 seconds, as it does for 2025-11-25 tasks.
+ */
+const DEFAULT_TASK_POLL_INTERVAL_MILLIS = 2_000;
+const MIN_TASK_POLL_INTERVAL_MILLIS = 100;
+
+function taskPollDelayMillis(task: ExtensionTask): number {
+  const requested = task.pollIntervalMs;
+  if (typeof requested !== 'number' || !(requested > 0)) return DEFAULT_TASK_POLL_INTERVAL_MILLIS;
+  return Math.max(MIN_TASK_POLL_INTERVAL_MILLIS, requested);
+}
+
+/** The methods of the server-to-client requests a task is waiting on (`inputRequests`). */
+function inputRequestMethods(task: ExtensionTask): string[] {
+  return Object.values(task.inputRequests ?? {}).map((request) => {
+    const method = (request as { method?: unknown } | null)?.method;
+    return typeof method === 'string' ? method : 'unknown request';
+  });
 }
 
 /**
@@ -256,6 +294,12 @@ export class McpClient implements IMcpClient {
   private modernSubscribedUris = new Set<string>();
   /** The open `subscriptions/listen` stream backing modernSubscribedUris, if any. */
   private modernListen: McpSubscription | undefined;
+  /**
+   * Lets the SDK client carry the 2026-07-28 tasks extension it does not implement yet:
+   * wraps the transport at connect time and unwraps the task a server hands back in lieu
+   * of a tool result (see tasks-transport-shim.ts).
+   */
+  private readonly tasksShim = new TasksTransportShim();
 
   constructor(clientInfo: Implementation, options: McpClientOptions = {}) {
     this.logger = options.logger || createNoOpLogger();
@@ -314,9 +358,14 @@ export class McpClient implements IMcpClient {
   /**
    * Connect to an MCP server using the provided transport
    */
-  async connect(transport: Transport): Promise<void> {
+  async connect(rawTransport: Transport): Promise<void> {
     try {
       this.logger.debug('Connecting to MCP server...');
+
+      // The SDK talks to the transport through the tasks-extension shim; so does this
+      // class, so that `sessionId`, `terminateSession` and friends are read off the same
+      // object the SDK drives.
+      const transport = this.tasksShim.wrap(rawTransport);
 
       // Store transport for later use (e.g., terminateSession on close)
       this.transport = transport;
@@ -663,35 +712,61 @@ export class McpClient implements IMcpClient {
   }
 
   /**
-   * Call a tool
+   * Call a tool and return its result.
+   *
+   * A 2026-07-28 server that declares the tasks extension may answer with a task handle
+   * instead of the result (task creation is the server's call, not the client's). The
+   * caller asked for the result, so that case is followed to its end here: the task is
+   * polled until it finishes and its result is returned, exactly as if the call had been
+   * synchronous. `onUpdate` observes the task's progress along the way, so the bridge can
+   * record a task it did not ask for.
    */
   async callTool(
     name: string,
     args?: Record<string, unknown>,
-    meta?: Record<string, unknown>
+    meta?: Record<string, unknown>,
+    onUpdate?: (update: TaskUpdate) => void
   ): Promise<CallToolResult> {
     try {
       this.logger.debug(`Calling tool: ${name}`, args);
-      const callParams: {
-        name: string;
-        arguments: Record<string, unknown>;
-        _meta?: Record<string, unknown>;
-      } = {
-        name,
-        arguments: args || {},
-      };
-      if (meta) {
-        callParams._meta = meta;
+      const result = await this.sendToolCall(name, args, meta);
+      const created = this.takeCreatedTask(result);
+      if (!created) {
+        this.logger.debug(`Tool ${name} completed`);
+        return result;
       }
-      const result = await this.client.callTool(callParams, this.getRequestOptions());
-      this.logger.debug(`Tool ${name} completed`);
-      return result;
+      this.logger.debug(`Tool ${name} runs as task ${created.taskId}, waiting for it to finish`);
+      onUpdate?.(taskToUpdate(created));
+      return await this.awaitExtensionTask(created, onUpdate);
     } catch (error) {
+      // Task outcomes (failed, cancelled, waiting for input) are reported in their own
+      // words; only transport and protocol failures get the generic wrapper.
+      if (error instanceof ServerError) throw error;
       this.logger.error(`Failed to call tool ${name}:`, error);
       throw new ServerError(`Failed to call tool ${name}: ${(error as Error).message}`, {
         originalError: error,
       });
     }
+  }
+
+  /** Issue a plain `tools/call` through the SDK client (output-schema checks and all). */
+  private async sendToolCall(
+    name: string,
+    args?: Record<string, unknown>,
+    meta?: Record<string, unknown>
+  ): Promise<CallToolResult> {
+    const callParams: {
+      name: string;
+      arguments: Record<string, unknown>;
+      _meta?: Record<string, unknown>;
+    } = {
+      name,
+      arguments: args || {},
+    };
+    if (meta) {
+      callParams._meta = meta;
+    }
+    return this.client.callTool(callParams, this.getRequestOptions());
   }
 
   /**
@@ -1078,45 +1153,93 @@ export class McpClient implements IMcpClient {
     }
   }
 
+  // -----------------------------------------------------------------------------------
+  // Tasks
+  //
+  // One command surface, two dialects. On 2025-11-25 connections tasks are the core
+  // protocol's experimental feature: the client asks for one with `task: {}` on
+  // `tools/call`, polls `tasks/get`, fetches the tool result with `tasks/result`, and the
+  // server lists them with `tasks/list`. On 2026-07-28 connections they are the
+  // `io.modelcontextprotocol/tasks` extension (SEP-2663): the client declares it on every
+  // request, the *server* decides per call whether to answer `tools/call` with a task
+  // handle, `tasks/get` inlines the result once the task completes, cancellation is a
+  // cooperative acknowledgement, and there is no listing — a client follows the tasks it
+  // created (the bridge keeps that record for `tasks-list`).
+  //
+  // The v2 SDK implements neither: it kept the 2025 wire schemas without a client API and
+  // does not know the extension. So every task request goes through `client.request()` —
+  // legacy ones with the SDK's own 2025 schemas, extension ones with `tasks-schema.ts` and
+  // the transport shim that gets them past the SDK's era gates (`tasks-transport-shim.ts`
+  // explains what it works around). Adopting the SDK's extension API once it ships is a
+  // change to this section only.
+  //
+  // mcpc never answers a task's `inputRequests` (`tasks/update`): it never prompts and
+  // has no LLM, the same reason elicitation and sampling are unsupported. A task that
+  // asks for input is reported as such and left on the server.
+  // -----------------------------------------------------------------------------------
+
   /**
-   * Check if the server supports task-augmented tool calls
+   * Settings the server declared for the tasks extension, or `undefined` when it did not
+   * declare it (the declaration carries no settings today, so the object is `{}`).
+   */
+  private getTasksExtension(): Record<string, unknown> | undefined {
+    return declaredExtensionSettings(this.client.getServerCapabilities(), TASKS_EXTENSION_KEY);
+  }
+
+  /**
+   * Whether `tools/call` can run as a task on this connection: on 2025-11-25 the server
+   * must advertise `tasks.requests.tools.call`; on 2026-07-28 it must declare the tasks
+   * extension (and then decides per call whether to actually create one).
    */
   supportsTasksForToolCall(): boolean {
-    if (this.getProtocolEra() === 'modern') return false;
+    if (this.getProtocolEra() === 'modern') return this.getTasksExtension() !== undefined;
     const capabilities = this.client.getServerCapabilities();
     return !!capabilities?.tasks?.requests?.tools?.call;
   }
 
   /**
-   * Tasks were an experimental core feature in `2025-11-25` and moved to the
-   * `io.modelcontextprotocol/tasks` extension in `2026-07-28` (SEP-2663). The v2 SDK
-   * dropped the v1 experimental client API and does not implement the extension yet, so
-   * mcpc issues the `2025-11-25` task requests directly via `client.request()` — the wire
-   * vocabulary is still part of the SDK's legacy-era schema set. All task traffic is
-   * funnelled through the few methods below, so adopting the SDK's tasks extension API
-   * once it ships is a change to these methods only.
+   * Refuse task traffic a 2026-07-28 server has not promised to serve. The extension is
+   * opt-in on both sides, and a server that does not declare it answers `tasks/*` with an
+   * error (or not at all) — so say so up front instead of discovering it on the wire.
+   * Legacy connections pass: the 2025 core protocol has the methods regardless, and the
+   * server's own capability decides what it serves.
    *
-   * Public so the bridge can reject `tools-call --task/--detach` up front: without that
-   * check a detached call on a modern connection would silently return a tool result
-   * where the caller expects a task ID. Always call this *outside* the try blocks below,
-   * so its message reaches the user as-is instead of nested in a "Failed to ..." wrapper.
+   * Public so the bridge can reject `tools-call --task/--detach` before dispatching:
+   * without that check a detached call would silently run the tool synchronously and hand
+   * the caller a tool result where it expects a task. Always call this *outside* the try
+   * blocks below, so its message reaches the user as-is instead of nested in a
+   * "Failed to ..." wrapper.
    */
   assertTasksAvailable(): void {
-    if (this.getProtocolEra() === 'modern') {
-      throw new ServerError(tasksUnavailableMessage(this.negotiatedProtocolVersion));
+    if (this.getProtocolEra() === 'modern' && this.getTasksExtension() === undefined) {
+      throw new ServerError(tasksNotDeclaredMessage());
     }
   }
 
   /**
-   * Issue a task-augmented `tools/call` and return the created task.
-   * The tool keeps running on the server after this returns.
+   * The task a 2026-07-28 server created in lieu of the tool result, lifted out of the
+   * placeholder the transport shim produced — or `undefined` when `result` is the real
+   * tool result. Validated here, since the shim only carries the object across.
    */
-  private async createToolTask(
+  private takeCreatedTask(result: CallToolResult): ExtensionTask | undefined {
+    const created = this.tasksShim.takeCreatedTask(result);
+    if (!created) return undefined;
+    const task = validateExtensionTask(created);
+    if (task instanceof Error) {
+      throw new ServerError(`Server answered tools/call with a task, but ${task.message}`);
+    }
+    return task;
+  }
+
+  /**
+   * Issue a task-augmented `tools/call` (2025-11-25 `task: {}` parameter) and return the
+   * created task. The tool keeps running on the server after this returns.
+   */
+  private async createLegacyToolTask(
     name: string,
     args?: Record<string, unknown>,
     meta?: Record<string, unknown>
-  ): Promise<TaskUpdate> {
-    this.assertTasksAvailable();
+  ): Promise<Task> {
     const params: Record<string, unknown> = {
       name,
       arguments: args || {},
@@ -1131,12 +1254,18 @@ export class McpClient implements IMcpClient {
       this.getRequestOptions()
     );
     this.logger.debug(`Task created: ${result.task.taskId}`);
-    return taskToUpdate(result.task);
+    return result.task;
   }
 
   /**
-   * Call a tool with task-augmented execution: create the task, poll its status until it
-   * reaches a terminal state, then fetch the tool result.
+   * Call a tool with task-augmented execution and wait for the tool result, reporting the
+   * task's progress through `onUpdate`.
+   *
+   * On 2025-11-25 connections this asks the server for a task, polls it and fetches the
+   * result. On 2026-07-28 connections the server decides: when it answers with a task the
+   * task is polled to its end, and when it answers with the result right away that result
+   * is returned — the flag only expresses willingness to wait, which is the most a client
+   * can express under the extension.
    */
   async callToolWithTask(
     name: string,
@@ -1144,10 +1273,14 @@ export class McpClient implements IMcpClient {
     onUpdate?: (update: TaskUpdate) => void,
     meta?: Record<string, unknown>
   ): Promise<CallToolResult> {
+    this.assertTasksAvailable();
+    if (this.getProtocolEra() === 'modern') {
+      return this.callTool(name, args, meta, onUpdate);
+    }
     try {
       this.logger.debug(`Calling tool with task: ${name}`, args);
-      const created = await this.createToolTask(name, args, meta);
-      onUpdate?.(created);
+      const created = await this.createLegacyToolTask(name, args, meta);
+      onUpdate?.(taskToUpdate(created));
       return await this.pollTask(created.taskId, onUpdate);
     } catch (error) {
       if (error instanceof ServerError) throw error;
@@ -1159,17 +1292,32 @@ export class McpClient implements IMcpClient {
   }
 
   /**
-   * Call a tool with task-augmented execution in detached mode.
-   * Returns immediately after task creation with the task ID.
+   * Call a tool with task-augmented execution in detached mode: return as soon as the
+   * server has handed out a task, without waiting for the tool to finish.
+   *
+   * On 2026-07-28 connections the server may decline to create a task and answer with the
+   * tool result instead; that result is then returned in the outcome's `result` field —
+   * the tool has run, and nothing is left to detach from.
    */
   async callToolDetached(
     name: string,
     args?: Record<string, unknown>,
     meta?: Record<string, unknown>
-  ): Promise<TaskUpdate> {
+  ): Promise<DetachedToolCall> {
+    this.assertTasksAvailable();
     try {
       this.logger.debug(`Calling tool detached: ${name}`, args);
-      return await this.createToolTask(name, args, meta);
+      if (this.getProtocolEra() !== 'modern') {
+        return { task: await this.createLegacyToolTask(name, args, meta) };
+      }
+      const result = await this.sendToolCall(name, args, meta);
+      const created = this.takeCreatedTask(result);
+      if (created) {
+        this.logger.debug(`Task created: ${created.taskId}`);
+        return { task: created };
+      }
+      this.logger.debug(`Tool ${name} completed synchronously; the server created no task`);
+      return { result };
     } catch (error) {
       if (error instanceof ServerError) throw error;
       this.logger.error(`Failed to call tool ${name} detached:`, error);
@@ -1180,35 +1328,28 @@ export class McpClient implements IMcpClient {
   }
 
   /**
-   * Poll a task by ID until it reaches a terminal state.
-   * Used for crash recovery — reconnect to an existing task.
+   * Poll a task by ID until it reaches a terminal state and return the tool result.
+   * Used for crash recovery — reconnect to an existing task — and by `tasks-result`.
    */
   async pollTask(taskId: string, onUpdate?: (update: TaskUpdate) => void): Promise<CallToolResult> {
-    const POLL_INTERVAL_MILLIS = 2000;
-
+    this.assertTasksAvailable();
     try {
       this.logger.debug(`Polling task: ${taskId}`);
+      if (this.getProtocolEra() === 'modern') {
+        const task = await this.getExtensionTask(taskId);
+        onUpdate?.(taskToUpdate(task));
+        return await this.awaitExtensionTask(task, onUpdate);
+      }
 
       while (true) {
-        const task = await this.getTask(taskId);
-        const update: TaskUpdate = {
-          taskId: task.taskId,
-          status: task.status,
-          ...(task.statusMessage != null ? { statusMessage: task.statusMessage } : {}),
-          createdAt: task.createdAt,
-          lastUpdatedAt: task.lastUpdatedAt,
-        };
-        onUpdate?.(update);
+        const task = await this.getLegacyTask(taskId);
+        onUpdate?.(taskToUpdate(task));
 
-        if (
-          task.status === 'completed' ||
-          task.status === 'failed' ||
-          task.status === 'cancelled'
-        ) {
+        if (isTerminalTaskStatus(task.status)) {
           if (task.status === 'completed') {
             // Fetch the actual tool result — the task status only carries a
             // human-readable message, not the tool output.
-            return await this.getTaskResult(taskId);
+            return await this.getLegacyTaskResult(taskId);
           }
           throw new ServerError(
             `Task ${taskId} ${task.status}: ${task.statusMessage || 'no details'}`
@@ -1218,10 +1359,10 @@ export class McpClient implements IMcpClient {
         // input_required: tasks/result delivers the queued server messages and
         // blocks until the task reaches a terminal state.
         if (task.status === 'input_required') {
-          return await this.getTaskResult(taskId);
+          return await this.getLegacyTaskResult(taskId);
         }
 
-        await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MILLIS));
+        await sleep(DEFAULT_TASK_POLL_INTERVAL_MILLIS);
       }
     } catch (error) {
       if (error instanceof ServerError) throw error;
@@ -1233,10 +1374,99 @@ export class McpClient implements IMcpClient {
   }
 
   /**
-   * List tasks on the server
+   * Follow a 2026-07-28 task to its end: poll `tasks/get` at the cadence the server asks
+   * for until the status is terminal, then return the tool result it carries or throw
+   * the outcome that ended it. A task waiting for input is reported and left alone —
+   * mcpc has nothing to answer it with.
    */
-  async listTasks(cursor?: string): Promise<ListTasksResult> {
+  private async awaitExtensionTask(
+    initial: ExtensionTask,
+    onUpdate?: (update: TaskUpdate) => void
+  ): Promise<CallToolResult> {
+    let task = initial;
+    while (!isTerminalTaskStatus(task.status)) {
+      if (task.status === 'input_required') {
+        throw new ServerError(taskInputRequiredMessage(task.taskId, inputRequestMethods(task)));
+      }
+      await sleep(taskPollDelayMillis(task));
+      task = await this.getExtensionTask(task.taskId);
+      onUpdate?.(taskToUpdate(task));
+    }
+    return this.extensionTaskOutcome(task);
+  }
+
+  /** The tool result a finished 2026-07-28 task holds, or the outcome that ended it. */
+  private async extensionTaskOutcome(task: ExtensionTask): Promise<CallToolResult> {
+    const detail = task.statusMessage ? `: ${task.statusMessage}` : '';
+    switch (task.status) {
+      case 'completed': {
+        // The spec types it as "the original request's result"; make sure it is one
+        // before handing it to renderers that trust the CallToolResult shape.
+        const outcome = await CallToolResultSchema['~standard'].validate(task.result);
+        if (outcome.issues) {
+          const problems = outcome.issues.map((issue) => issue.message).join('; ');
+          throw new ServerError(
+            `Task ${task.taskId} completed, but its result is not a valid tool result: ${problems}`
+          );
+        }
+        return outcome.value as CallToolResult;
+      }
+      case 'failed': {
+        const error = task.error;
+        const reason = error ? `${error.message} (code ${error.code})` : 'no details';
+        throw new ServerError(`Task ${task.taskId} failed: ${reason}${detail}`);
+      }
+      case 'cancelled':
+        throw new ServerError(`Task ${task.taskId} was cancelled${detail}`);
+      default:
+        throw new ServerError(`Task ${task.taskId} is ${task.status}${detail}`);
+    }
+  }
+
+  /** `tasks/get` of the 2026-07-28 extension (issued under the shim's alias). */
+  private async getExtensionTask(taskId: string): Promise<ExtensionTask> {
+    const task = await this.client.request(
+      { method: aliasTaskMethod('tasks/get'), params: { taskId } },
+      ExtensionTaskSchema,
+      this.getRequestOptions()
+    );
+    this.logger.debug(`Task ${taskId} status: ${task.status}`);
+    return task;
+  }
+
+  /** `tasks/get` of the 2025-11-25 core protocol. */
+  private async getLegacyTask(taskId: string): Promise<Task> {
+    const task = await this.client.request(
+      { method: 'tasks/get', params: { taskId } },
+      GetTaskResultSchema,
+      this.getRequestOptions()
+    );
+    this.logger.debug(`Task ${taskId} status: ${task.status}`);
+    return task;
+  }
+
+  /** `tasks/result` of the 2025-11-25 core protocol: blocks server-side until the task ends. */
+  private async getLegacyTaskResult(taskId: string): Promise<CallToolResult> {
+    const result = await this.client.request(
+      { method: 'tasks/result', params: { taskId } },
+      CallToolResultSchema,
+      this.getRequestOptions()
+    );
+    this.logger.debug(`Task ${taskId} result received`);
+    return result;
+  }
+
+  /**
+   * List tasks on the server (2025-11-25 `tasks/list`).
+   *
+   * The 2026-07-28 extension has no listing, so this refuses on modern connections; the
+   * bridge answers `tasks-list` there from its record of the tasks the session created.
+   */
+  async listTasks(cursor?: string): Promise<TasksPage> {
     this.assertTasksAvailable();
+    if (this.getProtocolEra() === 'modern') {
+      throw new ServerError(tasksListUnavailableMessage(this.negotiatedProtocolVersion));
+    }
     try {
       this.logger.debug('Listing tasks...', cursor ? { cursor } : {});
       const result = await this.client.request(
@@ -1255,19 +1485,16 @@ export class McpClient implements IMcpClient {
   }
 
   /**
-   * Get a task's current status
+   * Get a task's current state. On 2026-07-28 connections the answer inlines the tool
+   * result once the task has completed (and the error once it has failed).
    */
-  async getTask(taskId: string): Promise<GetTaskResult> {
+  async getTask(taskId: string): Promise<AnyTask> {
     this.assertTasksAvailable();
     try {
       this.logger.debug(`Getting task: ${taskId}`);
-      const result = await this.client.request(
-        { method: 'tasks/get', params: { taskId } },
-        GetTaskResultSchema,
-        this.getRequestOptions()
-      );
-      this.logger.debug(`Task ${taskId} status: ${result.status}`);
-      return result;
+      return this.getProtocolEra() === 'modern'
+        ? await this.getExtensionTask(taskId)
+        : await this.getLegacyTask(taskId);
     } catch (error) {
       this.logger.error(`Failed to get task ${taskId}:`, error);
       throw new ServerError(`Failed to get task ${taskId}: ${(error as Error).message}`, {
@@ -1277,22 +1504,20 @@ export class McpClient implements IMcpClient {
   }
 
   /**
-   * Get the final result of a task.
-   * Blocks on the server until the task reaches a terminal state, per
-   * the MCP `tasks/result` protocol method.
+   * Get the final result of a task, waiting until the task reaches a terminal state:
+   * server-side via `tasks/result` on 2025-11-25 connections, by polling `tasks/get` on
+   * 2026-07-28 ones (the extension inlines the result in the task).
    */
   async getTaskResult(taskId: string): Promise<CallToolResult> {
     this.assertTasksAvailable();
     try {
       this.logger.debug(`Getting task result: ${taskId}`);
-      const result = await this.client.request(
-        { method: 'tasks/result', params: { taskId } },
-        CallToolResultSchema,
-        this.getRequestOptions()
-      );
-      this.logger.debug(`Task ${taskId} result received`);
-      return result;
+      if (this.getProtocolEra() === 'modern') {
+        return await this.awaitExtensionTask(await this.getExtensionTask(taskId));
+      }
+      return await this.getLegacyTaskResult(taskId);
     } catch (error) {
+      if (error instanceof ServerError) throw error;
       this.logger.error(`Failed to get task result ${taskId}:`, error);
       throw new ServerError(`Failed to get task result ${taskId}: ${(error as Error).message}`, {
         originalError: error,
@@ -1301,12 +1526,27 @@ export class McpClient implements IMcpClient {
   }
 
   /**
-   * Cancel a running task
+   * Cancel a task and return its state afterwards.
+   *
+   * On 2025-11-25 connections the server answers with the task itself. On 2026-07-28
+   * ones `tasks/cancel` is an acknowledgement of intent — cancellation is cooperative and
+   * eventually consistent, so the task may still be `working` or end `completed` — and
+   * the state comes from a `tasks/get` right after, so callers see what the server made
+   * of the request.
    */
-  async cancelTask(taskId: string): Promise<CancelTaskResult> {
+  async cancelTask(taskId: string): Promise<AnyTask> {
     this.assertTasksAvailable();
     try {
       this.logger.debug(`Cancelling task: ${taskId}`);
+      if (this.getProtocolEra() === 'modern') {
+        await this.client.request(
+          { method: aliasTaskMethod('tasks/cancel'), params: { taskId } },
+          TaskAcknowledgementSchema,
+          this.getRequestOptions()
+        );
+        this.logger.debug(`Cancellation of task ${taskId} acknowledged`);
+        return await this.getExtensionTask(taskId);
+      }
       const result = await this.client.request(
         { method: 'tasks/cancel', params: { taskId } },
         CancelTaskResultSchema,

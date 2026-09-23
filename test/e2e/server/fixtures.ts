@@ -483,8 +483,10 @@ export type TestToolResult = {
 };
 
 /**
- * Execute one of the shared test tools (synchronous semantics only — the v1
- * server intercepts task-augmented `slow-task` calls before delegating here).
+ * Execute one of the shared test tools (synchronous semantics only — both servers
+ * intercept the task-augmented `slow-task` calls before delegating here: the v1 server
+ * when the client asks with `task: {}`, the v2 server when the client declares the tasks
+ * extension).
  * Throws on tool failure or unknown tool name, mirroring server-side errors.
  */
 export async function callTestTool(
@@ -523,7 +525,7 @@ export async function callTestTool(
       };
 
     case 'slow-task': {
-      // Synchronous execution (task-augmented execution is v1-server-only)
+      // Synchronous execution (task-augmented calls never reach here, see above)
       const ms = Number(args?.ms || 3000);
       const steps = Number(args?.steps || 3);
       await new Promise((resolve) => setTimeout(resolve, ms));

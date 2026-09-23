@@ -40,6 +40,7 @@ import { createLogger, getVerbose } from '../lib/logger.js';
 import type { ServerConfig } from '../lib/types.js';
 import { ClientError } from '../lib/errors.js';
 import { proxyFetch } from '../lib/proxy.js';
+import { withTaskRoutingHeader } from './tasks-transport-shim.js';
 import { createInterface } from 'node:readline';
 import type { Readable } from 'node:stream';
 
@@ -125,8 +126,10 @@ export function createStreamableHttpTransport(
 
   // Explicitly pass proxy-aware fetch so the MCP SDK transport respects
   // HTTP_PROXY/HTTPS_PROXY env vars (its internal fetch ignores the global dispatcher).
-  // Custom fetch (e.g. x402 middleware) takes priority if provided.
-  const fetchFn = options.fetch ?? proxyFetch;
+  // Custom fetch (e.g. x402 middleware) takes priority if provided. Either way the
+  // tasks-extension routing header (`Mcp-Name: <taskId>` on tasks/* requests) is added
+  // on top, since the SDK transport does not know the extension yet.
+  const fetchFn = withTaskRoutingHeader(options.fetch ?? proxyFetch);
 
   const transport = new StreamableHTTPClientTransport(new URL(url), {
     reconnectionOptions: defaultReconnectionOptions,
