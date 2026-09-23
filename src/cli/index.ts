@@ -497,38 +497,34 @@ Full docs: ${docsUrl}`
 ${chalk.bold('Server formats:')}
   mcp.apify.com                 Remote HTTP server (https:// auto-added)
   ~/.vscode/mcp.json:puppeteer  Config file entry (file:entry)
-  ~/.vscode/mcp.json            Config file — connect every entry
+  ~/.vscode/mcp.json            Config file — bulk connect every entry
   ${chalk.dim('(no server)'.padEnd(28))}  Auto-discover configs and connect everything
 
-${chalk.bold('Auto-discovery (no server arg):')}
-  Scans ./ and ~ for .mcp.json, mcp.json, mcp_config.json, .cursor/mcp.json,
+  Stdio entries run a local command on connect, so only use configs you
+  trust. Bulk connects skip them; pass --stdio to include them.
+
+${chalk.bold('Auto-discovery:')}
+  Without <server>, mcpc finds MCP config files in ./ and ~ and bulk connects
+  every entry: .mcp.json, mcp.json, mcp_config.json, .cursor/mcp.json,
   .vscode/mcp.json, .kiro/settings/mcp.json, ~/.claude.json,
   ~/.codeium/windsurf/mcp_config.json, plus VS Code & Claude Desktop configs.
+  For security, configs in ./ are untrusted: entries that reference \${VAR}
+  are skipped and -H is refused. To connect those: mcpc connect ./.mcp.json
 
 ${chalk.bold('Session name:')}
   Omit @session to auto-generate from the server (mcp.apify.com → @apify)
   or config entry. Matching sessions (same server, profile, header keys)
   are reused. Bulk connects don't accept @session.
 
-${chalk.bold('Stdio servers (command-based, run locally):')}
-  Config entries spawn the command on connect, even if the handshake
-  later fails — only connect to configs you trust. Bulk connects skip
-  stdio by default; pass --stdio to include them.
-
-${chalk.bold('Project configs (auto-discovery only):')}
-  Config files in the current directory are untrusted: entries that
-  reference \${VAR} are skipped and -H is refused. Files under ~ expand
-  \${VAR} as usual. To connect a skipped entry: mcpc connect ./.mcp.json
-
 ${chalk.bold('Protocol version:')}
   mcpc negotiates the newest MCP version both sides support, from
   2026-07-28 down to 2024-10-07. Pass --protocol-version to pin one exact
   version instead — the connection fails if the server does not offer it.
-  Run mcpc @session to see the negotiated version.
 
 ${chalk.bold('x402 payments (experimental):')}
-  --x402 pays for paid tool calls from the wallet set up with mcpc x402.
+  --x402 pays for paid tool calls from the wallet set up with: mcpc x402
   Schemes: auto (default, prefers upto), upto, exact.
+  For more info, run: mcpc help x402
 ${outputHelp([
   'For a single server, shows session, server info, capabilities, and tools.',
   'Bulk connects list every session with its state, then a summary.',
