@@ -252,6 +252,8 @@ read; it also refuses `-H`, which would go to every discovered server. Files und
 directory are your own and expand `${VAR}` as usual. To connect a skipped entry, review the file
 and name it explicitly (`mcpc connect ./.mcp.json`): naming a file is the trust step.
 
+![mcpc connect skipping a checked-in config that reads ${GITHUB_TOKEN}](https://raw.githubusercontent.com/apify/mcpc/main/docs/vhs/security.gif?v=1)
+
 ### MCP commands
 
 All MCP commands go through a named session created with `connect`:
@@ -1131,6 +1133,8 @@ mcpc --json @apify skills-list | jq -r '.[].frontmatter.name'
 # List a directory inside a skill (servers that declare "directoryRead": true)
 mcpc @apify resources-directory-read skill://pdf-processing/templates
 ```
+
+![mcpc skills-list and skills-get demo](https://raw.githubusercontent.com/apify/mcpc/main/docs/vhs/skills.gif?v=1)
 
 Every entry from `skills-list` is complete: the skill's verbatim frontmatter plus a manifest of every
 file with its SHA-256 digest and byte size. `skills-get` uses that manifest as the spec requires —
