@@ -15,11 +15,23 @@
  *                 unsupported-protocol-version error, proving that clients
  *                 talk pure 2026-07-28 to this server
  *     stateless - serve 2025-era requests statelessly (no session IDs)
+ *   NO_TASKS    - withhold the io.modelcontextprotocol/tasks extension, so
+ *                 --task/--detach must refuse and slow-task runs synchronously
  *
- * Control endpoints: same as index.ts where applicable. Session-oriented
- * endpoints (get-active-sessions, get-deleted-sessions, get-subscriptions,
- * expire-session) respond with 501 — the 2026-07-28 protocol has no session
- * state; suites that need them are legacy-era-specific.
+ * Tasks: this server declares the 2026-07-28 tasks extension and answers a
+ * `slow-task` call from a declaring client with a task handle
+ * (`resultType: "task"`), then serves `tasks/get`, `tasks/cancel` and
+ * `tasks/update` for it — the server-directed model of the extension, where
+ * the client never asks for a task. The v2 SDK has no runtime for the
+ * extension (its `Server` even refuses `tasks/get` as a 2025-only method), so
+ * the tasks layer sits in front of the SDK handler, at the HTTP level.
+ *
+ * Control endpoints: same as index.ts where applicable, plus
+ * `get-task-routing` (GET) — the `Mcp-Name` header the latest tasks/* requests
+ * carried, so a suite can check the routing header the spec requires.
+ * Session-oriented endpoints (get-active-sessions, get-deleted-sessions,
+ * get-subscriptions, expire-session) respond with 501 — the 2026-07-28
+ * protocol has no session state; suites that need them are legacy-era-specific.
  */
 
 import {
@@ -27,10 +39,12 @@ import {
   createMcpHandler,
   ProtocolError,
   INVALID_PARAMS,
+  CLIENT_CAPABILITIES_META_KEY,
   type ServerCapabilities,
 } from '@modelcontextprotocol/server';
 import { toNodeHandler } from '@modelcontextprotocol/node';
 import http from 'http';
+import { randomUUID } from 'crypto';
 import {
   TOOLS,
   RESOURCES,
@@ -56,6 +70,8 @@ const EXPECTED_BEARER_TOKEN = process.env.EXPECTED_BEARER_TOKEN || '';
 const NO_TOOLS = process.env.NO_TOOLS === 'true';
 const NO_RESOURCES = process.env.NO_RESOURCES === 'true';
 const NO_PROMPTS = process.env.NO_PROMPTS === 'true';
+// Withhold the tasks extension, so `--task`/`--detach` must refuse
+const NO_TASKS = process.env.NO_TASKS === 'true';
 const WITH_SKILLS = process.env.WITH_SKILLS === 'true';
 const WITH_OTHER_EXTENSIONS = process.env.WITH_OTHER_EXTENSIONS === 'true';
 const SKILLS_TAMPER = process.env.SKILLS_TAMPER;
@@ -75,6 +91,215 @@ let lastClientCapabilities: unknown = null;
 
 // Mutable counter resource state (bumped via /control/bump-counter)
 let counterValue = 0;
+
+// ---------------------------------------------------------------------------
+// Tasks extension (io.modelcontextprotocol/tasks, MCP 2026-07-28)
+// ---------------------------------------------------------------------------
+
+const TASKS_EXTENSION_KEY = 'io.modelcontextprotocol/tasks';
+const PROTOCOL_VERSION = '2026-07-28';
+/** Polling cadence handed to clients — short, so suites finish fast. */
+const TASK_POLL_INTERVAL_MS = 200;
+
+type TaskStatus = 'working' | 'input_required' | 'completed' | 'failed' | 'cancelled';
+
+/** A task in the extension's flat shape, with the status-specific payload inlined. */
+interface ExtensionTask {
+  taskId: string;
+  status: TaskStatus;
+  statusMessage?: string;
+  createdAt: string;
+  lastUpdatedAt: string;
+  ttlMs: number | null;
+  pollIntervalMs: number;
+  result?: { content: Array<{ type: 'text'; text: string }> };
+  error?: { code: number; message: string };
+  inputRequests?: Record<string, unknown>;
+}
+
+interface TaskEntry {
+  task: ExtensionTask;
+  abort: AbortController;
+  /** Resolves the wait of a task parked in input_required (tasks/update). */
+  resumeInput?: () => void;
+}
+
+const taskStore = new Map<string, TaskEntry>();
+
+// The Mcp-Name routing header of the latest tasks/* requests, newest last (the spec
+// requires it to carry params.taskId), for the get-task-routing control endpoint
+const taskRoutingLog: { method: string; taskId: string; mcpName: string | null }[] = [];
+const TASK_ROUTING_LOG_SIZE = 20;
+
+const isTerminal = (status: TaskStatus): boolean =>
+  status === 'completed' || status === 'failed' || status === 'cancelled';
+
+function touch(entry: TaskEntry, patch: Partial<ExtensionTask>): void {
+  Object.assign(entry.task, patch, { lastUpdatedAt: new Date().toISOString() });
+}
+
+/**
+ * Start `slow-task` as a task: `steps` progress steps spread over `ms`, then the same
+ * result the synchronous tool returns. With `needsInput`, the task parks in
+ * `input_required` after the first step, asking for a name, until `tasks/update` answers
+ * or `tasks/cancel` ends it.
+ */
+function startSlowTask(args: Record<string, unknown>): ExtensionTask {
+  const ms = Number(args.ms || 3000);
+  const steps = Number(args.steps || 3);
+  const needsInput = args.needsInput === true;
+  const now = new Date().toISOString();
+  const task: ExtensionTask = {
+    taskId: randomUUID(),
+    status: 'working',
+    statusMessage: 'Starting...',
+    createdAt: now,
+    lastUpdatedAt: now,
+    ttlMs: 300_000,
+    pollIntervalMs: TASK_POLL_INTERVAL_MS,
+  };
+  const entry: TaskEntry = { task, abort: new AbortController() };
+  taskStore.set(task.taskId, entry);
+
+  void (async () => {
+    const stepDuration = ms / steps;
+    for (let i = 1; i <= steps; i++) {
+      await new Promise((resolve) => setTimeout(resolve, stepDuration));
+      if (entry.abort.signal.aborted) return;
+      if (i === 1 && needsInput) {
+        touch(entry, {
+          status: 'input_required',
+          statusMessage: 'Waiting for a name',
+          inputRequests: {
+            name: {
+              method: 'elicitation/create',
+              params: {
+                mode: 'form',
+                message: 'Please enter your name.',
+                requestedSchema: {
+                  type: 'object',
+                  properties: { name: { type: 'string' } },
+                  required: ['name'],
+                },
+              },
+            },
+          },
+        });
+        await new Promise<void>((resolve) => {
+          entry.resumeInput = resolve;
+        });
+        if (entry.abort.signal.aborted) return;
+        touch(entry, { status: 'working', statusMessage: 'Name received' });
+        delete entry.task.inputRequests;
+      }
+      if (i < steps) {
+        touch(entry, { statusMessage: `Processing step ${i}/${steps}` });
+      } else {
+        touch(entry, {
+          status: 'completed',
+          statusMessage: `Done (${steps} steps)`,
+          result: { content: [{ type: 'text', text: `Completed ${steps} steps in ${ms}ms` }] },
+        });
+      }
+    }
+  })();
+
+  return task;
+}
+
+/** A JSON-RPC result response the way the 2026-07-28 transport expects it. */
+function jsonRpcResult(id: unknown, result: Record<string, unknown>): Response {
+  return Response.json(
+    { jsonrpc: '2.0', id, result },
+    { headers: { 'mcp-protocol-version': PROTOCOL_VERSION } }
+  );
+}
+
+/** A JSON-RPC error response (HTTP 200: the error is at the JSON-RPC layer). */
+function jsonRpcError(id: unknown, code: number, message: string, data?: unknown): Response {
+  return Response.json(
+    { jsonrpc: '2.0', id, error: { code, message, ...(data !== undefined ? { data } : {}) } },
+    { headers: { 'mcp-protocol-version': PROTOCOL_VERSION } }
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Serve the tasks extension for one HTTP request, or return `undefined` to let the SDK
+ * handler take it. Handles the task-creating `slow-task` call (for clients that declare
+ * the extension — a server MUST NOT hand a task to any other) and the `tasks/*` methods.
+ */
+async function serveTasksExtension(request: Request): Promise<Response | undefined> {
+  if (NO_TASKS || NO_TOOLS || request.method !== 'POST') return undefined;
+
+  let message: unknown;
+  try {
+    message = await request.clone().json();
+  } catch {
+    return undefined;
+  }
+  if (!isRecord(message) || typeof message.method !== 'string') return undefined;
+  const params = isRecord(message.params) ? message.params : {};
+  const meta = isRecord(params._meta) ? params._meta : {};
+  const clientCapabilities = meta[CLIENT_CAPABILITIES_META_KEY];
+  const declared =
+    isRecord(clientCapabilities) &&
+    isRecord(clientCapabilities.extensions) &&
+    clientCapabilities.extensions[TASKS_EXTENSION_KEY] !== undefined;
+
+  if (message.method === 'tools/call' && params.name === 'slow-task') {
+    // The server decides per call; here every slow-task call from a declaring client
+    // becomes a task. A client that did not declare the extension gets the synchronous
+    // tool from the SDK handler.
+    if (!declared) return undefined;
+    lastClientCapabilities = clientCapabilities;
+    await maybeDelay();
+    if (shouldFail()) return jsonRpcError(message.id, -32603, 'Simulated failure');
+    const task = startSlowTask(isRecord(params.arguments) ? params.arguments : {});
+    return jsonRpcResult(message.id, { resultType: 'task', ...task });
+  }
+
+  if (!['tasks/get', 'tasks/cancel', 'tasks/update'].includes(message.method)) return undefined;
+
+  const taskId = typeof params.taskId === 'string' ? params.taskId : '';
+  taskRoutingLog.push({ method: message.method, taskId, mcpName: request.headers.get('mcp-name') });
+  if (taskRoutingLog.length > TASK_ROUTING_LOG_SIZE) taskRoutingLog.shift();
+
+  if (!declared) {
+    return jsonRpcError(message.id, -32021, 'Missing required client capability', {
+      requiredCapabilities: { extensions: { [TASKS_EXTENSION_KEY]: {} } },
+    });
+  }
+  const entry = taskStore.get(taskId);
+  if (!entry) return jsonRpcError(message.id, INVALID_PARAMS, `Unknown task: ${taskId}`);
+
+  switch (message.method) {
+    case 'tasks/get':
+      return jsonRpcResult(message.id, { resultType: 'complete', ...entry.task });
+
+    case 'tasks/cancel':
+      // Honored right away when the task is still running (cooperative in the spec, but
+      // a test server has no reason to make clients wait for it)
+      if (!isTerminal(entry.task.status)) {
+        entry.abort.abort();
+        entry.resumeInput?.();
+        delete entry.task.inputRequests;
+        touch(entry, { status: 'cancelled', statusMessage: 'Cancelled by request' });
+      }
+      return jsonRpcResult(message.id, { resultType: 'complete' });
+
+    default: {
+      // tasks/update: any answer to the outstanding request resumes the task
+      if (entry.task.status === 'input_required' && isRecord(params.inputResponses)) {
+        entry.resumeInput?.();
+      }
+      return jsonRpcResult(message.id, { resultType: 'complete' });
+    }
+  }
+}
 
 // Compute the effective skills resource list and content map at startup.
 const {
@@ -124,6 +349,15 @@ function createTestServer(): Server {
   // later, so index.ts (2025-11-25) serves none.
   if (WITH_SKILLS && !NO_RESOURCES) {
     capabilities.extensions = { 'io.modelcontextprotocol/skills': { directoryRead: true } };
+  }
+
+  // Declare the tasks extension (served by the HTTP-level tasks layer, see above) unless
+  // a suite asked for a server without task support.
+  if (!NO_TOOLS && !NO_TASKS) {
+    capabilities.extensions = {
+      ...((capabilities.extensions as Record<string, unknown>) || {}),
+      [TASKS_EXTENSION_KEY]: {},
+    };
   }
 
   // Extensions beyond the ones mcpc implements. A server declares what it serves on its
@@ -340,7 +574,11 @@ async function main() {
       console.error('MCP handler error:', error.message);
     },
   });
-  const nodeHandler = toNodeHandler(mcpHandler);
+  // The tasks layer answers what it knows and hands everything else to the SDK handler
+  const nodeHandler = toNodeHandler({
+    fetch: async (request, options) =>
+      (await serveTasksExtension(request)) ?? mcpHandler.fetch(request, options),
+  });
 
   const httpServer = http.createServer(async (req, res) => {
     const url = new URL(req.url || '/', `http://localhost:${PORT}`);
@@ -378,6 +616,12 @@ async function main() {
         return;
       }
 
+      if (action === 'get-task-routing' && req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ routing: taskRoutingLog }));
+        return;
+      }
+
       if (req.method !== 'POST') {
         res.writeHead(404);
         res.end('Unknown control action');
@@ -397,6 +641,7 @@ async function main() {
           failNextCount = 0;
           counterValue = 0;
           lastClientCapabilities = null;
+          taskRoutingLog.length = 0;
           res.writeHead(200);
           res.end('State reset');
           return;
@@ -502,6 +747,7 @@ async function main() {
     if (NO_TOOLS) console.log(`  Tools: DISABLED`);
     if (NO_RESOURCES) console.log(`  Resources: DISABLED`);
     if (NO_PROMPTS) console.log(`  Prompts: DISABLED`);
+    if (NO_TASKS) console.log(`  Tasks extension: DISABLED`);
     if (WITH_SKILLS) {
       console.log(`  Skills: ENABLED${SKILLS_TAMPER ? ` (tampered: ${SKILLS_TAMPER})` : ''}`);
     }

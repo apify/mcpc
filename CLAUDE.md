@@ -329,7 +329,7 @@ When making changes, follow these rules to maintain the security posture:
 2. Server responds with agreed version and server capabilities
 3. Client sends `initialized` notification to activate session
 
-**Era-dependent behavior in mcpc:** `ping` maps to `server/discover` on modern connections; `logging-set-level` and the task commands are 2025-11-25-only (tasks moved to the `io.modelcontextprotocol/tasks` extension, which the SDK does not implement yet); `resources-subscribe` uses `subscriptions/listen` on modern connections and `resources/subscribe` on legacy ones.
+**Era-dependent behavior in mcpc:** `ping` maps to `server/discover` on modern connections; `logging-set-level` is 2025-11-25-only; `resources-subscribe` uses `subscriptions/listen` on modern connections and `resources/subscribe` on legacy ones. The task commands speak the 2025-11-25 core tasks feature on legacy connections and the `io.modelcontextprotocol/tasks` extension on modern ones — the latter implemented by mcpc itself, since the SDK has no runtime for it: `src/core/tasks-schema.ts` validates the extension's results and `src/core/tasks-transport-shim.ts` gets its methods and its `resultType: "task"` answers past the SDK's era gates (read its header before touching task code; it is the one place to remove once the SDK ships the extension). Under the extension task creation is the server's decision, so `tools-call` handles a task answer even without `--task`, `--detach` may return the tool result, and `tasks-list` shows the tasks the session created (there is no `tasks/list`).
 
 **One server-details shape for both eras:** `ServerDetails` (`src/lib/types.ts`) reconciles `InitializeResult` and `DiscoverResult` — the fields both carry (`protocolVersion`, `capabilities`, `serverInfo`, `instructions`) plus the discover-only `supportedVersions` and `_meta`, which are absent on legacy connections. It is what `mcpc connect --json`, `mcpc @session --json` and `restart --json` print, and what the bridge persists in `sessions.json` (so a resumed session, which skips the handshake, can still report all of it). Never fabricate an era's missing field — a legacy connection has no `supportedVersions` because the server never advertised one.
 
@@ -592,7 +592,7 @@ credential that fits still costs one keychain write and one read. Credentials ov
 
 All state files are stored in `~/.mcpc/` directory (unless overridden by `MCPC_HOME_DIR` environment variable):
 
-- `~/.mcpc/sessions.json` - Active sessions with references to auth profiles, active async tasks, and resource subscriptions (file-locked for concurrent access)
+- `~/.mcpc/sessions.json` - Active sessions with references to auth profiles, the tasks each session created (crash recovery; on 2026-07-28 connections also what `tasks-list` shows), and resource subscriptions (file-locked for concurrent access)
 - `~/.mcpc/profiles.json` - Authentication profiles (OAuth metadata, scopes, expiry)
 - `~/.mcpc/bridges/` - Unix domain socket files for bridge processes
 - `~/.mcpc/logs/bridge-<session>.log` - Bridge process logs (rotated at 10MB, up to 5 rotated files kept)
@@ -738,6 +738,7 @@ Bridge logs location: `~/.mcpc/logs/bridge-<session>.log`
   - `prompts-list`, `prompts-get`
   - `tasks-list`, `tasks-get`, `tasks-result`, `tasks-cancel`
   - `skills-list`, `skills-get` (skills extension: manifest-verified reads)
+  - Tasks extension (`io.modelcontextprotocol/tasks`, 2026-07-28): server-directed task creation on `tools-call`, `tasks/get` polling at the server's `pollIntervalMs`, cooperative `tasks/cancel`, the `Mcp-Name` routing header, and a per-session task record standing in for the missing `tasks/list`
   - `grep` (per-session and global), `logs` (with `--follow`)
   - `logging-set-level`
   - `ping` (with roundtrip timing)

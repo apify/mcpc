@@ -12,7 +12,12 @@
 
 import { vi } from 'vitest';
 import { SdkHttpError, SdkErrorCode } from '@modelcontextprotocol/client';
-import { McpClient, isExpectedProbeRejection } from '../../../src/core/mcp-client.js';
+import {
+  McpClient,
+  isExpectedProbeRejection,
+  isUnknownTaskError,
+  taskPollDelayMillis,
+} from '../../../src/core/mcp-client.js';
 import { ServerError } from '../../../src/lib/errors.js';
 import { Logger } from '../../../src/lib/logger.js';
 
@@ -77,6 +82,7 @@ function resetSdkStub(): void {
     ping: vi.fn().mockResolvedValue(undefined),
     discover: vi.fn().mockResolvedValue({}),
     listTools: vi.fn().mockResolvedValue({ tools: [] }),
+    callTool: vi.fn().mockResolvedValue({ content: [] }),
     setLoggingLevel: vi.fn().mockResolvedValue(undefined),
     subscribeResource: vi.fn().mockResolvedValue(undefined),
     unsubscribeResource: vi.fn().mockResolvedValue(undefined),
@@ -246,19 +252,23 @@ describe('removed protocol methods are rejected per era', () => {
     expect(stubSdkClient.setLoggingLevel).not.toHaveBeenCalled();
   });
 
-  it('does not wrap the era-gate message in a "Failed to ..." prefix', async () => {
+  it('refuses task requests on a modern server that does not declare the tasks extension', async () => {
     // The CLI appends ". For details, run: ..." to the message, so a nested wrapper
-    // (and a trailing period) would render as "Failed to list tasks: Tasks are not ...25.."
+    // (and a trailing period) would render as "Failed to list tasks: This server ...s.."
     const client = await connectClient({ era: 'modern' });
-    await expect(client.listTasks()).rejects.toThrow(/^Tasks are not available/);
+    await expect(client.listTasks()).rejects.toThrow(/^This server does not declare/);
     for (const call of [
       client.getTask('t1'),
       client.getTaskResult('t1'),
       client.cancelTask('t1'),
+      client.callToolDetached('slow'),
+      client.callToolWithTask('slow'),
+      client.pollTask('t1'),
     ]) {
-      await expect(call).rejects.toThrow(/^Tasks are not available/);
+      await expect(call).rejects.toThrow(/^This server does not declare/);
     }
     expect(stubSdkClient.request).not.toHaveBeenCalled();
+    expect(stubSdkClient.callTool).not.toHaveBeenCalled();
   });
 
   it('does not end era-gate messages with a period', async () => {
@@ -276,16 +286,303 @@ describe('removed protocol methods are rejected per era', () => {
     expect(stubSdkClient.setLoggingLevel).toHaveBeenCalledWith('debug', expect.anything());
     stubSdkClient.request = vi.fn().mockResolvedValue({ tasks: [] });
     await expect(client.listTasks()).resolves.toEqual({ tasks: [] });
+    expect(stubSdkClient.request).toHaveBeenCalledWith(
+      { method: 'tasks/list' },
+      expect.anything(),
+      expect.anything()
+    );
   });
 
-  it('never advertises task-augmented tool calls on a modern connection', async () => {
+  it('derives task support from the era: the 2025 capability, or the 2026 extension', async () => {
     stubSdkClient.getServerCapabilities = vi
       .fn()
       .mockReturnValue({ tasks: { requests: { tools: { call: {} } } } });
     const legacy = await connectClient({ era: 'legacy' });
     expect(legacy.supportsTasksForToolCall()).toBe(true);
+    // The 2025 capability means nothing on a 2026-07-28 connection...
     const modern = await connectClient({ era: 'modern' });
     expect(modern.supportsTasksForToolCall()).toBe(false);
+    // ...where the extension declaration is what counts.
+    stubSdkClient.getServerCapabilities = vi
+      .fn()
+      .mockReturnValue({ extensions: { 'io.modelcontextprotocol/tasks': {} } });
+    const declaring = await connectClient({ era: 'modern' });
+    expect(declaring.supportsTasksForToolCall()).toBe(true);
+    const legacyDeclaring = await connectClient({ era: 'legacy' });
+    expect(legacyDeclaring.supportsTasksForToolCall()).toBe(false);
+  });
+});
+
+describe('tasks extension (2026-07-28)', () => {
+  const TASKS_ALIAS = 'mcpc-tasks-extension:';
+  const createdAt = '2026-09-23T10:00:00Z';
+
+  /** A modern connection to a server that declares the tasks extension. */
+  async function connectDeclaringClient(): Promise<McpClient> {
+    stubSdkClient.getServerCapabilities = vi
+      .fn()
+      .mockReturnValue({ extensions: { 'io.modelcontextprotocol/tasks': {} } });
+    return connectClient({ era: 'modern' });
+  }
+
+  /** Queue `tasks/get` answers (the results the SDK hands back, `resultType` consumed). */
+  function answerTaskGets(...tasks: Record<string, unknown>[]): void {
+    const queue = [...tasks];
+    stubSdkClient.request = vi.fn(async (request: { method: string }) => {
+      if (request.method === `${TASKS_ALIAS}tasks/cancel`) return {};
+      const next = queue.shift();
+      if (!next) throw new Error(`unexpected request ${request.method}`);
+      return next;
+    });
+  }
+
+  function working(extra: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      taskId: 't-1',
+      status: 'working',
+      createdAt,
+      lastUpdatedAt: createdAt,
+      ttlMs: 60_000,
+      pollIntervalMs: 100,
+      ...extra,
+    };
+  }
+
+  /**
+   * Feed a `CreateTaskResult` through the transport the SDK was handed, the way a wire
+   * response would arrive, and return what the SDK's onmessage would then see.
+   */
+  function deliverCreateTaskResult(client: McpClient, task: Record<string, unknown>): unknown {
+    void client;
+    const wrapped = (stubSdkClient.connect as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
+      onmessage?: (message: unknown) => void;
+    };
+    let seen: unknown;
+    wrapped.onmessage = (message: unknown) => {
+      seen = message;
+    };
+    // The raw transport is what the network layer invokes; the proxy installed the
+    // rewriting handler on it.
+    rawTransport.onmessage?.({
+      jsonrpc: '2.0',
+      id: 7,
+      result: { resultType: 'task', ...task },
+    });
+    return (seen as { result: unknown }).result;
+  }
+
+  let rawTransport: Record<string, unknown> & { onmessage?: (message: unknown) => void };
+
+  beforeEach(() => {
+    rawTransport = httpTransport(undefined);
+  });
+
+  it('sends tasks/get under the alias the SDK era gate lets through', async () => {
+    const client = await connectDeclaringClient();
+    answerTaskGets(working());
+    const task = await client.getTask('t-1');
+    expect(task).toMatchObject({ taskId: 't-1', status: 'working', ttlMs: 60_000 });
+    expect(stubSdkClient.request).toHaveBeenCalledWith(
+      { method: `${TASKS_ALIAS}tasks/get`, params: { taskId: 't-1' } },
+      expect.anything(),
+      expect.anything()
+    );
+  });
+
+  it('has no tasks/list: a client follows only the tasks it created', async () => {
+    const client = await connectDeclaringClient();
+    await expect(client.listTasks()).rejects.toThrow(
+      /tasks\/list does not exist in MCP 2026-07-28/
+    );
+    expect(stubSdkClient.request).not.toHaveBeenCalled();
+  });
+
+  it("polls tasks/get at the server's pollIntervalMs and returns the inlined result", async () => {
+    vi.useFakeTimers();
+    try {
+      const client = await connectDeclaringClient();
+      const result = { content: [{ type: 'text', text: 'done' }] };
+      answerTaskGets(working(), working({ status: 'completed', result }));
+      const updates: string[] = [];
+      const pending = client.getTaskResult('t-1');
+      // First tasks/get answers immediately; the second waits for the poll interval.
+      await vi.advanceTimersByTimeAsync(0);
+      expect(stubSdkClient.request).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(99);
+      expect(stubSdkClient.request).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(pending).resolves.toEqual(result);
+      expect(stubSdkClient.request).toHaveBeenCalledTimes(2);
+      void updates;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('reports a failed task with the JSON-RPC error it carries', async () => {
+    const client = await connectDeclaringClient();
+    answerTaskGets(working({ status: 'failed', error: { code: -32603, message: 'disk on fire' } }));
+    await expect(client.getTaskResult('t-1')).rejects.toThrow(
+      /^Task t-1 failed: disk on fire \(code -32603\)/
+    );
+  });
+
+  it('reports a cancelled task', async () => {
+    const client = await connectDeclaringClient();
+    answerTaskGets(working({ status: 'cancelled', statusMessage: 'by request' }));
+    await expect(client.getTaskResult('t-1')).rejects.toThrow(
+      /^Task t-1 was cancelled: by request/
+    );
+  });
+
+  it('stops at input_required, naming what the server asked for', async () => {
+    const client = await connectDeclaringClient();
+    answerTaskGets(
+      working({
+        status: 'input_required',
+        inputRequests: { name: { method: 'elicitation/create', params: {} } },
+      })
+    );
+    await expect(client.getTaskResult('t-1')).rejects.toThrow(
+      /waiting for input from the client \(elicitation\/create\)/
+    );
+    // No further polling: the task cannot progress without an answer mcpc cannot give.
+    expect(stubSdkClient.request).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a completed task whose result is not a tool result', async () => {
+    const client = await connectDeclaringClient();
+    // The SDK schema fills in a missing `content`, so only a wrongly typed one is invalid
+    answerTaskGets(working({ status: 'completed', result: { content: 'not blocks' } }));
+    await expect(client.getTaskResult('t-1')).rejects.toThrow(
+      /completed, but its result is not a valid tool result/
+    );
+  });
+
+  it('cancels with an acknowledgement and reports the state right after', async () => {
+    const client = await connectDeclaringClient();
+    answerTaskGets(working({ status: 'cancelled' }));
+    const task = await client.cancelTask('t-1');
+    expect(task.status).toBe('cancelled');
+    const methods = (stubSdkClient.request as ReturnType<typeof vi.fn>).mock.calls.map(
+      (call) => (call[0] as { method: string }).method
+    );
+    expect(methods).toEqual([`${TASKS_ALIAS}tasks/cancel`, `${TASKS_ALIAS}tasks/get`]);
+  });
+
+  it('turns a CreateTaskResult answering tools/call into the created task (detached)', async () => {
+    stubSdkClient.getServerCapabilities = vi
+      .fn()
+      .mockReturnValue({ extensions: { 'io.modelcontextprotocol/tasks': {} } });
+    const client = await connectClient({ era: 'modern', transport: rawTransport });
+    const placeholder = deliverCreateTaskResult(client, working());
+    stubSdkClient.callTool = vi.fn().mockResolvedValue(placeholder);
+
+    const outcome = await client.callToolDetached('slow', { ms: 5 });
+    expect(outcome.result).toBeUndefined();
+    expect(outcome.task).toMatchObject({ taskId: 't-1', status: 'working', ttlMs: 60_000 });
+    // The wire discriminator and the placeholder are gone from what callers see.
+    expect(outcome.task).not.toHaveProperty('resultType');
+    expect(stubSdkClient.callTool).toHaveBeenCalledWith(
+      { name: 'slow', arguments: { ms: 5 } },
+      expect.anything()
+    );
+  });
+
+  it('returns the tool result when the server ran a detached call synchronously', async () => {
+    const client = await connectDeclaringClient();
+    const result = { content: [{ type: 'text', text: 'quick' }] };
+    stubSdkClient.callTool = vi.fn().mockResolvedValue(result);
+    await expect(client.callToolDetached('echo')).resolves.toEqual({ result });
+  });
+
+  it('waits for a task the server created for a plain tools/call', async () => {
+    vi.useFakeTimers();
+    try {
+      stubSdkClient.getServerCapabilities = vi
+        .fn()
+        .mockReturnValue({ extensions: { 'io.modelcontextprotocol/tasks': {} } });
+      const client = await connectClient({ era: 'modern', transport: rawTransport });
+      const placeholder = deliverCreateTaskResult(client, working());
+      stubSdkClient.callTool = vi.fn().mockResolvedValue(placeholder);
+      const result = { content: [{ type: 'text', text: 'eventually' }] };
+      answerTaskGets(working({ status: 'completed', result }));
+
+      const updates: string[] = [];
+      const pending = client.callTool('slow', {}, undefined, (update) =>
+        updates.push(update.status)
+      );
+      await vi.advanceTimersByTimeAsync(100);
+      await expect(pending).resolves.toEqual(result);
+      expect(updates).toEqual(['working', 'completed']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('clamps the poll interval the server asks for at both ends', () => {
+    const task = (pollIntervalMs?: number) =>
+      ({
+        taskId: 't',
+        status: 'working',
+        createdAt,
+        lastUpdatedAt: createdAt,
+        ttlMs: null,
+        pollIntervalMs,
+      }) as const;
+    expect(taskPollDelayMillis(task(undefined))).toBe(2_000);
+    expect(taskPollDelayMillis(task(0))).toBe(2_000);
+    expect(taskPollDelayMillis(task(Number.NaN))).toBe(2_000);
+    expect(taskPollDelayMillis(task(1))).toBe(100);
+    expect(taskPollDelayMillis(task(5_000))).toBe(5_000);
+    // Node coerces a timer over 2^31-1 ms to 1 ms — a huge hint must not become a busy loop
+    expect(taskPollDelayMillis(task(2 ** 40))).toBe(300_000);
+    expect(taskPollDelayMillis(task(Number.POSITIVE_INFINITY))).toBe(300_000);
+  });
+
+  it('does not poll faster than the capped interval on an oversized hint', async () => {
+    vi.useFakeTimers();
+    try {
+      const client = await connectDeclaringClient();
+      const result = { content: [{ type: 'text', text: 'done' }] };
+      answerTaskGets(
+        working({ pollIntervalMs: 2 ** 40 }),
+        working({ status: 'completed', result })
+      );
+      const pending = client.getTaskResult('t-1');
+      await vi.advanceTimersByTimeAsync(299_999);
+      expect(stubSdkClient.request).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(pending).resolves.toEqual(result);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('tells an unknown-task error apart from any other failure', async () => {
+    const client = await connectDeclaringClient();
+    const unknown = Object.assign(new Error('Unknown task: t-1'), { code: -32602 });
+    stubSdkClient.request = vi.fn().mockRejectedValue(unknown);
+    const error = await client.getTask('t-1').catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ServerError);
+    expect(isUnknownTaskError(error)).toBe(true);
+
+    stubSdkClient.request = vi.fn().mockRejectedValue(new Error('Request timed out'));
+    const timeout = await client.getTask('t-1').catch((e: unknown) => e);
+    expect(isUnknownTaskError(timeout)).toBe(false);
+    expect(isUnknownTaskError(new Error('plain'))).toBe(false);
+    expect(isUnknownTaskError(undefined)).toBe(false);
+  });
+
+  it('ignores a genuine tool result that merely spells the placeholder meta key', async () => {
+    const client = await connectDeclaringClient();
+    const forged = {
+      content: [{ type: 'text', text: 'real result' }],
+      _meta: { 'com.apify.mcpc/created-task': working() },
+    };
+    stubSdkClient.callTool = vi.fn().mockResolvedValue(forged);
+    await expect(client.callTool('echo')).resolves.toEqual(forged);
+    expect(stubSdkClient.request).not.toHaveBeenCalled();
   });
 });
 

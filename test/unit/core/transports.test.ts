@@ -8,6 +8,11 @@ import { StreamableHTTPClientTransport } from '../../../src/core/transports.js';
 import { ClientError } from '../../../src/lib/errors.js';
 import { proxyFetch } from '../../../src/lib/proxy.js';
 
+// Mock the proxy-aware fetch so calling through the transport's fetch never hits the network
+vi.mock('../../../src/lib/proxy.js', () => ({
+  proxyFetch: vi.fn().mockResolvedValue(new Response('{}')),
+}));
+
 // Mock the SDK transports
 vi.mock('@modelcontextprotocol/client/stdio', () => ({
   StdioClientTransport: vi.fn(function () {
@@ -79,7 +84,9 @@ describe('createTransportFromConfig', () => {
     expect(transport).toBeDefined();
   });
 
-  it('should inject proxyFetch into HTTP transport when no custom fetch is provided', () => {
+  // The transport's fetch is wrapped by the tasks-extension routing-header shim, so the
+  // underlying function is observed by calling through it rather than by identity.
+  it('should inject proxyFetch into HTTP transport when no custom fetch is provided', async () => {
     const mock = StreamableHTTPClientTransport as Mock;
     mock.mockClear();
     createTransportFromConfig({
@@ -88,13 +95,16 @@ describe('createTransportFromConfig', () => {
 
     expect(mock).toHaveBeenCalledTimes(1);
     const [, options] = mock.mock.calls[0];
-    expect(options.fetch).toBe(proxyFetch);
+    expect(typeof options.fetch).toBe('function');
+    (proxyFetch as unknown as Mock).mockClear();
+    await options.fetch('https://mcp.example.com', { method: 'GET' });
+    expect(proxyFetch).toHaveBeenCalledWith('https://mcp.example.com', { method: 'GET' });
   });
 
-  it('should preserve custom fetch when provided (e.g. x402 middleware)', () => {
+  it('should preserve custom fetch when provided (e.g. x402 middleware)', async () => {
     const mock = StreamableHTTPClientTransport as Mock;
     mock.mockClear();
-    const customFetch = vi.fn();
+    const customFetch = vi.fn().mockResolvedValue(new Response('{}'));
     createTransportFromConfig(
       { url: 'https://mcp.example.com' },
       { customFetch: customFetch as any }
@@ -102,6 +112,8 @@ describe('createTransportFromConfig', () => {
 
     expect(mock).toHaveBeenCalledTimes(1);
     const [, options] = mock.mock.calls[0];
-    expect(options.fetch).toBe(customFetch);
+    await options.fetch('https://mcp.example.com', { method: 'GET' });
+    expect(customFetch).toHaveBeenCalledWith('https://mcp.example.com', { method: 'GET' });
+    expect(proxyFetch).not.toHaveBeenCalled();
   });
 });

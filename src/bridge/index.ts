@@ -14,6 +14,7 @@ import {
   CreateMcpClientOptions,
   buildClientCapabilities,
   tasksUnsupportedByServerMessage,
+  isUnknownTaskError,
 } from '../core/index.js';
 import type { McpClient } from '../core/index.js';
 import type {
@@ -63,10 +64,10 @@ import {
 import { updateAuthProfileRefreshedAt } from '../lib/auth/profiles.js';
 import { createClientCredentialsProvider } from '../lib/auth/client-credentials.js';
 import { createIdJagProvider } from '../lib/auth/id-jag.js';
-import type { Tool, Resource, Prompt, Task } from '@modelcontextprotocol/client';
+import type { Tool, Resource, Prompt } from '@modelcontextprotocol/client';
 import { ResourceSyncManager } from './resource-sync.js';
 import { isModernProtocolVersion } from '../core/protocol.js';
-import type { TaskUpdate } from '../lib/types.js';
+import type { AnyTask, DetachedToolCall, TaskUpdate, TasksPage } from '../lib/types.js';
 import { createRequire } from 'module';
 const { version: mcpcVersion } = createRequire(import.meta.url)('../../package.json') as {
   version: string;
@@ -137,9 +138,6 @@ class BridgeProcess {
 
   // Shared payment signature cache — middleware reads/writes, bridge invalidates on payment-required results
   private x402PaymentCache: X402PaymentCache = { signature: null };
-
-  // Active async tasks (in-memory, also persisted to disk for crash recovery)
-  private activeTasks: Map<string, Task> = new Map();
 
   // Resource→file sync for resources-subscribe (created once the MCP client connects)
   private resourceSync: ResourceSyncManager | null = null;
@@ -1459,32 +1457,21 @@ class BridgeProcess {
           const executeToolCall = async (): Promise<unknown> => {
             if (params.useTask) {
               if (params.detach) {
-                // Detached execution: start task and return task ID immediately
-                const taskUpdate = await client.callToolDetached(
+                // Detached execution: return as soon as the server has handed out a task
+                // (or, on 2026-07-28, the tool result when it created none)
+                const outcome = await client.callToolDetached(
                   params.name,
                   params.arguments,
                   params._meta
                 );
-                this.activeTasks.set(taskUpdate.taskId, {
-                  taskId: taskUpdate.taskId,
-                  status: taskUpdate.status,
-                  statusMessage: taskUpdate.statusMessage,
-                  createdAt: taskUpdate.createdAt ?? new Date().toISOString(),
-                  lastUpdatedAt: taskUpdate.lastUpdatedAt ?? new Date().toISOString(),
-                } as Task);
-                await this.persistActiveTask(taskUpdate.taskId, params.name);
-                return taskUpdate;
+                if (outcome.task) {
+                  await this.persistActiveTask(outcome.task.taskId, params.name);
+                }
+                return outcome;
               }
 
               // Task-augmented tool call: stream updates to requesting socket
               const onUpdate = (update: TaskUpdate): void => {
-                this.activeTasks.set(update.taskId, {
-                  taskId: update.taskId,
-                  status: update.status,
-                  statusMessage: update.statusMessage,
-                  createdAt: update.createdAt ?? new Date().toISOString(),
-                  lastUpdatedAt: update.lastUpdatedAt ?? new Date().toISOString(),
-                } as Task);
                 if (message.id) {
                   this.sendResponse(socket, {
                     type: 'task-update',
@@ -1506,31 +1493,45 @@ class BridgeProcess {
                   params._meta
                 );
               } finally {
-                for (const [tid, task] of this.activeTasks) {
-                  if (
-                    task.status === 'completed' ||
-                    task.status === 'failed' ||
-                    task.status === 'cancelled'
-                  ) {
-                    this.activeTasks.delete(tid);
-                    await this.removePersistedTask(tid).catch(() => {});
-                  }
-                }
                 if (taskId) {
-                  await this.removePersistedTask(taskId).catch(() => {});
+                  await this.releaseFinishedTask(taskId);
                 }
               }
             }
 
-            return client.callTool(params.name, params.arguments, params._meta);
+            // A 2026-07-28 server may turn a plain call into a task on its own; the client
+            // waits for it, and the record makes it recoverable should this bridge die first.
+            let createdTaskId: string | undefined;
+            const { wrappedOnUpdate } = this.persistActiveTaskOnCreate((update: TaskUpdate) => {
+              createdTaskId = update.taskId;
+            }, params.name);
+            try {
+              return await client.callTool(
+                params.name,
+                params.arguments,
+                params._meta,
+                wrappedOnUpdate
+              );
+            } finally {
+              if (createdTaskId) {
+                await this.releaseFinishedTask(createdTaskId);
+              }
+            }
           };
+
+          // A detached call answers with a wrapper — { task } or, when a 2026-07-28 server
+          // ran the tool synchronously, { result } — while the x402 helpers below look at
+          // the tool result itself. Unwrap for them and put the wrapper back afterwards.
+          const detached = !!(params.useTask && params.detach);
+          const toolResultOf = (value: unknown): unknown =>
+            detached ? (value as DetachedToolCall).result : value;
 
           // Execute with automatic x402 payment retry on payment-required tool results
           try {
             result = await executeToolCall();
             const retry = await this.handlePaymentRequiredRetry(
               params.name,
-              result,
+              toolResultOf(result),
               executeToolCall
             );
             if (retry.handled) {
@@ -1544,7 +1545,17 @@ class BridgeProcess {
             // without x402, so such a session never loads the (viem-backed) x402 module.
             if (this.x402PaymentCache.lastSettlement) {
               const { withSettlementReceipt } = await import('../lib/x402/fetch-middleware.js');
-              result = withSettlementReceipt(result, this.x402PaymentCache, params.name);
+              const toolResult = toolResultOf(result);
+              const withReceipt = withSettlementReceipt(
+                toolResult,
+                this.x402PaymentCache,
+                params.name
+              );
+              if (!detached) {
+                result = withReceipt;
+              } else if (toolResult !== undefined) {
+                result = { result: withReceipt } as DetachedToolCall;
+              }
             }
           }
           break;
@@ -1667,7 +1678,11 @@ class BridgeProcess {
 
         case 'listTasks': {
           const cursor = message.params as string | undefined;
-          result = await this.client.listTasks(cursor);
+          // The 2026-07-28 tasks extension has no tasks/list: a client can only follow the
+          // tasks it created, which is exactly the record this bridge keeps.
+          result = this.tracksTasksLocally()
+            ? await this.listTrackedTasks()
+            : await this.client.listTasks(cursor);
           break;
         }
 
@@ -1692,14 +1707,6 @@ class BridgeProcess {
         case 'pollTask': {
           const params = message.params as { taskId: string };
           const onUpdate = (update: TaskUpdate): void => {
-            // Track active task
-            this.activeTasks.set(update.taskId, {
-              taskId: update.taskId,
-              status: update.status,
-              statusMessage: update.statusMessage,
-              createdAt: update.createdAt ?? new Date().toISOString(),
-              lastUpdatedAt: update.lastUpdatedAt ?? new Date().toISOString(),
-            } as Task);
             // Send task update to requesting client
             if (message.id) {
               this.sendResponse(socket, {
@@ -1712,8 +1719,7 @@ class BridgeProcess {
           try {
             result = await this.client.pollTask(params.taskId, onUpdate);
           } finally {
-            this.activeTasks.delete(params.taskId);
-            await this.removePersistedTask(params.taskId).catch(() => {});
+            await this.releaseFinishedTask(params.taskId);
           }
           break;
         }
@@ -1750,10 +1756,65 @@ class BridgeProcess {
     }
   }
 
-  // --- Active task persistence for crash recovery (stored in sessions.json) ---
+  // --- Task record (stored in sessions.json) ---
+  //
+  // Every task this session creates is recorded when it is created. On 2025-11-25
+  // connections the record exists for crash recovery only: the server's `tasks/list` is
+  // the listing, so an entry is dropped once its result has been delivered. On 2026-07-28
+  // connections the tasks extension has no listing — a client can only follow the tasks
+  // it created — so the record is also what `tasks-list` shows there, and entries stay
+  // until the server no longer knows the task (`listTrackedTasks` prunes those).
+
+  /** Whether this connection's `tasks-list` is answered from the local record (2026-07-28). */
+  private tracksTasksLocally(): boolean {
+    return this.client?.getProtocolEra() === 'modern';
+  }
 
   /**
-   * Persist an active task to sessions.json for crash recovery
+   * The tasks this session created, as the server sees them now (`tasks/get` each), for
+   * `tasks-list` on 2026-07-28 connections. A task the server no longer knows — expired
+   * past its TTL, or lost with the server's state — is dropped from the record.
+   */
+  private async listTrackedTasks(): Promise<TasksPage> {
+    const client = this.client;
+    if (!client) {
+      throw new NetworkError('MCP client not connected');
+    }
+    client.assertTasksAvailable();
+    const session = await getSession(this.options.sessionName);
+    const entries = Object.values(session?.activeTasks ?? {}).sort((a, b) =>
+      a.createdAt.localeCompare(b.createdAt)
+    );
+    const tasks: AnyTask[] = [];
+    for (const entry of entries) {
+      try {
+        tasks.push(await client.getTask(entry.taskId));
+      } catch (error) {
+        // Only the server saying "no such task" is proof the task is gone. A timeout, an
+        // auth failure or a malformed answer says nothing about the task, and dropping
+        // the record on it would lose the session's only handle on a task that is still
+        // running — so those fail the listing instead.
+        if (!isUnknownTaskError(error)) throw error;
+        logger.info(
+          `Task ${entry.taskId} is no longer known to the server, dropping it from the record: ${(error as Error).message}`
+        );
+        await this.removePersistedTask(entry.taskId);
+      }
+    }
+    return { tasks };
+  }
+
+  /**
+   * A task's result has been delivered (or the wait for it ended): forget the task where
+   * the record serves crash recovery only, keep it where it is the listing (see above).
+   */
+  private async releaseFinishedTask(taskId: string): Promise<void> {
+    if (this.tracksTasksLocally()) return;
+    await this.removePersistedTask(taskId).catch(() => {});
+  }
+
+  /**
+   * Record a task this session created in sessions.json
    */
   private async persistActiveTask(taskId: string, toolName: string): Promise<void> {
     try {

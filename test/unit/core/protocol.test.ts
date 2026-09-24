@@ -14,8 +14,10 @@ import {
   isModernProtocolVersion,
   isSupportedProtocolVersion,
   discoverUnavailableMessage,
-  tasksUnavailableMessage,
+  tasksNotDeclaredMessage,
   tasksUnsupportedByServerMessage,
+  tasksListUnavailableMessage,
+  taskInputRequiredMessage,
 } from '../../../src/core/protocol.js';
 import { resolveVersionOptions } from '../../../src/core/mcp-client.js';
 import { ClientError } from '../../../src/lib/errors.js';
@@ -50,23 +52,46 @@ describe('protocol version constants', () => {
   });
 });
 
-describe('tasksUnavailableMessage', () => {
+describe('tasksNotDeclaredMessage', () => {
   // Shared by the CLI (which gates tools-call --task/--detach) and McpClient (which
   // gates the tasks/* requests), so both report the identical reason.
-  it('names the negotiated version and the extension', () => {
-    const message = tasksUnavailableMessage('2026-07-28');
-    expect(message).toContain('2026-07-28');
+  it('names the extension and points at the session overview', () => {
+    const message = tasksNotDeclaredMessage('@acme');
     expect(message).toContain('io.modelcontextprotocol/tasks extension');
-    expect(message).toContain('2025-11-25');
+    expect(message).toContain('--task/--detach');
+    expect(message).toContain('mcpc @acme');
+  });
+
+  it('falls back to a placeholder session name', () => {
+    expect(tasksNotDeclaredMessage()).toContain('mcpc @session');
   });
 
   it('has no trailing period, so the bridge\'s ". For details, run: ..." never doubles up', () => {
-    expect(tasksUnavailableMessage('2026-07-28')).not.toMatch(/\.$/);
-    expect(tasksUnavailableMessage(undefined)).not.toMatch(/\.$/);
+    expect(tasksNotDeclaredMessage('@s')).not.toMatch(/\.$/);
+    expect(tasksNotDeclaredMessage()).not.toMatch(/\.$/);
+  });
+});
+
+describe('tasksListUnavailableMessage', () => {
+  it('names the version and the extension, and falls back to the latest modern version', () => {
+    expect(tasksListUnavailableMessage('2026-07-28')).toContain('2026-07-28');
+    expect(tasksListUnavailableMessage('2026-07-28')).toContain('io.modelcontextprotocol/tasks');
+    expect(tasksListUnavailableMessage(undefined)).toContain(MODERN_PROTOCOL_VERSIONS[0]!);
+    expect(tasksListUnavailableMessage(undefined)).not.toMatch(/\.$/);
+  });
+});
+
+describe('taskInputRequiredMessage', () => {
+  it('names the task, what it waits for, and how to cancel it', () => {
+    const message = taskInputRequiredMessage('t-1', ['elicitation/create']);
+    expect(message).toContain('t-1');
+    expect(message).toContain('elicitation/create');
+    expect(message).toContain('tasks-cancel t-1');
+    expect(message).not.toMatch(/\.$/);
   });
 
-  it('falls back to the latest modern version when none is known', () => {
-    expect(tasksUnavailableMessage(undefined)).toContain(MODERN_PROTOCOL_VERSIONS[0]!);
+  it('copes with an empty request list', () => {
+    expect(taskInputRequiredMessage('t-1', [])).not.toContain('()');
   });
 });
 
@@ -83,8 +108,8 @@ describe('tasksUnsupportedByServerMessage', () => {
     expect(tasksUnsupportedByServerMessage()).not.toMatch(/\.$/);
   });
 
-  it('is distinct from the protocol-era reason', () => {
-    expect(tasksUnsupportedByServerMessage()).not.toEqual(tasksUnavailableMessage('2026-07-28'));
+  it('is distinct from the extension-not-declared reason', () => {
+    expect(tasksUnsupportedByServerMessage()).not.toEqual(tasksNotDeclaredMessage());
   });
 });
 

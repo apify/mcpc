@@ -40,6 +40,8 @@ import {
   formatTools,
   formatToolDetail,
   formatServerDetails,
+  formatTask,
+  formatTasks,
   formatDiscoverResult,
   formatResources,
   formatResourceDetail,
@@ -2942,5 +2944,136 @@ describe('formatCallToolResultHuman', () => {
 
     // Correct ordering: Structured content → Metadata
     expect(output.indexOf('Structured content:')).toBeLessThan(output.indexOf('Metadata:'));
+  });
+});
+
+describe('formatServerDetails with the tasks extension', () => {
+  it('lists the extension and offers the task commands on a 2026-07-28 connection', () => {
+    const details: ServerDetails = {
+      protocolVersion: '2026-07-28',
+      capabilities: {
+        tools: { listChanged: false },
+        extensions: { 'io.modelcontextprotocol/tasks': {} },
+      },
+      serverInfo: { name: 'Modern Server', version: '1.0.0' },
+      connectionMode: 'stateless',
+    };
+
+    const output = formatServerDetails(details, '@modern');
+
+    expect(output).toContain('* tasks (extension)');
+    expect(output).not.toContain('not usable on MCP');
+    expect(output).toContain('mcpc @modern tasks-list');
+    expect(output).toContain('mcpc @modern tasks-result <taskId>');
+  });
+
+  it('flags the extension as out of era on a 2025-11-25 connection', () => {
+    const details: ServerDetails = {
+      protocolVersion: '2025-11-25',
+      capabilities: {
+        tools: { listChanged: false },
+        extensions: { 'io.modelcontextprotocol/tasks': {} },
+      },
+      serverInfo: { name: 'Legacy Server', version: '1.0.0' },
+    };
+
+    const output = formatServerDetails(details, '@legacy');
+
+    // The core `tasks` capability is what task commands need there, and it is absent
+    expect(output).toContain('tasks (extension, not usable on MCP 2025-11-25)');
+    expect(output).not.toContain('mcpc @legacy tasks-list');
+    // Rendered once, not again as a generic extension line
+    expect(output.match(/\* tasks/g)).toHaveLength(1);
+  });
+});
+
+describe('formatTask', () => {
+  const createdAt = '2026-09-23T10:00:00Z';
+
+  it('formats a 2025-11-25 task with its ttl and poll interval', () => {
+    const output = formatTask({
+      taskId: 't-1',
+      status: 'working',
+      statusMessage: 'Step 1/3',
+      createdAt,
+      lastUpdatedAt: createdAt,
+      ttl: 90_000,
+      pollInterval: 500,
+    });
+    expect(output).toContain('Task ID: `t-1`');
+    expect(output).toContain('working');
+    expect(output).toContain('Message: Step 1/3');
+    expect(output).toContain('TTL: 1.5 min');
+    expect(output).toContain('Poll interval: 500 ms');
+  });
+
+  it('formats a 2026-07-28 task, including an unlimited ttl', () => {
+    const output = formatTask({
+      taskId: 't-2',
+      status: 'working',
+      createdAt,
+      lastUpdatedAt: createdAt,
+      ttlMs: null,
+      pollIntervalMs: 5_000,
+    });
+    expect(output).toContain('TTL: unlimited');
+    expect(output).toContain('Poll interval: 5 s');
+  });
+
+  it('points at tasks-result once a 2026-07-28 task has completed', () => {
+    const output = formatTask(
+      {
+        taskId: 't-3',
+        status: 'completed',
+        createdAt,
+        lastUpdatedAt: createdAt,
+        ttlMs: 1000,
+        result: { content: [] },
+      },
+      { sessionName: '@s' }
+    );
+    expect(output).toContain('Result: ready');
+    expect(output).toContain('mcpc @s tasks-result t-3');
+  });
+
+  it('shows the error of a failed task and the requests an input_required task waits for', () => {
+    const failed = formatTask({
+      taskId: 't-4',
+      status: 'failed',
+      createdAt,
+      lastUpdatedAt: createdAt,
+      ttlMs: 1000,
+      error: { code: -32603, message: 'disk on fire' },
+    });
+    expect(failed).toContain('Error: disk on fire (code -32603)');
+
+    const waiting = formatTask({
+      taskId: 't-5',
+      status: 'input_required',
+      createdAt,
+      lastUpdatedAt: createdAt,
+      ttlMs: 1000,
+      inputRequests: { name: { method: 'elicitation/create', params: {} } },
+    });
+    expect(waiting).toContain('Waiting for: elicitation/create');
+    expect(waiting).toContain('mcpc cannot answer');
+  });
+});
+
+describe('formatTasks', () => {
+  it('titles the 2026-07-28 listing as the tasks this session created', () => {
+    const task = {
+      taskId: 't-1',
+      status: 'completed' as const,
+      createdAt: 'x',
+      lastUpdatedAt: 'x',
+      ttlMs: null,
+      result: {},
+    };
+    expect(formatTasks([task])).toContain('Tasks (1):');
+    expect(formatTasks([task], { tracked: true })).toContain(
+      'Tasks started from this session (1):'
+    );
+    expect(formatTasks([task], { tracked: true })).toContain('`t-1`');
   });
 });

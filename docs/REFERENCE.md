@@ -487,7 +487,7 @@ Commands:
   tools-list                        List all MCP tools.
   tools-get <name>                  Get details and schema for an MCP tool.
   tools-call <name> [args...]       Call an MCP tool with arguments.
-  tasks-list                        List all MCP tasks.
+  tasks-list                        List MCP tasks (see below).
   tasks-get <taskId>                Get MCP task status.
   tasks-result <taskId>             Get MCP task final result (blocks until the task finishes).
   tasks-cancel <taskId>             Cancel an MCP task.
@@ -649,13 +649,16 @@ Async tasks (--task, --detach):
   --task shows a progress spinner while the task runs on the server.
   If you press Ctrl+C, the task keeps running and a hint with the task ID
   is printed so you can fetch or cancel it later.
-  --detach returns the task ID immediately without waiting.
-  Both flags require a server that advertises the tasks capability and uses
-  MCP protocol 2025-11-25 (on 2026-07-28 servers tasks are an extension not
-  yet supported by mcpc). If it does not, the command fails instead of
-  running the tool synchronously — the flags change the output shape, so the
-  fallback would silently return a result where a task ID is expected.
-  Check per-tool support in tools-list: [task:optional|required|forbidden].
+  --detach returns as soon as the server hands out a task, printing its ID
+  (the whole Task with --json), without waiting for the tool to finish.
+  Both flags need a server with task support and fail otherwise, instead of
+  running the tool synchronously (the flags change the output shape):
+  - MCP 2025-11-25: the server advertises the tasks capability; tools-list
+    flags per-tool support as [task:optional|required|forbidden].
+  - MCP 2026-07-28: the server declares the io.modelcontextprotocol/tasks
+    extension and decides per call whether to create a task. When it runs
+    the tool synchronously instead, --detach prints the tool result. A plain
+    tools-call that the server turns into a task is waited for.
 
 Schema validation:
   --schema <file>       Validate tool schema before calling (save with tools-get --json)
@@ -666,9 +669,13 @@ JSON output (--json):
   `{ content: [{ type, text?, ... }], isError?, structuredContent?: { ... } }`
   Schema: https://modelcontextprotocol.io/specification/2026-07-28/schema#calltoolresult
 
-  With `--detach`: `CreateTaskResult` object:
-  `{ taskId: string, status: string }`
-  Schema: https://modelcontextprotocol.io/specification/2025-11-25/schema#createtaskresult
+  With `--detach`: the created `Task` object,
+  on MCP 2025-11-25: `{ taskId, status, ttl, createdAt, lastUpdatedAt, statusMessage?, pollInterval? }`
+  on MCP 2026-07-28: `{ taskId, status, ttlMs, createdAt, lastUpdatedAt, statusMessage?, pollIntervalMs?,
+                      result? (completed), error? (failed), inputRequests? (input_required) }`
+  or the `CallToolResult` above when a 2026-07-28 server ran the tool synchronously.
+  Schema: https://modelcontextprotocol.io/specification/2025-11-25/schema#task
+          https://github.com/modelcontextprotocol/ext-tasks/blob/main/specification/2026-07-28/tasks.md
 
   With `--x402` on the session: the server's settlement receipt, when it sends
   one, is at `_meta["x402/payment-response"]`.
@@ -679,15 +686,23 @@ JSON output (--json):
 ```text
 Usage: mcpc @<session> tasks-list [options]
 
-List all MCP tasks.
+List MCP tasks (see below).
 
 Options:
   --json  Output in JSON format
 
+Notes:
+  MCP 2025-11-25 servers list every task they hold (tasks/list). The 2026-07-28
+  tasks extension has no listing, so there the command shows the tasks this
+  session created and the server still knows.
+
 JSON output (--json):
-  `{ tasks: Task[] }`:
-  `{ tasks: [{ taskId, status, ttl, createdAt, lastUpdatedAt, statusMessage?, pollInterval? }] }`
+  `{ tasks: Task[] }`, each `Task` shaped:
+  on MCP 2025-11-25: `{ taskId, status, ttl, createdAt, lastUpdatedAt, statusMessage?, pollInterval? }`
+  on MCP 2026-07-28: `{ taskId, status, ttlMs, createdAt, lastUpdatedAt, statusMessage?, pollIntervalMs?,
+                      result? (completed), error? (failed), inputRequests? (input_required) }`
   Schema: https://modelcontextprotocol.io/specification/2025-11-25/schema#task
+          https://github.com/modelcontextprotocol/ext-tasks/blob/main/specification/2026-07-28/tasks.md
 ```
 
 ### `mcpc @<session> tasks-get`
@@ -700,10 +715,18 @@ Get MCP task status.
 Options:
   --json  Output in JSON format
 
+Notes:
+  On MCP 2026-07-28 a finished task carries its outcome: the tool result once
+  completed, the error once failed. Human output shows the status; --json
+  shows everything.
+
 JSON output (--json):
   `Task` object:
-  `{ taskId, status, ttl, createdAt, lastUpdatedAt, statusMessage?, pollInterval? }`
+  on MCP 2025-11-25: `{ taskId, status, ttl, createdAt, lastUpdatedAt, statusMessage?, pollInterval? }`
+  on MCP 2026-07-28: `{ taskId, status, ttlMs, createdAt, lastUpdatedAt, statusMessage?, pollIntervalMs?,
+                      result? (completed), error? (failed), inputRequests? (input_required) }`
   Schema: https://modelcontextprotocol.io/specification/2025-11-25/schema#task
+          https://github.com/modelcontextprotocol/ext-tasks/blob/main/specification/2026-07-28/tasks.md
 ```
 
 ### `mcpc @<session> tasks-result`
@@ -715,6 +738,12 @@ Get MCP task final result (blocks until the task finishes).
 
 Options:
   --json  Output in JSON format
+
+Notes:
+  Waits server-side (tasks/result) on MCP 2025-11-25, and by polling tasks/get
+  at the server's pollIntervalMs on 2026-07-28. A task that waits for client
+  input (input_required) is reported as an error: mcpc never prompts, so it
+  cannot answer; cancel the task or let it time out.
 
 JSON output (--json):
   `CallToolResult` object:
@@ -732,10 +761,19 @@ Cancel an MCP task.
 Options:
   --json  Output in JSON format
 
+Notes:
+  On MCP 2026-07-28 cancellation is cooperative: the server acknowledges the
+  request and the command reports the status it shows right after, which may
+  still be working (the task may even finish). Exit code 2 only when the task
+  had already completed or failed.
+
 JSON output (--json):
-  `Task` object:
-  `{ taskId, status, ttl, createdAt, lastUpdatedAt, statusMessage?, pollInterval? }`
+  `Task` object (its state after the request):
+  on MCP 2025-11-25: `{ taskId, status, ttl, createdAt, lastUpdatedAt, statusMessage?, pollInterval? }`
+  on MCP 2026-07-28: `{ taskId, status, ttlMs, createdAt, lastUpdatedAt, statusMessage?, pollIntervalMs?,
+                      result? (completed), error? (failed), inputRequests? (input_required) }`
   Schema: https://modelcontextprotocol.io/specification/2025-11-25/schema#task
+          https://github.com/modelcontextprotocol/ext-tasks/blob/main/specification/2026-07-28/tasks.md
 ```
 
 ### `mcpc @<session> prompts-list`

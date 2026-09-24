@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Full support for the MCP [Tasks extension](https://modelcontextprotocol.io/extensions/tasks/overview) (`io.modelcontextprotocol/tasks`) on MCP 2026-07-28 servers, ahead of the official SDK: `tools-call --task`/`--detach`, `tasks-get`, `tasks-result` and `tasks-cancel` now work there too, mcpc declares the extension on every request, and a server that answers a plain `tools-call` with a task is followed to its result. `tasks-list` shows the tasks the session created, since the extension has no server-side listing. Everything keeps working unchanged on 2025-11-25 servers, where tasks are part of the core protocol.
+
+### Changed
+
+- `tools-call --detach --json` prints the whole created `Task` object (id, status, TTL, poll interval) instead of just `{ taskId, status }`. On a 2026-07-28 server that runs a detached call synchronously — the server decides per call whether to create a task — it prints the tool result instead, so check for `taskId`.
+- `tasks-cancel` on a 2026-07-28 server reports the status the server shows right after acknowledging the request (cancellation is cooperative there, so a task may still be `working` for a moment) and exits with code 2 only when the task had already finished.
+
 ## [0.7.0] - 2026-09-23
 
 ### Added

@@ -892,7 +892,7 @@ Where `mcpc` stands on each part of the MCP specification:
 | 🔄 [**Sessions**](#sessions)                         | ✅ Supported (with automatic keepalive)                           |
 | 📖 [**Server instructions**](#server-instructions)   | ✅ Supported                                                      |
 | 🔧 [**Tools**](#tools)                               | ✅ Supported (incl. list changed notifications)                   |
-| ⏳ [**Async tasks**](#async-tasks)                   | ✅ Supported (2025-11-25 servers; 2026-07-28 tasks extension planned) |
+| ⏳ [**Async tasks**](#async-tasks)                   | ✅ Supported (2025-11-25 core tasks and the 2026-07-28 tasks extension) |
 | 💬 [**Prompts**](#prompts)                           | ✅ Supported (incl. list changed notifications)                   |
 | 📦 [**Resources**](#resources)                       | ✅ Supported (incl. subscriptions and list changed notifications) |
 | 🧠 [**Skills**](#skills)                             | ✅ Supported (skills extension, 2026-07-28 servers)              |
@@ -942,13 +942,13 @@ client and server capabilities. Where `mcpc` stands on the
 | [Enterprise-managed authorization](https://modelcontextprotocol.io/extensions/auth/enterprise-managed-authorization) | `io.modelcontextprotocol/enterprise-managed-authorization` | ✅ `mcpc login <server> --grant id-jag`                                        |
 | [Skills](https://modelcontextprotocol.io/extensions/skills/overview)                                           | `io.modelcontextprotocol/skills`                           | ✅ [`skills-list`, `skills-get`, `resources-directory-read`](#skills) (MCP 2026-07-28 servers) |
 | [MCP Apps](https://modelcontextprotocol.io/extensions/apps/overview)                                           | `io.modelcontextprotocol/ui`                               | ❌ Interactive HTML interfaces have no equivalent on a terminal                |
-| [Tasks](https://modelcontextprotocol.io/extensions/tasks/overview)                                             | `io.modelcontextprotocol/tasks`                            | 🚧 Task commands work on 2025-11-25 servers, where tasks are part of the core protocol |
+| [Tasks](https://modelcontextprotocol.io/extensions/tasks/overview)                                             | `io.modelcontextprotocol/tasks`                            | ✅ [`tools-call --task/--detach`, `tasks-get`, `tasks-result`, `tasks-cancel`, `tasks-list`](#async-tasks) (MCP 2026-07-28 servers) |
 
-The two auth extensions are the ones a client declares: `mcpc` declares both to every server it
-connects to, so a server can tell what this client can do before any token is issued. Skills is
-declared by servers only — a client issues `skills/list` and `skills/get` once it sees that
-declaration. `mcpc @session` lists what a server declares in return, and says which of those
-`mcpc` can use.
+The two auth extensions and tasks are the ones a client declares: `mcpc` declares all three to
+every server it connects to, so a server can tell what this client can do before any token is
+issued, and can answer a tool call with a task handle. Skills is declared by servers only — a
+client issues `skills/list` and `skills/get` once it sees that declaration. `mcpc @session` lists
+what a server declares in return, and says which of those `mcpc` can use.
 
 #### Server instructions
 
@@ -1252,19 +1252,30 @@ mcpc @apify tasks-cancel <taskId>
 
 With `--task`, the CLI shows a progress spinner with elapsed time, server status messages,
 and progress notifications. Press **ESC** during execution to detach and get the task ID
-for later retrieval. With `--detach`, the task starts and returns the task ID immediately.
-Use `tasks-result <taskId>` to fetch the final `CallToolResult` payload once the task
-completes.
+for later retrieval. With `--detach`, the task starts and its ID is printed immediately
+(`--json` prints the whole created `Task`: ID, status, TTL, poll interval). Use
+`tasks-result <taskId>` to fetch the final `CallToolResult` payload once the task completes.
 
-`tools-list` and `tools-get` show task support annotations per tool:
-`[task:optional]`, `[task:required]`, or `[task:forbidden]`.
+Tasks exist in two forms, and `mcpc` speaks both behind the same commands:
 
-Task commands require a server that advertises the tasks capability and uses protocol
-`2025-11-25`. In `2026-07-28` tasks moved to the `io.modelcontextprotocol/tasks` extension,
-which `mcpc` does not support yet. When either is missing, `--task`/`--detach` and the
-`tasks-*` commands fail with an error explaining which of the two it is — they never fall
-back to a plain synchronous call, because the flags change the shape of the output and
-`--detach` callers would be left parsing a task ID that is not there.
+- On MCP `2025-11-25` servers tasks are part of the core protocol. The server advertises the
+  `tasks` capability, `tools-list` and `tools-get` flag per-tool support as `[task:optional]`,
+  `[task:required]` or `[task:forbidden]`, and the client asks for a task with `--task`.
+- On MCP `2026-07-28` servers tasks are the [`io.modelcontextprotocol/tasks`](https://modelcontextprotocol.io/extensions/tasks/overview)
+  extension, which `mcpc` declares on every request. Task creation is the **server's** call:
+  a server that declares the extension may answer any `tools-call` with a task, which `mcpc`
+  then polls (at the interval the server asks for) until the result is in — with or without
+  `--task`. Conversely, a `--detach` call the server chooses to run synchronously prints the
+  tool result instead of a task, so scripts should check for `taskId`. The extension has no
+  server-side listing, so `tasks-list` shows the tasks the session created and the server
+  still knows, and `tasks-cancel` reports the status the server shows right after
+  acknowledging the request (cancellation is cooperative there). A task that stops to ask
+  for input (`input_required`) is reported as an error — `mcpc` never prompts.
+
+When a server offers neither, `--task`/`--detach` and the `tasks-*` commands fail with an
+error saying so — they never fall back to a plain synchronous call, because the flags change
+the shape of the output and `--detach` callers would be left parsing a task ID that is not
+there.
 
 ## Configuration
 
