@@ -1082,9 +1082,10 @@ describe('formatServerDetails', () => {
     const output = formatServerDetails(details, '@notion');
 
     expect(output).toContain('Notion MCP (version: 1.2.0)');
-    expect(output).toContain("Notion's official MCP server.");
-    expect(output).toContain('Use your workspace as a system of record.');
-    expect(output).toContain('https://developers.notion.com/docs/mcp');
+    expect(output).toContain(
+      "* Description: Notion's official MCP server.\n               Use your workspace as a system of record."
+    );
+    expect(output).toContain('* Website: https://developers.notion.com/docs/mcp');
   });
 
   it('keeps the server line alone when no description or website URL is advertised', () => {

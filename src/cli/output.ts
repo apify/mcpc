@@ -1869,13 +1869,17 @@ function formatServerIdentity(serverInfo: Implementation): string[] {
     chalk.bold('Server:') + ` ${serverInfo.name} (version: ${serverInfo.version || 'N/A'})`,
   ];
 
+  const bullet = chalk.dim('*');
   const description = serverInfo.description?.trim();
   if (description) {
-    lines.push(...description.split('\n').map((line) => chalk.gray(line)));
+    // Continuation lines of a multi-line description stay aligned under its first line
+    const [first, ...rest] = description.split('\n');
+    const continuationIndent = ' '.repeat('* Description: '.length);
+    lines.push(`${bullet} Description: ${first}`, ...rest.map((line) => continuationIndent + line));
   }
 
   if (serverInfo.websiteUrl) {
-    lines.push(theme.cyan(serverInfo.websiteUrl));
+    lines.push(`${bullet} Website: ${theme.cyan(serverInfo.websiteUrl)}`);
   }
 
   return lines;
