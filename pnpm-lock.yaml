@@ -26,6 +26,9 @@ importers:
       commander:
         specifier: ^15.0.0
         version: 15.0.0
+      mcpfy-pulse:
+        specifier: 0.1.4
+        version: 0.1.4
       ora:
         specifier: ^9.4.1
         version: 9.4.1
@@ -1846,6 +1849,11 @@ packages:
   math-intrinsics@1.1.0:
     resolution: {integrity: sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g==}
     engines: {node: '>= 0.4'}
+
+  mcpfy-pulse@0.1.4:
+    resolution: {integrity: sha512-sp7GYZoePFbYaAKG/9uuE8AQb9yR1c1GDcXPuKIArWpE0reG22f3OBogzDmTOIB/qcsvodD/72xfNT5JkhU4wA==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    hasBin: true
 
   mdast-util-find-and-replace@1.1.1:
     resolution: {integrity: sha512-9cKl33Y21lyckGzpSmEQnIDjEfeeWelN5s1kUW1LwdB0Fkuq2u+4GdqcGEygYxJE8GVqCl0741bYXHgamfWAZA==}
@@ -4389,6 +4397,8 @@ snapshots:
   marked@18.0.11: {}
 
   math-intrinsics@1.1.0: {}
+
+  mcpfy-pulse@0.1.4: {}
 
   mdast-util-find-and-replace@1.1.1:
     dependencies:

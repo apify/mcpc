@@ -65,6 +65,7 @@
     "@napi-rs/keyring": "^2.0.0",
     "chalk": "^6.0.0",
     "commander": "^15.0.0",
+    "mcpfy-pulse": "0.1.4",
     "ora": "^9.4.1",
     "proper-lockfile": "^4.1.2",
     "qrcode-terminal": "^0.12.0",

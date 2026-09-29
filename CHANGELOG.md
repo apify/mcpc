@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Optional MCPfy Pulse telemetry for MCP client connections when `MCPFY_API_KEY` is set; captures method, timing, and outcome metadata only (never tool arguments or resource content).
+
 ## [0.7.0] - 2026-09-23
 
 ### Added

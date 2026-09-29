@@ -13,6 +13,7 @@ import { McpClient, type McpClientOptions } from './mcp-client.js';
 import { createTransportFromConfig } from './transports.js';
 import { type ServerConfig } from '../lib/types.js';
 import { createLogger } from '../lib/logger.js';
+import { wrapTransportWithPulse } from '../lib/pulse/telemetry.js';
 
 /**
  * Client information for identification
@@ -185,7 +186,8 @@ export async function createMcpClient(options: CreateMcpClientOptions): Promise<
     if (options.onStderrLine) {
       transportOptions.onStderrLine = options.onStderrLine;
     }
-    const transport = createTransportFromConfig(options.serverConfig, transportOptions);
+    const rawTransport = createTransportFromConfig(options.serverConfig, transportOptions);
+    const transport = await wrapTransportWithPulse(rawTransport, options.clientInfo);
     await client.connect(transport);
   }
 
