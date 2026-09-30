@@ -87,6 +87,10 @@ import { IpcLineBuffer } from '../lib/ipc-line-buffer.js';
 // Maximum IPC buffer size (10 MB) — destroy socket if exceeded
 const MAX_BUFFER_SIZE = 10 * 1024 * 1024;
 
+// How long a bridge waits before re-reading sessions.json to confirm that another
+// bridge has really taken over its session (see exitIfSuperseded).
+const SUPERSEDED_CONFIRM_DELAY_MILLIS = 1000;
+
 const logger = createLogger('bridge');
 
 interface BridgeOptions {
@@ -1064,12 +1068,69 @@ class BridgeProcess {
       return;
     }
 
+    if (await this.exitIfSuperseded()) {
+      return;
+    }
+
     logger.debug('Sending keepalive ping');
     await this.client.ping();
     logger.debug('Keepalive ping successful');
 
     // Update lastSeenAt on successful ping
     await this.updateLastSeenAt();
+  }
+
+  /**
+   * Exit when sessions.json has been re-pointed at another bridge for this session.
+   *
+   * The CLI replaces a bridge whenever it believes the old one is dead. When that belief
+   * is wrong (a timed-out `tasklist` on Windows reported every PID dead, #427) or two CLI
+   * processes restart the same session in parallel (#156), the superseded bridge is never
+   * told to exit: nothing references its PID anymore and its own keepalive pings keep
+   * succeeding, so it lives on — with its stdio server child — until the machine reboots.
+   * Checking on every keepalive tick whether this bridge is still the registered one
+   * closes that gap for every such race, present and future.
+   *
+   * Only a *different* PID counts. A missing one means a CLI cleared the field because it
+   * believed this bridge dead; the session's next use then registers a replacement, which
+   * lands here. The takeover is confirmed on a second read shortly after the first.
+   *
+   * @returns true when the bridge is shutting down because it was superseded
+   */
+  private async exitIfSuperseded(): Promise<boolean> {
+    const registeredPid = await this.readRegisteredPid();
+    if (registeredPid === undefined || registeredPid === process.pid) {
+      return false;
+    }
+    await new Promise((resolve) => setTimeout(resolve, SUPERSEDED_CONFIRM_DELAY_MILLIS));
+    if (this.isShuttingDown) {
+      return true;
+    }
+    if ((await this.readRegisteredPid()) !== registeredPid) {
+      return false;
+    }
+    logger.warn(
+      `Another bridge (PID ${registeredPid}) is registered for this session; ` +
+        `exiting so this one (PID ${process.pid}) is not left orphaned`
+    );
+    // The replacement may have resumed this bridge's MCP session ID (restartBridge hands it
+    // over), so the server-side session is now its to end — no HTTP DELETE from here.
+    await this.shutdown({ terminateMcpSession: false });
+    return true;
+  }
+
+  /**
+   * The bridge PID sessions.json currently holds for this session; undefined when the
+   * field is unset or the file cannot be read (a read error is never grounds to exit).
+   */
+  private async readRegisteredPid(): Promise<number | undefined> {
+    try {
+      const session = await getSession(this.options.sessionName);
+      return session?.pid;
+    } catch (error) {
+      logger.debug('Failed to read the registered bridge PID:', error);
+      return undefined;
+    }
   }
 
   /**
@@ -1858,8 +1919,11 @@ class BridgeProcess {
 
   /**
    * Gracefully shutdown the bridge
+   *
+   * @param options.terminateMcpSession - Whether to end the server-side MCP session (HTTP
+   *   DELETE) on the way out. Defaults to true; false when another bridge owns it now.
    */
-  private async shutdown(): Promise<void> {
+  private async shutdown(options?: { terminateMcpSession?: boolean }): Promise<void> {
     if (this.isShuttingDown) {
       return;
     }
@@ -1867,7 +1931,7 @@ class BridgeProcess {
 
     logger.info('Shutting down bridge...');
 
-    await this.cleanup();
+    await this.cleanup(options);
 
     process.exit(0);
   }
@@ -1875,7 +1939,7 @@ class BridgeProcess {
   /**
    * Clean up resources
    */
-  private async cleanup(): Promise<void> {
+  private async cleanup(options?: { terminateMcpSession?: boolean }): Promise<void> {
     // Stop keepalive ping
     if (this.keepaliveInterval) {
       clearInterval(this.keepaliveInterval);
@@ -1927,7 +1991,7 @@ class BridgeProcess {
     // Close MCP client
     if (this.client) {
       try {
-        await this.client.close();
+        await this.client.close({ terminateSession: options?.terminateMcpSession ?? true });
         logger.debug('MCP client closed');
       } catch (error) {
         logger.warn('Failed to close MCP client:', error);
