@@ -165,6 +165,7 @@ export const KNOWN_SESSION_COMMANDS = [
   'skills-get',
   'prompts-list',
   'prompts-get',
+  'completion-complete',
   'logging-set-level',
   'ping',
   'server-discover',
@@ -674,6 +675,38 @@ export async function readStdinArgs(): Promise<Record<string, unknown>> {
     // Start reading
     process.stdin.resume();
   });
+}
+
+/**
+ * Resolve a command's arguments the way `tools-call`, `prompts-get` and
+ * `completion-complete` all do: positional `key:=value` pairs or one inline JSON
+ * object win; otherwise piped stdin is read as JSON; otherwise there are none.
+ *
+ * Single home for the rule so the three commands cannot drift apart.
+ */
+export async function readCommandArgs(
+  args: string[] | undefined
+): Promise<Record<string, unknown>> {
+  if (args && args.length > 0) {
+    return parseCommandArgs(args);
+  }
+  if (hasStdinData()) {
+    return await readStdinArgs();
+  }
+  return {};
+}
+
+/**
+ * Coerce auto-parsed argument values to strings for the MCP methods whose arguments
+ * are string-only (`prompts/get`, `completion/complete`): a value that was parsed as a
+ * number, boolean, object or array is serialized back to JSON text.
+ */
+export function stringifyArgValues(args: Record<string, unknown>): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(args)) {
+    result[key] = typeof value === 'string' ? value : JSON.stringify(value);
+  }
+  return result;
 }
 
 /**

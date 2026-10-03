@@ -24,6 +24,7 @@ import {
   ReadResourceRequestSchema,
   ListPromptsRequestSchema,
   GetPromptRequestSchema,
+  CompleteRequestSchema,
   SetLevelRequestSchema,
   PingRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
@@ -268,6 +269,7 @@ export class ProxyServer {
           tools: {},
           resources: {},
           prompts: {},
+          completions: {},
           logging: {},
         },
         // Pass upstream server's instructions to proxy clients (if available)
@@ -318,6 +320,11 @@ export class ProxyServer {
 
     mcpServer.setRequestHandler(GetPromptRequestSchema, async (request) => {
       return await client.getPrompt(request.params.name, request.params.arguments);
+    });
+
+    // Completions (the upstream client refuses when the upstream server lacks the capability)
+    mcpServer.setRequestHandler(CompleteRequestSchema, async (request) => {
+      return await client.complete(request.params);
     });
 
     // Logging

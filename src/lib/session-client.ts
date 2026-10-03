@@ -20,6 +20,8 @@ import type {
   ReadResourceResult,
   ListPromptsResult,
   GetPromptResult,
+  CompleteRequestParams,
+  CompleteResult,
   LoggingLevel,
   IMcpClient,
   ServerDetails,
@@ -354,6 +356,18 @@ export class SessionClient implements IMcpClient {
           this.requestTimeoutSecs
         ) as Promise<GetPromptResult>,
       'getPrompt'
+    );
+  }
+
+  async complete(params: CompleteRequestParams): Promise<CompleteResult> {
+    return this.withRetry(
+      () =>
+        this.bridgeClient.request(
+          'complete',
+          params,
+          this.requestTimeoutSecs
+        ) as Promise<CompleteResult>,
+      'complete'
     );
   }
 

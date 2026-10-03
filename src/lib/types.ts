@@ -27,6 +27,8 @@ import type {
   ListPromptsResult,
   GetPromptRequest,
   GetPromptResult,
+  CompleteRequestParams,
+  CompleteResult,
   SubscribeRequest,
   UnsubscribeRequest,
   LoggingLevel,
@@ -67,6 +69,8 @@ export type {
   ListPromptsResult,
   GetPromptRequest,
   GetPromptResult,
+  CompleteRequestParams,
+  CompleteResult,
   SubscribeRequest,
   UnsubscribeRequest,
   LoggingLevel,
@@ -659,6 +663,11 @@ export interface IMcpClient {
   readResourceDirectory(uri: string, cursor?: string): Promise<ReadResourceDirectoryResult>;
   listPrompts(cursor?: string): Promise<ListPromptsResult>;
   getPrompt(name: string, args?: Record<string, string>): Promise<GetPromptResult>;
+  /**
+   * Ask the server to suggest values for a prompt argument or resource-template variable
+   * (`completion/complete`). Requires the server to declare the `completions` capability.
+   */
+  complete(params: CompleteRequestParams): Promise<CompleteResult>;
   setLoggingLevel(level: LoggingLevel): Promise<void>;
 
   // Task operations (async tool execution)

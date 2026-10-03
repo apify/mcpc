@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- New `completion-complete prompt|resource <ref> <arg> [arg:=val ...]` command asks the server for argument suggestions (MCP `completion/complete`), taking the arguments filled in so far in the same syntax as `prompts-get`. The `--proxy` server forwards completions too.
+
 ### Security
 
 - The `env` of a stdio config entry, where API tokens such as `GITHUB_PERSONAL_ACCESS_TOKEN` usually live, is now stored in the OS keychain and delivered to the bridge over IPC like session headers, instead of being written in plaintext to `sessions.json`, printed by `mcpc --json` and `mcpc @session`, and passed on the bridge's command line where `ps` showed it to every local user. Verbose output and the bridge log no longer record header values, env values, or tool-call arguments either, and bridge log files are created owner-only.

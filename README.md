@@ -175,6 +175,7 @@ MCP session commands (after connecting):
   <@session> tasks-cancel <taskId>
   <@session> prompts-list
   <@session> prompts-get <name> [arg:=val ... | <json> | <stdin]
+  <@session> completion-complete prompt|resource <ref> <arg> [arg:=val ... | <json> | <stdin]
   <@session> resources-list
   <@session> resources-read <uri> [-o <file> | --raw]
   <@session> resources-subscribe <uri> <file>
@@ -903,7 +904,7 @@ Where `mcpc` stands on each part of the MCP specification:
 | 🔍 [**Server discovery**](#server-discovery)          | ✅ Supported (`server/discover`, 2026-07-28 servers)               |
 | 📁 **Roots**                                         | ❌ Not planned (deprecated by MCP)                                |
 | ❓ **Elicitation**                                   | 🚧 Planned                                                       |
-| 🔤 **Completion**                                    | 🚧 Planned                                                       |
+| 🔤 **Completion**                                    | ✅ Supported (`completion-complete`)                              |
 | 🤖 **Sampling**                                      | ❌ Not applicable (no LLM access)                                 |
 
 Beyond the interactive browser login, the **Authorization** row above also covers the OAuth
@@ -1061,6 +1062,10 @@ mcpc @apify prompts-list
 
 # Get a prompt with arguments
 mcpc @apify prompts-get analyze-website url:=https://example.com
+
+# Ask the server to suggest values for a prompt argument (or a resource template
+# variable with `resource <uri-template>`); pass the arguments filled in so far
+mcpc @apify completion-complete prompt analyze-website url url:=https://ex
 ```
 
 <!-- TODO: Add example of prompt templates -->

@@ -150,6 +150,7 @@ mcpc/
   - Tools: `tools-list`, `tools-get`, `tools-call` (with `--task`/`--detach` for async tasks, `--schema`/`--schema-mode` for schema validation)
   - Resources: `resources-list`, `resources-read`, `resources-subscribe`, `resources-unsubscribe`, `resources-templates-list`, `resources-directory-read`
   - Prompts: `prompts-list`, `prompts-get`
+  - Completions: `completion-complete` (argument suggestions for prompts and resource templates)
   - Tasks: `tasks-list`, `tasks-get`, `tasks-result`, `tasks-cancel`
   - Skills: `skills-list`, `skills-get` (io.modelcontextprotocol/skills extension, 2026-07-28+)
   - Other: `grep`, `logs`, `ping`, `logging-set-level`, `restart`, `close`, `help`
@@ -738,6 +739,7 @@ Bridge logs location: `~/.mcpc/logs/bridge-<session>.log`
   - `tools-list`, `tools-get`, `tools-call` (incl. `--task`/`--detach` async execution and `--schema` validation)
   - `resources-list`, `resources-read`, `resources-subscribe`, `resources-unsubscribe`, `resources-templates-list`, `resources-directory-read`
   - `prompts-list`, `prompts-get`
+  - `completion-complete` (prompt argument and resource template variable suggestions)
   - `tasks-list`, `tasks-get`, `tasks-result`, `tasks-cancel`
   - `skills-list`, `skills-get` (skills extension: manifest-verified reads)
   - `grep` (per-session and global), `logs` (with `--follow`)

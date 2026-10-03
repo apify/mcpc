@@ -289,6 +289,47 @@ describe('removed protocol methods are rejected per era', () => {
   });
 });
 
+describe('completion/complete', () => {
+  const params = {
+    ref: { type: 'ref/prompt' as const, name: 'code_review' },
+    argument: { name: 'language', value: 'py' },
+  };
+
+  it('refuses when the server declares no completions capability, without calling the SDK', async () => {
+    stubSdkClient.complete = vi.fn();
+    const client = await connectClient({ era: 'legacy' });
+    await expect(client.complete(params)).rejects.toThrow(
+      /^This server does not declare the completions capability/
+    );
+    await expect(client.complete(params)).rejects.toThrow(
+      expect.objectContaining({ message: expect.not.stringMatching(/\.$/) })
+    );
+    expect(stubSdkClient.complete).not.toHaveBeenCalled();
+  });
+
+  it('forwards the params verbatim with the request options in either era', async () => {
+    const result = { completion: { values: ['python', 'pytorch'], total: 2, hasMore: false } };
+    for (const era of ['legacy', 'modern'] as const) {
+      stubSdkClient.getServerCapabilities = vi.fn().mockReturnValue({ completions: {} });
+      stubSdkClient.complete = vi.fn().mockResolvedValue(result);
+      const client = await connectClient({ era });
+      const withContext = { ...params, context: { arguments: { framework: 'flask' } } };
+      await expect(client.complete(withContext)).resolves.toEqual(result);
+      expect(stubSdkClient.complete).toHaveBeenCalledWith(withContext, expect.anything());
+    }
+  });
+
+  it('wraps SDK failures in a ServerError naming the argument and reference', async () => {
+    stubSdkClient.getServerCapabilities = vi.fn().mockReturnValue({ completions: {} });
+    stubSdkClient.complete = vi.fn().mockRejectedValue(new Error('boom'));
+    const client = await connectClient({ era: 'legacy' });
+    await expect(client.complete(params)).rejects.toThrow(ServerError);
+    await expect(client.complete(params)).rejects.toThrow(
+      'Failed to complete argument language of prompt code_review: boom'
+    );
+  });
+});
+
 describe('ping', () => {
   it('sends ping on a legacy connection', async () => {
     const client = await connectClient({ era: 'legacy' });

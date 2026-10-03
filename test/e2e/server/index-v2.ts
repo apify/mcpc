@@ -42,6 +42,7 @@ import {
   callTestTool,
   readTestResource,
   getTestPrompt,
+  completeTestArgument,
   handleOAuthEndpoints,
 } from './fixtures.js';
 
@@ -56,6 +57,7 @@ const EXPECTED_BEARER_TOKEN = process.env.EXPECTED_BEARER_TOKEN || '';
 const NO_TOOLS = process.env.NO_TOOLS === 'true';
 const NO_RESOURCES = process.env.NO_RESOURCES === 'true';
 const NO_PROMPTS = process.env.NO_PROMPTS === 'true';
+const NO_COMPLETIONS = process.env.NO_COMPLETIONS === 'true';
 const WITH_SKILLS = process.env.WITH_SKILLS === 'true';
 const WITH_OTHER_EXTENSIONS = process.env.WITH_OTHER_EXTENSIONS === 'true';
 const SKILLS_TAMPER = process.env.SKILLS_TAMPER;
@@ -118,6 +120,9 @@ function createTestServer(): Server {
   }
   if (!NO_PROMPTS) {
     capabilities.prompts = { listChanged: true };
+  }
+  if (!NO_COMPLETIONS) {
+    capabilities.completions = {};
   }
   // Declare the skills extension, with directory reads, when skills are served.
   // Skills are modern-era only: the extension is specified against 2026-07-28 and
@@ -329,6 +334,27 @@ function createTestServer(): Server {
     });
   }
 
+  // Completions for the shared prompts and resource templates (the SDK refuses the
+  // handler unless the capability above is declared)
+  if (!NO_COMPLETIONS) {
+    server.setRequestHandler('completion/complete', async (request) => {
+      await maybeDelay();
+      if (shouldFail()) {
+        throw new Error('Simulated failure');
+      }
+
+      const { ref, argument, context } = request.params;
+      const result = completeTestArgument(ref, argument, context);
+      if (!result) {
+        throw new ProtocolError(
+          INVALID_PARAMS,
+          `Nothing to complete for ${JSON.stringify(ref)} argument ${argument.name}`
+        );
+      }
+      return result;
+    });
+  }
+
   return server;
 }
 
@@ -502,6 +528,7 @@ async function main() {
     if (NO_TOOLS) console.log(`  Tools: DISABLED`);
     if (NO_RESOURCES) console.log(`  Resources: DISABLED`);
     if (NO_PROMPTS) console.log(`  Prompts: DISABLED`);
+    if (NO_COMPLETIONS) console.log(`  Completions: DISABLED`);
     if (WITH_SKILLS) {
       console.log(`  Skills: ENABLED${SKILLS_TAMPER ? ` (tampered: ${SKILLS_TAMPER})` : ''}`);
     }

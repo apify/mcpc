@@ -5,6 +5,8 @@
 
 import chalk from 'chalk';
 import type {
+  CompleteRequestParams,
+  CompleteResult,
   DiscoverResult,
   GetPromptResult,
   Implementation,
@@ -1232,6 +1234,59 @@ function formatPromptResult(result: GetPromptResult): string {
 }
 
 /**
+ * Format a `CompleteResult` for humans: one suggestion per line, a footer when the server
+ * says the list is partial, and a hint showing how to use the first suggestion.
+ */
+export function formatCompletionResult(
+  result: CompleteResult,
+  request: Pick<CompleteRequestParams, 'ref' | 'argument'>,
+  target: string
+): string {
+  const { values, total, hasMore } = result.completion;
+  const lines: string[] = [];
+
+  if (values.length === 0) {
+    lines.push(chalk.gray(`(no suggestions for ${request.argument.name})`));
+  } else {
+    lines.push(...values);
+  }
+
+  // Footer only when it says something the list itself does not
+  if (hasMore || (total !== undefined && total !== values.length)) {
+    const shown = total !== undefined ? `${values.length} of ${total}` : `${values.length}`;
+    const more = hasMore ? ', more available' : '';
+    lines.push('');
+    lines.push(chalk.dim(`Showing ${shown} suggestions${more}`));
+  }
+
+  const first = values[0];
+  if (first !== undefined) {
+    lines.push('');
+    if (request.ref.type === 'ref/prompt') {
+      const arg = `${request.argument.name}:=${quoteShellArg(first)}`;
+      lines.push(
+        chalk.dim(
+          `To use it, run: mcpc ${target} prompts-get ${quoteShellArg(request.ref.name)} ${arg}`
+        )
+      );
+    } else {
+      const variable = `{${request.argument.name}}`;
+      const uri = request.ref.uri;
+      if (uri.includes(variable)) {
+        const expanded = uri.split(variable).join(encodeURIComponent(first));
+        lines.push(
+          chalk.dim(`To read it, run: mcpc ${target} resources-read ${quoteShellArg(expanded)}`)
+        );
+      } else {
+        lines.push(chalk.dim(`To see the template, run: mcpc ${target} resources-templates-list`));
+      }
+    }
+  }
+
+  return lines.join('\n');
+}
+
+/**
  * Format a single content block from a prompt message
  */
 function formatPromptContent(content: PromptMessage['content']): string {
@@ -2055,6 +2110,13 @@ export function formatServerDetails(
     commands.push(`${bullet} ${bt}mcpc ${target} prompts-list${bt}`);
     commands.push(
       `${bullet} ${bt}mcpc ${target} prompts-get <name> [arg1:=val1 ... | <args-json> | <stdin]${bt}`
+    );
+  }
+
+  // Completions work the same in every era; only the server's declaration gates them
+  if (capabilities?.completions) {
+    commands.push(
+      `${bullet} ${bt}mcpc ${target} completion-complete prompt|resource <ref> <arg> [arg1:=val1 ...]${bt}`
     );
   }
 

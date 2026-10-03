@@ -34,6 +34,7 @@ New to mcpc? Start with the [README](../README.md), or run `mcpc help --skill` f
   - [`mcpc @<session> tasks-cancel`](#mcpc-session-tasks-cancel)
   - [`mcpc @<session> prompts-list`](#mcpc-session-prompts-list)
   - [`mcpc @<session> prompts-get`](#mcpc-session-prompts-get)
+  - [`mcpc @<session> completion-complete`](#mcpc-session-completion-complete)
   - [`mcpc @<session> resources-list`](#mcpc-session-resources-list)
   - [`mcpc @<session> resources-read`](#mcpc-session-resources-read)
   - [`mcpc @<session> resources-subscribe`](#mcpc-session-resources-subscribe)
@@ -87,6 +88,7 @@ MCP session commands (after connecting):
   <@session> tasks-cancel <taskId>
   <@session> prompts-list
   <@session> prompts-get <name> [arg:=val ... | <json> | <stdin]
+  <@session> completion-complete prompt|resource <ref> <arg> [arg:=val ... | <json> | <stdin]
   <@session> resources-list
   <@session> resources-read <uri> [-o <file> | --raw]
   <@session> resources-subscribe <uri> <file>
@@ -472,39 +474,40 @@ Usage: mcpc @<session> [options] [command]
 Show MCP session info or execute commands.
 
 Options:
-  --json                            Output in JSON format for scripting and code mode
-  --verbose                         Enable debug logging
-  --profile <name>                  OAuth profile override
-  --timeout <seconds>               Request timeout in seconds (default: 60)
-  --max-chars <n>                   Truncate output to n characters (ignored in --json mode)
-  --insecure                        Skip TLS certificate verification (for self-signed certs)
-  -h, --help                        Display help
+  --json                                  Output in JSON format for scripting and code mode
+  --verbose                               Enable debug logging
+  --profile <name>                        OAuth profile override
+  --timeout <seconds>                     Request timeout in seconds (default: 60)
+  --max-chars <n>                         Truncate output to n characters (ignored in --json mode)
+  --insecure                              Skip TLS certificate verification (for self-signed certs)
+  -h, --help                              Display help
 
 Commands:
-  close                             Close MCP session.
-  restart                           Restart MCP session (losing all state).
-  grep <pattern>                    Search MCP session objects.
-  tools-list                        List all MCP tools.
-  tools-get <name>                  Get details and schema for an MCP tool.
-  tools-call <name> [args...]       Call an MCP tool with arguments.
-  tasks-list                        List all MCP tasks.
-  tasks-get <taskId>                Get MCP task status.
-  tasks-result <taskId>             Get MCP task final result (blocks until the task finishes).
-  tasks-cancel <taskId>             Cancel an MCP task.
-  resources-list                    List all MCP resources.
-  resources-read <uri>              Read an MCP resource by URI.
-  resources-subscribe <uri> <file>  Subscribe to an MCP resource and sync it to a local file.
-  resources-unsubscribe <uri>       Stop syncing a subscribed MCP resource (keeps the local file).
-  resources-templates-list          List MCP resource templates.
-  skills-list                       List the agent skills the server serves.
-  skills-get <skill> [file]         Read a skill's SKILL.md, or one of its files (see below).
-  resources-directory-read <uri>    List a directory resource's direct children.
-  prompts-list                      List all MCP prompts.
-  prompts-get <name> [args...]      Get an MCP prompt with arguments.
-  logging-set-level <level>         Set MCP server logging level (deprecated).
-  ping                              Ping the MCP server.
-  server-discover                   Ask the server what it supports (MCP 2026-07-28+).
-  logs                              Show or follow the bridge log file for this session.
+  close                                   Close MCP session.
+  restart                                 Restart MCP session (losing all state).
+  grep <pattern>                          Search MCP session objects.
+  tools-list                              List all MCP tools.
+  tools-get <name>                        Get details and schema for an MCP tool.
+  tools-call <name> [args...]             Call an MCP tool with arguments.
+  tasks-list                              List all MCP tasks.
+  tasks-get <taskId>                      Get MCP task status.
+  tasks-result <taskId>                   Get a task's result (waits until it finishes).
+  tasks-cancel <taskId>                   Cancel an MCP task.
+  resources-list                          List all MCP resources.
+  resources-read <uri>                    Read an MCP resource by URI.
+  resources-subscribe <uri> <file>        Subscribe to an MCP resource and sync it to a local file.
+  resources-unsubscribe <uri>             Stop syncing a resource, keep the local file.
+  resources-templates-list                List MCP resource templates.
+  skills-list                             List the agent skills the server serves.
+  skills-get <skill> [file]               Read a skill's SKILL.md, or one of its files (see below).
+  resources-directory-read <uri>          List a directory resource's direct children.
+  prompts-list                            List all MCP prompts.
+  prompts-get <name> [args...]            Get an MCP prompt with arguments.
+  completion-complete <type> <ref> <arg>  Suggest values for a prompt or template argument.
+  logging-set-level <level>               Set MCP server logging level (deprecated).
+  ping                                    Ping the MCP server.
+  server-discover                         Ask the server what it supports (MCP 2026-07-28+).
+  logs                                    Show or follow the bridge log file for this session.
 
 Output:
   When no command is given, shows session, server info, capabilities, and tools.
@@ -711,7 +714,7 @@ JSON output (--json):
 ```text
 Usage: mcpc @<session> tasks-result [options] <taskId>
 
-Get MCP task final result (blocks until the task finishes).
+Get a task's result (waits until it finishes).
 
 Options:
   --json  Output in JSON format
@@ -776,6 +779,45 @@ JSON output (--json):
   `GetPromptResult` object:
   `{ description?, messages: [{ role, content: { type, text?, ... } }] }`
   Schema: https://modelcontextprotocol.io/specification/2026-07-28/schema#getpromptresult
+```
+
+### `mcpc @<session> completion-complete`
+
+```text
+Usage: mcpc @<session> completion-complete [options] <type> <ref> <arg> [args...]
+
+Suggest values for a prompt or template argument.
+
+Options:
+  --json  Output in JSON format
+
+Arguments:
+  <type>              prompt or resource: what is being completed, a prompt (by name)
+                      or a resource template (by URI template), like the MCP
+                      ref/prompt and ref/resource reference types.
+  <ref>               The prompt name or the resource URI template.
+  <arg>               The argument (or template variable) to get suggestions for.
+  [args...]           The arguments filled in so far, in the prompts-get syntax:
+                      the <arg> entry is the text typed so far (omit it to list
+                      every suggestion), the other entries are sent as context.
+
+  key:=value pairs    mcpc @<session> completion-complete prompt code_review language language:=py
+  Inline JSON         mcpc @<session> completion-complete prompt code_review language '{"language":"py"}'
+  Stdin pipe          echo '{"language":"python"}' | mcpc @<session> completion-complete prompt code_review framework
+
+Examples:
+  mcpc @<session> completion-complete prompt code_review language
+  mcpc @<session> completion-complete prompt code_review framework language:=python framework:=fla
+  mcpc @<session> completion-complete resource 'file:///{path}' path path:=/ho
+
+Notes:
+  The server must declare the completions capability (shown by: mcpc @<session>).
+  Servers return at most 100 suggestions, ranked by relevance; hasMore says if there are more.
+
+JSON output (--json):
+  `CompleteResult` object:
+  `{ completion: { values: [...], total?, hasMore? } }`
+  Schema: https://modelcontextprotocol.io/specification/2026-07-28/schema#completeresult
 ```
 
 ### `mcpc @<session> resources-list`
@@ -852,7 +894,7 @@ JSON output (--json):
 ```text
 Usage: mcpc @<session> resources-unsubscribe [options] <uri>
 
-Stop syncing a subscribed MCP resource (keeps the local file).
+Stop syncing a resource, keep the local file.
 
 Options:
   --json  Output in JSON format

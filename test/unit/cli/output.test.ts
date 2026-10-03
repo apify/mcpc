@@ -40,6 +40,7 @@ import {
   formatTools,
   formatToolDetail,
   formatServerDetails,
+  formatCompletionResult,
   formatDiscoverResult,
   formatResources,
   formatResourceDetail,
@@ -1059,6 +1060,7 @@ describe('formatServerDetails', () => {
     expect(output).toContain('mcpc @test resources-list');
     expect(output).toContain('mcpc @test resources-read');
     expect(output).toContain('mcpc @test prompts-list');
+    expect(output).toContain('mcpc @test completion-complete prompt|resource <ref> <arg>');
     expect(output).toContain('mcpc @test logging-set-level');
 
     // Should contain instructions in code block
@@ -1282,6 +1284,17 @@ describe('formatServerDetails', () => {
     expect(output).toContain('mcpc @res resources-list');
     expect(output).toContain('mcpc @res resources-read');
     expect(output).toContain('mcpc @res resources-subscribe <uri> <file>');
+  });
+
+  it('should not list completion-complete without the completions capability', () => {
+    const details: ServerDetails = {
+      protocolVersion: '2026-07-28',
+      capabilities: { prompts: {} },
+      serverInfo: { name: 'Test Server', version: '1.0.0' },
+    };
+    const output = formatServerDetails(details, '@test');
+    expect(output).toContain('mcpc @test prompts-get');
+    expect(output).not.toContain('completion-complete');
   });
 
   it('should not list resources-subscribe command without the subscribe capability', () => {
@@ -2943,5 +2956,83 @@ describe('formatCallToolResultHuman', () => {
 
     // Correct ordering: Structured content → Metadata
     expect(output.indexOf('Structured content:')).toBeLessThan(output.indexOf('Metadata:'));
+  });
+});
+
+describe('formatCompletionResult', () => {
+  const promptRef = {
+    ref: { type: 'ref/prompt' as const, name: 'code_review' },
+    argument: { name: 'language', value: 'py' },
+  };
+
+  it('lists one suggestion per line and hints at prompts-get with the first one', () => {
+    const output = formatCompletionResult(
+      { completion: { values: ['python', 'pytorch'] } },
+      promptRef,
+      '@test'
+    );
+    expect(output).toContain('python\npytorch');
+    expect(output).toContain('To use it, run: mcpc @test prompts-get code_review language:=python');
+    expect(output).not.toContain('Showing');
+  });
+
+  it('prints an empty state when nothing matches', () => {
+    const output = formatCompletionResult({ completion: { values: [] } }, promptRef, '@test');
+    expect(output).toContain('(no suggestions for language)');
+    expect(output).not.toContain('prompts-get');
+  });
+
+  it('adds a footer only when the list is partial', () => {
+    const complete = formatCompletionResult(
+      { completion: { values: ['a', 'b'], total: 2, hasMore: false } },
+      promptRef,
+      '@test'
+    );
+    expect(complete).not.toContain('Showing');
+    const partial = formatCompletionResult(
+      { completion: { values: ['a', 'b'], total: 10, hasMore: true } },
+      promptRef,
+      '@test'
+    );
+    expect(partial).toContain('Showing 2 of 10 suggestions, more available');
+    const untotaled = formatCompletionResult(
+      { completion: { values: ['a'], hasMore: true } },
+      promptRef,
+      '@test'
+    );
+    expect(untotaled).toContain('Showing 1 suggestions, more available');
+  });
+
+  it('quotes a suggestion that is not shell-safe', () => {
+    const output = formatCompletionResult(
+      { completion: { values: ['Sir Reginald'] } },
+      { ref: { type: 'ref/prompt', name: 'greeting' }, argument: { name: 'name', value: '' } },
+      '@test'
+    );
+    expect(output).toContain('prompts-get greeting name:="Sir Reginald"');
+  });
+
+  it('expands the template variable into a resources-read hint', () => {
+    const output = formatCompletionResult(
+      { completion: { values: ['docs/readme.md'] } },
+      {
+        ref: { type: 'ref/resource', uri: 'file:///{path}' },
+        argument: { name: 'path', value: 'do' },
+      },
+      '@test'
+    );
+    expect(output).toContain('To read it, run: mcpc @test resources-read file:///docs%2Freadme.md');
+  });
+
+  it('falls back to resources-templates-list when the URI has no such variable', () => {
+    const output = formatCompletionResult(
+      { completion: { values: ['x'] } },
+      {
+        ref: { type: 'ref/resource', uri: 'file:///{other}' },
+        argument: { name: 'path', value: '' },
+      },
+      '@test'
+    );
+    expect(output).toContain('To see the template, run: mcpc @test resources-templates-list');
   });
 });

@@ -4,6 +4,9 @@
 
 import {
   parseCommandArgs,
+  readCommandArgs,
+  stringifyArgValues,
+  KNOWN_SESSION_COMMANDS,
   getVerboseFromEnv,
   getJsonFromEnv,
   validateOptions,
@@ -596,6 +599,33 @@ describe('suggestCommand', () => {
   });
 });
 
+describe('readCommandArgs', () => {
+  const originalIsTTY = process.stdin.isTTY;
+  afterEach(() => {
+    Object.defineProperty(process.stdin, 'isTTY', { value: originalIsTTY, configurable: true });
+  });
+
+  it('prefers positional arguments and never touches stdin', async () => {
+    Object.defineProperty(process.stdin, 'isTTY', { value: undefined, configurable: true });
+    await expect(readCommandArgs(['a:=1', 'b:=x'])).resolves.toEqual({ a: 1, b: 'x' });
+    await expect(readCommandArgs(['{"a":[1]}'])).resolves.toEqual({ a: [1] });
+  });
+
+  it('returns no arguments on a TTY with nothing positional', async () => {
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+    await expect(readCommandArgs(undefined)).resolves.toEqual({});
+    await expect(readCommandArgs([])).resolves.toEqual({});
+  });
+});
+
+describe('stringifyArgValues', () => {
+  it('keeps strings and serializes everything else as JSON text', () => {
+    expect(
+      stringifyArgValues({ s: 'py', n: 10, b: true, o: { k: 'v' }, a: [1, 2], z: null })
+    ).toEqual({ s: 'py', n: '10', b: 'true', o: '{"k":"v"}', a: '[1,2]', z: 'null' });
+  });
+});
+
 describe('normalizeSlashCommand', () => {
   it('returns the input unchanged when there is no slash', () => {
     expect(normalizeSlashCommand('tools-list')).toBe('tools-list');
@@ -608,6 +638,11 @@ describe('normalizeSlashCommand', () => {
     expect(normalizeSlashCommand('resources/read')).toBe('resources-read');
     expect(normalizeSlashCommand('prompts/get')).toBe('prompts-get');
     expect(normalizeSlashCommand('server/discover')).toBe('server-discover');
+  });
+
+  it('maps completion/complete to the known completion-complete command', () => {
+    expect(normalizeSlashCommand('completion/complete')).toBe('completion-complete');
+    expect(KNOWN_SESSION_COMMANDS).toContain('completion-complete');
   });
 
   it('converts multi-segment slash method names', () => {
