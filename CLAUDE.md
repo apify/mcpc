@@ -845,10 +845,14 @@ The `CHANGELOG.md` file follows [Keep a Changelog](https://keepachangelog.com/en
 - `Fixed` - Bug fixes
 - `Security` - Vulnerability fixes
 
+**Release summary line:** keep one plain-text sentence (~120 characters, user-facing) right under `## [Unreleased]`, above the first `###` heading, and update it as entries are added. The release workflow puts it at the top of the GitHub release body, which is what the release URL's social preview card shows.
+
 **Example entry:**
 
 ```markdown
 ## [Unreleased]
+
+Faster tool calls and a fix for empty server responses.
 
 ### Added
 
@@ -862,7 +866,7 @@ The `CHANGELOG.md` file follows [Keep a Changelog](https://keepachangelog.com/en
 **Before each release**, Claude should:
 
 1. Review all commits since the last release: `git log $(git describe --tags --abbrev=0)..HEAD --oneline`
-2. Ensure all significant changes are documented in `[Unreleased]`
+2. Ensure all significant changes are documented in `[Unreleased]`, and that it opens with an up-to-date one-line summary
 3. The release script will automatically move `[Unreleased]` entries to the new version section
 
 **Important:** The changelog is for **users reading release notes**. Only include entries that a user would care about. Do not add entries for: new warnings or deprecation notices on existing commands, minor help text or `--help` output changes, test infrastructure (new tests, test refactors), CI/CD workflow changes, internal refactors, or cosmetic tweaks. When in doubt, leave it out.

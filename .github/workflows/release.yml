@@ -125,6 +125,15 @@ jobs:
         if: inputs.type == 'release'
         run: pnpm run build:reference
 
+      - name: Read release summary
+        id: summary
+        # The plain sentence right under `## [Unreleased]` in CHANGELOG.md opens
+        # the GitHub release body, which is what the social preview card of the
+        # release URL shows. Read it before the version bump renames the section.
+        run: |
+          SUMMARY=$(awk '/^## \[Unreleased\]/{f=1;next} f&&/^#/{exit} f&&NF{if ($0 !~ /^-/) print; exit}' CHANGELOG.md)
+          echo "text=$SUMMARY" >> "$GITHUB_OUTPUT"
+
       - name: Report install size
         id: install-size
         # Measures the tarball/unpacked/full-install size of what will be
@@ -230,6 +239,8 @@ jobs:
           # so the release page shows users how to install this version.
           append_body: true
           body: |
+            ${{ steps.summary.outputs.text }}
+
             ## Install
 
             ```bash
@@ -315,6 +326,8 @@ jobs:
           # so the release page shows users how to install this version.
           append_body: true
           body: |
+            ${{ steps.summary.outputs.text }}
+
             ## Install
 
             ```bash
