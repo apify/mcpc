@@ -538,11 +538,21 @@ export function truncate(str: string, maxLength: number, suffix = '...'): string
  * the underlying `OpenProcess()` succeeds for zombie processes whose
  * handles haven't been fully released. We use `tasklist` instead, with
  * a short-lived cache so one call covers all PID checks within 2 seconds.
+ *
+ * The answer fails open: when `tasklist` itself cannot be trusted (it timed out on a
+ * busy machine, or is not on PATH), the check falls back to `process.kill(pid, 0)`
+ * instead of reporting the PID dead. A false "dead" is the expensive mistake here —
+ * the CLI would spawn a replacement bridge and never stop the healthy one (#427) —
+ * while a false "alive" only costs a fast-failing socket connect before the restart.
  */
 export function isProcessAlive(pid: number): boolean {
   if (process.platform === 'win32') {
     return isProcessAliveTasklist(pid);
   }
+  return isProcessAliveSignal(pid);
+}
+
+function isProcessAliveSignal(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
@@ -560,7 +570,9 @@ export function isProcessAlive(pid: number): boolean {
  */
 let _tasklistCache: Set<number> | null = null;
 let _tasklistCacheTime = 0;
+let _tasklistFailedAt = 0;
 const TASKLIST_CACHE_TTL_MILLIS = 2000; // 2 seconds
+const TASKLIST_TIMEOUT_MILLIS = 10_000;
 
 /**
  * Invalidate the Windows tasklist cache used by isProcessAlive().
@@ -571,6 +583,7 @@ const TASKLIST_CACHE_TTL_MILLIS = 2000; // 2 seconds
 export function invalidateProcessAliveCache(): void {
   _tasklistCache = null;
   _tasklistCacheTime = 0;
+  _tasklistFailedAt = 0;
 }
 
 function isProcessAliveTasklist(pid: number): boolean {
@@ -578,12 +591,18 @@ function isProcessAliveTasklist(pid: number): boolean {
   if (_tasklistCache && now - _tasklistCacheTime < TASKLIST_CACHE_TTL_MILLIS) {
     return _tasklistCache.has(pid);
   }
+  // A tasklist that just failed is not retried within the TTL: one CLI invocation checks
+  // the same PID several times in a row (ensureBridgeReady, stopBridge, waitForProcessExit),
+  // and each retry of a timed-out tasklist would cost another full timeout.
+  if (_tasklistFailedAt && now - _tasklistFailedAt < TASKLIST_CACHE_TTL_MILLIS) {
+    return isProcessAliveSignal(pid);
+  }
   try {
     // Fetch ALL PIDs in one call (CSV format for reliable parsing)
     const output = execFileSync('tasklist', ['/FO', 'CSV', '/NH'], {
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'pipe'],
-      timeout: 10000,
+      timeout: TASKLIST_TIMEOUT_MILLIS,
     });
     _tasklistCache = new Set<number>();
     for (const line of output.split('\n')) {
@@ -592,10 +611,13 @@ function isProcessAliveTasklist(pid: number): boolean {
       if (match) _tasklistCache.add(Number(match[1]));
     }
     _tasklistCacheTime = now;
+    _tasklistFailedAt = 0;
     return _tasklistCache.has(pid);
   } catch {
+    // tasklist timed out or could not run — its answer is unknown, not "dead" (#427).
     _tasklistCache = null;
-    return false;
+    _tasklistFailedAt = Date.now();
+    return isProcessAliveSignal(pid);
   }
 }
 

@@ -394,11 +394,14 @@ export class McpClient implements IMcpClient {
 
   /**
    * Close the connection to the server
-   * For HTTP transport, sends DELETE request to terminate session before closing
+   * For HTTP transport, sends DELETE request to terminate session before closing,
+   * unless `terminateSession` is false — for a client that no longer owns the
+   * server-side session (another process has taken it over) and must not end it.
    */
-  async close(): Promise<void> {
+  async close(options?: { terminateSession?: boolean }): Promise<void> {
     this.logger.debug('Closing connection...');
     this.isClosing = true;
+    const terminateSession = options?.terminateSession ?? true;
 
     try {
       // Tear down the listen stream first on 2026-07-28 connections so its
@@ -413,7 +416,7 @@ export class McpClient implements IMcpClient {
       // For HTTP transport, terminate the session first (sends HTTP DELETE)
       // This is separate from close() in the SDK - terminateSession() sends the DELETE,
       // while close() just cleans up the client without notifying the server
-      if (this.transport?.terminateSession) {
+      if (terminateSession && this.transport?.terminateSession) {
         this.logger.debug('Terminating session (sending DELETE)...');
         try {
           await Promise.race([

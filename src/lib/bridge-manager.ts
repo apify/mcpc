@@ -371,33 +371,39 @@ export async function stopBridge(
   }
 
   // Kill the bridge process if it's still running
-  if (session.pid && isProcessAlive(session.pid)) {
+  if (session.pid) {
+    const pid = session.pid;
     try {
       if (process.platform === 'win32') {
         // On Windows, SIGTERM calls TerminateProcess (immediate kill, no cleanup).
         // For graceful shutdown (closeSession / explicit restart), send an IPC message
         // first so the bridge can send HTTP DELETE to terminate its MCP session before
         // exiting. Without it the server-side session (and its subscriptions) is orphaned.
+        //
+        // The IPC shutdown is attempted whenever a PID is recorded, not only when
+        // isProcessAlive() says the bridge is running: that check can be wrong (a timed-out
+        // `tasklist` used to report every PID dead, #427), and connecting to a dead pipe
+        // fails in milliseconds and does no harm.
         if (options?.graceful) {
-          const socketPath = getSocketPath(sessionName, session.pid);
+          const socketPath = getSocketPath(sessionName, pid);
           const shutdownOk = await sendBridgeShutdown(socketPath);
           if (shutdownOk) {
-            await waitForProcessExit(session.pid, 2000);
+            await waitForProcessExit(pid, 2000);
           }
         }
-      } else {
-        logger.debug(`Sending SIGTERM to bridge process: ${session.pid}`);
-        process.kill(session.pid, 'SIGTERM');
+      } else if (isProcessAlive(pid)) {
+        logger.debug(`Sending SIGTERM to bridge process: ${pid}`);
+        process.kill(pid, 'SIGTERM');
 
         // Wait for graceful shutdown (gives time for HTTP DELETE to be sent)
         await new Promise((resolve) => setTimeout(resolve, 1000));
       }
 
       // Force kill if still alive
-      if (isProcessAlive(session.pid)) {
+      if (isProcessAlive(pid)) {
         logger.debug('Bridge did not exit gracefully, force killing');
         try {
-          process.kill(session.pid, 'SIGKILL');
+          process.kill(pid, 'SIGKILL');
         } catch {
           // Ignore - process may have exited between check and kill
         }

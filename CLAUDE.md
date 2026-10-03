@@ -128,7 +128,7 @@ mcpc/
 - Unix domain socket server for CLI-to-bridge IPC (named pipes on Windows)
 - Socket location: `~/.mcpc/bridges/<session-name>.<pid>.sock` (falls back to a short hashed path under the system temp dir when the path would exceed the OS socket limit)
 - Keepalive ping every 30 seconds, `lastSeenAt` recorded in `sessions.json`
-- Orphaned log and socket file cleanup (note: orphaned *processes* are not reaped automatically)
+- Orphaned log and socket file cleanup; a bridge that finds a *different* PID registered for its session in `sessions.json` (checked on every keepalive tick) exits on its own without ending the server-side MCP session, so a replacement spawned by mistake never leaves the original running (#427)
 - Atomic writes for session file (write to temp, then rename)
 - File lock acquisition: up to 10 retries with randomized backoff (5s max per retry)
 

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Windows sessions no longer pile up duplicate bridge processes when `tasklist` is slow or unavailable. A liveness check that could not run used to report every bridge dead, so each command spawned a replacement without stopping the healthy original; the check now falls back to a signal probe, the old bridge is always asked to shut down, and a bridge that finds another one registered for its session exits on its own. (#427)
+
 ## [0.7.0] - 2026-09-23
 
 ### Added
