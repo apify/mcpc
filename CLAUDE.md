@@ -845,7 +845,7 @@ The `CHANGELOG.md` file follows [Keep a Changelog](https://keepachangelog.com/en
 - `Fixed` - Bug fixes
 - `Security` - Vulnerability fixes
 
-**Release summary line:** `[Unreleased]` should open with a single plain-text sentence summarizing the release, above the first `###` heading. `scripts/release-notes.mjs` makes it the first line of the GitHub release body, which is what GitHub's social preview card shows when a release URL is shared; the changelog entries, install instructions and install-size report follow, then GitHub's generated "What's Changed". Without a summary the script derives one from entry counts, and `pnpm run release` warns. Keep it short (~120 characters), user-facing, and update it as entries are added.
+**Release summary line:** keep one plain-text sentence (~120 characters, user-facing) right under `## [Unreleased]`, above the first `###` heading, and update it as entries are added. The release workflow puts it at the top of the GitHub release body, which is what the release URL's social preview card shows.
 
 **Example entry:**
 

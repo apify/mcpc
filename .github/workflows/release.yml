@@ -125,6 +125,15 @@ jobs:
         if: inputs.type == 'release'
         run: pnpm run build:reference
 
+      - name: Read release summary
+        id: summary
+        # The plain sentence right under `## [Unreleased]` in CHANGELOG.md opens
+        # the GitHub release body, which is what the social preview card of the
+        # release URL shows. Read it before the version bump renames the section.
+        run: |
+          SUMMARY=$(awk '/^## \[Unreleased\]/{f=1;next} f&&/^#/{exit} f&&NF{if ($0 !~ /^-/) print; exit}' CHANGELOG.md)
+          echo "text=$SUMMARY" >> "$GITHUB_OUTPUT"
+
       - name: Report install size
         id: install-size
         # Measures the tarball/unpacked/full-install size of what will be
@@ -212,13 +221,6 @@ jobs:
             echo "\`\`\`"
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
-      - name: Write pre-release notes
-        if: inputs.type == 'pre-release'
-        env:
-          VERSION: ${{ steps.prerelease.outputs.version }}
-          INSTALL_SIZE_REPORT: ${{ steps.install-size.outputs.report }}
-        run: node scripts/release-notes.mjs --version "$VERSION" --section Unreleased --out "$RUNNER_TEMP/release-notes.md"
-
       - name: Publish pre-release to npm
         if: inputs.type == 'pre-release'
         run: MCPC_RELEASE=1 pnpm publish --access public --tag beta --provenance --no-git-checks
@@ -233,10 +235,21 @@ jobs:
           name: v${{ steps.prerelease.outputs.version }}
           prerelease: true
           generate_release_notes: true
-          # Our notes (summary line, changelog entries, install instructions)
-          # go first and GitHub's generated "What's Changed" is appended below.
-          # The summary line is what the release URL's social preview card shows.
-          body_path: ${{ runner.temp }}/release-notes.md
+          # Append install instructions to the auto-generated "What's Changed"
+          # so the release page shows users how to install this version.
+          append_body: true
+          body: |
+            ${{ steps.summary.outputs.text }}
+
+            ## Install
+
+            ```bash
+            npm install -g ${{ steps.prerelease.outputs.package-name }}@${{ steps.prerelease.outputs.version }}
+            # or
+            bun install -g ${{ steps.prerelease.outputs.package-name }}@${{ steps.prerelease.outputs.version }}
+            ```
+
+            ${{ steps.install-size.outputs.report }}
           target_commitish: ${{ github.sha }}
         env:
           GITHUB_TOKEN: ${{ secrets.APIFY_SERVICE_ACCOUNT_GITHUB_TOKEN }}
@@ -284,13 +297,6 @@ jobs:
             sed -i "s|\[Unreleased\]: \(.*\)/compare/v[0-9.]*\.\.\.HEAD|[Unreleased]: \1/compare/v$NEW_VERSION...HEAD\n[$NEW_VERSION]: \1/compare/v$CURRENT...v$NEW_VERSION|" CHANGELOG.md
           fi
 
-      - name: Write release notes
-        if: inputs.type == 'release'
-        env:
-          VERSION: ${{ steps.release.outputs.version }}
-          INSTALL_SIZE_REPORT: ${{ steps.install-size.outputs.report }}
-        run: node scripts/release-notes.mjs --version "$VERSION" --out "$RUNNER_TEMP/release-notes.md"
-
       - name: Commit version bump and changelog
         if: inputs.type == 'release'
         run: |
@@ -316,10 +322,21 @@ jobs:
           tag_name: v${{ steps.release.outputs.version }}
           name: v${{ steps.release.outputs.version }}
           generate_release_notes: true
-          # Our notes (summary line, changelog entries, install instructions)
-          # go first and GitHub's generated "What's Changed" is appended below.
-          # The summary line is what the release URL's social preview card shows.
-          body_path: ${{ runner.temp }}/release-notes.md
+          # Append install instructions to the auto-generated "What's Changed"
+          # so the release page shows users how to install this version.
+          append_body: true
+          body: |
+            ${{ steps.summary.outputs.text }}
+
+            ## Install
+
+            ```bash
+            npm install -g ${{ steps.release.outputs.package-name }}@${{ steps.release.outputs.version }}
+            # or
+            bun install -g ${{ steps.release.outputs.package-name }}@${{ steps.release.outputs.version }}
+            ```
+
+            ${{ steps.install-size.outputs.report }}
         env:
           GITHUB_TOKEN: ${{ secrets.APIFY_SERVICE_ACCOUNT_GITHUB_TOKEN }}
 

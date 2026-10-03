@@ -5,8 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-Each version opens with a one-line summary, which becomes the first line of the GitHub release
-and its social preview card (see `scripts/release-notes.mjs`).
+Each version opens with a one-line summary, which also opens its GitHub release.
 
 ## [Unreleased]
 
