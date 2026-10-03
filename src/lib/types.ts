@@ -105,7 +105,7 @@ export interface ServerConfig {
   headers?: Record<string, string>; // For http transport
   command?: string; // Mandatory for stdio transport
   args?: string[]; // For stdio transport
-  env?: Record<string, string>; // Environment variables for stdio transport
+  env?: Record<string, string>; // Environment variables for stdio transport (values live in the keychain; redacted in sessions.json)
   timeout?: number; // Request timeout in SECONDS (field name kept as `timeout` for mcp.json / sessions.json compatibility)
   protocolVersion?: string; // Pin the MCP protocol version (strict, no fallback; absent = auto-negotiate)
 }
@@ -172,7 +172,7 @@ export interface SessionNotifications {
  */
 export interface SessionData {
   name: string;
-  server: ServerConfig; // Transport configuration (header values redacted to "<redacted>")
+  server: ServerConfig; // Transport configuration (header and stdio env values redacted to "<redacted>")
   profileName?: string; // Name of auth profile (for OAuth servers)
   /**
    * x402 auto-payment scheme preference. Presence enables x402 for the session;
@@ -410,6 +410,9 @@ export interface AuthCredentials {
   idJag?: IdJagCredentials;
   // HTTP headers (from --header flags, stored in keychain)
   headers?: Record<string, string>;
+  // Environment variables for a stdio server (from the config entry's `env`, stored in
+  // keychain). Delivered over IPC so the resolved values never appear in the bridge's argv.
+  env?: Record<string, string>;
   // Bearer token the bridge's proxy server requires (from --proxy-bearer-token).
   // Read by the CLI before spawn and delivered via IPC so the bridge never reads it
   // from the keychain itself — keeping the bridge's only keychain access on the

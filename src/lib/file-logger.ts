@@ -56,8 +56,9 @@ export class FileLogger {
       this.writtenBytes = 0;
     }
 
-    // Open file stream in append mode
-    this.stream = createWriteStream(this.filePath, { flags: 'a' });
+    // Open file stream in append mode. Logs hold server output and request details, so
+    // they are created owner-only (the mode applies on creation; the logs dir is 0700).
+    this.stream = createWriteStream(this.filePath, { flags: 'a', mode: 0o600 });
 
     // Handle stream errors
     this.stream.on('error', (error) => {
@@ -168,7 +169,7 @@ export class FileLogger {
     }
 
     // Create new stream
-    this.stream = createWriteStream(this.filePath, { flags: 'a' });
+    this.stream = createWriteStream(this.filePath, { flags: 'a', mode: 0o600 });
     this.stream.on('error', (error) => {
       console.error('[file-logger] Stream error:', error);
     });

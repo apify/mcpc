@@ -674,7 +674,7 @@ export class McpClient implements IMcpClient {
     meta?: Record<string, unknown>
   ): Promise<CallToolResult> {
     try {
-      this.logger.debug(`Calling tool: ${name}`, args);
+      this.logger.debug(`Calling tool: ${name}`, { argumentKeys: Object.keys(args ?? {}) });
       const callParams: {
         name: string;
         arguments: Record<string, unknown>;
@@ -1038,7 +1038,7 @@ export class McpClient implements IMcpClient {
    */
   async getPrompt(name: string, args?: Record<string, string>): Promise<GetPromptResult> {
     try {
-      this.logger.debug(`Getting prompt: ${name}`, args);
+      this.logger.debug(`Getting prompt: ${name}`, { argumentKeys: Object.keys(args ?? {}) });
       const result = await this.client.getPrompt(
         {
           name,
@@ -1148,7 +1148,9 @@ export class McpClient implements IMcpClient {
     meta?: Record<string, unknown>
   ): Promise<CallToolResult> {
     try {
-      this.logger.debug(`Calling tool with task: ${name}`, args);
+      this.logger.debug(`Calling tool with task: ${name}`, {
+        argumentKeys: Object.keys(args ?? {}),
+      });
       const created = await this.createToolTask(name, args, meta);
       onUpdate?.(created);
       return await this.pollTask(created.taskId, onUpdate);
@@ -1171,7 +1173,9 @@ export class McpClient implements IMcpClient {
     meta?: Record<string, unknown>
   ): Promise<TaskUpdate> {
     try {
-      this.logger.debug(`Calling tool detached: ${name}`, args);
+      this.logger.debug(`Calling tool detached: ${name}`, {
+        argumentKeys: Object.keys(args ?? {}),
+      });
       return await this.createToolTask(name, args, meta);
     } catch (error) {
       if (error instanceof ServerError) throw error;

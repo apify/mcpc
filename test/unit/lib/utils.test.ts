@@ -29,6 +29,9 @@ import {
   generateRequestId,
   fetchAllPages,
   isProtocolMismatchError,
+  redactHeaders,
+  redactServerConfig,
+  REDACTED_HEADER_VALUE,
 } from '../../../src/lib/utils.js';
 import { ServerError } from '../../../src/lib/errors.js';
 import { DEFAULT_AUTH_PROFILE } from '../../../src/lib/auth/oauth-utils.js';
@@ -708,5 +711,54 @@ describe('isProtocolMismatchError', () => {
     expect(isProtocolMismatchError('{"error":{"code":-32602,"message":"Invalid params"}}')).toBe(
       false
     );
+  });
+});
+
+describe('redactServerConfig', () => {
+  it('redacts header values and keeps their names', () => {
+    const redacted = redactServerConfig({
+      url: 'https://mcp.example.com/mcp',
+      headers: { Authorization: 'Bearer secret', 'X-Api-Key': 'key' },
+    });
+    expect(redacted).toEqual({
+      url: 'https://mcp.example.com/mcp',
+      headers: { Authorization: REDACTED_HEADER_VALUE, 'X-Api-Key': REDACTED_HEADER_VALUE },
+    });
+  });
+
+  it('redacts stdio env values and keeps their names', () => {
+    const redacted = redactServerConfig({
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-github'],
+      env: { GITHUB_PERSONAL_ACCESS_TOKEN: 'ghp_secret', DEBUG: 'mcp:*' },
+    });
+    expect(redacted.env).toEqual({
+      GITHUB_PERSONAL_ACCESS_TOKEN: REDACTED_HEADER_VALUE,
+      DEBUG: REDACTED_HEADER_VALUE,
+    });
+  });
+
+  it('leaves command and args alone (they are the child process argv anyway)', () => {
+    const config = { command: 'node', args: ['server.js', '--port', '3000'], timeout: 30 };
+    expect(redactServerConfig(config)).toEqual(config);
+  });
+
+  it('does not mutate the input', () => {
+    const config = { url: 'https://x.example', headers: { A: 'a' }, env: { B: 'b' } };
+    redactServerConfig(config);
+    expect(config.headers.A).toBe('a');
+    expect(config.env.B).toBe('b');
+  });
+
+  it('is idempotent on an already redacted config', () => {
+    const once = redactServerConfig({ command: 'x', env: { K: 'v' } });
+    expect(redactServerConfig(once)).toEqual(once);
+    expect(redactHeaders(once.env!)).toEqual(once.env);
+  });
+
+  it('omits headers and env when the config has none', () => {
+    const redacted = redactServerConfig({ url: 'https://x.example' });
+    expect(redacted).not.toHaveProperty('headers');
+    expect(redacted).not.toHaveProperty('env');
   });
 });

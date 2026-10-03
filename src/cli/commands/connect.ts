@@ -16,6 +16,7 @@ import {
   normalizeServerUrl,
   validateProfileName,
   redactHeaders,
+  redactServerConfig,
   AuthError,
   ClientError,
   isAuthenticationError,
@@ -48,6 +49,7 @@ import {
 import { startBridge, StartBridgeOptions, stopBridge } from '../../lib/bridge-manager.js';
 import {
   storeKeychainSessionHeaders,
+  storeKeychainSessionEnv,
   storeKeychainProxyBearerToken,
 } from '../../lib/auth/keychain.js';
 import { getWallet } from '../../lib/wallets.js';
@@ -181,12 +183,7 @@ async function buildConnectResultEntry(
       const tools = (await client.listAllTools()).tools;
 
       const server: ServerConfig | undefined = context.serverConfig
-        ? {
-            ...context.serverConfig,
-            ...(context.serverConfig.headers && {
-              headers: redactHeaders(context.serverConfig.headers),
-            }),
-          }
+        ? redactServerConfig(context.serverConfig)
         : undefined;
 
       return {
@@ -378,6 +375,17 @@ export async function connectSession(
     await storeKeychainSessionHeaders(name, headers);
   }
 
+  // Store the stdio server's env in the OS keychain too: it is where config entries put
+  // API tokens, and it must never reach the bridge's argv or sessions.json.
+  let env: Record<string, string> | undefined;
+  if (serverConfig.env && Object.keys(serverConfig.env).length > 0) {
+    env = { ...serverConfig.env };
+    logger.debug(
+      `Storing ${Object.keys(env).length} stdio env variable(s) for session ${name} in keychain`
+    );
+    await storeKeychainSessionEnv(name, env);
+  }
+
   // Store proxy bearer token in keychain (if provided)
   if (options.proxyBearerToken) {
     logger.debug(`Storing proxy bearer token for session ${name} in keychain`);
@@ -394,12 +402,13 @@ export async function connectSession(
   }
 
   // Create or update session record (without pid - that comes from startBridge)
-  // Store serverConfig with headers redacted (actual values in keychain)
+  // Store serverConfig with header and env values redacted (actual values in keychain)
   const isReconnect = !!existingSession;
-  const { headers: _originalHeaders, ...baseTransportConfig } = serverConfig;
+  const { headers: _originalHeaders, env: _originalEnv, ...baseTransportConfig } = serverConfig;
   const sessionTransportConfig: ServerConfig = {
     ...baseTransportConfig,
     ...(headers && { headers: redactHeaders(headers) }),
+    ...(env && { env: redactHeaders(env) }),
   };
 
   const sessionUpdate: Parameters<typeof updateSession>[1] = {
@@ -433,6 +442,7 @@ export async function connectSession(
       serverConfig,
       verbose: options.verbose || false,
       ...(headers && { headers }),
+      ...(env && { env }),
       ...(profileName && { profileName }),
       ...(proxyConfig && { proxyConfig }),
       ...(options.x402 && { x402: options.x402 }),

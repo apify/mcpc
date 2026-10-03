@@ -341,6 +341,8 @@ const oauthIdJagAccount = (serverUrl: string, profileName: string): string =>
 
 const sessionHeadersAccount = (sessionName: string): string => `session:${sessionName}:headers`;
 
+const sessionEnvAccount = (sessionName: string): string => `session:${sessionName}:env`;
+
 const proxyBearerTokenAccount = (sessionName: string): string =>
   `session:${sessionName}:proxy-bearer-token`;
 
@@ -522,6 +524,34 @@ export async function readKeychainSessionHeaders(
 export async function removeKeychainSessionHeaders(sessionName: string): Promise<boolean> {
   logger.debug(`Deleting headers for session ${sessionName}`);
   return keychainDelete(sessionHeadersAccount(sessionName));
+}
+
+/**
+ * Store the environment variables a session's stdio server is started with. They
+ * routinely carry API tokens (`"env": {"GITHUB_TOKEN": "${GITHUB_TOKEN}"}`), so they are
+ * kept like session headers: in the keychain, delivered to the bridge over IPC, and
+ * redacted everywhere else.
+ */
+export async function storeKeychainSessionEnv(
+  sessionName: string,
+  env: Record<string, string>
+): Promise<void> {
+  logger.debug(`Storing stdio env for session ${sessionName}`);
+  await keychainSet(sessionEnvAccount(sessionName), JSON.stringify(env));
+}
+
+/** Read the environment variables a session's stdio server is started with. */
+export async function readKeychainSessionEnv(
+  sessionName: string
+): Promise<Record<string, string> | undefined> {
+  logger.debug(`Retrieving stdio env for session ${sessionName}`);
+  return keychainGetParsed<Record<string, string>>(sessionEnvAccount(sessionName), 'session env');
+}
+
+/** Delete the stored environment variables of a session's stdio server. */
+export async function removeKeychainSessionEnv(sessionName: string): Promise<boolean> {
+  logger.debug(`Deleting stdio env for session ${sessionName}`);
+  return keychainDelete(sessionEnvAccount(sessionName));
 }
 
 /** Store the bearer token used to authenticate requests to the proxy server. */

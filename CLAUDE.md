@@ -276,7 +276,7 @@ Implements [MCP security best practices](https://modelcontextprotocol.io/specifi
 
 - Credentials stored in OS keychain (encrypted by system), with `0600` fallback file
 - No credentials logged even in verbose mode — only log presence/absence (e.g., `refreshToken: present`)
-- Headers sent to bridge via IPC after socket connect, never as command-line arguments (visible in `ps`)
+- Headers and stdio `env` values sent to bridge via IPC after socket connect, never as command-line arguments (visible in `ps`)
 - `sessions.json` and `profiles.json` file permissions: `0600` (user-only)
 
 **Transport security:**
@@ -468,6 +468,7 @@ Environment variable substitution supported: `${VAR_NAME}`
 
 - Bearer tokens passed via `--header "Authorization: Bearer ${TOKEN}"` are NOT stored as profiles
 - All session headers are stored in the OS keychain as one JSON blob per session (keychain account: `session:<name>:headers`)
+- The `env` of a stdio config entry is stored the same way (keychain account: `session:<name>:env`) and delivered over IPC; `sessions.json`, `mcpc --json` and the bridge's argv only ever see the variable names with `<redacted>` values. `command` and `args` are deliberately not treated as secrets: they are the child process's own argv, visible in `ps` whatever mcpc does
 - Bridge loads them automatically when making requests (delivered over IPC after spawn, never via argv)
 
 **CLI Commands:**
@@ -578,7 +579,8 @@ On failure, the error message includes instructions on how to login. This ensure
 // Account: auth-profile:mcp.apify.com:personal:tokens
 // Value: {"access_token": "...", "refresh_token": "...", "expires_at": ...}
 // Other accounts: auth-profile:<host>:<profile>:client (registered OAuth client),
-// session:<name>:headers (per-session headers), session:<name>:proxy-bearer-token
+// session:<name>:headers (per-session headers), session:<name>:env (stdio env),
+// session:<name>:proxy-bearer-token
 ```
 
 Windows Credential Manager refuses a credential over 1280 characters (2560 bytes of
