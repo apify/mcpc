@@ -819,14 +819,15 @@ The script validates preconditions locally (including `pnpm run check:deps-age`,
 
 `pnpm-workspace.yaml` sets `minimumReleaseAge` to keep freshly-published (potentially compromised) packages out of the tree, but pnpm applies it only when *resolving* new versions — pnpm 10 does not re-check an existing lockfile on a `--frozen-lockfile` install (that landed in pnpm 11). `scripts/check-dependency-age.mjs` closes that gap: it reads the publish time of every version pinned in `pnpm-lock.yaml` and fails the release if anything is too young. Packages listed in `minimumReleaseAgeExclude` get a shorter 48-hour floor instead of a free pass. The check fails closed — a registry error is a failure, never a skip. Remove the script once the repo moves to pnpm ≥ 11 and native lockfile age verification covers it.
 
-The Homebrew formula lives in [apify/homebrew-tap](https://github.com/apify/homebrew-tap), not here, and its bump is **started manually for now** — the release workflow only prints the command in its run summary:
+Homebrew formulae live outside this repo, in [Homebrew/homebrew-core](https://github.com/Homebrew/homebrew-core/blob/main/Formula/m/mcpc.rb) (`brew install mcpc`) and [apify/homebrew-tap](https://github.com/apify/homebrew-tap) (`brew install apify/tap/mcpc`). After a release, the `homebrew` job in `release.yml` updates both: it runs `brew bump-formula-pr` to open a version-bump PR in homebrew-core (merged by Homebrew maintainers once their CI passes) and dispatches the tap's `update_formula.yaml`. It runs as a separate job, so a failure there never affects the npm release; to retry by hand:
 
 ```bash
+brew bump-formula-pr mcpc --version <version>
 gh workflow run update_formula.yaml --repo apify/homebrew-tap \
   --field package=mcpc --field npm_package=@apify/mcpc --field version=<version>
 ```
 
-That workflow points `Formula/mcpc.rb` at the new npm tarball, installs and `brew test`s it on Linux and macOS, and merges the bump. Skipping it only leaves Homebrew users on the previous version; npm and Bun installs are unaffected.
+Skipping it only leaves Homebrew users on the previous version; npm and Bun installs are unaffected.
 
 For pre-releases: `pnpm run release:pre` (or `pnpm run release:pre -- minor`)
 
