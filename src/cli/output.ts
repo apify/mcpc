@@ -2116,7 +2116,7 @@ export function formatServerDetails(
   // Completions work the same in every era; only the server's declaration gates them
   if (capabilities?.completions) {
     commands.push(
-      `${bullet} ${bt}mcpc ${target} completion-complete prompt|resource <ref> <arg> [arg1:=val1 ...]${bt}`
+      `${bullet} ${bt}mcpc ${target} completion-complete prompt|resource <ref> <arg1:=val1 ... | <args-json> | <stdin>${bt}`
     );
   }
 

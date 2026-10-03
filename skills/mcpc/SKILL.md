@@ -173,8 +173,8 @@ mcpc @apify resources-unsubscribe <uri>             # stop syncing, keep the fil
 mcpc @apify prompts-list
 mcpc @apify prompts-get <name> arg1:=value1         # same argument syntax as tools-call (values coerced to strings)
 
-mcpc @apify completion-complete prompt <name> <arg> [arg:=partial other:=value]   # suggestions for a prompt argument
-mcpc @apify completion-complete resource <uri-template> <var> [var:=partial]      # ...or a template variable
+mcpc @apify completion-complete prompt <name> other:=value arg:=partial   # suggestions for the LAST argument given;
+mcpc @apify completion-complete resource <uri-template> var:=partial     # earlier ones are context, `arg:=` = all
                                                     # needs the `completions` capability (shown by `mcpc @apify`)
 ```
 

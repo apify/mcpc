@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- New `completion-complete prompt|resource <ref> <arg> [arg:=val ...]` command asks the server for argument suggestions (MCP `completion/complete`), taking the arguments filled in so far in the same syntax as `prompts-get`. The `--proxy` server forwards completions too.
+- New `completion-complete prompt|resource <ref> <arg:=val ...>` command asks the server for argument suggestions (MCP `completion/complete`): pass the arguments in the `prompts-get` syntax and the last one is completed. The `--proxy` server forwards completions too.
 
 ### Security
 

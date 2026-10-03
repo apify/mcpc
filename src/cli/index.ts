@@ -459,7 +459,7 @@ ${chalk.bold('MCP session commands (after connecting):')}
   <@session> ${theme.cyan('tasks-cancel')} <taskId>
   <@session> ${theme.cyan('prompts-list')}
   <@session> ${theme.cyan('prompts-get')} <name> [arg:=val ... | <json> | <stdin]
-  <@session> ${theme.cyan('completion-complete')} prompt|resource <ref> <arg> [arg:=val ... | <json> | <stdin]
+  <@session> ${theme.cyan('completion-complete')} prompt|resource <ref> <arg:=val ... | <json> | <stdin>
   <@session> ${theme.cyan('resources-list')}
   <@session> ${theme.cyan('resources-read')} <uri> [-o <file> | --raw]
   <@session> ${theme.cyan('resources-subscribe')} <uri> <file>
@@ -1477,7 +1477,7 @@ ${jsonHelp('`GetPromptResult` object', '`{ description?, messages: [{ role, cont
     });
 
   program
-    .command('completion-complete <type> <ref> <arg> [args...]')
+    .command('completion-complete <type> <ref> [args...]')
     .description('Suggest values for a prompt or template argument.')
     .addHelpText(
       'after',
@@ -1487,27 +1487,26 @@ ${chalk.bold('Arguments:')}
                       or a resource template (by URI template), like the MCP
                       ref/prompt and ref/resource reference types.
   <ref>               The prompt name or the resource URI template.
-  <arg>               The argument (or template variable) to get suggestions for.
-  [args...]           The arguments filled in so far, in the prompts-get syntax:
-                      the <arg> entry is the text typed so far (omit it to list
-                      every suggestion), the other entries are sent as context.
+  [args...]           The arguments in the prompts-get syntax. The last one is the
+                      argument to complete, with the text typed so far as its value
+                      (name:= for none); the ones before it are sent as context.
 
-  key:=value pairs    mcpc ${session} completion-complete prompt code_review language language:=py
-  Inline JSON         mcpc ${session} completion-complete prompt code_review language '{"language":"py"}'
-  Stdin pipe          echo '{"language":"python"}' | mcpc ${session} completion-complete prompt code_review framework
+  key:=value pairs    mcpc ${session} completion-complete prompt code_review language:=py
+  Inline JSON         mcpc ${session} completion-complete prompt code_review '{"language":"py"}'
+  Stdin pipe          echo '{"language":"py"}' | mcpc ${session} completion-complete prompt code_review
 
 ${chalk.bold('Examples:')}
-  mcpc ${session} completion-complete prompt code_review language
-  mcpc ${session} completion-complete prompt code_review framework language:=python framework:=fla
-  mcpc ${session} completion-complete resource 'file:///{path}' path path:=/ho
+  mcpc ${session} completion-complete prompt code_review language:=
+  mcpc ${session} completion-complete prompt code_review language:=python framework:=fla
+  mcpc ${session} completion-complete resource 'file:///{path}' path:=/ho
 
 ${chalk.bold('Notes:')}
   The server must declare the completions capability (shown by: mcpc ${session}).
   Servers return at most 100 suggestions, ranked by relevance; hasMore says if there are more.
 ${jsonHelp('`CompleteResult` object', '`{ completion: { values: [...], total?, hasMore? } }`', `${SCHEMA_BASE}#completeresult`)}`
     )
-    .action(async (refType, ref, argument, args, _options, command) => {
-      await completion.complete(session, refType, ref, argument, {
+    .action(async (refType, ref, args, _options, command) => {
+      await completion.complete(session, refType, ref, {
         args,
         ...getOptionsFromCommand(command),
       });
@@ -1623,7 +1622,7 @@ ${jsonHelp(
  * `--help` screen still shows the complete usage.
  */
 const SESSION_COMMAND_LIST_TERMS: Record<string, string> = {
-  'completion-complete': 'completion-complete <type> <ref> <arg>',
+  'completion-complete': 'completion-complete <type> <ref> ...',
 };
 
 function createSessionProgram(): Command {

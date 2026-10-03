@@ -175,7 +175,7 @@ MCP session commands (after connecting):
   <@session> tasks-cancel <taskId>
   <@session> prompts-list
   <@session> prompts-get <name> [arg:=val ... | <json> | <stdin]
-  <@session> completion-complete prompt|resource <ref> <arg> [arg:=val ... | <json> | <stdin]
+  <@session> completion-complete prompt|resource <ref> <arg:=val ... | <json> | <stdin>
   <@session> resources-list
   <@session> resources-read <uri> [-o <file> | --raw]
   <@session> resources-subscribe <uri> <file>
@@ -1063,9 +1063,9 @@ mcpc @apify prompts-list
 # Get a prompt with arguments
 mcpc @apify prompts-get analyze-website url:=https://example.com
 
-# Ask the server to suggest values for a prompt argument (or a resource template
-# variable with `resource <uri-template>`); pass the arguments filled in so far
-mcpc @apify completion-complete prompt analyze-website url url:=https://ex
+# Ask the server to suggest values for the last argument given (or for a resource
+# template variable with `resource <uri-template>`); earlier arguments are context
+mcpc @apify completion-complete prompt analyze-website url:=https://ex
 ```
 
 <!-- TODO: Add example of prompt templates -->

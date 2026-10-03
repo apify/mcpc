@@ -25,7 +25,7 @@ assert_not_contains "$STDOUT" "completion-complete"
 test_pass
 
 test_case "completion-complete explains that the server declares no completions"
-run_xmcpc "$SESSION" completion-complete prompt greeting style
+run_xmcpc "$SESSION" completion-complete prompt greeting style:=
 assert_exit_code 2
 assert_contains "$STDERR" "does not declare the completions capability"
 assert_contains "$STDERR" "mcpc @session"

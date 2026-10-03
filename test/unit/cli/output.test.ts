@@ -1060,7 +1060,7 @@ describe('formatServerDetails', () => {
     expect(output).toContain('mcpc @test resources-list');
     expect(output).toContain('mcpc @test resources-read');
     expect(output).toContain('mcpc @test prompts-list');
-    expect(output).toContain('mcpc @test completion-complete prompt|resource <ref> <arg>');
+    expect(output).toContain('mcpc @test completion-complete prompt|resource <ref> <arg1:=val1');
     expect(output).toContain('mcpc @test logging-set-level');
 
     // Should contain instructions in code block

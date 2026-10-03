@@ -618,6 +618,12 @@ describe('readCommandArgs', () => {
   });
 });
 
+describe('parseCommandArgs empty values', () => {
+  it('keeps name:= as an empty string (how completion-complete asks for every suggestion)', () => {
+    expect(parseCommandArgs(['name:='])).toEqual({ name: '' });
+  });
+});
+
 describe('stringifyArgValues', () => {
   it('keeps strings and serializes everything else as JSON text', () => {
     expect(
