@@ -312,6 +312,14 @@ export interface OAuthClientCredentialsInfo {
   keyAlg?: string; // JWT signing algorithm for the private_key_jwt variant
   scope?: string; // space-separated scopes requested by the grant
   tokenEndpoint?: string; // explicit token endpoint (--token-endpoint); skips discovery
+  /**
+   * Authorization server issuer the material was validated against at login. The SDK
+   * provider is bound to it (SEP-2352), so the secret or key is only ever sent there,
+   * and a server that later points at a different authorization server fails loudly
+   * instead of receiving the credentials. Absent for profiles written before mcpc
+   * recorded it; re-login records it.
+   */
+  issuer?: string;
 }
 
 export interface OAuthTokenInfo {

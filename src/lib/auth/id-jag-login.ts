@@ -276,6 +276,10 @@ export async function loginIdJag(
     }
     grantedScope = (await provider.tokens())?.scope;
     logger.debug('ID-JAG validation token request succeeded');
+    // Record the authorization server the chain was validated against; the bridge
+    // binds its provider to it (SEP-2352) from now on.
+    const authorizationServer = provider.authorizationServerUrl();
+    if (authorizationServer) info.mcpAuthorizationServer = authorizationServer;
   } catch (error) {
     if (error instanceof AuthError) throw error;
     throw new AuthError(`Enterprise-managed authentication failed: ${describeAuthError(error)}`);
@@ -299,7 +303,7 @@ export async function loginIdJag(
     serverUrl: normalizedServerUrl,
     authType: 'oauth',
     oauthGrant: 'id_jag',
-    oauthIssuer: normalizedServerUrl,
+    oauthIssuer: info.mcpAuthorizationServer ?? normalizedServerUrl,
     idpIssuer,
     createdAt: existing?.createdAt ?? now,
     authenticatedAt: now,

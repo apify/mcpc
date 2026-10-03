@@ -9,14 +9,14 @@ importers:
   .:
     dependencies:
       '@modelcontextprotocol/client':
-        specifier: 2.0.0
-        version: 2.0.0
+        specifier: 2.3.0
+        version: 2.3.0
       '@modelcontextprotocol/core':
-        specifier: 2.0.0
-        version: 2.0.0
+        specifier: 2.3.0
+        version: 2.3.0
       '@modelcontextprotocol/sdk':
-        specifier: ^1.30.0
-        version: 1.30.0(zod@4.5.4)
+        specifier: ^1.32.0
+        version: 1.32.0(zod@4.5.4)
       '@napi-rs/keyring':
         specifier: ^2.0.0
         version: 2.0.0
@@ -43,11 +43,11 @@ importers:
         specifier: ^10.0.1
         version: 10.0.1(eslint@10.10.0)
       '@modelcontextprotocol/node':
-        specifier: 2.0.0
-        version: 2.0.0(@modelcontextprotocol/server@2.0.0)(hono@4.13.7)
+        specifier: 2.1.1
+        version: 2.1.1(@modelcontextprotocol/server@2.3.0)
       '@modelcontextprotocol/server':
-        specifier: 2.0.0
-        version: 2.0.0
+        specifier: 2.3.0
+        version: 2.3.0
       '@modelcontextprotocol/server-filesystem':
         specifier: 2026.8.31
         version: 2026.8.31(zod@4.5.4)
@@ -451,26 +451,22 @@ packages:
   '@keyv/serialize@1.1.1':
     resolution: {integrity: sha512-dXn3FZhPv0US+7dtJsIi2R+c7qWYiReoEh5zUntWCf4oSpMNib8FDhSoed6m3QyZdx5hK7iLFkYk3rNxwt8vTA==}
 
-  '@modelcontextprotocol/client@2.0.0':
-    resolution: {integrity: sha512-8f1OghQ2rjzIOfqgUCP+8GiUWqRs89njoWLNqAe8kWmDePv3s1fZXseej+QXemssEuuOvLLmLO/kqM3IQHtISw==}
+  '@modelcontextprotocol/client@2.3.0':
+    resolution: {integrity: sha512-pbHtGj6EeFCHngFE8gtNPaKrsj8Mb1IMw45BLcaPML/m2WTxI7pyYmeNQvaux88Lw8BSO5r7nyRbUyIkICmGrg==}
     engines: {node: '>=20'}
 
-  '@modelcontextprotocol/core@2.0.0':
-    resolution: {integrity: sha512-pJCEwGG7Lfr/+PQp9ZTwKXNeO5wzbfKL7H3MYpCorM4oFBoQrdjnBgEoqG+RjhsvS1FKrDbKux+M1HhlnGWqcA==}
+  '@modelcontextprotocol/core@2.3.0':
+    resolution: {integrity: sha512-09BHFaNVBe5pB2AhzCfLj0cqmsKLERvZQ4FblzP90UMGLaXVqdZPByFjURwsUYCmxonUW2yAwgTTvle+8O2/8w==}
     engines: {node: '>=20'}
 
-  '@modelcontextprotocol/node@2.0.0':
-    resolution: {integrity: sha512-Y4hAC2XdGDUdDOCbLDOCA4+aL3NUldjsOWlDL/YwpAxrPhRm1xHd7lZ+mLacvZ9t3PaH28wgNoaLQGrIk1P2pg==}
+  '@modelcontextprotocol/node@2.1.1':
+    resolution: {integrity: sha512-EY92OAXN2xYL7tNS/MVsWJW1v8VHAPwl9B4Ca3pCrjmvqyC+S1C/6UHsMxF2GoFPraS5Yyg56vFz9brVpFojMA==}
     engines: {node: '>=20'}
     peerDependencies:
-      '@modelcontextprotocol/server': ^2.0.0
-      hono: ^4.11.4
-    peerDependenciesMeta:
-      hono:
-        optional: true
+      '@modelcontextprotocol/server': ^2.3.0
 
-  '@modelcontextprotocol/sdk@1.30.0':
-    resolution: {integrity: sha512-xKd8OIzlqNzcqcNumGAa6g+PW2kjD5vrpcKOnfldAUPP3j7lnqMPwlTXQm8gF+UwH72z0lqaRbjr9hqGz0eITA==}
+  '@modelcontextprotocol/sdk@1.32.0':
+    resolution: {integrity: sha512-8BviX/hK4Gd2eL1KdTwm0gfl4d3wdoErW0Jd00h6nomUAtk6IJk5vwQJc6kfWtJTzN5OEV/lgIiJKI8fiDGAlA==}
     engines: {node: '>=18'}
     peerDependencies:
       '@cfworker/json-schema': ^4.1.1
@@ -483,8 +479,8 @@ packages:
     resolution: {integrity: sha512-kKaFkyAh6oipvc9+EAbJ552JafnMnOq5nzmzWkp1jJdBhTAAGpmIpWihUG1+rfNhmEFM98gUZDdCHCDD4v6a7Q==}
     hasBin: true
 
-  '@modelcontextprotocol/server@2.0.0':
-    resolution: {integrity: sha512-YhHWdHfpFMQfd0prsEnxKeS3Qz3ytIGmsS0sth4KDjnacIT7hxk6hXHkJ9KysxlkvTM+WZAtQbbcUhdoP4Hvtw==}
+  '@modelcontextprotocol/server@2.3.0':
+    resolution: {integrity: sha512-+6b0LdsQLmHsvS7J6sQJ4weTpzUn61fU1JKS+321/+IyDYoHW5CR2Tgqcs6GgAAQvlesCo6yX3xttgmx+XGtJw==}
     engines: {node: '>=20'}
 
   '@napi-rs/keyring-darwin-arm64@2.0.0':
@@ -2994,9 +2990,9 @@ snapshots:
 
   '@keyv/serialize@1.1.1': {}
 
-  '@modelcontextprotocol/client@2.0.0':
+  '@modelcontextprotocol/client@2.3.0':
     dependencies:
-      '@modelcontextprotocol/core': 2.0.0
+      '@modelcontextprotocol/core': 2.3.0
       cross-spawn: 7.0.6
       eventsource: 3.0.7
       eventsource-parser: 3.1.1
@@ -3004,18 +3000,17 @@ snapshots:
       pkce-challenge: 5.0.1
       zod: 4.5.4
 
-  '@modelcontextprotocol/core@2.0.0':
+  '@modelcontextprotocol/core@2.3.0':
     dependencies:
       zod: 4.5.4
 
-  '@modelcontextprotocol/node@2.0.0(@modelcontextprotocol/server@2.0.0)(hono@4.13.7)':
+  '@modelcontextprotocol/node@2.1.1(@modelcontextprotocol/server@2.3.0)':
     dependencies:
       '@hono/node-server': 1.19.17(hono@4.13.7)
-      '@modelcontextprotocol/server': 2.0.0
-    optionalDependencies:
+      '@modelcontextprotocol/server': 2.3.0
       hono: 4.13.7
 
-  '@modelcontextprotocol/sdk@1.30.0(zod@4.5.4)':
+  '@modelcontextprotocol/sdk@1.32.0(zod@4.5.4)':
     dependencies:
       '@hono/node-server': 2.1.1(hono@4.13.7)
       ajv: 8.20.0
@@ -3039,7 +3034,7 @@ snapshots:
 
   '@modelcontextprotocol/server-filesystem@2026.8.31(zod@4.5.4)':
     dependencies:
-      '@modelcontextprotocol/sdk': 1.30.0(zod@4.5.4)
+      '@modelcontextprotocol/sdk': 1.32.0(zod@4.5.4)
       diff: 8.0.4
       glob: 13.0.6
       minimatch: 10.2.6
@@ -3048,9 +3043,9 @@ snapshots:
       - supports-color
       - zod
 
-  '@modelcontextprotocol/server@2.0.0':
+  '@modelcontextprotocol/server@2.3.0':
     dependencies:
-      '@modelcontextprotocol/core': 2.0.0
+      '@modelcontextprotocol/core': 2.3.0
       zod: 4.5.4
 
   '@napi-rs/keyring-darwin-arm64@2.0.0':
