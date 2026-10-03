@@ -445,7 +445,7 @@ Environment variable substitution supported: `${VAR_NAME}`
 - **Node.js:** ≥22.12.0
 - **Bun:** ≥1.0.0 (alternative runtime)
 - **OS support:** macOS, Linux, Windows
-- **Linux dependency:** `libsecret` (for OS keychain access via `@napi-rs/keyring`)
+- **Linux keychain:** a Secret Service provider (e.g. GNOME Keyring, KWallet) on the session D-Bus; `@napi-rs/keyring` talks D-Bus directly and does not need `libsecret`. Without one, credentials fall back to `~/.mcpc/credentials.json`
 
 ## Authentication Architecture
 
