@@ -2035,7 +2035,7 @@ async function main(): Promise<void> {
 
   if (args.length < 2) {
     console.error(
-      'Usage: mcpc-bridge <sessionName> <transportConfigJson> [--verbose] [--profile <name>] [--proxy-host <host>] [--proxy-port <port>] [--mcp-session-id <id>] [--protocol-version <version>] [--x402 <auto|upto|exact>] [--insecure]'
+      'Usage: node dist/bridge/index.js <sessionName> <transportConfigJson> [--verbose] [--profile <name>] [--proxy-host <host>] [--proxy-port <port>] [--mcp-session-id <id>] [--protocol-version <version>] [--x402 <auto|upto|exact>] [--insecure]'
     );
     process.exit(1);
   }

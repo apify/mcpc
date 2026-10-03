@@ -329,7 +329,7 @@ _capture_timeout_diagnostics() {
 
   echo "--- all mcpc CLI / bridge processes ---"
   ps -axww -o pid,etime,command 2>/dev/null \
-    | grep -E "dist/cli/index|dist/bridge/index|mcpc-bridge" | grep -v grep | head -30 || true
+    | grep -E "dist/cli/index|dist/bridge/index" | grep -v grep | head -30 || true
 
   # Native stack of each hung descendant. macOS `sample` needs no privileges for
   # own-user processes and pinpoints the exact syscall/frame the process is stuck on.
@@ -653,7 +653,6 @@ cleanup_bridges() {
   if _is_windows; then
     taskkill //F //IM node.exe 2>/dev/null || true
   else
-    pkill -f "mcpc-bridge.*$home_dir" 2>/dev/null || true
     pkill -f "mcpc/dist/bridge.*$home_dir" 2>/dev/null || true
   fi
 

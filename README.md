@@ -1468,7 +1468,7 @@ files, but supports [verbose mode](#verbose-mode).
 **"Cannot connect to bridge"**
 
 - Bridge may have crashed. Try: `mcpc @<session-name> tools-list` to restart the bridge
-- Check bridge is running: `ps aux | grep -e 'mcpc-bridge' -e '[m]cpc/dist/bridge'`
+- Check bridge is running: `ps aux | grep '[m]cpc/dist/bridge'`
 - Check socket exists: `ls ~/.mcpc/bridges/`
 
 **"Session not found"**
