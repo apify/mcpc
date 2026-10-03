@@ -99,8 +99,7 @@ mcpc/
 │       ├── auth/       # Authentication management (OAuth, bearer tokens, profiles)
 │       └── ...         # Other utilities
 ├── bin/
-│   ├── mcpc            # Main CLI executable
-│   └── mcpc-bridge     # Bridge process executable
+│   └── mcpc            # Main CLI executable
 └── test/
     └── e2e/
         └── server/     # Test MCP servers for E2E tests (2025-11-25 + 2026-07-28)
@@ -122,7 +121,7 @@ mcpc/
 
 **2. Bridge Process (`src/bridge/`)**
 
-- Separate executable (`mcpc-bridge`) that maintains persistent MCP connections
+- Separate process (`dist/bridge/index.js`, spawned by the CLI with the same Node.js binary) that maintains persistent MCP connections
 - Session persistence via `~/.mcpc/sessions.json` with file locking (`proper-lockfile` package)
 - Process lifecycle management for local package servers (stdio transport)
 - Unix domain socket server for CLI-to-bridge IPC (named pipes on Windows)
