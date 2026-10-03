@@ -25,6 +25,7 @@ Argument completions for prompts and resource templates, stdio server secrets ke
 
 ### Fixed
 
+- Bridge log rotation no longer races the file it rotates: under load the rename could run before the log file was opened or flushed, so the rotation was silently skipped and the first lines of the new file were lost.
 - Windows sessions no longer pile up duplicate bridge processes when `tasklist` is slow or unavailable. A liveness check that could not run used to report every bridge dead, so each command spawned a replacement without stopping the healthy original; the check now falls back to a signal probe, the old bridge is always asked to shut down, and a bridge that finds another one registered for its session exits on its own. (#427)
 
 ## [0.7.0] - 2026-09-23

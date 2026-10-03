@@ -107,10 +107,14 @@ export class FileLogger {
    * Renames current file to .1, .1 to .2, etc., and deletes oldest
    */
   private async rotate(): Promise<void> {
-    // Close current stream
+    // Close the current stream and wait until it has finished: write streams open lazily
+    // and flush on end, so renaming before that could run while the file does not exist
+    // yet (the rename then silently did nothing and the rotation was lost) or before the
+    // last lines reached it.
     if (this.stream) {
-      this.stream.end();
+      const stream = this.stream;
       this.stream = null;
+      await new Promise<void>((resolve) => stream.end(resolve));
     }
 
     const dir = dirname(this.filePath);
