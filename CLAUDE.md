@@ -99,8 +99,7 @@ mcpc/
 │       ├── auth/       # Authentication management (OAuth, bearer tokens, profiles)
 │       └── ...         # Other utilities
 ├── bin/
-│   ├── mcpc            # Main CLI executable
-│   └── mcpc-bridge     # Bridge process executable
+│   └── mcpc            # Main CLI executable
 └── test/
     └── e2e/
         └── server/     # Test MCP servers for E2E tests (2025-11-25 + 2026-07-28)
@@ -122,7 +121,7 @@ mcpc/
 
 **2. Bridge Process (`src/bridge/`)**
 
-- Separate executable (`mcpc-bridge`) that maintains persistent MCP connections
+- Separate process (`dist/bridge/index.js`, spawned by the CLI with the same Node.js binary) that maintains persistent MCP connections
 - Session persistence via `~/.mcpc/sessions.json` with file locking (`proper-lockfile` package)
 - Process lifecycle management for local package servers (stdio transport)
 - Unix domain socket server for CLI-to-bridge IPC (named pipes on Windows)
@@ -821,14 +820,15 @@ The script validates preconditions locally (including `pnpm run check:deps-age`,
 
 `pnpm-workspace.yaml` sets `minimumReleaseAge` to keep freshly-published (potentially compromised) packages out of the tree, but pnpm applies it only when *resolving* new versions — pnpm 10 does not re-check an existing lockfile on a `--frozen-lockfile` install (that landed in pnpm 11). `scripts/check-dependency-age.mjs` closes that gap: it reads the publish time of every version pinned in `pnpm-lock.yaml` and fails the release if anything is too young. Packages listed in `minimumReleaseAgeExclude` get a shorter 48-hour floor instead of a free pass. The check fails closed — a registry error is a failure, never a skip. Remove the script once the repo moves to pnpm ≥ 11 and native lockfile age verification covers it.
 
-The Homebrew formula lives in [apify/homebrew-tap](https://github.com/apify/homebrew-tap), not here, and its bump is **started manually for now** — the release workflow only prints the command in its run summary:
+Homebrew formulae live outside this repo, in [Homebrew/homebrew-core](https://github.com/Homebrew/homebrew-core/blob/main/Formula/m/mcpc.rb) (`brew install mcpc`) and [apify/homebrew-tap](https://github.com/apify/homebrew-tap) (`brew install apify/tap/mcpc`). After a release, the `homebrew` job in `release.yml` updates both: it runs `brew bump-formula-pr` to open a version-bump PR in homebrew-core (merged by Homebrew maintainers once their CI passes) and dispatches the tap's `update_formula.yaml`. It runs as a separate job, so a failure there never affects the npm release; to retry by hand:
 
 ```bash
+brew bump-formula-pr mcpc --version <version>
 gh workflow run update_formula.yaml --repo apify/homebrew-tap \
   --field package=mcpc --field npm_package=@apify/mcpc --field version=<version>
 ```
 
-That workflow points `Formula/mcpc.rb` at the new npm tarball, installs and `brew test`s it on Linux and macOS, and merges the bump. Skipping it only leaves Homebrew users on the previous version; npm and Bun installs are unaffected.
+Skipping it only leaves Homebrew users on the previous version; npm and Bun installs are unaffected.
 
 For pre-releases: `pnpm run release:pre` (or `pnpm run release:pre -- minor`)
 
@@ -847,10 +847,14 @@ The `CHANGELOG.md` file follows [Keep a Changelog](https://keepachangelog.com/en
 - `Fixed` - Bug fixes
 - `Security` - Vulnerability fixes
 
+**Release summary line:** keep one plain-text sentence (~120 characters, user-facing) right under `## [Unreleased]`, above the first `###` heading, and update it as entries are added. The release workflow puts it at the top of the GitHub release body, which is what the release URL's social preview card shows.
+
 **Example entry:**
 
 ```markdown
 ## [Unreleased]
+
+Faster tool calls and a fix for empty server responses.
 
 ### Added
 
@@ -864,7 +868,7 @@ The `CHANGELOG.md` file follows [Keep a Changelog](https://keepachangelog.com/en
 **Before each release**, Claude should:
 
 1. Review all commits since the last release: `git log $(git describe --tags --abbrev=0)..HEAD --oneline`
-2. Ensure all significant changes are documented in `[Unreleased]`
+2. Ensure all significant changes are documented in `[Unreleased]`, and that it opens with an up-to-date one-line summary
 3. The release script will automatically move `[Unreleased]` entries to the new version section
 
 **Important:** The changelog is for **users reading release notes**. Only include entries that a user would care about. Do not add entries for: new warnings or deprecation notices on existing commands, minor help text or `--help` output changes, test infrastructure (new tests, test refactors), CI/CD workflow changes, internal refactors, or cosmetic tweaks. When in doubt, leave it out.

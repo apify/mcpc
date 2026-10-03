@@ -22,8 +22,7 @@
   },
   "homepage": "https://github.com/apify/mcpc",
   "bin": {
-    "mcpc": "bin/mcpc",
-    "mcpc-bridge": "bin/mcpc-bridge"
+    "mcpc": "bin/mcpc"
   },
   "engines": {
     "node": ">=22.12.0"
