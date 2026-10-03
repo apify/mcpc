@@ -78,7 +78,8 @@ The two aren't exclusive – they're complementary.
 As a bonus, the same `mcpc` configuration, OAuth profiles, and live sessions can be shared across
 many AI agents on the same machine. Authenticate once, reuse everywhere.
 
-How `mcpc` compares to other MCP CLI clients (see [Related work](#related-work) for details and notes):
+`mcpc` is the most [MCP specification](https://modelcontextprotocol.io/specification/latest)-compliant CLI client available.
+Here's how it compares to other MCP CLI clients (see [Related work](#related-work) for details and notes):
 
 [![Comparison of MCP CLI clients](https://raw.githubusercontent.com/apify/mcpc/main/docs/images/related-work.svg)](#related-work)
 
