@@ -131,6 +131,10 @@ class BridgeProcess {
   // HTTP headers (received via IPC, stored in memory only)
   private headers: Record<string, string> | null = null;
 
+  // Environment variables for the stdio server (received via IPC, stored in memory only;
+  // never on this process's argv, where every local user could read them)
+  private env: Record<string, string> | null = null;
+
   // Bearer token the proxy server requires (received via IPC, stored in memory only).
   // Read by the CLI before spawn and sent over IPC — never read from the keychain here,
   // keeping the bridge's only keychain access on the OAuth-refresh path (see #55).
@@ -211,6 +215,7 @@ class BridgeProcess {
     logger.debug(`  clientSecret: ${credentials.clientSecret ? 'present' : 'absent'}`);
     logger.debug(`  privateKey: ${credentials.privateKeyPem ? 'present' : 'absent'}`);
     logger.debug(`  headers: ${credentials.headers ? Object.keys(credentials.headers).length : 0}`);
+    logger.debug(`  env: ${credentials.env ? Object.keys(credentials.env).length : 0}`);
     logger.debug(`  proxyBearerToken: ${credentials.proxyBearerToken ? 'present' : 'absent'}`);
     logger.debug(`  idJag: ${credentials.idJag ? 'present' : 'absent'}`);
 
@@ -353,6 +358,12 @@ class BridgeProcess {
         ...credentials.headers,
       };
       logger.debug(`Stored headers "${Object.keys(this.headers).join(', ')}" in memory`);
+    }
+
+    // Store the stdio server's env if provided (merged into the transport config on connect)
+    if (credentials.env) {
+      this.env = { ...this.env, ...credentials.env };
+      logger.debug(`Stored stdio env "${Object.keys(this.env).join(', ')}" in memory`);
     }
 
     // Store the proxy bearer token if provided (used by startProxyServer)
@@ -684,6 +695,13 @@ class BridgeProcess {
       // No authProvider - use updateTransportAuth for static headers
       logger.debug('No authProvider - using updateTransportAuth for headers');
       serverConfig = await this.updateTransportAuth();
+    }
+
+    // A stdio server's env arrives over IPC (see setAuthCredentials); the config on argv
+    // never carries it.
+    if (this.env) {
+      serverConfig.env = { ...serverConfig.env, ...this.env };
+      logger.debug(`Added stdio env "${Object.keys(this.env).join(', ')}" to transport`);
     }
 
     logger.debug('Building MCP client config...');

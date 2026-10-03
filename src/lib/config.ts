@@ -9,7 +9,7 @@ import { join, resolve } from 'path';
 import type { McpConfig, ServerConfig } from './types.js';
 import { ClientError } from './errors.js';
 import { createLogger } from './logger.js';
-import { normalizeServerUrl } from './utils.js';
+import { normalizeServerUrl, redactServerConfig } from './utils.js';
 
 const logger = createLogger('config');
 
@@ -94,7 +94,8 @@ export function getServerConfig(config: McpConfig, serverName: string): ServerCo
   // Substitute environment variables
   const substituted = substituteEnvVars(serverConfig);
 
-  logger.debug(`Retrieved config for server: ${serverName}`, substituted);
+  // Header and env values are secrets more often than not — log the shape, not the values.
+  logger.debug(`Retrieved config for server: ${serverName}`, redactServerConfig(substituted));
 
   return substituted;
 }

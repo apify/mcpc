@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- The `env` of a stdio config entry, where API tokens such as `GITHUB_PERSONAL_ACCESS_TOKEN` usually live, is now stored in the OS keychain and delivered to the bridge over IPC like session headers, instead of being written in plaintext to `sessions.json`, printed by `mcpc --json` and `mcpc @session`, and passed on the bridge's command line where `ps` showed it to every local user. Verbose output and the bridge log no longer record header values, env values, or tool-call arguments either, and bridge log files are created owner-only.
+
 ### Fixed
 
 - Windows sessions no longer pile up duplicate bridge processes when `tasklist` is slow or unavailable. A liveness check that could not run used to report every bridge dead, so each command spawned a replacement without stopping the healthy original; the check now falls back to a signal probe, the old bridge is always asked to shut down, and a bridge that finds another one registered for its session exits on its own. (#427)

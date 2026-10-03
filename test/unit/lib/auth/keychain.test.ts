@@ -170,6 +170,28 @@ describe('OS keychain available', () => {
     expect(await readKeychainSessionHeaders('s')).toEqual(headers);
   });
 
+  it('stores, retrieves and removes a stdio session env separately from its headers', async () => {
+    const {
+      storeKeychainSessionHeaders,
+      readKeychainSessionHeaders,
+      storeKeychainSessionEnv,
+      readKeychainSessionEnv,
+      removeKeychainSessionEnv,
+    } = await loadKeychain();
+
+    await storeKeychainSessionHeaders('s', { 'X-Custom': 'v' });
+    const env = { GITHUB_PERSONAL_ACCESS_TOKEN: 'ghp_secret', DEBUG: 'mcp:*' };
+    await storeKeychainSessionEnv('s', env);
+
+    expect(await readKeychainSessionEnv('s')).toEqual(env);
+    expect(await readKeychainSessionHeaders('s')).toEqual({ 'X-Custom': 'v' });
+    expect(await readKeychainSessionEnv('other')).toBeUndefined();
+
+    expect(await removeKeychainSessionEnv('s')).toBe(true);
+    expect(await readKeychainSessionEnv('s')).toBeUndefined();
+    expect(await readKeychainSessionHeaders('s')).toEqual({ 'X-Custom': 'v' });
+  });
+
   it('stores and retrieves proxy bearer token', async () => {
     const { storeKeychainProxyBearerToken, readKeychainProxyBearerToken } = await loadKeychain();
 

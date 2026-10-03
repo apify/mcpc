@@ -29,6 +29,7 @@ import {
   invalidateProcessAliveCache,
   isSessionExpiredError,
   enrichErrorMessage,
+  REDACTED_HEADER_VALUE,
 } from './utils.js';
 import { updateSession, getSession } from './sessions.js';
 import { createLogger } from './logger.js';
@@ -45,6 +46,7 @@ import {
   readKeychainClientCredentials,
   readKeychainIdJagCredentials,
   readKeychainSessionHeaders,
+  readKeychainSessionEnv,
   readKeychainProxyBearerToken,
 } from './auth/keychain.js';
 import { getAuthProfile } from './auth/profiles.js';
@@ -115,6 +117,7 @@ export interface StartBridgeOptions {
   verbose?: boolean;
   profileName?: string; // Auth profile name for token refresh
   headers?: Record<string, string>; // Headers to send via IPC (caller stores in keychain)
+  env?: Record<string, string>; // Stdio server env to send via IPC (caller stores in keychain)
   proxyConfig?: ProxyConfig; // Proxy server configuration
   mcpSessionId?: string; // MCP session ID for resumption (Streamable HTTP only)
   protocolVersion?: string; // Protocol version negotiated by the resumed session (only pass with mcpSessionId)
@@ -131,10 +134,10 @@ export interface StartBridgeResult {
  * Start a bridge process for a session
  * Spawns the bridge process and sends auth credentials via IPC
  *
- * SECURITY: All headers are treated as potentially sensitive:
- * 1. Caller stores headers in OS keychain before calling this function
- * 2. Headers are sent to bridge via IPC after startup
- * 3. Never exposed in process listings
+ * SECURITY: All headers and stdio env values are treated as potentially sensitive:
+ * 1. Caller stores them in the OS keychain before calling this function
+ * 2. They are sent to the bridge via IPC after startup
+ * 3. Never exposed in process listings (the bridge's argv carries neither)
  *
  * NOTE: This function does NOT manage session storage. The caller is responsible for:
  * - Creating the session record before calling startBridge()
@@ -149,6 +152,7 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
     verbose,
     profileName,
     headers,
+    env,
     proxyConfig,
     mcpSessionId,
     protocolVersion,
@@ -171,22 +175,25 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
     : undefined;
 
   const authCredentials =
-    profileName || headers || proxyBearerToken
+    profileName || headers || env || proxyBearerToken
       ? await loadAuthCredentials(
           serverConfig.url || serverConfig.command || '',
           profileName,
           headers,
-          proxyBearerToken
+          proxyBearerToken,
+          env
         )
       : null;
   const x402Credentials = x402 ? await loadX402WalletCredentials() : null;
 
-  // Create a sanitized transport config without any headers
-  // Headers will be sent to the bridge via IPC instead
+  // Create a sanitized transport config without headers or stdio env: both go to the
+  // bridge via IPC instead. argv is world-readable (`ps`, /proc/<pid>/cmdline), and a
+  // stdio entry's env is where API tokens usually live.
   const sanitizedTarget: ServerConfig = { ...serverConfig };
   delete sanitizedTarget.headers; // Only exists for http, no-op for stdio
+  delete sanitizedTarget.env; // Only exists for stdio, no-op for http
 
-  // Prepare bridge arguments (with sanitized config - no headers)
+  // Prepare bridge arguments (with sanitized config - no headers, no env)
   const bridgeExecutable = getBridgeExecutable();
   const targetJson = JSON.stringify(sanitizedTarget);
   const args = [sessionName, targetJson];
@@ -196,12 +203,16 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
   }
 
   // Pass auth profile to bridge
-  // Use a dummy placeholder when headers or a proxy bearer token are provided (no
-  // OAuth profile), so the bridge waits for the IPC credentials — which also carry
-  // the proxy bearer token — before connecting and starting its proxy server.
+  // Use a dummy placeholder when headers, a stdio env, or a proxy bearer token are
+  // provided (no OAuth profile), so the bridge waits for the IPC credentials — which
+  // carry all of them — before connecting and starting its proxy server.
   if (profileName) {
     args.push('--profile', profileName);
-  } else if ((headers && Object.keys(headers).length > 0) || proxyBearerToken) {
+  } else if (
+    (headers && Object.keys(headers).length > 0) ||
+    (env && Object.keys(env).length > 0) ||
+    proxyBearerToken
+  ) {
     args.push('--profile', 'dummy');
   }
 
@@ -482,9 +493,10 @@ export async function restartBridge(sessionName: string): Promise<StartBridgeRes
     // Ignore errors, we're restarting anyway
   }
 
-  // Build transport config from session data (exclude redacted headers)
+  // Build transport config from session data (exclude redacted headers and env)
   const serverConfig: ServerConfig = { ...session.server };
   delete serverConfig.headers;
+  delete serverConfig.env;
 
   // Retrieve transport headers from keychain for failover, and cross-check them
   let headers: Record<string, string> | undefined;
@@ -502,6 +514,9 @@ export async function restartBridge(sessionName: string): Promise<StartBridgeRes
     logger.debug(`Retrieved ${expectedHeaderKeys.length} headers from keychain for failover`);
   }
 
+  // Retrieve the stdio server's env from the keychain the same way
+  const env = await loadSessionEnv(sessionName, session.server.env);
+
   // Start a new bridge, preserving auth profile, proxy config, MCP session ID, and wallet
   const bridgeOptions: StartBridgeOptions = {
     sessionName,
@@ -509,6 +524,9 @@ export async function restartBridge(sessionName: string): Promise<StartBridgeRes
   };
   if (headers) {
     bridgeOptions.headers = headers;
+  }
+  if (env) {
+    bridgeOptions.env = env;
   }
   if (session.profileName) {
     bridgeOptions.profileName = session.profileName;
@@ -553,7 +571,8 @@ export async function loadAuthCredentials(
   serverUrl: string,
   profileName?: string,
   headers?: Record<string, string>,
-  proxyBearerToken?: string
+  proxyBearerToken?: string,
+  env?: Record<string, string>
 ): Promise<AuthCredentials> {
   // Build credentials object
   const credentials: AuthCredentials = {
@@ -652,7 +671,53 @@ export async function loadAuthCredentials(
     logger.debug('Including proxy bearer token in credentials');
   }
 
+  // Add the stdio server's env if provided (kept off the bridge's argv)
+  if (env) {
+    credentials.env = env;
+    logger.debug(`Including ${Object.keys(env).length} stdio env variable(s) in credentials`);
+  }
+
   return credentials;
+}
+
+/**
+ * Resolve the environment a session's stdio server must be restarted with.
+ *
+ * The session record keeps the variable names with redacted values; the values are in the
+ * keychain. A record written before mcpc redacted `env` (0.7 and earlier) still holds the
+ * plaintext values and has no keychain entry, so those are used as they are rather than
+ * failing a restart the user did not ask for. Returns undefined when the server has no env.
+ */
+export async function loadSessionEnv(
+  sessionName: string,
+  storedEnv: Record<string, string> | undefined
+): Promise<Record<string, string> | undefined> {
+  const expectedKeys = storedEnv ? Object.keys(storedEnv) : [];
+  if (expectedKeys.length === 0) {
+    return undefined;
+  }
+
+  const env = await readKeychainSessionEnv(sessionName);
+  const retrievedKeys = new Set(Object.keys(env || {}));
+  const missingKeys = expectedKeys.filter((key) => !retrievedKeys.has(key));
+  if (missingKeys.length === 0) {
+    logger.debug(`Retrieved ${expectedKeys.length} stdio env variable(s) from keychain`);
+    return env;
+  }
+
+  const redactedKeys = missingKeys.filter((key) => storedEnv?.[key] === REDACTED_HEADER_VALUE);
+  if (redactedKeys.length > 0) {
+    throw new ClientError(
+      `Missing stdio environment variable(s) in keychain for session ${sessionName}: ${redactedKeys.join(', ')}. ` +
+        `The session may need to be recreated with "mcpc ${sessionName} close" followed by a new connect.`
+    );
+  }
+
+  // Legacy record: plaintext values, nothing in the keychain yet.
+  logger.debug(
+    `Using ${missingKeys.length} stdio env variable(s) from the session record (written before mcpc stored them in the keychain)`
+  );
+  return { ...storedEnv, ...env };
 }
 
 /**

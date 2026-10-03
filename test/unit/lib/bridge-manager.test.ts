@@ -14,6 +14,7 @@ vi.mock('../../../src/lib/auth/keychain.js', () => ({
   readKeychainClientCredentials: vi.fn(),
   readKeychainIdJagCredentials: vi.fn(),
   readKeychainSessionHeaders: vi.fn(),
+  readKeychainSessionEnv: vi.fn(),
   readKeychainProxyBearerToken: vi.fn(),
 }));
 
@@ -21,8 +22,11 @@ import { getAuthProfile } from '../../../src/lib/auth/profiles.js';
 import {
   readKeychainOAuthClientInfo,
   readKeychainOAuthTokenInfo,
+  readKeychainSessionEnv,
 } from '../../../src/lib/auth/keychain.js';
-import { loadAuthCredentials } from '../../../src/lib/bridge-manager.js';
+import { loadAuthCredentials, loadSessionEnv } from '../../../src/lib/bridge-manager.js';
+import { REDACTED_HEADER_VALUE } from '../../../src/lib/utils.js';
+import { ClientError } from '../../../src/lib/errors.js';
 
 const SERVER_URL = 'https://mcp.example.com/mcp';
 
@@ -90,5 +94,61 @@ describe('loadAuthCredentials for the authorization-code grant (#387)', () => {
     const credentials = await loadAuthCredentials(SERVER_URL, 'default');
 
     expect(credentials).not.toHaveProperty('oauthIssuer');
+  });
+});
+
+describe('stdio env delivered over IPC instead of argv', () => {
+  it('loadAuthCredentials carries the env alongside headers', async () => {
+    const env = { GITHUB_PERSONAL_ACCESS_TOKEN: 'ghp_secret' };
+    const credentials = await loadAuthCredentials('npx', undefined, undefined, undefined, env);
+
+    expect(credentials.env).toEqual(env);
+    expect(credentials.headers).toBeUndefined();
+    expect(credentials.profileName).toBe('dummy');
+  });
+
+  it('loadSessionEnv returns undefined when the server has no env', async () => {
+    expect(await loadSessionEnv('@s', undefined)).toBeUndefined();
+    expect(await loadSessionEnv('@s', {})).toBeUndefined();
+    expect(readKeychainSessionEnv).not.toHaveBeenCalled();
+  });
+
+  it('loadSessionEnv restores the values from the keychain', async () => {
+    vi.mocked(readKeychainSessionEnv).mockResolvedValue({ TOKEN: 'real', DEBUG: 'mcp:*' });
+
+    const env = await loadSessionEnv('@s', {
+      TOKEN: REDACTED_HEADER_VALUE,
+      DEBUG: REDACTED_HEADER_VALUE,
+    });
+
+    expect(env).toEqual({ TOKEN: 'real', DEBUG: 'mcp:*' });
+    expect(readKeychainSessionEnv).toHaveBeenCalledWith('@s');
+  });
+
+  it('loadSessionEnv fails clearly when a redacted value is missing from the keychain', async () => {
+    vi.mocked(readKeychainSessionEnv).mockResolvedValue({ DEBUG: 'mcp:*' });
+
+    await expect(
+      loadSessionEnv('@s', { TOKEN: REDACTED_HEADER_VALUE, DEBUG: REDACTED_HEADER_VALUE })
+    ).rejects.toThrow(ClientError);
+    await expect(
+      loadSessionEnv('@s', { TOKEN: REDACTED_HEADER_VALUE, DEBUG: REDACTED_HEADER_VALUE })
+    ).rejects.toThrow(/TOKEN/);
+  });
+
+  it('loadSessionEnv keeps a legacy plaintext record working until the session is recreated', async () => {
+    vi.mocked(readKeychainSessionEnv).mockResolvedValue(undefined);
+
+    const env = await loadSessionEnv('@s', { TOKEN: 'plaintext-from-0.7', DEBUG: 'mcp:*' });
+
+    expect(env).toEqual({ TOKEN: 'plaintext-from-0.7', DEBUG: 'mcp:*' });
+  });
+
+  it('never lets the redaction sentinel reach the server as a value', async () => {
+    vi.mocked(readKeychainSessionEnv).mockResolvedValue(undefined);
+
+    await expect(loadSessionEnv('@s', { TOKEN: REDACTED_HEADER_VALUE })).rejects.toThrow(
+      ClientError
+    );
   });
 });

@@ -9,6 +9,7 @@ import { homedir, tmpdir } from 'os';
 import { join, resolve, isAbsolute } from 'path';
 import { mkdir, access, constants, rename, lstat, chmod } from 'fs/promises';
 import { ClientError, ServerError } from './errors.js';
+import type { ServerConfig } from './types.js';
 
 /**
  * Safety cap on pages fetched by fetchAllPages(). Generous — real servers
@@ -644,6 +645,24 @@ export function redactHeaders(headers: Record<string, string>): Record<string, s
   for (const key of Object.keys(headers)) {
     redacted[key] = REDACTED_HEADER_VALUE;
   }
+  return redacted;
+}
+
+/**
+ * Redact every secret-bearing value of a server config for storage, display, or logging:
+ * HTTP `headers` and stdio `env` values become "<redacted>" (their keys stay, so a restart
+ * knows which values to fetch from the keychain). The real values live in the OS keychain.
+ *
+ * `command` and `args` are deliberately left alone: a stdio server's command line is the
+ * child process's own argv, which `ps` shows to every local user regardless of what mcpc
+ * stores, so hiding it here would cost diagnostics without protecting anything. Its
+ * environment, by contrast, is private to the process owner — until it is copied onto
+ * another process's command line or into a world-readable file, which is what this guards.
+ */
+export function redactServerConfig(config: ServerConfig): ServerConfig {
+  const redacted: ServerConfig = { ...config };
+  if (config.headers) redacted.headers = redactHeaders(config.headers);
+  if (config.env) redacted.env = redactHeaders(config.env);
   return redacted;
 }
 
