@@ -114,6 +114,25 @@ if [[ -n "$REMOTE" && "$LOCAL" != "$REMOTE" ]]; then
 fi
 echo -e "${GREEN}✓ Branch is up-to-date with remote${NC}"
 
+# Check the release summary line (the first line of the GitHub release and its
+# social preview card). Without one, release-notes.mjs falls back to entry counts.
+if [[ "$RELEASE_TYPE" == "release" ]]; then
+  SUMMARY=$(node --input-type=module -e "
+    import { readFileSync } from 'node:fs';
+    import { extractSection, splitSummary } from './scripts/release-notes.mjs';
+    console.log(splitSummary(extractSection(readFileSync('CHANGELOG.md', 'utf8'), 'Unreleased') ?? '').summary);
+  ")
+  if [[ -z "$SUMMARY" ]]; then
+    echo -e "${YELLOW}⚠ No summary line under '## [Unreleased]' in CHANGELOG.md.${NC}"
+    echo "   Add a one-line summary above the first '###' heading; it opens the GitHub release"
+    echo "   and its social preview card. Without one, entry counts are used instead."
+    read -r -p "   Continue anyway? [y/N] " REPLY
+    [[ "$REPLY" =~ ^[Yy]$ ]] || exit 1
+  else
+    echo -e "${GREEN}✓ Release summary: ${SUMMARY}${NC}"
+  fi
+fi
+
 # Check dependency age (same gate the release workflow runs, failed early here so a
 # too-young dependency is caught before burning a full CI matrix on the release run)
 echo ""

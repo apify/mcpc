@@ -5,7 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+Each version opens with a one-line summary, which becomes the first line of the GitHub release
+and its social preview card (see `scripts/release-notes.mjs`).
+
 ## [Unreleased]
+
+Stdio server secrets stay out of plaintext files, logs and `ps`, and Windows no longer piles up duplicate bridges.
 
 ### Security
 
@@ -16,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Windows sessions no longer pile up duplicate bridge processes when `tasklist` is slow or unavailable. A liveness check that could not run used to report every bridge dead, so each command spawned a replacement without stopping the healthy original; the check now falls back to a signal probe, the old bridge is always asked to shut down, and a bridge that finds another one registered for its session exits on its own. (#427)
 
 ## [0.7.0] - 2026-09-23
+
+MCP Skills extension, directory resources, OAuth sessions that survive token expiry, and a round of security hardening.
 
 ### Added
 

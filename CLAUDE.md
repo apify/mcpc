@@ -845,10 +845,14 @@ The `CHANGELOG.md` file follows [Keep a Changelog](https://keepachangelog.com/en
 - `Fixed` - Bug fixes
 - `Security` - Vulnerability fixes
 
+**Release summary line:** `[Unreleased]` should open with a single plain-text sentence summarizing the release, above the first `###` heading. `scripts/release-notes.mjs` makes it the first line of the GitHub release body, which is what GitHub's social preview card shows when a release URL is shared; the changelog entries, install instructions and install-size report follow, then GitHub's generated "What's Changed". Without a summary the script derives one from entry counts, and `pnpm run release` warns. Keep it short (~120 characters), user-facing, and update it as entries are added.
+
 **Example entry:**
 
 ```markdown
 ## [Unreleased]
+
+Faster tool calls and a fix for empty server responses.
 
 ### Added
 
@@ -862,7 +866,7 @@ The `CHANGELOG.md` file follows [Keep a Changelog](https://keepachangelog.com/en
 **Before each release**, Claude should:
 
 1. Review all commits since the last release: `git log $(git describe --tags --abbrev=0)..HEAD --oneline`
-2. Ensure all significant changes are documented in `[Unreleased]`
+2. Ensure all significant changes are documented in `[Unreleased]`, and that it opens with an up-to-date one-line summary
 3. The release script will automatically move `[Unreleased]` entries to the new version section
 
 **Important:** The changelog is for **users reading release notes**. Only include entries that a user would care about. Do not add entries for: new warnings or deprecation notices on existing commands, minor help text or `--help` output changes, test infrastructure (new tests, test refactors), CI/CD workflow changes, internal refactors, or cosmetic tweaks. When in doubt, leave it out.
