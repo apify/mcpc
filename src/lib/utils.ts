@@ -16,7 +16,13 @@ import type { ServerConfig } from './types.js';
  * paginate in the tens of pages; the cap only exists to bound a misbehaving
  * server that keeps handing out fresh cursors forever.
  */
-const MAX_PAGINATION_PAGES = 1000;
+/**
+ * Most pages a paginated list operation may span before mcpc gives up on the
+ * server. Also handed to the SDK client as `listMaxPages`, so the SDK's own
+ * page walk (its no-cursor list calls aggregate every page) stops at the same
+ * point instead of its default of 64.
+ */
+export const MAX_PAGINATION_PAGES = 1000;
 
 /**
  * Fetch every page of a paginated MCP list operation and collect the items.
