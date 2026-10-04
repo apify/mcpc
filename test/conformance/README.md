@@ -69,6 +69,15 @@ yet. It is exercised by `test/e2e/suites/basic/skills.test.sh` (against the
 2026-07-28 test server) in the meantime; wire up a scenario here as soon as one
 appears in `list --client`.
 
+The same goes for the `io.modelcontextprotocol/tasks` extension (MCP 2026-07-28):
+no client scenario upstream yet. `test/e2e/suites/sessions/tasks-extension.test.sh`
+covers it against the 2026-07-28 test server (server-directed task creation, the
+`tasks/get` poll loop and its inlined result, the `Mcp-Name` routing header,
+cooperative cancellation, `input_required`), and `sessions/async-tasks.test.sh`
+runs the shared command surface in both eras. The `tools_call` scenario's
+`--task` refusal above stays a 2025-11-25 check: the conformance server neither
+advertises the `tasks` capability nor declares the extension.
+
 Note that the framework's client scenarios currently top out at protocol
 `2025-11-25`, so these runs exercise mcpc's legacy fallback path rather than the
 `2026-07-28` era it negotiates by default.

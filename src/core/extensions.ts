@@ -32,7 +32,14 @@ export const ENTERPRISE_MANAGED_AUTH_EXTENSION_KEY =
  */
 export const SKILLS_EXTENSION_KEY = 'io.modelcontextprotocol/skills';
 
-/** Tasks — asynchronous execution of long-running requests (core in 2025-11-25). */
+/**
+ * Tasks — asynchronous execution of long-running requests. A core (experimental) feature
+ * of 2025-11-25 that 2026-07-28 moved into this extension (SEP-2663): a server declaring
+ * it may answer `tools/call` with a task handle (`resultType: "task"`) that the client
+ * polls with `tasks/get` and cancels with `tasks/cancel`.
+ *
+ * Spec: https://github.com/modelcontextprotocol/ext-tasks/blob/main/specification/2026-07-28/tasks.md
+ */
 export const TASKS_EXTENSION_KEY = 'io.modelcontextprotocol/tasks';
 
 /**
@@ -62,7 +69,9 @@ export interface McpExtension {
    * Only extensions whose specification defines a *client-side* declaration belong here.
    * The skills extension, for instance, is declared by servers only — a client issues
    * `skills/list` and `skills/get` once it sees that declaration — so a client-side claim
-   * would be invented, not reported, however completely mcpc implements it.
+   * would be invented, not reported, however completely mcpc implements it. The tasks
+   * extension is the opposite case: a server may only hand a task to a client that
+   * declared it on that very request, so mcpc declares it everywhere.
    */
   declaredByClient: boolean;
 }
@@ -103,10 +112,10 @@ export const MCP_EXTENSIONS: readonly McpExtension[] = [
   },
   {
     id: TASKS_EXTENSION_KEY,
-    label: 'async tasks',
-    support: 'none',
-    note: 'task commands work on 2025-11-25 servers, where tasks are part of the core protocol',
-    declaredByClient: false,
+    label: 'tasks',
+    support: 'full',
+    note: 'mcpc @session tools-call --task/--detach and tasks-get / tasks-result / tasks-cancel (tasks-list shows the tasks this session created), on MCP 2026-07-28 connections',
+    declaredByClient: true,
   },
 ];
 
@@ -116,13 +125,34 @@ export function findMcpExtension(id: string): McpExtension | undefined {
 }
 
 /**
+ * The settings a server declared for an extension, or `undefined` when it did not declare
+ * the extension at all. Only `capabilities.extensions` counts — that is where extensions
+ * are declared — and an empty object means "supported, with no optional settings", which
+ * is why presence and content are told apart here. Takes the capabilities as `unknown`
+ * so the CLI can call it on persisted session data without loading the SDK's types.
+ */
+export function declaredExtensionSettings(
+  capabilities: unknown,
+  id: string
+): Record<string, unknown> | undefined {
+  const extensions = (capabilities as { extensions?: unknown } | undefined)?.extensions;
+  if (typeof extensions !== 'object' || extensions === null) return undefined;
+  const declared = (extensions as Record<string, unknown>)[id];
+  if (declared === undefined) return undefined;
+  return typeof declared === 'object' && declared !== null
+    ? (declared as Record<string, unknown>)
+    : {};
+}
+
+/**
  * The `extensions` map mcpc declares in its client capabilities: every extension whose
  * spec defines a client-side declaration and that mcpc implements.
  *
  * Declared unconditionally, because the map reports what this client *can* do, not what
  * the current connection happens to be doing — a server can only offer an extension to a
- * client it knows supports it, and mcpc's auth grants are chosen at `login` time, long
- * before any request goes out. Neither extension defines settings, so each maps to `{}`.
+ * client it knows supports it, mcpc's auth grants are chosen at `login` time, long before
+ * any request goes out, and a task may only be handed to a client that declared the tasks
+ * extension on that request. None of the three defines settings, so each maps to `{}`.
  */
 export function clientExtensionDeclarations(): Record<string, Record<string, never>> {
   const declarations: Record<string, Record<string, never>> = {};

@@ -9,11 +9,17 @@ Each version opens with a one-line summary, which also opens its GitHub release.
 
 ## [Unreleased]
 
-MCP TypeScript SDK 2.3.0, stdio server secrets kept out of plaintext files, logs and `ps`, and no more duplicate bridges on Windows.
+Tasks on MCP 2026-07-28 servers, MCP TypeScript SDK 2.3.0, stdio server secrets kept out of plaintext files, logs and `ps`, and no more duplicate bridges on Windows.
+
+### Added
+
+- Support for the MCP [Tasks extension](https://modelcontextprotocol.io/extensions/tasks/overview) (`io.modelcontextprotocol/tasks`) on MCP 2026-07-28 servers: `tools-call --task`/`--detach`, `tasks-get`, `tasks-result` and `tasks-cancel` now work there too, mcpc declares the extension on every request, and a server that answers a plain `tools-call` with a task is followed to its result. `tasks-list` shows the tasks the session created, since the extension has no server-side listing. Everything keeps working unchanged on 2025-11-25 servers, where tasks are part of the core protocol. (#430)
 
 ### Changed
 
 - Updated to MCP TypeScript SDK 2.3.0. Large tool results over Streamable HTTP now arrive in a fraction of the time, and HTTP redirects are followed only within the server's own origin (plus `http` to `https` on the same host): a server that redirects elsewhere is reported with the target URL so you can connect to it directly.
+- `tools-call --detach --json` prints the whole created `Task` object (id, status, TTL, poll interval) instead of just `{ taskId, status }`. On a 2026-07-28 server that runs a detached call synchronously — the server decides per call whether to create a task — it prints the tool result instead, so check for `taskId`.
+- `tasks-cancel` on a 2026-07-28 server reports the status the server shows right after acknowledging the request (cancellation is cooperative there, so a task may still be `working` for a moment) and exits with code 2 only when the task had already finished.
 
 ### Security
 

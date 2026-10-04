@@ -111,8 +111,9 @@ let lastClientCapabilities: unknown = null;
 const serverSubscriptions = new WeakMap<Server, Set<string>>();
 
 // The task-augmented slow-task tool advertises optional task support
-// (2025-11-25 experimental tasks — v1 server only; tasks moved to an
-// extension in 2026-07-28 that the v2 SDK does not implement yet).
+// (2025-11-25 experimental tasks — v1 server only; in 2026-07-28 tasks are the
+// io.modelcontextprotocol/tasks extension, which index-v2.ts serves, and the
+// per-tool `execution` hint no longer exists).
 const V1_TOOLS = TOOLS.map((tool) =>
   tool.name === 'slow-task' ? { ...tool, execution: { taskSupport: 'optional' as const } } : tool
 );
