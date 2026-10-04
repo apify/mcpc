@@ -772,7 +772,7 @@ export function enrichErrorMessage(errorMessage: string, serverUrl?: string): st
   // http -> https on the same host); anything else is reported with its target so the
   // user can connect to it directly, or notice the URL is not an MCP endpoint at all.
   if (isHttpRedirectError(errorMessage)) {
-    return `Server returned a redirect${urlHint} that was not followed (redirects are only followed within the same origin). If the target is the MCP endpoint, connect to that URL directly; otherwise this doesn't look like an MCP endpoint.\n  Original error: ${errorMessage}`;
+    return `Server returned a redirect${urlHint} that was not followed (redirects are only followed within the same origin, or from http to https on the same host). If the target is the MCP endpoint, connect to that URL directly; otherwise this doesn't look like an MCP endpoint.\n  Original error: ${errorMessage}`;
   }
 
   // Timeout

@@ -84,10 +84,12 @@ interface IdTokenClaims {
  * Check the MCP server's authorization server metadata for ID-JAG support.
  * Forgiving on missing metadata (the validation exchange in step 4 is the real
  * test); hard error only when the server explicitly lists supported grant
- * profiles and ID-JAG is not among them.
+ * profiles and ID-JAG is not among them. Returns the authorization server's
+ * issuer when the metadata names one, so the provider can be bound to it.
  */
-async function checkServerSupportsIdJag(serverUrl: string): Promise<void> {
+async function checkServerSupportsIdJag(serverUrl: string): Promise<string | undefined> {
   let grantProfiles: unknown;
+  let issuer: string | undefined;
   try {
     const prm = await discoverOAuthProtectedResourceMetadata(
       serverUrl,
@@ -97,12 +99,13 @@ async function checkServerSupportsIdJag(serverUrl: string): Promise<void> {
     const authServerUrl = prm.authorization_servers?.[0] ?? serverUrl;
     const metadata = await discoverAuthServerMetadata(authServerUrl);
     grantProfiles = metadata?.['authorization_grant_profiles_supported'];
+    if (typeof metadata?.issuer === 'string' && metadata.issuer) issuer = metadata.issuer;
   } catch (error) {
     logger.debug(
       `Could not discover authorization server metadata for ${serverUrl}: ` +
         `${(error as Error).message} — continuing, the validation token request will verify support`
     );
-    return;
+    return undefined;
   }
 
   if (Array.isArray(grantProfiles) && !grantProfiles.includes(ID_JAG_GRANT_PROFILE)) {
@@ -113,6 +116,7 @@ async function checkServerSupportsIdJag(serverUrl: string): Promise<void> {
         `try the standard interactive login instead: mcpc login ${serverUrl}`
     );
   }
+  return issuer;
 }
 
 /**
@@ -234,8 +238,11 @@ export async function loginIdJag(
   const oauthServerUrl = getOAuthServerUrl(normalizedServerUrl);
   const idpIssuer = normalizeServerUrl(opts.idpIssuer);
 
-  // 1. Fail fast when the server explicitly rules out ID-JAGs.
-  await checkServerSupportsIdJag(oauthServerUrl);
+  // 1. Fail fast when the server explicitly rules out ID-JAGs. The same discovery
+  // names the MCP authorization server, which the provider is bound to (SEP-2352)
+  // from the validation request onwards; without it the SDK prints a deprecation
+  // notice on stderr, which would break --json output.
+  const mcpAuthorizationServer = await checkServerSupportsIdJag(oauthServerUrl);
 
   // 2 + 3. IdP endpoint discovery and browser SSO.
   const sso = await performIdpSso({ ...opts, idpIssuer }, profileName);
@@ -248,6 +255,7 @@ export async function loginIdJag(
     mcpClientId: opts.mcpClientId,
     mcpClientSecret: opts.mcpClientSecret,
   };
+  if (mcpAuthorizationServer) info.mcpAuthorizationServer = mcpAuthorizationServer;
   if (opts.idpClientSecret) info.idpClientSecret = opts.idpClientSecret;
   if (sso.idpRefreshToken) info.idpRefreshToken = sso.idpRefreshToken;
   if (opts.scope) info.scope = opts.scope;
@@ -276,10 +284,12 @@ export async function loginIdJag(
     }
     grantedScope = (await provider.tokens())?.scope;
     logger.debug('ID-JAG validation token request succeeded');
-    // Record the authorization server the chain was validated against; the bridge
-    // binds its provider to it (SEP-2352) from now on.
+    // When the pre-flight discovery above found no issuer, record the authorization
+    // server the SDK resolved during validation, so the bridge binds to it from now on.
     const authorizationServer = provider.authorizationServerUrl();
-    if (authorizationServer) info.mcpAuthorizationServer = authorizationServer;
+    if (!info.mcpAuthorizationServer && authorizationServer) {
+      info.mcpAuthorizationServer = authorizationServer;
+    }
   } catch (error) {
     if (error instanceof AuthError) throw error;
     throw new AuthError(`Enterprise-managed authentication failed: ${describeAuthError(error)}`);
