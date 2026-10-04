@@ -263,6 +263,9 @@ class BridgeProcess {
         ...(credentials.keyAlg ? { keyAlg: credentials.keyAlg } : {}),
         ...(credentials.scope ? { scope: credentials.scope } : {}),
         ...(credentials.tokenEndpoint ? { tokenEndpoint: credentials.tokenEndpoint } : {}),
+        ...(credentials.clientCredentialsIssuer
+          ? { issuer: credentials.clientCredentialsIssuer }
+          : {}),
       });
       logger.debug('Client-credentials provider created for SDK transport');
       // Set up OAuth token manager if refresh token and client ID are provided

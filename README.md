@@ -104,7 +104,7 @@ bun install -g @apify/mcpc
 GNOME/KDE desktops work out of the box. On headless/CI systems, `mcpc` falls back to a
 file-based store (`~/.mcpc/credentials.json`, mode `0600`).
 
-To force the keychain on headless systems, install `libsecret` + `gnome-keyring`
+To force the keychain on headless systems, install `gnome-keyring`
 (via `apt-get`, `dnf`, or `pacman`) and run:
 
 ```bash

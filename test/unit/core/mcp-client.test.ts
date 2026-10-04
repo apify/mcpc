@@ -11,7 +11,7 @@
  */
 
 import { vi } from 'vitest';
-import { SdkHttpError, SdkErrorCode } from '@modelcontextprotocol/client';
+import { Client as SdkClient, SdkHttpError, SdkErrorCode } from '@modelcontextprotocol/client';
 import { McpClient, isExpectedProbeRejection } from '../../../src/core/mcp-client.js';
 import { ServerError } from '../../../src/lib/errors.js';
 import { Logger } from '../../../src/lib/logger.js';
@@ -117,6 +117,18 @@ async function connectClient(options: {
 beforeEach(() => {
   resetSdkStub();
   vi.clearAllMocks();
+});
+
+describe('SDK client options', () => {
+  it('raises the SDK page-walk cap to the same limit mcpc applies itself', () => {
+    new McpClient({ name: 'test', version: '0.0.0' });
+    // The SDK aggregates every page of a no-cursor list call and throws past
+    // `listMaxPages`; its default of 64 is far below mcpc's own 1000-page guard.
+    expect(SdkClient).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ listMaxPages: 1000 })
+    );
+  });
 });
 
 describe('connection mode', () => {

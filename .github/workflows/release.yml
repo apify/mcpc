@@ -343,9 +343,12 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.APIFY_SERVICE_ACCOUNT_GITHUB_TOKEN }}
 
   homebrew:
-    name: Update Homebrew formulae
+    name: Update Homebrew tap
     # Runs as its own job after the release is tagged, published to npm and
     # announced, so a Homebrew hiccup can never fail or roll back the release.
+    # Homebrew/homebrew-core (`brew install mcpc`) is not bumped from here:
+    # Homebrew's autobump picks up new npm versions itself, after its one-day
+    # supply-chain cooldown.
     needs: release
     if: inputs.type == 'release' && needs.release.result == 'success'
     runs-on: ubuntu-latest
@@ -353,7 +356,6 @@ jobs:
       VERSION: ${{ needs.release.outputs.version }}
     steps:
       - name: Wait for the version to be available on npm
-        id: wait
         # The registry can lag a few minutes behind `pnpm publish`.
         run: |
           for _i in {1..30}; do
@@ -363,32 +365,10 @@ jobs:
           done
           curl -sf "https://registry.npmjs.org/@apify/mcpc/${VERSION}" > /dev/null
 
-      - name: Set git identity
-        run: |
-          git config --global user.name 'Apify Service Account'
-          git config --global user.email 'apify-service-account@users.noreply.github.com'
-
-      - name: Set up Homebrew
-        uses: Homebrew/actions/setup-homebrew@f8d4222eb633e65c2a0157383cf80861fc7fae7f # master
-
-      - name: Open formula bump PR in Homebrew/homebrew-core
-        # `brew install mcpc`. Forks homebrew-core under the service account and
-        # opens a PR pointing Formula/m/mcpc.rb at the new npm tarball; Homebrew's
-        # CI builds, tests and bottles it, and a Homebrew maintainer merges it.
-        run: |
-          brew tap --force homebrew/core
-          brew bump-formula-pr homebrew/core/mcpc \
-            --version "${VERSION}" \
-            --no-browse \
-            --message "Automatic update of the \`mcpc\` formula. CC @jancurn"
-        env:
-          HOMEBREW_GITHUB_API_TOKEN: ${{ secrets.APIFY_SERVICE_ACCOUNT_GITHUB_TOKEN }}
-
       - name: Update formula in apify/homebrew-tap
         # `brew install apify/tap/mcpc`. The dispatched workflow points
         # Formula/mcpc.rb at the new npm tarball, installs and `brew test`s it on
         # Linux and macOS, then merges the bump.
-        if: ${{ !cancelled() && steps.wait.outcome == 'success' }}
         run: |
           gh workflow run update_formula.yaml --repo apify/homebrew-tap \
             --field package=mcpc --field npm_package=@apify/mcpc --field version="${VERSION}"

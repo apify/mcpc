@@ -613,6 +613,7 @@ export async function loadAuthCredentials(
         if (cc.keyAlg) credentials.keyAlg = cc.keyAlg;
         if (cc.scope) credentials.scope = cc.scope;
         if (cc.tokenEndpoint) credentials.tokenEndpoint = cc.tokenEndpoint;
+        if (cc.issuer) credentials.clientCredentialsIssuer = cc.issuer;
         logger.debug(`Found client-credentials material for profile ${profileName}`);
       } else {
         logger.warn(

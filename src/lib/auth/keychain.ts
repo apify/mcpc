@@ -2,11 +2,11 @@
  * OS Keychain integration for secure credential storage
  * Uses @napi-rs/keyring for cross-platform keychain access.
  * Falls back to ~/.mcpc/credentials.json (mode 0600) when the OS keychain
- * is unavailable (e.g. headless servers, containers, missing libsecret).
+ * is unavailable (e.g. headless servers, containers, no Secret Service on D-Bus).
  *
  * The @napi-rs/keyring native addon is loaded lazily on first use via a
- * cached import() promise.  If the addon or its shared-library dependency
- * (libsecret on Linux) is not present, file-based fallback is used for the
+ * cached import() promise.  If the addon cannot be loaded or the keychain
+ * cannot be reached, file-based fallback is used for the
  * entire session; a warning is shown once, when the fallback file is first
  * created (i.e. when credentials actually get stored outside the keychain).
  */
@@ -88,7 +88,7 @@ let keychainAvailable: boolean | null = null; // null = untested
 // Cache the import() result so the native addon is attempted only once per
 // module instance. Using a promise (not top-level await) avoids forcing every
 // consumer (including test runners) into top-level-await territory.
-// Rejects if the addon or its shared-library dependency (libsecret) is absent.
+// Rejects if the native addon cannot be loaded.
 let _entryPromise: Promise<EntryConstructor> | null = null;
 
 function getEntry(): Promise<EntryConstructor> {
@@ -232,7 +232,7 @@ async function ensureProbed(): Promise<void> {
         const EntryClass = await getEntry();
         keychainAvailable = await probeKeychain(EntryClass);
       } catch {
-        // import() itself failed (missing native addon / libsecret)
+        // import() itself failed (missing native addon)
         keychainAvailable = false;
       }
       if (!keychainAvailable) {
@@ -312,6 +312,14 @@ export interface OAuthClientCredentialsInfo {
   keyAlg?: string; // JWT signing algorithm for the private_key_jwt variant
   scope?: string; // space-separated scopes requested by the grant
   tokenEndpoint?: string; // explicit token endpoint (--token-endpoint); skips discovery
+  /**
+   * Authorization server issuer the material was validated against at login. The SDK
+   * provider is bound to it (SEP-2352), so the secret or key is only ever sent there,
+   * and a server that later points at a different authorization server fails loudly
+   * instead of receiving the credentials. Absent for profiles written before mcpc
+   * recorded it; re-login records it.
+   */
+  issuer?: string;
 }
 
 export interface OAuthTokenInfo {
