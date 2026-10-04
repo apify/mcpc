@@ -818,10 +818,9 @@ The script validates preconditions locally (including `pnpm run check:deps-age`,
 
 `pnpm-workspace.yaml` sets `minimumReleaseAge` to keep freshly-published (potentially compromised) packages out of the tree, but pnpm applies it only when *resolving* new versions — pnpm 10 does not re-check an existing lockfile on a `--frozen-lockfile` install (that landed in pnpm 11). `scripts/check-dependency-age.mjs` closes that gap: it reads the publish time of every version pinned in `pnpm-lock.yaml` and fails the release if anything is too young. Packages listed in `minimumReleaseAgeExclude` get a shorter 48-hour floor instead of a free pass. The check fails closed — a registry error is a failure, never a skip. Remove the script once the repo moves to pnpm ≥ 11 and native lockfile age verification covers it.
 
-Homebrew formulae live outside this repo, in [Homebrew/homebrew-core](https://github.com/Homebrew/homebrew-core/blob/main/Formula/m/mcpc.rb) (`brew install mcpc`) and [apify/homebrew-tap](https://github.com/apify/homebrew-tap) (`brew install apify/tap/mcpc`). After a release, the `homebrew` job in `release.yml` updates both: it runs `brew bump-formula-pr` to open a version-bump PR in homebrew-core (merged by Homebrew maintainers once their CI passes) and dispatches the tap's `update_formula.yaml`. It runs as a separate job, so a failure there never affects the npm release; to retry by hand:
+Homebrew formulae live outside this repo, in [Homebrew/homebrew-core](https://github.com/Homebrew/homebrew-core/blob/main/Formula/m/mcpc.rb) (`brew install mcpc`) and [apify/homebrew-tap](https://github.com/apify/homebrew-tap) (`brew install apify/tap/mcpc`). The homebrew-core formula is bumped by Homebrew's own autobump, which waits out a one-day cooldown on new npm releases (a supply-chain safeguard), so nothing here pushes to it. After a release, the `homebrew` job in `release.yml` dispatches the tap's `update_formula.yaml`; it runs as a separate job, so a failure there never affects the npm release. To retry by hand:
 
 ```bash
-brew bump-formula-pr mcpc --version <version>
 gh workflow run update_formula.yaml --repo apify/homebrew-tap \
   --field package=mcpc --field npm_package=@apify/mcpc --field version=<version>
 ```
