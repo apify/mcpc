@@ -19,6 +19,10 @@ Stdio server secrets stay out of plaintext files, logs and `ps`, and Windows no 
 
 - The unused `mcpc-bridge` executable is no longer installed on your `PATH`. mcpc never invoked it — it starts the bridge process directly — so nothing changes for sessions.
 
+### Removed
+
+- The unused `mcpc-bridge` executable is no longer installed on your `PATH`. mcpc never invoked it — it starts the bridge process directly — so nothing changes for sessions.
+
 ### Fixed
 
 - Windows sessions no longer pile up duplicate bridge processes when `tasklist` is slow or unavailable. A liveness check that could not run used to report every bridge dead, so each command spawned a replacement without stopping the healthy original; the check now falls back to a signal probe, the old bridge is always asked to shut down, and a bridge that finds another one registered for its session exits on its own. (#427)
