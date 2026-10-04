@@ -97,6 +97,11 @@ export async function resolvePrivateKeyPem(keyValue: string): Promise<string> {
 export function createClientCredentialsProvider(
   info: OAuthClientCredentialsInfo
 ): OAuthClientProvider {
+  // SEP-2352: bind the material to the authorization server it was validated against
+  // at login, so the SDK only ever sends the secret or key there and refuses a server
+  // that later points somewhere else. Material stored before mcpc recorded the issuer
+  // stays unbound (the SDK warns about that on stderr); re-login records it.
+  const binding = info.issuer ? { expectedIssuer: info.issuer } : {};
   let provider: OAuthClientProvider;
   if (info.privateKeyPem) {
     provider = new PrivateKeyJwtProvider({
@@ -105,6 +110,7 @@ export function createClientCredentialsProvider(
       algorithm: info.keyAlg || DEFAULT_KEY_ALGORITHM,
       clientName: CLIENT_NAME,
       ...(info.scope ? { scope: info.scope } : {}),
+      ...binding,
     });
   } else if (info.clientSecret) {
     provider = new ClientCredentialsProvider({
@@ -112,6 +118,7 @@ export function createClientCredentialsProvider(
       clientSecret: info.clientSecret,
       clientName: CLIENT_NAME,
       ...(info.scope ? { scope: info.scope } : {}),
+      ...binding,
     });
   } else {
     throw new ClientError(
@@ -179,6 +186,18 @@ export function describeAuthError(error: unknown): string {
   return String(error);
 }
 
+/** What a successful client-credentials validation learned about the server. */
+interface ClientCredentialsValidation {
+  /** Scopes the authorization server granted, when it reported them. */
+  scopes?: string[];
+  /**
+   * Issuer of the authorization server the material was validated against — the
+   * `issuer` of its RFC 8414 metadata, or the origin of a pinned `--token-endpoint`.
+   * Undefined when the metadata names no issuer.
+   */
+  issuer?: string;
+}
+
 /**
  * Perform a one-off client-credentials token request to validate the supplied
  * material and learn the granted scopes. Uses the same SDK provider the bridge
@@ -187,11 +206,15 @@ export function describeAuthError(error: unknown): string {
 async function validateClientCredentials(
   serverUrl: string,
   info: OAuthClientCredentialsInfo
-): Promise<string[] | undefined> {
+): Promise<ClientCredentialsValidation> {
   let metadata: AuthServerMetadata | undefined;
+  let issuer: string | undefined;
   if (info.tokenEndpoint) {
-    // Token endpoint pinned via --token-endpoint: skip discovery entirely.
-    metadata = { token_endpoint: info.tokenEndpoint };
+    // Token endpoint pinned via --token-endpoint: skip discovery entirely. The
+    // endpoint's origin identifies the authorization server, exactly as the
+    // discovery state the bridge pins the provider to (buildPinnedDiscoveryState).
+    issuer = new URL(info.tokenEndpoint).origin;
+    metadata = { issuer, token_endpoint: info.tokenEndpoint };
   } else {
     // RFC 9728 first: it is the mechanism the MCP spec prescribes and the only
     // one that finds an authorization server hosted on a different origin than
@@ -208,16 +231,24 @@ async function validateClientCredentials(
           `Pass --token-endpoint <url> to specify it explicitly.`
       );
     }
+    if (typeof metadata.issuer === 'string' && metadata.issuer) {
+      issuer = metadata.issuer;
+    }
   }
 
-  const provider = createClientCredentialsProvider(info);
+  // Validate with the provider bound the way the bridge will bind it, so a successful
+  // login guarantees the runtime binding holds too.
+  const provider = createClientCredentialsProvider(issuer ? { ...info, issuer } : info);
   try {
     const tokens = await fetchToken(provider, serverUrl, {
       metadata: metadata as unknown as AuthorizationServerMetadata,
       fetchFn: proxyFetch as FetchLike,
     });
     logger.debug('Client-credentials validation token request succeeded');
-    return tokens.scope ? tokens.scope.split(' ') : undefined;
+    return {
+      ...(tokens.scope ? { scopes: tokens.scope.split(' ') } : {}),
+      ...(issuer ? { issuer } : {}),
+    };
   } catch (error) {
     throw new AuthError(`Client-credentials authentication failed: ${describeAuthError(error)}`);
   }
@@ -240,11 +271,19 @@ export async function loginClientCredentials(
 ): Promise<ClientCredentialsLoginResult> {
   const normalizedServerUrl = normalizeServerUrl(serverUrl);
 
-  // Validate by performing a real token request (also yields granted scopes).
-  const grantedScopes = await validateClientCredentials(normalizedServerUrl, info);
+  // Validate by performing a real token request (also yields granted scopes and the
+  // authorization server the material is bound to from now on).
+  const { scopes: grantedScopes, issuer } = await validateClientCredentials(
+    normalizedServerUrl,
+    info
+  );
 
   // Persist the credentials material in the OS keychain.
-  await storeKeychainClientCredentials(normalizedServerUrl, profileName, info);
+  await storeKeychainClientCredentials(
+    normalizedServerUrl,
+    profileName,
+    issuer ? { ...info, issuer } : info
+  );
 
   // Prefer scopes the server actually granted; fall back to what was requested.
   const requestedScopes = info.scope ? info.scope.split(' ') : undefined;
@@ -259,7 +298,7 @@ export async function loginClientCredentials(
     serverUrl: normalizedServerUrl,
     authType: 'oauth',
     oauthGrant: 'client_credentials',
-    oauthIssuer: normalizedServerUrl,
+    oauthIssuer: issuer ?? normalizedServerUrl,
     createdAt: existing?.createdAt ?? now,
     authenticatedAt: now,
     ...(effectiveScopes && effectiveScopes.length > 0 ? { scopes: effectiveScopes } : {}),

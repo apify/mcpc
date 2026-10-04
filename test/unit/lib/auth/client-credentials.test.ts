@@ -11,6 +11,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { mkdtemp, writeFile, rm } from 'fs/promises';
 import { generateKeyPairSync } from 'crypto';
+import type { MockInstance } from 'vitest';
 import { InvalidClientError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
 import {
   validateKeyAlgorithm,
@@ -70,6 +71,54 @@ describe('resolvePrivateKeyPem', () => {
 });
 
 describe('createClientCredentialsProvider', () => {
+  // The SDK prints a deprecation notice on stderr for providers built without an
+  // issuer binding; keep it out of the test output and assert on it where relevant.
+  let warnSpy: MockInstance;
+
+  beforeEach(() => {
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    warnSpy.mockRestore();
+  });
+
+  it('binds the provider to the issuer recorded at login (SEP-2352)', async () => {
+    const provider = createClientCredentialsProvider({
+      clientId: 'svc',
+      clientSecret: 's3cr3t',
+      issuer: 'https://auth.example.com',
+    });
+    const info = await provider.clientInformation({ issuer: 'https://auth.example.com' });
+    expect(info?.issuer).toBe('https://auth.example.com');
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('binds the key variant the same way', async () => {
+    const { privateKey } = generateKeyPairSync('rsa', {
+      modulusLength: 2048,
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+    });
+    const provider = createClientCredentialsProvider({
+      clientId: 'svc',
+      privateKeyPem: privateKey,
+      issuer: 'https://auth.example.com',
+    });
+    const info = await provider.clientInformation({ issuer: 'https://auth.example.com' });
+    expect(info?.issuer).toBe('https://auth.example.com');
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('leaves material recorded before mcpc knew the issuer unbound', async () => {
+    const provider = createClientCredentialsProvider({ clientId: 'svc', clientSecret: 's3cr3t' });
+    const info = await provider.clientInformation({ issuer: 'https://auth.example.com' });
+    expect(info?.issuer).toBeUndefined();
+    // The SDK says so once, on stderr, rather than refusing the material.
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(String(warnSpy.mock.calls[0]?.[0])).toContain('expectedIssuer');
+  });
+
   it('builds a ClientCredentialsProvider for the secret variant', () => {
     const provider = createClientCredentialsProvider({
       clientId: 'svc',

@@ -176,6 +176,26 @@ describe('createIdJagProvider', () => {
     ).prepareTokenRequest();
   }
 
+  it('binds the MCP client to the authorization server recorded at login (SEP-2352)', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const provider = createIdJagProvider(
+        makeCredentials({ mcpAuthorizationServer: 'https://auth.mcp.example.com' }),
+        PROVIDER_OPTIONS
+      );
+      expect(provider.clientInformation().issuer).toBe('https://auth.mcp.example.com');
+      expect(warnSpy).not.toHaveBeenCalled();
+
+      // Material recorded before mcpc knew the authorization server stays unbound;
+      // the SDK notes the missing binding once on stderr instead of refusing it.
+      const legacy = createIdJagProvider(makeCredentials(), PROVIDER_OPTIONS);
+      expect(legacy.clientInformation().issuer).toBeUndefined();
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it('exchanges a fresh ID token for an ID-JAG with the exact RFC 8693 wire format', async () => {
     fetchSpy.mockResolvedValue(mockResponse(ID_JAG_RESPONSE));
 

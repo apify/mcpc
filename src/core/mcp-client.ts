@@ -45,7 +45,7 @@ import {
 } from './skills-schema.js';
 import { createNoOpLogger, type Logger } from '../lib/logger.js';
 import { ClientError, ServerError, NetworkError, isShutdownError } from '../lib/errors.js';
-import { fetchAllPages } from '../lib/utils.js';
+import { fetchAllPages, MAX_PAGINATION_PAGES } from '../lib/utils.js';
 import {
   isModernProtocolVersion,
   isSupportedProtocolVersion,
@@ -267,6 +267,9 @@ export class McpClient implements IMcpClient {
 
     this.client = new SDKClient(clientInfo, {
       capabilities: options.capabilities || {},
+      // The SDK walks every page itself when a list call carries no cursor; align
+      // its cap with mcpc's own instead of its default of 64 pages.
+      listMaxPages: MAX_PAGINATION_PAGES,
       ...options,
       // Placed after the spread so a caller-supplied versionNegotiation never
       // overrides the protocolVersion pin (or the default auto negotiation).

@@ -356,6 +356,12 @@ export interface IdJagCredentials {
   mcpClientId: string;
   /** Secret for the MCP authorization server client (required by the SDK provider). */
   mcpClientSecret: string;
+  /**
+   * Authorization server of the MCP server, as discovered at login (RFC 9728). The SDK
+   * provider is bound to it (SEP-2352), so the MCP client secret is only ever sent
+   * there. Absent for profiles written before mcpc recorded it; re-login records it.
+   */
+  mcpAuthorizationServer?: string;
   /** Space-separated scopes requested for the MCP server. */
   scope?: string;
 }
@@ -406,6 +412,12 @@ export interface AuthCredentials {
   keyAlg?: string; // JWT signing algorithm for the private_key_jwt variant (e.g. RS256)
   scope?: string; // space-separated scopes requested by the client-credentials grant
   tokenEndpoint?: string; // explicit token endpoint (--token-endpoint); bypasses discovery
+  /**
+   * Authorization server the client-credentials material is bound to (SEP-2352), as
+   * recorded by `login` (`OAuthClientCredentialsInfo.issuer`). Absent for profiles
+   * written before mcpc recorded it.
+   */
+  clientCredentialsIssuer?: string;
   // Enterprise-managed authorization material (id_jag grant; sent via IPC, never CLI args)
   idJag?: IdJagCredentials;
   // HTTP headers (from --header flags, stored in keychain)

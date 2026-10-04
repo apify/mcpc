@@ -9,10 +9,15 @@ Each version opens with a one-line summary, which also opens its GitHub release.
 
 ## [Unreleased]
 
-Stdio server secrets stay out of plaintext files, logs and `ps`, and Windows no longer piles up duplicate bridges.
+MCP TypeScript SDK 2.3.0, stdio server secrets kept out of plaintext files, logs and `ps`, and no more duplicate bridges on Windows.
+
+### Changed
+
+- Updated to MCP TypeScript SDK 2.3.0. Large tool results over Streamable HTTP now arrive in a fraction of the time, and HTTP redirects are followed only within the server's own origin (plus `http` to `https` on the same host): a server that redirects elsewhere is reported with the target URL so you can connect to it directly.
 
 ### Security
 
+- `login --grant client-credentials` and `login --grant id-jag` now bind the stored client secret or key to the authorization server they were validated against, so a server that later points at a different authorization server is refused instead of receiving the credentials. Profiles created earlier keep working; log in again to bind them.
 - The `env` of a stdio config entry, where API tokens such as `GITHUB_PERSONAL_ACCESS_TOKEN` usually live, is now stored in the OS keychain and delivered to the bridge over IPC like session headers, instead of being written in plaintext to `sessions.json`, printed by `mcpc --json` and `mcpc @session`, and passed on the bridge's command line where `ps` showed it to every local user. Verbose output and the bridge log no longer record header values, env values, or tool-call arguments either, and bridge log files are created owner-only. (#341)
 
 ### Removed

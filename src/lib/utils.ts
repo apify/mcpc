@@ -16,7 +16,13 @@ import type { ServerConfig } from './types.js';
  * paginate in the tens of pages; the cap only exists to bound a misbehaving
  * server that keeps handing out fresh cursors forever.
  */
-const MAX_PAGINATION_PAGES = 1000;
+/**
+ * Most pages a paginated list operation may span before mcpc gives up on the
+ * server. Also handed to the SDK client as `listMaxPages`, so the SDK's own
+ * page walk (its no-cursor list calls aggregate every page) stops at the same
+ * point instead of its default of 64.
+ */
+export const MAX_PAGINATION_PAGES = 1000;
 
 /**
  * Fetch every page of a paginated MCP list operation and collect the items.
@@ -768,9 +774,11 @@ export function enrichErrorMessage(errorMessage: string, serverUrl?: string): st
     return `Server returned 404 Not Found${urlHint}. Check the endpoint URL.\n  Original error: ${errorMessage}`;
   }
 
-  // HTTP redirects
+  // HTTP redirects. The SDK follows a redirect only within the server's origin (and
+  // http -> https on the same host); anything else is reported with its target so the
+  // user can connect to it directly, or notice the URL is not an MCP endpoint at all.
   if (isHttpRedirectError(errorMessage)) {
-    return `Server returned a redirect${urlHint}. This doesn't look like an MCP endpoint.\n  Original error: ${errorMessage}`;
+    return `Server returned a redirect${urlHint} that was not followed (redirects are only followed within the same origin, or from http to https on the same host). If the target is the MCP endpoint, connect to that URL directly; otherwise this doesn't look like an MCP endpoint.\n  Original error: ${errorMessage}`;
   }
 
   // Timeout
