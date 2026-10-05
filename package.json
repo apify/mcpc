@@ -61,7 +61,7 @@
     "@modelcontextprotocol/client": "2.3.0",
     "@modelcontextprotocol/core": "2.3.0",
     "@modelcontextprotocol/sdk": "^1.32.0",
-    "@napi-rs/keyring": "^2.0.0",
+    "@napi-rs/keyring": "2.1.0",
     "chalk": "^6.0.0",
     "commander": "^15.0.0",
     "ora": "^9.4.1",
