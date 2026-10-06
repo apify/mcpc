@@ -1161,7 +1161,7 @@ ${chalk.bold('JSON output (--json):')}
 
   With \`--detach\`: the created \`Task\` object,
   ${taskJsonShapes}
-  or the \`CallToolResult\` above when a 2026-07-28 server ran the tool synchronously.
+  or the \`CallToolResult\` above when the server ran the tool synchronously.
   Schema: ${taskSchemaUrls.join('\n          ')}
 
   With \`--x402\` on the session: the server's settlement receipt, when it sends
@@ -1191,19 +1191,14 @@ ${chalk.bold('Arguments:')}
   Tip: mcpc ${session} tools-call <tool> --help prints the tool's parameter schema.
 
 ${chalk.bold('Async tasks (--task, --detach):')}
-  --task shows a progress spinner while the task runs on the server.
-  If you press Ctrl+C, the task keeps running and a hint with the task ID
-  is printed so you can fetch or cancel it later.
-  --detach returns as soon as the server hands out a task, printing its ID
-  (the whole Task with --json), without waiting for the tool to finish.
-  Both flags need a server with task support and fail otherwise, instead of
-  running the tool synchronously (the flags change the output shape):
-  - MCP 2025-11-25: the server advertises the tasks capability; tools-list
-    flags per-tool support as [task:optional|required|forbidden].
-  - MCP 2026-07-28: the server declares the io.modelcontextprotocol/tasks
-    extension and decides per call whether to create a task. When it runs
-    the tool synchronously instead, --detach prints the tool result. A plain
-    tools-call that the server turns into a task is waited for.
+  --task shows a progress spinner; Ctrl+C leaves the task running and prints
+  its ID for tasks-get, tasks-result or tasks-cancel.
+  --detach prints the task ID (the whole Task with --json) once the server
+  has created the task.
+  Both fail unless the server supports tasks (the tasks capability on MCP
+  2025-11-25, per-tool in tools-list; the tasks extension on 2026-07-28).
+  A 2026-07-28 server decides per call: a plain call it turns into a task is
+  waited for, and --detach prints the tool result if it ran synchronously.
 
 ${chalk.bold('Schema validation:')}
   --schema <file>       Validate tool schema before calling (save with tools-get --json)
@@ -1230,9 +1225,8 @@ ${toolsCallCombinedJsonHelp}`
       'after',
       `
 ${chalk.bold('Notes:')}
-  MCP 2025-11-25 servers list every task they hold (tasks/list). The 2026-07-28
-  tasks extension has no listing, so there the command shows the tasks this
-  session created and the server still knows.
+  MCP 2025-11-25 servers list all their tasks. The 2026-07-28 tasks extension
+  has no listing, so there this shows the tasks this session created.
 ${jsonHelp('`{ tasks: Task[] }`, each `Task` shaped', taskJsonShapes, taskSchemaUrls)}`
     )
     .action(async (_options, command) => {
@@ -1246,9 +1240,8 @@ ${jsonHelp('`{ tasks: Task[] }`, each `Task` shaped', taskJsonShapes, taskSchema
       'after',
       `
 ${chalk.bold('Notes:')}
-  On MCP 2026-07-28 a finished task carries its outcome: the tool result once
-  completed, the error once failed. Human output shows the status; --json
-  shows everything.
+  On MCP 2026-07-28 a finished task carries its result or error (shown with
+  --json).
 ${jsonHelp('`Task` object', taskJsonShapes, taskSchemaUrls)}`
     )
     .action(async (taskId, _options, command) => {
@@ -1262,10 +1255,8 @@ ${jsonHelp('`Task` object', taskJsonShapes, taskSchemaUrls)}`
       'after',
       `
 ${chalk.bold('Notes:')}
-  Waits server-side (tasks/result) on MCP 2025-11-25, and by polling tasks/get
-  at the server's pollIntervalMs on 2026-07-28. A task that waits for client
-  input (input_required) is reported as an error: mcpc never prompts, so it
-  cannot answer; cancel the task or let it time out.
+  Polls tasks/get on MCP 2026-07-28. A task waiting for client input
+  (input_required) is reported as an error: mcpc never prompts.
 ${toolsCallJsonHelp}`
     )
     .action(async (taskId, _options, command) => {
@@ -1279,10 +1270,8 @@ ${toolsCallJsonHelp}`
       'after',
       `
 ${chalk.bold('Notes:')}
-  On MCP 2026-07-28 cancellation is cooperative: the server acknowledges the
-  request and the command reports the status it shows right after, which may
-  still be working (the task may even finish). Exit code 2 only when the task
-  had already completed or failed.
+  On MCP 2026-07-28 cancellation is cooperative: the status shown right after
+  may still be working. Exit code 2 only if the task had already finished.
 ${jsonHelp('`Task` object (its state after the request)', taskJsonShapes, taskSchemaUrls)}`
     )
     .action(async (taskId, _options, command) => {
