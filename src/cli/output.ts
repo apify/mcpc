@@ -1239,7 +1239,7 @@ function formatPromptResult(result: GetPromptResult): string {
  */
 export function formatCompletionResult(
   result: CompleteResult,
-  request: Pick<CompleteRequestParams, 'ref' | 'argument'>,
+  request: Pick<CompleteRequestParams, 'ref' | 'argument' | 'context'>,
   target: string
 ): string {
   const { values, total, hasMore } = result.completion;
@@ -1259,21 +1259,31 @@ export function formatCompletionResult(
     lines.push(chalk.dim(`Showing ${shown} suggestions${more}`));
   }
 
+  // The hint repeats the arguments the request carried as context, then the completed one
+  // with the first suggestion, so the command it suggests means what the completion meant.
   const first = values[0];
   if (first !== undefined) {
+    const args: Record<string, string> = {
+      ...request.context?.arguments,
+      [request.argument.name]: first,
+    };
     lines.push('');
     if (request.ref.type === 'ref/prompt') {
-      const arg = `${request.argument.name}:=${quoteShellArg(first)}`;
+      const pairs = Object.entries(args)
+        .map(([name, value]) => `${name}:=${quoteShellArg(value)}`)
+        .join(' ');
       lines.push(
         chalk.dim(
-          `To use it, run: mcpc ${target} prompts-get ${quoteShellArg(request.ref.name)} ${arg}`
+          `To use it, run: mcpc ${target} prompts-get ${quoteShellArg(request.ref.name)} ${pairs}`
         )
       );
     } else {
-      const variable = `{${request.argument.name}}`;
-      const uri = request.ref.uri;
-      if (uri.includes(variable)) {
-        const expanded = uri.split(variable).join(encodeURIComponent(first));
+      let expanded = request.ref.uri;
+      for (const [name, value] of Object.entries(args)) {
+        expanded = expanded.split(`{${name}}`).join(encodeURIComponent(value));
+      }
+      // Only a fully expanded template is readable; otherwise point at the template list
+      if (expanded !== request.ref.uri && !/\{[^}]*\}/.test(expanded)) {
         lines.push(
           chalk.dim(`To read it, run: mcpc ${target} resources-read ${quoteShellArg(expanded)}`)
         );

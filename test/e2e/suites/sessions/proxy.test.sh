@@ -77,6 +77,16 @@ assert_success
 assert_contains "$STDOUT" "echo"
 test_pass
 
+# Test: the proxy advertises completions because the upstream test server declares them
+test_case "proxy advertises and forwards completions"
+run_mcpc "$SESSION_DOWNSTREAM"
+assert_success
+assert_contains "$STDOUT" "completions"
+run_mcpc --json "$SESSION_DOWNSTREAM" completion-complete prompt greeting style:=f
+assert_success
+assert_json "$STDOUT" '.completion.values == ["formal"]'
+test_pass
+
 # Test: tools-call works through proxy
 test_case "tools-call works via proxy"
 run_mcpc "$SESSION_DOWNSTREAM" tools-call echo 'message:=proxied message'

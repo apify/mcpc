@@ -37,4 +37,41 @@ assert_success
 _SESSIONS_CREATED=("${_SESSIONS_CREATED[@]/$SESSION}")
 test_pass
 
+# =============================================================================
+# Through --proxy: the proxy advertises only what upstream can serve
+# =============================================================================
+
+UPSTREAM=$(session_name "nocmpl-up")
+DOWNSTREAM=$(session_name "nocmpl-via")
+PROXY_PORT=$((8300 + RANDOM % 100))
+
+test_case "setup: expose the server through --proxy and connect to the proxy"
+run_mcpc connect "$TEST_SERVER_URL" "$UPSTREAM" --header "X-Test: true" --proxy "$PROXY_PORT"
+assert_success
+_SESSIONS_CREATED+=("$UPSTREAM")
+wait_for "curl -s http://127.0.0.1:$PROXY_PORT/health 2>/dev/null | grep -q ok"
+run_mcpc connect "127.0.0.1:$PROXY_PORT" "$DOWNSTREAM"
+assert_success
+_SESSIONS_CREATED+=("$DOWNSTREAM")
+test_pass
+
+test_case "the proxy does not advertise completions its upstream lacks"
+run_mcpc "$DOWNSTREAM"
+assert_success
+assert_not_contains "$STDOUT" "completions"
+assert_not_contains "$STDOUT" "completion-complete"
+run_xmcpc "$DOWNSTREAM" completion-complete prompt greeting style:=
+assert_exit_code 2
+assert_contains "$STDERR" "does not declare the completions capability"
+test_pass
+
+test_case "cleanup: close the proxy sessions"
+run_mcpc "$DOWNSTREAM" close
+assert_success
+run_mcpc "$UPSTREAM" close
+assert_success
+_SESSIONS_CREATED=("${_SESSIONS_CREATED[@]/$DOWNSTREAM}")
+_SESSIONS_CREATED=("${_SESSIONS_CREATED[@]/$UPSTREAM}")
+test_pass
+
 test_done

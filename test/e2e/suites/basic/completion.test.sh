@@ -85,7 +85,7 @@ test_pass
 test_case "a typed value with spaces survives the shell hint quoting"
 run_mcpc "$SESSION" completion-complete prompt greeting style:=formal name:=
 assert_success
-assert_contains "$STDOUT" 'prompts-get greeting name:="Sir Reginald"'
+assert_contains "$STDOUT" 'prompts-get greeting style:=formal name:="Sir Reginald"'
 test_pass
 
 test_case "a capped result reports total and hasMore"

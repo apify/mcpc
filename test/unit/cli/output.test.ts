@@ -3024,6 +3024,45 @@ describe('formatCompletionResult', () => {
     expect(output).toContain('To read it, run: mcpc @test resources-read file:///docs%2Freadme.md');
   });
 
+  it('repeats the context arguments before the completed one in the prompts-get hint', () => {
+    const output = formatCompletionResult(
+      { completion: { values: ['Sir Reginald'] } },
+      {
+        ref: { type: 'ref/prompt', name: 'greeting' },
+        argument: { name: 'name', value: '' },
+        context: { arguments: { style: 'formal' } },
+      },
+      '@test'
+    );
+    expect(output).toContain('prompts-get greeting style:=formal name:="Sir Reginald"');
+  });
+
+  it('expands every supplied template variable in the resources-read hint', () => {
+    const output = formatCompletionResult(
+      { completion: { values: ['readme.md'] } },
+      {
+        ref: { type: 'ref/resource', uri: 'repo://{owner}/{file}' },
+        argument: { name: 'file', value: 'r' },
+        context: { arguments: { owner: 'apify' } },
+      },
+      '@test'
+    );
+    expect(output).toContain('To read it, run: mcpc @test resources-read repo://apify/readme.md');
+  });
+
+  it('points at the template list while variables remain unexpanded', () => {
+    const output = formatCompletionResult(
+      { completion: { values: ['apify'] } },
+      {
+        ref: { type: 'ref/resource', uri: 'repo://{owner}/{file}' },
+        argument: { name: 'owner', value: '' },
+      },
+      '@test'
+    );
+    expect(output).not.toContain('resources-read');
+    expect(output).toContain('To see the template, run: mcpc @test resources-templates-list');
+  });
+
   it('falls back to resources-templates-list when the URI has no such variable', () => {
     const output = formatCompletionResult(
       { completion: { values: ['x'] } },

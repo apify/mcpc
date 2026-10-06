@@ -1047,6 +1047,9 @@ class BridgeProcess {
     if (instructions) {
       proxyOptions.instructions = instructions;
     }
+    if (serverDetails.capabilities) {
+      proxyOptions.capabilities = serverDetails.capabilities;
+    }
 
     this.proxyServer = new ProxyServer(proxyOptions);
 

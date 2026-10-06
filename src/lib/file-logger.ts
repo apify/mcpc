@@ -20,12 +20,31 @@ export interface FileLoggerOptions {
 /**
  * File logger with automatic rotation
  */
+/**
+ * End a write stream and wait until its file descriptor is closed. `end()`'s callback
+ * runs on `finish`, before the descriptor is released; renaming the file at that point
+ * still races the open handle (and is refused on Windows), so wait for `close` instead.
+ */
+function endAndClose(stream: WriteStream): Promise<void> {
+  return new Promise((resolve) => {
+    if (stream.closed) {
+      resolve();
+      return;
+    }
+    stream.once('close', () => resolve());
+    stream.end();
+  });
+}
+
 export class FileLogger {
   private filePath: string;
   private maxSize: number;
   private maxFiles: number;
   private stream: WriteStream | null = null;
   private writtenBytes = 0;
+  /** The rotation in progress, if any; writes made meanwhile wait in `pendingLines` */
+  private rotation: Promise<void> | null = null;
+  private pendingLines: string[] = [];
 
   constructor(options: FileLoggerOptions) {
     this.filePath = options.filePath;
@@ -70,28 +89,34 @@ export class FileLogger {
    * Write a log message
    */
   write(message: string): void {
+    // Ensure newline
+    const line = message.endsWith('\n') ? message : `${message}\n`;
+
+    // A rotation closes the stream, renames the files and opens a new one; lines logged
+    // meanwhile are held back and written to the new file once it is open.
+    if (this.rotation) {
+      this.pendingLines.push(line);
+      return;
+    }
+
     if (!this.stream) {
       console.error('[file-logger] Logger not initialized');
       return;
     }
 
-    // Ensure newline
-    const line = message.endsWith('\n') ? message : `${message}\n`;
-    const bytes = Buffer.byteLength(line, 'utf8');
-
     // Write to file
     this.stream.write(line);
-    this.writtenBytes += bytes;
+    this.writtenBytes += Buffer.byteLength(line, 'utf8');
 
     // Check if rotation is needed
     if (this.writtenBytes >= this.maxSize) {
       // Rotate asynchronously (don't wait)
-      void this.rotateAsync();
+      this.rotation = this.rotateAsync();
     }
   }
 
   /**
-   * Rotate log files asynchronously
+   * Rotate log files asynchronously, then flush the lines that arrived meanwhile
    */
   private async rotateAsync(): Promise<void> {
     try {
@@ -99,6 +124,15 @@ export class FileLogger {
       this.writtenBytes = 0;
     } catch (error) {
       console.error('[file-logger] Rotation error:', error);
+    } finally {
+      this.rotation = null;
+      // Flush in order; a flushed line may start the next rotation, which then holds
+      // back the rest the same way.
+      const pending = this.pendingLines;
+      this.pendingLines = [];
+      for (const line of pending) {
+        this.write(line);
+      }
     }
   }
 
@@ -107,14 +141,14 @@ export class FileLogger {
    * Renames current file to .1, .1 to .2, etc., and deletes oldest
    */
   private async rotate(): Promise<void> {
-    // Close the current stream and wait until it has finished: write streams open lazily
-    // and flush on end, so renaming before that could run while the file does not exist
-    // yet (the rename then silently did nothing and the rotation was lost) or before the
-    // last lines reached it.
+    // Close the current stream and wait until its descriptor is released: write streams
+    // open lazily and flush on end, so renaming before that could run while the file does
+    // not exist yet (the rename then silently did nothing and the rotation was lost),
+    // before the last lines reached it, or against a still-open handle.
     if (this.stream) {
       const stream = this.stream;
       this.stream = null;
-      await new Promise<void>((resolve) => stream.end(resolve));
+      await endAndClose(stream);
     }
 
     const dir = dirname(this.filePath);
@@ -183,17 +217,15 @@ export class FileLogger {
    * Close the logger
    */
   async close(): Promise<void> {
-    if (this.stream) {
-      return new Promise((resolve) => {
-        if (this.stream) {
-          this.stream.end(() => {
-            resolve();
-          });
-          this.stream = null;
-        } else {
-          resolve();
-        }
-      });
+    // Let a rotation in progress finish and flush (a flush may start another one)
+    while (this.rotation) {
+      await this.rotation;
     }
+    if (!this.stream) {
+      return;
+    }
+    const stream = this.stream;
+    this.stream = null;
+    await endAndClose(stream);
   }
 }
