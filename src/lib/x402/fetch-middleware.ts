@@ -37,6 +37,7 @@ import {
   type SchemePreference,
 } from './signer.js';
 import { createLogger } from '../logger.js';
+import type { DetachedToolCall } from '../types.js';
 
 const logger = createLogger('x402-middleware');
 
@@ -223,6 +224,28 @@ export function withSettlementReceipt<T>(result: T, cache: X402PaymentCache, too
     ...result,
     _meta: { ...meta, [MCP_PAYMENT_RESPONSE_META_KEY]: receipt },
   };
+}
+
+/**
+ * {@link withSettlementReceipt} for what a detached tool call (`tools-call --detach`)
+ * produced: the receipt goes on the tool result when the server answered with one, and
+ * otherwise on the task it created in its place — the paid request is the one that created
+ * the task. An absent outcome (the call failed) still consumes the receipt, so it cannot
+ * surface on the next call to the same tool.
+ */
+export function withSettlementReceiptOnDetachedCall(
+  outcome: DetachedToolCall | undefined,
+  cache: X402PaymentCache,
+  toolName: string
+): DetachedToolCall | undefined {
+  if (outcome?.result) {
+    return { ...outcome, result: withSettlementReceipt(outcome.result, cache, toolName) };
+  }
+  if (outcome?.task) {
+    return { ...outcome, task: withSettlementReceipt(outcome.task, cache, toolName) };
+  }
+  withSettlementReceipt(outcome, cache, toolName);
+  return outcome;
 }
 
 /**

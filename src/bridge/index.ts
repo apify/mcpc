@@ -50,7 +50,7 @@ import {
   AuthError,
   isAuthenticationError,
 } from '../lib/index.js';
-import { getSession, loadSessions, updateSession } from '../lib/sessions.js';
+import { getSession, loadSessions, modifySession, updateSession } from '../lib/sessions.js';
 import type { AuthCredentials, X402WalletCredentials } from '../lib/types.js';
 import { OAuthTokenManager } from '../lib/auth/oauth-token-manager.js';
 import { createRuntimeAuthProvider } from '../lib/auth/runtime-auth-provider.js';
@@ -1602,11 +1602,12 @@ class BridgeProcess {
           };
 
           // A detached call answers with a wrapper — { task } or, when a 2026-07-28 server
-          // ran the tool synchronously, { result } — while the x402 helpers below look at
-          // the tool result itself. Unwrap for them and put the wrapper back afterwards.
+          // ran the tool synchronously, { result }. The payment-required check below looks
+          // at the tool result itself (a task is never a payment challenge), so unwrap for
+          // it; the settlement receipt goes on whichever of the two the call produced.
           const detached = !!(params.useTask && params.detach);
           const toolResultOf = (value: unknown): unknown =>
-            detached ? (value as DetachedToolCall).result : value;
+            detached ? (value as DetachedToolCall | undefined)?.result : value;
 
           // Execute with automatic x402 payment retry on payment-required tool results
           try {
@@ -1626,18 +1627,15 @@ class BridgeProcess {
             // handing its receipt to the next call to the same tool. The slot stays empty
             // without x402, so such a session never loads the (viem-backed) x402 module.
             if (this.x402PaymentCache.lastSettlement) {
-              const { withSettlementReceipt } = await import('../lib/x402/fetch-middleware.js');
-              const toolResult = toolResultOf(result);
-              const withReceipt = withSettlementReceipt(
-                toolResult,
-                this.x402PaymentCache,
-                params.name
-              );
-              if (!detached) {
-                result = withReceipt;
-              } else if (toolResult !== undefined) {
-                result = { result: withReceipt } as DetachedToolCall;
-              }
+              const { withSettlementReceipt, withSettlementReceiptOnDetachedCall } =
+                await import('../lib/x402/fetch-middleware.js');
+              result = detached
+                ? withSettlementReceiptOnDetachedCall(
+                    result as DetachedToolCall | undefined,
+                    this.x402PaymentCache,
+                    params.name
+                  )
+                : withSettlementReceipt(result, this.x402PaymentCache, params.name);
             }
           }
           break;
@@ -1896,36 +1894,37 @@ class BridgeProcess {
   }
 
   /**
-   * Record a task this session created in sessions.json
+   * Record a task this session created in sessions.json.
+   *
+   * One atomic edit under the sessions file lock, like `removePersistedTask`: requests run
+   * concurrently in this process, so a `tasks-list` pruning an expired task while a tool
+   * call records a new one must not overwrite each other's entry with a stale copy of the
+   * record — on 2026-07-28 connections that record is the session's only handle on a task.
    */
   private async persistActiveTask(taskId: string, toolName: string): Promise<void> {
     try {
-      const session = await getSession(this.options.sessionName);
-      const activeTasks = { ...session?.activeTasks };
-      activeTasks[taskId] = {
-        taskId,
-        toolName,
-        createdAt: new Date().toISOString(),
-      };
-      await updateSession(this.options.sessionName, { activeTasks });
+      await modifySession(this.options.sessionName, (session) => ({
+        activeTasks: {
+          ...session.activeTasks,
+          [taskId]: { taskId, toolName, createdAt: new Date().toISOString() },
+        },
+      }));
     } catch (error) {
       logger.warn(`Failed to persist active task ${taskId}:`, error);
     }
   }
 
   /**
-   * Remove a persisted task (on completion/failure/cancellation)
+   * Remove a persisted task (on completion/failure/cancellation, or when the server no
+   * longer knows it). Atomic, see `persistActiveTask`.
    */
   private async removePersistedTask(taskId: string): Promise<void> {
     try {
-      const session = await getSession(this.options.sessionName);
-      if (session?.activeTasks?.[taskId]) {
-        const activeTasks = { ...session.activeTasks };
-        delete activeTasks[taskId];
-        await updateSession(this.options.sessionName, {
-          activeTasks: Object.keys(activeTasks).length > 0 ? activeTasks : {},
-        });
-      }
+      await modifySession(this.options.sessionName, (session) => {
+        if (!session.activeTasks?.[taskId]) return undefined;
+        const { [taskId]: _removed, ...activeTasks } = session.activeTasks;
+        return { activeTasks };
+      });
     } catch (error) {
       logger.warn(`Failed to remove persisted task ${taskId}:`, error);
     }
