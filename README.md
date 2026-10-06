@@ -25,6 +25,13 @@ server and its latest capabilities using the most universal programming interfac
 - 🪶 **Lightweight** - Minimal dependencies, works on Mac/Win/Linux, doesn't use LLMs on its own.
 - 💸 **Agentic payments** - Experimental support for the [x402](https://www.x402.org/) protocol on [Base](https://www.base.org/).
 
+`mcpc` is the most [MCP specification](https://modelcontextprotocol.io/specification/latest)-compliant CLI client available:
+the only one that covers tools, resources, prompts, async tasks, and skills, plus the OAuth client-credentials and
+enterprise-managed authorization extensions, on the latest protocol version. Here's how it compares to other MCP CLI
+clients (see [Related work](#related-work) for the full table, legend, and notes):
+
+[![Comparison of MCP CLI clients](https://raw.githubusercontent.com/apify/mcpc/main/docs/images/related-work.svg)](#related-work)
+
 ![mcpc screenshot](https://raw.githubusercontent.com/apify/mcpc/main/docs/images/mcpc-demo.gif?v=3)
 
 ## Table of contents
@@ -77,11 +84,6 @@ The two aren't exclusive – they're complementary.
 
 As a bonus, the same `mcpc` configuration, OAuth profiles, and live sessions can be shared across
 many AI agents on the same machine. Authenticate once, reuse everywhere.
-
-`mcpc` is the most [MCP specification](https://modelcontextprotocol.io/specification/latest)-compliant CLI client available.
-Here's how it compares to other MCP CLI clients (see [Related work](#related-work) for details and notes):
-
-[![Comparison of MCP CLI clients](https://raw.githubusercontent.com/apify/mcpc/main/docs/images/related-work.svg)](#related-work)
 
 ## Install
 
