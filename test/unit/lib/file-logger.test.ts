@@ -2,7 +2,7 @@
  * Unit tests for the rotating file logger used for bridge logs
  */
 
-import { mkdtempSync, rmSync, statSync, readFileSync, existsSync } from 'fs';
+import { mkdtempSync, rmSync, statSync, readFileSync, readdirSync, existsSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { FileLogger } from '../../../src/lib/file-logger.js';
@@ -55,5 +55,40 @@ posixOnly('FileLogger file permissions', () => {
 
     expect(statSync(join(dir, 'bridge-@s.log')).mode & 0o777).toBe(0o600);
     expect(statSync(join(dir, 'bridge-@s.log.1')).mode & 0o777).toBe(0o600);
+  });
+});
+
+describe('FileLogger rotation', () => {
+  it('keeps every line written while a rotation is in progress', async () => {
+    // 1-byte max size: every write rotates, so the second and third writes land while
+    // the first rotation is closing and renaming files
+    const logger = new FileLogger({ filePath: join(dir, 'bridge-@s.log'), maxSize: 1 });
+    await logger.init();
+    logger.write('first');
+    logger.write('second');
+    logger.write('third');
+    await logger.close();
+
+    const lines = readdirSync(dir)
+      .filter((name) => name.startsWith('bridge-@s.log'))
+      .flatMap((name) => readFileSync(join(dir, name), 'utf8').split('\n'))
+      .filter((line) => line.length > 0)
+      .sort();
+    expect(lines).toEqual(['first', 'second', 'third']);
+    // Each line rotated once written (the limit is one byte), in order, into its own file
+    expect(readFileSync(join(dir, 'bridge-@s.log.1'), 'utf8')).toBe('third\n');
+    expect(readFileSync(join(dir, 'bridge-@s.log.2'), 'utf8')).toBe('second\n');
+    expect(readFileSync(join(dir, 'bridge-@s.log.3'), 'utf8')).toBe('first\n');
+    expect(readFileSync(join(dir, 'bridge-@s.log'), 'utf8')).toBe('');
+  });
+
+  it('waits for the rotated stream to close before renaming', async () => {
+    const logger = new FileLogger({ filePath: join(dir, 'bridge-@s.log'), maxSize: 1 });
+    await logger.init();
+    logger.write('only');
+    await logger.close();
+    // The rotation moved the whole first file aside, so nothing of it was lost or split
+    expect(readFileSync(join(dir, 'bridge-@s.log.1'), 'utf8')).toBe('only\n');
+    expect(readFileSync(join(dir, 'bridge-@s.log'), 'utf8')).toBe('');
   });
 });

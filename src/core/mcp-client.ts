@@ -25,6 +25,8 @@ import type {
   ReadResourceResult,
   ListPromptsResult,
   GetPromptResult,
+  CompleteRequestParams,
+  CompleteResult,
   LoggingLevel,
   GetTaskResult,
   ListTasksResult,
@@ -54,6 +56,7 @@ import {
   skillsUnavailableMessage,
   skillsNotDeclaredMessage,
   directoryReadUnavailableMessage,
+  completionsNotDeclaredMessage,
   SERVER_INFO_META_KEY,
   SUPPORTED_PROTOCOL_VERSIONS,
 } from './protocol.js';
@@ -1056,6 +1059,35 @@ export class McpClient implements IMcpClient {
       throw new ServerError(`Failed to get prompt ${name}: ${(error as Error).message}`, {
         originalError: error,
       });
+    }
+  }
+
+  /**
+   * Ask the server to complete a prompt argument or resource-template variable
+   * (`completion/complete`). The request and result shapes are the same in every
+   * protocol era; what differs is only whether the server declared the `completions`
+   * capability, which the spec requires before the method may be called. That check
+   * runs outside the try block so its message reaches the user unwrapped.
+   */
+  async complete(params: CompleteRequestParams): Promise<CompleteResult> {
+    if (this.client.getServerCapabilities()?.completions === undefined) {
+      throw new ServerError(completionsNotDeclaredMessage());
+    }
+    const refLabel =
+      params.ref.type === 'ref/prompt' ? `prompt ${params.ref.name}` : `resource ${params.ref.uri}`;
+    try {
+      this.logger.debug(`Completing argument ${params.argument.name} of ${refLabel}`, {
+        contextKeys: Object.keys(params.context?.arguments ?? {}),
+      });
+      const result = await this.client.complete(params, this.getRequestOptions());
+      this.logger.debug(`Got ${result.completion.values.length} completion values`);
+      return result;
+    } catch (error) {
+      this.logger.error(`Failed to complete argument ${params.argument.name}:`, error);
+      throw new ServerError(
+        `Failed to complete argument ${params.argument.name} of ${refLabel}: ${(error as Error).message}`,
+        { originalError: error }
+      );
     }
   }
 

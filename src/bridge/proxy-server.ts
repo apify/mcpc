@@ -24,10 +24,12 @@ import {
   ReadResourceRequestSchema,
   ListPromptsRequestSchema,
   GetPromptRequestSchema,
+  CompleteRequestSchema,
   SetLevelRequestSchema,
   PingRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import type { McpClient } from '../core/mcp-client.js';
+import type { ServerCapabilities } from '../lib/types.js';
 import { createLogger } from '../lib/logger.js';
 
 const logger = createLogger('proxy-server');
@@ -44,6 +46,8 @@ export interface ProxyServerOptions {
   version: string;
   bearerToken?: string;
   instructions?: string; // Instructions from upstream server to pass to proxy clients
+  /** Upstream server capabilities; the proxy only advertises what upstream can serve */
+  capabilities?: ServerCapabilities;
 }
 
 /**
@@ -256,7 +260,11 @@ export class ProxyServer {
    * forward to the upstream client.
    */
   private createMcpServer(): MCPServer {
-    const { client, sessionName, version, instructions } = this.options;
+    const { client, sessionName, version, instructions, capabilities } = this.options;
+    // Completions are forwarded only when upstream declared them: the upstream client
+    // refuses `completion/complete` otherwise, so advertising it would promise an API
+    // that can only fail.
+    const completions = capabilities?.completions !== undefined;
 
     const mcpServer = new MCPServer(
       {
@@ -268,6 +276,7 @@ export class ProxyServer {
           tools: {},
           resources: {},
           prompts: {},
+          ...(completions && { completions: {} }),
           logging: {},
         },
         // Pass upstream server's instructions to proxy clients (if available)
@@ -275,14 +284,14 @@ export class ProxyServer {
       }
     );
 
-    this.registerHandlers(mcpServer, client);
+    this.registerHandlers(mcpServer, client, completions);
     return mcpServer;
   }
 
   /**
    * Register MCP request handlers that forward to upstream client
    */
-  private registerHandlers(mcpServer: MCPServer, client: McpClient): void {
+  private registerHandlers(mcpServer: MCPServer, client: McpClient, completions: boolean): void {
     // Ping
     mcpServer.setRequestHandler(PingRequestSchema, async () => {
       await client.ping();
@@ -319,6 +328,13 @@ export class ProxyServer {
     mcpServer.setRequestHandler(GetPromptRequestSchema, async (request) => {
       return await client.getPrompt(request.params.name, request.params.arguments);
     });
+
+    // Completions (the SDK refuses this handler unless the capability was declared above)
+    if (completions) {
+      mcpServer.setRequestHandler(CompleteRequestSchema, async (request) => {
+        return await client.complete(request.params);
+      });
+    }
 
     // Logging
     mcpServer.setRequestHandler(SetLevelRequestSchema, async (request) => {

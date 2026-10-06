@@ -27,7 +27,7 @@ import {
   tasksUnavailableMessage,
   tasksUnsupportedByServerMessage,
 } from '../../core/protocol.js';
-import { parseCommandArgs, hasStdinData, readStdinArgs } from '../parser.js';
+import { readCommandArgs } from '../parser.js';
 import {
   loadSchemaFromFile,
   validateToolSchema,
@@ -271,20 +271,8 @@ export async function callTool(
     detach?: boolean;
   }
 ): Promise<void> {
-  // Parse args from positional arguments or stdin
-  let parsedArgs: Record<string, unknown>;
-
-  // Prefer positional arguments; only read stdin if no args provided and stdin has data
-  if (options.args && options.args.length > 0) {
-    // Parse from positional arguments (key:=value pairs or inline JSON)
-    parsedArgs = parseCommandArgs(options.args);
-  } else if (hasStdinData()) {
-    // Read arguments from stdin (piped JSON)
-    parsedArgs = await readStdinArgs();
-  } else {
-    // No arguments provided
-    parsedArgs = {};
-  }
+  // Parse args from positional arguments (key:=value pairs or inline JSON) or piped stdin
+  const parsedArgs = await readCommandArgs(options.args);
 
   // Load expected schema if provided
   let expectedSchema: ToolSchema | undefined;

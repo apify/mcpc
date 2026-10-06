@@ -140,3 +140,18 @@ export function directoryReadUnavailableMessage(sessionName?: string): string {
     `Run "mcpc ${session} resources-list" to see the resources it serves`
   );
 }
+
+/**
+ * Explain that the server never declared the `completions` capability. The spec requires
+ * servers to declare it before answering `completion/complete`, so mcpc says so instead of
+ * firing a request the server would reject with "method not found".
+ *
+ * Same no-trailing-period convention as the messages above.
+ */
+export function completionsNotDeclaredMessage(sessionName?: string): string {
+  const session = sessionName ?? '@session';
+  return (
+    `This server does not declare the completions capability, so it offers no argument ` +
+    `suggestions. Run "mcpc ${session}" to see what it supports`
+  );
+}
