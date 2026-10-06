@@ -9,10 +9,11 @@ Each version opens with a one-line summary, which also opens its GitHub release.
 
 ## [Unreleased]
 
-Tasks on MCP 2026-07-28 servers, MCP TypeScript SDK 2.3.0, stdio server secrets kept out of plaintext files, logs and `ps`, and no more duplicate bridges on Windows.
+Argument completions for prompts and resource templates, tasks on MCP 2026-07-28 servers, MCP TypeScript SDK 2.3.0, stdio server secrets kept out of plaintext files, logs and `ps`, and no more duplicate bridges on Windows.
 
 ### Added
 
+- New `completion-complete prompt|resource <ref> <arg:=val ...>` command asks the server for argument suggestions (MCP `completion/complete`): pass the arguments in the `prompts-get` syntax and the last one is completed. The `--proxy` server forwards completions too.
 - Support for the MCP [Tasks extension](https://modelcontextprotocol.io/extensions/tasks/overview) (`io.modelcontextprotocol/tasks`) on MCP 2026-07-28 servers: `tools-call --task`/`--detach`, `tasks-get`, `tasks-result` and `tasks-cancel` now work there too, mcpc declares the extension on every request, and a server that answers a plain `tools-call` with a task is followed to its result. `tasks-list` shows the tasks the session created, since the extension has no server-side listing. Everything keeps working unchanged on 2025-11-25 servers, where tasks are part of the core protocol. (#430)
 
 ### Changed
@@ -32,6 +33,7 @@ Tasks on MCP 2026-07-28 servers, MCP TypeScript SDK 2.3.0, stdio server secrets 
 
 ### Fixed
 
+- Bridge log rotation no longer races the file it rotates: under load the rename could run before the log file was opened or flushed, so the rotation was silently skipped and the first lines of the new file were lost.
 - Windows sessions no longer pile up duplicate bridge processes when `tasklist` is slow or unavailable. A liveness check that could not run used to report every bridge dead, so each command spawned a replacement without stopping the healthy original; the check now falls back to a signal probe, the old bridge is always asked to shut down, and a bridge that finds another one registered for its session exits on its own. (#427)
 
 ## [0.7.0] - 2026-09-23

@@ -15,6 +15,8 @@
  *     must be refused rather than silently run synchronously (default: false)
  *   NO_RESOURCES - disable resources capability (default: false)
  *   NO_PROMPTS - disable prompts capability (default: false)
+ *   NO_COMPLETIONS - withhold the completions capability, so completion-complete
+ *     must be refused client-side instead of sent (default: false)
  *   WITH_SKILLS - declare the io.modelcontextprotocol/skills extension and expose
  *     the skill:// files as ordinary resources (default: false). The extension's
  *     own methods are 2026-07-28-only and live in index-v2.ts; serving them here
@@ -48,6 +50,7 @@ import {
   UnsubscribeRequestSchema,
   ListPromptsRequestSchema,
   GetPromptRequestSchema,
+  CompleteRequestSchema,
   ListResourceTemplatesRequestSchema,
   GetTaskRequestSchema,
   GetTaskPayloadRequestSchema,
@@ -68,6 +71,7 @@ import {
   callTestTool,
   readTestResource,
   getTestPrompt,
+  completeTestArgument,
   handleOAuthEndpoints,
 } from './fixtures.js';
 
@@ -84,6 +88,7 @@ const NO_TOOLS = process.env.NO_TOOLS === 'true';
 const NO_TASKS = process.env.NO_TASKS === 'true';
 const NO_RESOURCES = process.env.NO_RESOURCES === 'true';
 const NO_PROMPTS = process.env.NO_PROMPTS === 'true';
+const NO_COMPLETIONS = process.env.NO_COMPLETIONS === 'true';
 const WITH_SKILLS = process.env.WITH_SKILLS === 'true';
 const WITH_OTHER_EXTENSIONS = process.env.WITH_OTHER_EXTENSIONS === 'true';
 // OAuth client-credentials grant test endpoints (metadata + /token). Opt-in so
@@ -170,6 +175,9 @@ function createMcpServer(): Server {
   }
   if (!NO_PROMPTS) {
     capabilities.prompts = { listChanged: true };
+  }
+  if (!NO_COMPLETIONS) {
+    capabilities.completions = {};
   }
   // Declare the skills extension, as an out-of-era server might. Its methods are
   // not served here (see the header) — the client is expected to refuse them on a
@@ -433,6 +441,24 @@ function createMcpServer(): Server {
     });
   } // end if (!NO_PROMPTS)
 
+  // Completions for the shared prompts and resource templates (the SDK refuses the
+  // handler unless the capability above is declared)
+  if (!NO_COMPLETIONS) {
+    server.setRequestHandler(CompleteRequestSchema, async (request) => {
+      await maybeDelay();
+      if (shouldFail()) {
+        throw new Error('Simulated failure');
+      }
+
+      const { ref, argument, context } = request.params;
+      const result = completeTestArgument(ref, argument, context);
+      if (!result) {
+        throw new Error(`Nothing to complete for ${JSON.stringify(ref)} argument ${argument.name}`);
+      }
+      return result;
+    });
+  }
+
   return server;
 }
 
@@ -674,6 +700,7 @@ async function main() {
     if (NO_TOOLS) console.log(`  Tools: DISABLED`);
     if (NO_RESOURCES) console.log(`  Resources: DISABLED`);
     if (NO_PROMPTS) console.log(`  Prompts: DISABLED`);
+    if (NO_COMPLETIONS) console.log(`  Completions: DISABLED`);
     if (WITH_SKILLS) {
       console.log(`  Skills: resources only (the extension's methods are 2026-07-28-only)`);
     }

@@ -5,7 +5,7 @@
 import type { CommandOptions } from '../../lib/types.js';
 import { formatOutput } from '../output.js';
 import { withMcpClient } from '../helpers.js';
-import { parseCommandArgs, hasStdinData, readStdinArgs } from '../parser.js';
+import { readCommandArgs, stringifyArgValues } from '../parser.js';
 import { fetchAllPages } from '../../lib/utils.js';
 
 /**
@@ -41,26 +41,8 @@ export async function getPrompt(
     args?: string[];
   }
 ): Promise<void> {
-  // Parse args from positional arguments or stdin
-  let parsedArgs: Record<string, unknown>;
-
-  // Prefer positional arguments; only read stdin if no args provided and stdin has data
-  if (options.args && options.args.length > 0) {
-    // Parse from positional arguments (key:=value pairs or inline JSON)
-    parsedArgs = parseCommandArgs(options.args);
-  } else if (hasStdinData()) {
-    // Read arguments from stdin (piped JSON)
-    parsedArgs = await readStdinArgs();
-  } else {
-    // No arguments provided
-    parsedArgs = {};
-  }
-
-  // Convert all args to strings for prompt API
-  const promptArgs: Record<string, string> = {};
-  for (const [key, value] of Object.entries(parsedArgs)) {
-    promptArgs[key] = typeof value === 'string' ? value : JSON.stringify(value);
-  }
+  // Prompt arguments are string-only on the wire, so auto-parsed values go back to text
+  const promptArgs = stringifyArgValues(await readCommandArgs(options.args));
 
   await withMcpClient(target, options, async (client, _context) => {
     const result = await client.getPrompt(name, promptArgs);

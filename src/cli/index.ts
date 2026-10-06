@@ -25,6 +25,7 @@ import * as resources from './commands/resources.js';
 import * as skills from './commands/skills.js';
 import * as help from './commands/help.js';
 import * as prompts from './commands/prompts.js';
+import * as completion from './commands/completion.js';
 import * as sessions from './commands/sessions.js';
 import * as connect from './commands/connect.js';
 import * as logging from './commands/logging.js';
@@ -459,6 +460,7 @@ ${chalk.bold('MCP session commands (after connecting):')}
   <@session> ${theme.cyan('tasks-cancel')} <taskId>
   <@session> ${theme.cyan('prompts-list')}
   <@session> ${theme.cyan('prompts-get')} <name> [arg:=val ... | <json> | <stdin]
+  <@session> ${theme.cyan('completion-complete')} prompt|resource <ref> <arg:=val ... | <json> | <stdin>
   <@session> ${theme.cyan('resources-list')}
   <@session> ${theme.cyan('resources-read')} <uri> [-o <file> | --raw]
   <@session> ${theme.cyan('resources-subscribe')} <uri> <file>
@@ -1250,7 +1252,7 @@ ${jsonHelp('`Task` object', taskJsonShapes, taskSchemaUrls)}`
 
   program
     .command('tasks-result <taskId>')
-    .description('Get MCP task final result (blocks until the task finishes).')
+    .description("Get a task's result (waits until it finishes).")
     .addHelpText(
       'after',
       `
@@ -1349,7 +1351,7 @@ ${jsonHelp('`{ subscribed: true, uri, file, bytes, mimeType? }`')}`
 
   program
     .command('resources-unsubscribe <uri>')
-    .description('Stop syncing a subscribed MCP resource (keeps the local file).')
+    .description('Stop syncing a resource, keep the local file.')
     .addHelpText('after', jsonHelp('`{ unsubscribed: true, uri, file }`'))
     .action(async (uri, _options, command) => {
       await resources.unsubscribeResource(session, uri, getOptionsFromCommand(command));
@@ -1488,6 +1490,42 @@ ${jsonHelp('`GetPromptResult` object', '`{ description?, messages: [{ role, cont
       });
     });
 
+  program
+    .command('completion-complete <type> <ref> [args...]')
+    .description('Suggest values for a prompt or template argument.')
+    .addHelpText(
+      'after',
+      `
+${chalk.bold('Arguments:')}
+  <type>              prompt or resource: what is being completed, a prompt (by name)
+                      or a resource template (by URI template), like the MCP
+                      ref/prompt and ref/resource reference types.
+  <ref>               The prompt name or the resource URI template.
+  [args...]           The arguments in the prompts-get syntax. The last one is the
+                      argument to complete, with the text typed so far as its value
+                      (name:= for none); the ones before it are sent as context.
+
+  key:=value pairs    mcpc ${session} completion-complete prompt code_review language:=py
+  Inline JSON         mcpc ${session} completion-complete prompt code_review '{"language":"py"}'
+  Stdin pipe          echo '{"language":"py"}' | mcpc ${session} completion-complete prompt code_review
+
+${chalk.bold('Examples:')}
+  mcpc ${session} completion-complete prompt code_review language:=
+  mcpc ${session} completion-complete prompt code_review language:=python framework:=fla
+  mcpc ${session} completion-complete resource 'file:///{path}' path:=/ho
+
+${chalk.bold('Notes:')}
+  The server must declare the completions capability (shown by: mcpc ${session}).
+  Servers return at most 100 suggestions, ranked by relevance; hasMore says if there are more.
+${jsonHelp('`CompleteResult` object', '`{ completion: { values: [...], total?, hasMore? } }`', `${SCHEMA_BASE}#completeresult`)}`
+    )
+    .action(async (refType, ref, args, _options, command) => {
+      await completion.complete(session, refType, ref, {
+        args,
+        ...getOptionsFromCommand(command),
+      });
+    });
+
   // Logging commands
   program
     .command('logging-set-level <level>')
@@ -1590,6 +1628,17 @@ ${jsonHelp(
  * Create a Commander program for session subcommands
  * Separate from top-level program to avoid command name conflicts
  */
+/**
+ * Shorter terms for the `mcpc @session --help` command list. Commander pads every
+ * command and option in that screen to the longest term, and the 100-column help width
+ * leaves room for the descriptions only while the longest term stays under ~40 columns.
+ * A command whose full usage would exceed that lists an abbreviated form here; its own
+ * `--help` screen still shows the complete usage.
+ */
+const SESSION_COMMAND_LIST_TERMS: Record<string, string> = {
+  'completion-complete': 'completion-complete <type> <ref> ...',
+};
+
 function createSessionProgram(): Command {
   const program = new Command();
 
@@ -1603,6 +1652,7 @@ function createSessionProgram(): Command {
   // Match the top-level help styling: bold titles, cyan subcommand text
   program.configureHelp({
     subcommandTerm: (cmd) =>
+      SESSION_COMMAND_LIST_TERMS[cmd.name()] ??
       `${cmd.name()} ${cmd.usage()}`.replace(/^\[options\]\s*|\s*\[options\]/g, '').trim(),
     styleTitle: (str) => chalk.bold(str),
     styleSubcommandText: (str) => theme.cyan(str),

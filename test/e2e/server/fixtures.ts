@@ -658,6 +658,66 @@ export function getTestPrompt(
   return null;
 }
 
+/** `completion/complete` reference, as both SDKs hand it to a handler. */
+export type TestCompletionRef =
+  { type: 'ref/prompt'; name: string } | { type: 'ref/resource'; uri: string };
+
+/** `completion/complete` result shared by both servers. */
+export type TestCompletionResult = {
+  completion: { values: string[]; total?: number; hasMore?: boolean };
+};
+
+/**
+ * Answer a `completion/complete` request for the shared prompts and resource
+ * templates. Returns null when the reference names nothing this server serves
+ * (each server maps that to its own invalid-params error).
+ *
+ * Deterministic on purpose, with one branch per behaviour a client test wants:
+ * - `greeting` / `style`: prefix-filtered fixed list
+ * - `greeting` / `name`: depends on `context.arguments.style`, proving context is sent
+ * - `summarize` / `maxLength`: more than 100 matches, so the result is capped with
+ *   `total` and `hasMore` set
+ * - `test://file/{path}` / `path`: prefix-filtered fixed list for a URI template
+ */
+export function completeTestArgument(
+  ref: TestCompletionRef,
+  argument: { name: string; value: string },
+  context: { arguments?: Record<string, string> } | undefined
+): TestCompletionResult | null {
+  const byPrefix = (candidates: string[]): TestCompletionResult => {
+    const values = candidates.filter((candidate) => candidate.startsWith(argument.value));
+    return { completion: { values, total: values.length, hasMore: false } };
+  };
+
+  if (ref.type === 'ref/prompt') {
+    if (ref.name === 'greeting') {
+      if (argument.name === 'style') return byPrefix(['formal', 'casual']);
+      if (argument.name === 'name') {
+        const formal = context?.arguments?.style === 'formal';
+        return byPrefix(formal ? ['Sir Reginald', 'Madam Beatrix'] : ['Alice', 'Bob', 'Charlie']);
+      }
+      return null;
+    }
+    if (ref.name === 'summarize' && argument.name === 'maxLength') {
+      const all = Array.from({ length: 150 }, (_, index) => String((index + 1) * 10));
+      const matching = all.filter((candidate) => candidate.startsWith(argument.value));
+      return {
+        completion: {
+          values: matching.slice(0, 100),
+          total: matching.length,
+          hasMore: matching.length > 100,
+        },
+      };
+    }
+    return null;
+  }
+
+  if (ref.uri === 'test://file/{path}' && argument.name === 'path') {
+    return byPrefix(['docs/readme.md', 'docs/changelog.md', 'src/index.ts']);
+  }
+  return null;
+}
+
 /** Configuration for the OAuth client-credentials test endpoints. */
 export interface OAuthEndpointsConfig {
   port: number;

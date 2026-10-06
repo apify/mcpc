@@ -176,6 +176,7 @@ MCP session commands (after connecting):
   <@session> tasks-cancel <taskId>
   <@session> prompts-list
   <@session> prompts-get <name> [arg:=val ... | <json> | <stdin]
+  <@session> completion-complete prompt|resource <ref> <arg:=val ... | <json> | <stdin>
   <@session> resources-list
   <@session> resources-read <uri> [-o <file> | --raw]
   <@session> resources-subscribe <uri> <file>
@@ -543,6 +544,41 @@ mcpc login mcp.example.com --no-client-metadata-url
 See the [MCP authorization spec](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization#client-registration-approaches)
 for details on each approach and the format of Client ID Metadata Documents.
 
+### MCP authorization extensions
+
+Besides the interactive browser login, `mcpc` supports two official
+[MCP authorization extensions](https://modelcontextprotocol.io/extensions/client-matrix),
+selected with `mcpc login --grant <grant>`. Both save an [authentication profile](#oauth-profiles) like
+a regular login, and `mcpc` declares both extensions to every server it connects to.
+
+#### OAuth client credentials
+
+The [`io.modelcontextprotocol/oauth-client-credentials`](https://modelcontextprotocol.io/extensions/auth/oauth-client-credentials)
+extension is for non-interactive, machine-to-machine use such as CI/CD and daemons — no browser:
+`mcpc login <server> --grant client-credentials --client-id <id> --client-secret <secret>`
+(or a private-key JWT assertion via `--client-key`, RFC 7523). Access tokens are fetched and
+refreshed automatically; pin a non-discoverable token endpoint with `--token-endpoint <url>`.
+
+#### Enterprise-managed authorization
+
+The [`io.modelcontextprotocol/enterprise-managed-authorization`](https://modelcontextprotocol.io/extensions/auth/enterprise-managed-authorization)
+extension (SEP-990) is for organizations that control MCP server access centrally through their
+identity provider (e.g. Okta). You sign in once with corporate SSO, and mcpc then obtains MCP
+server tokens via identity assertion grants (ID-JAG) — no per-server consent screens:
+
+```bash
+mcpc login mcp.example.com --grant id-jag \
+  --idp https://acme.okta.com --idp-client-id <idp-client> \
+  --client-id <mcp-as-client> --client-secret <secret>
+```
+
+Both clients are pre-registered by your IT team: `--idp-client-id` at the enterprise IdP
+(add `--idp-client-secret` for confidential clients), `--client-id`/`--client-secret` at the
+MCP server's authorization server. The SSO session is kept alive with the IdP's refresh token;
+when it expires, affected sessions turn `unauthorized` with a re-login hint.
+
+See [MCP extensions](#mcp-extensions) for the full list of extensions `mcpc` supports.
+
 ### Authentication precedence
 
 When connecting, `mcpc` picks one auth source based on the flags you pass — explicit flags
@@ -904,32 +940,12 @@ Where `mcpc` stands on each part of the MCP specification:
 | 🔍 [**Server discovery**](#server-discovery)          | ✅ Supported (`server/discover`, 2026-07-28 servers)               |
 | 📁 **Roots**                                         | ❌ Not planned (deprecated by MCP)                                |
 | ❓ **Elicitation**                                   | 🚧 Planned                                                       |
-| 🔤 **Completion**                                    | 🚧 Planned                                                       |
+| 🔤 **Completion**                                    | ✅ Supported (`completion-complete`)                              |
 | 🤖 **Sampling**                                      | ❌ Not applicable (no LLM access)                                 |
 
-Beyond the interactive browser login, the **Authorization** row above also covers the OAuth
-**client-credentials** grant (the [`io.modelcontextprotocol/oauth-client-credentials`](https://modelcontextprotocol.io/extensions/auth/oauth-client-credentials)
-extension) for non-interactive, machine-to-machine use such as CI/CD and daemons — no browser:
-`mcpc login <server> --grant client-credentials --client-id <id> --client-secret <secret>`
-(or a private-key JWT assertion via `--client-key`, RFC 7523). Access tokens are fetched and
-refreshed automatically; pin a non-discoverable token endpoint with `--token-endpoint <url>`.
-
-It also covers **enterprise-managed authorization** (the
-[`io.modelcontextprotocol/enterprise-managed-authorization`](https://modelcontextprotocol.io/extensions/auth/enterprise-managed-authorization)
-extension, SEP-990) for organizations that control MCP server access centrally through their
-identity provider (e.g. Okta). You sign in once with corporate SSO, and mcpc then obtains MCP
-server tokens via identity assertion grants (ID-JAG) — no per-server consent screens:
-
-```bash
-mcpc login mcp.example.com --grant id-jag \
-  --idp https://acme.okta.com --idp-client-id <idp-client> \
-  --client-id <mcp-as-client> --client-secret <secret>
-```
-
-Both clients are pre-registered by your IT team: `--idp-client-id` at the enterprise IdP
-(add `--idp-client-secret` for confidential clients), `--client-id`/`--client-secret` at the
-MCP server's authorization server. The SSO session is kept alive with the IdP's refresh token;
-when it expires, affected sessions turn `unauthorized` with a re-login hint.
+Beyond the interactive browser login, the **Authorization** row also covers the two
+[MCP authorization extensions](#mcp-authorization-extensions): OAuth client credentials and
+enterprise-managed authorization.
 
 #### MCP extensions
 
@@ -1062,6 +1078,10 @@ mcpc @apify prompts-list
 
 # Get a prompt with arguments
 mcpc @apify prompts-get analyze-website url:=https://example.com
+
+# Ask the server to suggest values for the last argument given (or for a resource
+# template variable with `resource <uri-template>`); earlier arguments are context
+mcpc @apify completion-complete prompt analyze-website url:=https://ex
 ```
 
 <!-- TODO: Add example of prompt templates -->

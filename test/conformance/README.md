@@ -64,6 +64,11 @@ they need no such scaffolding.
 implements no elicitation (it never prompts for input, the same reason sampling
 is unsupported).
 
+Completions (`completion/complete`, the `completion-complete` command) have no
+client-side scenario upstream: the suite's `completion-complete` scenario
+exercises servers, not clients. The e2e suites cover the client against both
+test servers instead.
+
 The `io.modelcontextprotocol/skills` extension has no client scenario upstream
 yet. It is exercised by `test/e2e/suites/basic/skills.test.sh` (against the
 2026-07-28 test server) in the meantime; wire up a scenario here as soon as one

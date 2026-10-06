@@ -21,6 +21,7 @@ import type {
   ServerConfig,
   IpcMessage,
   LoggingLevel,
+  CompleteRequestParams,
   X402SchemePreference,
   ServerDetails,
 } from '../lib/index.js';
@@ -1044,6 +1045,9 @@ class BridgeProcess {
     if (instructions) {
       proxyOptions.instructions = instructions;
     }
+    if (serverDetails.capabilities) {
+      proxyOptions.capabilities = serverDetails.capabilities;
+    }
 
     this.proxyServer = new ProxyServer(proxyOptions);
 
@@ -1743,6 +1747,12 @@ class BridgeProcess {
         case 'getPrompt': {
           const params = message.params as { name: string; arguments?: Record<string, string> };
           result = await this.client.getPrompt(params.name, params.arguments);
+          break;
+        }
+
+        case 'complete': {
+          const params = message.params as CompleteRequestParams;
+          result = await this.client.complete(params);
           break;
         }
 
