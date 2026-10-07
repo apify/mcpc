@@ -25,6 +25,13 @@ server and its latest capabilities using the most universal programming interfac
 - 🪶 **Lightweight** - Minimal dependencies, works on Mac/Win/Linux, doesn't use LLMs on its own.
 - 💸 **Agentic payments** - Experimental support for the [x402](https://www.x402.org/) protocol on [Base](https://www.base.org/).
 
+`mcpc` is the most [MCP specification](https://modelcontextprotocol.io/specification/latest)-compliant CLI client available:
+the only one that covers tools, resources, prompts, async tasks, and skills, plus the OAuth client-credentials and
+enterprise-managed authorization extensions, on the latest protocol version. Here's how it compares to other MCP CLI
+clients (see [Related work](#related-work) for the full table, legend, and notes):
+
+[![Comparison of MCP CLI clients](https://raw.githubusercontent.com/apify/mcpc/main/docs/images/related-work.svg)](#related-work)
+
 ![mcpc screenshot](https://raw.githubusercontent.com/apify/mcpc/main/docs/images/mcpc-demo.gif?v=3)
 
 ## Table of contents
@@ -68,7 +75,7 @@ wiring up dozens of MCP functions. Just one `Bash()` tool, and `mcpc` handles th
  └──────────┘            └────────┘           └────────────┘
                                      Sessions, OAuth, Tools,
                                      Resources, Prompts,
-                                     Tasks, x402, ...
+                                     Tasks, Skills, x402, ...
 ```
 
 CLI is the perfect _local_ interface between agents and MCP, while MCP remains the
@@ -77,11 +84,6 @@ The two aren't exclusive – they're complementary.
 
 As a bonus, the same `mcpc` configuration, OAuth profiles, and live sessions can be shared across
 many AI agents on the same machine. Authenticate once, reuse everywhere.
-
-`mcpc` is the most [MCP specification](https://modelcontextprotocol.io/specification/latest)-compliant CLI client available.
-Here's how it compares to other MCP CLI clients (see [Related work](#related-work) for details and notes):
-
-[![Comparison of MCP CLI clients](https://raw.githubusercontent.com/apify/mcpc/main/docs/images/related-work.svg)](#related-work)
 
 ## Install
 
@@ -940,7 +942,7 @@ Where `mcpc` stands on each part of the MCP specification:
 | 🔍 [**Server discovery**](#server-discovery)          | ✅ Supported (`server/discover`, 2026-07-28 servers)               |
 | 📁 **Roots**                                         | ❌ Not planned (deprecated by MCP)                                |
 | ❓ **Elicitation**                                   | 🚧 Planned                                                       |
-| 🔤 **Completion**                                    | ✅ Supported (`completion-complete`)                              |
+| 🔤 [**Completion**](#completion)                     | ✅ Supported                                                      |
 | 🤖 **Sampling**                                      | ❌ Not applicable (no LLM access)                                 |
 
 Beyond the interactive browser login, the **Authorization** row also covers the two
@@ -1078,10 +1080,6 @@ mcpc @apify prompts-list
 
 # Get a prompt with arguments
 mcpc @apify prompts-get analyze-website url:=https://example.com
-
-# Ask the server to suggest values for the last argument given (or for a resource
-# template variable with `resource <uri-template>`); earlier arguments are context
-mcpc @apify completion-complete prompt analyze-website url:=https://ex
 ```
 
 <!-- TODO: Add example of prompt templates -->
@@ -1123,6 +1121,29 @@ mcpc @apify resources-subscribe "file:///config.json" ./config.json
 # Stop syncing — the local file is kept as-is
 mcpc @apify resources-unsubscribe "file:///config.json"
 ```
+
+#### Completion
+
+Servers that declare the `completions` capability can suggest values for prompt arguments and
+resource template variables
+([`completion/complete`](https://modelcontextprotocol.io/specification/latest/server/utilities/completion)).
+Arguments use the `prompts-get` syntax: the last one is the argument being completed, with the text
+typed so far as its value (empty for none), and any arguments before it are sent as context so the
+server can narrow its suggestions:
+
+```bash
+# Suggest values for a prompt argument from what's typed so far
+mcpc @apify completion-complete prompt code_review language:=py
+
+# Earlier arguments are context: complete "framework" for a Python code review
+mcpc @apify completion-complete prompt code_review language:=python framework:=fla
+
+# Complete a variable of a resource template
+mcpc @apify completion-complete resource 'file:///{path}' path:=/ho
+```
+
+Servers return at most 100 suggestions ranked by relevance; `hasMore` in the `--json` output says
+whether there were more. Completion works the same on `2025-11-25` and `2026-07-28` servers.
 
 #### Skills
 
