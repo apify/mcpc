@@ -942,7 +942,7 @@ Where `mcpc` stands on each part of the MCP specification:
 | 🔍 [**Server discovery**](#server-discovery)          | ✅ Supported (`server/discover`, 2026-07-28 servers)               |
 | 📁 **Roots**                                         | ❌ Not planned (deprecated by MCP)                                |
 | ❓ **Elicitation**                                   | 🚧 Planned                                                       |
-| 🔤 **Completion**                                    | ✅ Supported                                                      |
+| 🔤 [**Completion**](#completion)                     | ✅ Supported                                                      |
 | 🤖 **Sampling**                                      | ❌ Not applicable (no LLM access)                                 |
 
 Beyond the interactive browser login, the **Authorization** row also covers the two
@@ -1080,10 +1080,6 @@ mcpc @apify prompts-list
 
 # Get a prompt with arguments
 mcpc @apify prompts-get analyze-website url:=https://example.com
-
-# Ask the server to suggest values for the last argument given (or for a resource
-# template variable with `resource <uri-template>`); earlier arguments are context
-mcpc @apify completion-complete prompt analyze-website url:=https://ex
 ```
 
 <!-- TODO: Add example of prompt templates -->
@@ -1125,6 +1121,29 @@ mcpc @apify resources-subscribe "file:///config.json" ./config.json
 # Stop syncing — the local file is kept as-is
 mcpc @apify resources-unsubscribe "file:///config.json"
 ```
+
+#### Completion
+
+Servers that declare the `completions` capability can suggest values for prompt arguments and
+resource template variables
+([`completion/complete`](https://modelcontextprotocol.io/specification/latest/server/utilities/completion)).
+Arguments use the `prompts-get` syntax: the last one is the argument being completed, with the text
+typed so far as its value (empty for none), and any arguments before it are sent as context so the
+server can narrow its suggestions:
+
+```bash
+# Suggest values for a prompt argument from what's typed so far
+mcpc @apify completion-complete prompt code_review language:=py
+
+# Earlier arguments are context: complete "framework" for a Python code review
+mcpc @apify completion-complete prompt code_review language:=python framework:=fla
+
+# Complete a variable of a resource template
+mcpc @apify completion-complete resource 'file:///{path}' path:=/ho
+```
+
+Servers return at most 100 suggestions ranked by relevance; `hasMore` in the `--json` output says
+whether there were more. Completion works the same on `2025-11-25` and `2026-07-28` servers.
 
 #### Skills
 
