@@ -942,7 +942,7 @@ Where `mcpc` stands on each part of the MCP specification:
 | 🔍 [**Server discovery**](#server-discovery)          | ✅ Supported (`server/discover`, 2026-07-28 servers)               |
 | 📁 **Roots**                                         | ❌ Not planned (deprecated by MCP)                                |
 | ❓ **Elicitation**                                   | 🚧 Planned                                                       |
-| 🔤 **Completion**                                    | ✅ Supported (`completion-complete`)                              |
+| 🔤 **Completion**                                    | ✅ Supported                                                      |
 | 🤖 **Sampling**                                      | ❌ Not applicable (no LLM access)                                 |
 
 Beyond the interactive browser login, the **Authorization** row also covers the two
