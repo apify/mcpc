@@ -149,12 +149,15 @@ function touch(entry: TaskEntry, patch: Partial<ExtensionTask>): void {
  * Start `slow-task` as a task: `steps` progress steps spread over `ms`, then the same
  * result the synchronous tool returns. With `needsInput`, the task parks in
  * `input_required` after the first step, asking for a name, until `tasks/update` answers
- * or `tasks/cancel` ends it.
+ * or `tasks/cancel` ends it. With `immediate`, the task is handed out already completed:
+ * the seed a client receives carries no result (a `CreateTaskResult` never does), so the
+ * client has to fetch the outcome with `tasks/get`.
  */
 function startSlowTask(args: Record<string, unknown>): ExtensionTask {
   const ms = Number(args.ms || 3000);
   const steps = Number(args.steps || 3);
   const needsInput = args.needsInput === true;
+  const immediate = args.immediate === true;
   const now = new Date().toISOString();
   const task: ExtensionTask = {
     taskId: randomUUID(),
@@ -167,6 +170,15 @@ function startSlowTask(args: Record<string, unknown>): ExtensionTask {
   };
   const entry: TaskEntry = { task, abort: new AbortController() };
   taskStore.set(task.taskId, entry);
+
+  if (immediate) {
+    touch(entry, {
+      status: 'completed',
+      statusMessage: 'Done before the task was handed out',
+      result: { content: [{ type: 'text', text: 'Completed immediately' }] },
+    });
+    return task;
+  }
 
   void (async () => {
     const stepDuration = ms / steps;
@@ -270,8 +282,15 @@ async function serveTasksExtension(request: Request): Promise<Response | undefin
   lastClientCapabilities = clientCapabilities;
   await maybeDelay();
   if (shouldFail()) return jsonRpcError(message.id, INTERNAL_ERROR, 'Simulated failure');
-  const task = startSlowTask(isRecord(params.arguments) ? params.arguments : {});
-  return jsonRpcResult(message.id, { resultType: 'task', ...task });
+  // A CreateTaskResult is the bare Task: the status payload (result, error,
+  // inputRequests) belongs to tasks/get, so hand out the seed without it.
+  const {
+    result: _result,
+    error: _error,
+    inputRequests: _inputRequests,
+    ...seed
+  } = startSlowTask(isRecord(params.arguments) ? params.arguments : {});
+  return jsonRpcResult(message.id, { resultType: 'task', ...seed });
 }
 
 // Compute the effective skills resource list and content map at startup.

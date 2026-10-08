@@ -95,6 +95,21 @@ assert_json_eq "$STDOUT" '.content[0].text' 'hi'
 assert_json "$STDOUT" 'has("taskId") | not'
 test_pass
 
+test_case "a task handed out already completed is unwrapped through tasks/get"
+# A CreateTaskResult is the bare Task: the outcome of a terminal seed lives in tasks/get only
+run_xmcpc "$SESSION" tools-call slow-task immediate:=true
+assert_success
+assert_contains "$STDOUT" "Completed immediately"
+run_mcpc --json "$SESSION" tools-call --detach slow-task immediate:=true
+assert_success
+assert_json_eq "$STDOUT" '.status' 'completed'
+assert_json "$STDOUT" 'has("result") | not'
+DONE_ID=$(json_get '.taskId')
+run_mcpc --json "$SESSION" tasks-result "$DONE_ID"
+assert_success
+assert_json_eq "$STDOUT" '.content[0].text' 'Completed immediately'
+test_pass
+
 # ── Polling and the inlined result ───────────────────────────
 
 test_case "tasks-get shows the task's TTL and poll interval"

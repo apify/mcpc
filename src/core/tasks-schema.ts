@@ -99,16 +99,26 @@ function parseTaskError(value: unknown, path: string[], issues: Issues): TaskErr
 }
 
 /**
- * Validate one task object — the flat `Task` fields plus whatever status-specific payload
- * the status calls for. Shared by `CreateTaskResult` (seed state; never carries a
- * payload in practice), the `tasks/get` result, and `notifications/tasks`.
+ * The two shapes the extension gives a task. A `CreateTaskResult` is the bare `Task`
+ * (`seed`): the status-specific payload — `result` once completed, `error` once failed,
+ * `inputRequests` while waiting — belongs to the `DetailedTask` that only `tasks/get`
+ * returns (`detailed`). So a seed may be `completed` without a `result`, and a client
+ * that wants the outcome of a task handed out already finished fetches it with `tasks/get`.
+ */
+export type ExtensionTaskShape = 'seed' | 'detailed';
+
+/**
+ * Validate one task object — the flat `Task` fields plus, for the `detailed` shape,
+ * whatever status-specific payload the status calls for. A payload present on a seed is
+ * type-checked and passed through, never required.
  *
  * `path` is where the object sits in the enclosing result, for error messages.
  */
 export function parseExtensionTask(
   value: unknown,
   issues: Issues,
-  path: string[] = []
+  path: string[] = [],
+  shape: ExtensionTaskShape = 'detailed'
 ): ExtensionTask | undefined {
   if (!isRecord(value)) {
     issues.add(path, 'must be a task object');
@@ -150,9 +160,11 @@ export function parseExtensionTask(
     valid = false;
   }
 
-  // Status-specific payload. A completed task without its result is one whose outcome
-  // is unreachable, so that is an error; the other payloads are checked when present.
-  if (status === 'completed' && !isRecord(value.result)) {
+  // Status-specific payload. On the detailed shape a completed task without its result is
+  // one whose outcome is unreachable, so that is an error; everything else is checked when
+  // present. A seed carries no payload by definition (the outcome is one tasks/get away).
+  const detailed = shape === 'detailed';
+  if (detailed && status === 'completed' && !isRecord(value.result)) {
     issues.add([...path, 'result'], 'must be present on a completed task (the request result)');
     valid = false;
   }
@@ -160,7 +172,7 @@ export function parseExtensionTask(
   if (value.error !== undefined) {
     error = parseTaskError(value.error, [...path, 'error'], issues);
     if (!error) valid = false;
-  } else if (status === 'failed') {
+  } else if (detailed && status === 'failed') {
     // The spec requires the error, but the status alone is already a definite outcome.
     // Report a readable placeholder rather than refuse the whole task.
     error = { code: -32603, message: 'task failed (the server sent no error details)' };
@@ -185,9 +197,8 @@ export function parseExtensionTask(
 
 /**
  * Result schema for `tasks/get`: the `DetailedTask` for the task's current status, with
- * the wire `resultType: "complete"` already consumed by the SDK. Also validates the task
- * object a `CreateTaskResult` carries and the params of `notifications/tasks`, which the
- * spec gives the same shape.
+ * the wire `resultType: "complete"` already consumed by the SDK. The params of
+ * `notifications/tasks` have the same shape.
  */
 export const ExtensionTaskSchema = standardSchema<ExtensionTask>((value, issues) =>
   parseExtensionTask(value, issues)
@@ -209,12 +220,15 @@ export const TaskAcknowledgementSchema = standardSchema<Record<string, unknown>>
 );
 
 /**
- * Validate a task object outside `client.request()` — the seed task lifted out of a
- * `CreateTaskResult` — and report every problem in one message.
+ * Validate a task object outside `client.request()` and report every problem in one
+ * message. `shape` says which of the two task shapes to expect (see {@link ExtensionTaskShape}).
  */
-export function validateExtensionTask(value: unknown): ExtensionTask | Error {
+export function validateExtensionTask(
+  value: unknown,
+  shape: ExtensionTaskShape = 'detailed'
+): ExtensionTask | Error {
   const issues = new Issues();
-  const task = parseExtensionTask(value, issues);
+  const task = parseExtensionTask(value, issues, [], shape);
   if (task && issues.ok) return task;
   const details = issues.list
     .map((issue) =>
@@ -222,4 +236,9 @@ export function validateExtensionTask(value: unknown): ExtensionTask | Error {
     )
     .join('; ');
   return new Error(`Invalid task object from server: ${details || 'not a task'}`);
+}
+
+/** Validate the seed task lifted out of a `CreateTaskResult` (the bare `Task`). */
+export function validateCreatedTask(value: unknown): ExtensionTask | Error {
+  return validateExtensionTask(value, 'seed');
 }

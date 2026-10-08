@@ -6,6 +6,7 @@ import {
   ExtensionTaskSchema,
   TaskAcknowledgementSchema,
   isTerminalTaskStatus,
+  validateCreatedTask,
   validateExtensionTask,
 } from '../../../src/core/tasks-schema.js';
 
@@ -93,6 +94,32 @@ describe('validateExtensionTask', () => {
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toContain('taskId: must be a non-empty string');
     expect((error as Error).message).toContain('status: must be one of');
+  });
+
+  it('expects the detailed shape: a completed task carries its result', () => {
+    expect(validateExtensionTask({ ...base, status: 'completed' })).toBeInstanceOf(Error);
+  });
+});
+
+describe('validateCreatedTask', () => {
+  it('accepts a seed task in a terminal state without the tasks/get payload', () => {
+    // A CreateTaskResult is the bare Task: a server may hand out a task that is already
+    // completed (or failed) and keep its outcome for tasks/get.
+    expect(validateCreatedTask({ ...base, status: 'completed' })).toMatchObject({
+      status: 'completed',
+    });
+    const failed = validateCreatedTask({ ...base, status: 'failed' });
+    expect(failed).toMatchObject({ status: 'failed' });
+    // No placeholder error is invented on a seed: the real one is one tasks/get away
+    expect(failed).not.toHaveProperty('error');
+  });
+
+  it('still checks the task fields and any payload that is present', () => {
+    expect(validateCreatedTask({ ...base, taskId: '' })).toBeInstanceOf(Error);
+    expect(validateCreatedTask({ ...base, status: 'failed', error: 'boom' })).toBeInstanceOf(Error);
+    expect(
+      validateCreatedTask({ ...base, status: 'completed', result: { content: [] } })
+    ).toMatchObject({ result: { content: [] } });
   });
 });
 

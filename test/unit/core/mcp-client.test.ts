@@ -486,6 +486,34 @@ describe('tasks extension (2026-07-28)', () => {
     );
   });
 
+  it('fetches a task handed out already completed through tasks/get before unwrapping it', async () => {
+    // A CreateTaskResult is the bare Task: the outcome of a terminal seed lives in tasks/get
+    const client = await connectDeclaringClient();
+    const placeholder = createdTaskPlaceholder(client, working({ status: 'completed' }));
+    stubSdkClient.callTool = vi.fn().mockResolvedValue(placeholder);
+    const result = { content: [{ type: 'text', text: 'already done' }] };
+    answerTaskGets(working({ status: 'completed', result }));
+
+    await expect(client.callTool('slow')).resolves.toEqual(result);
+    expect(stubSdkClient.request).toHaveBeenCalledTimes(1);
+    expect(stubSdkClient.request).toHaveBeenCalledWith(
+      { method: 'tasks/get', params: { taskId: 't-1' } },
+      expect.anything(),
+      expect.anything()
+    );
+  });
+
+  it('hands a detached caller a terminal seed as the server sent it', async () => {
+    const client = await connectDeclaringClient();
+    const placeholder = createdTaskPlaceholder(client, working({ status: 'completed' }));
+    stubSdkClient.callTool = vi.fn().mockResolvedValue(placeholder);
+
+    const outcome = await client.callToolDetached('slow');
+    expect(outcome.task).toMatchObject({ taskId: 't-1', status: 'completed' });
+    expect(outcome.task).not.toHaveProperty('result');
+    expect(stubSdkClient.request).not.toHaveBeenCalled();
+  });
+
   it('returns the tool result when the server ran a detached call synchronously', async () => {
     const client = await connectDeclaringClient();
     const result = { content: [{ type: 'text', text: 'quick' }] };

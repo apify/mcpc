@@ -47,7 +47,7 @@ import {
   ExtensionTaskSchema,
   TaskAcknowledgementSchema,
   isTerminalTaskStatus,
-  validateExtensionTask,
+  validateCreatedTask,
 } from './tasks-schema.js';
 import { CreatedTaskShim } from './tasks-result-shim.js';
 import { createNoOpLogger, type Logger } from '../lib/logger.js';
@@ -782,7 +782,7 @@ export class McpClient implements IMcpClient {
       }
       this.logger.debug(`Tool ${name} runs as task ${created.taskId}, waiting for it to finish`);
       onUpdate?.(taskToUpdate(created));
-      return await this.awaitExtensionTask(created, onUpdate);
+      return await this.followCreatedTask(created, onUpdate);
     } catch (error) {
       // Task outcomes (failed, cancelled, waiting for input) are reported in their own
       // words; only transport and protocol failures get the generic wrapper.
@@ -1296,12 +1296,14 @@ export class McpClient implements IMcpClient {
   /**
    * The task a 2026-07-28 server created in lieu of the tool result, lifted out of the
    * placeholder the response shim produced — or `undefined` when `result` is the real
-   * tool result. Validated here, since the shim only carries the object across.
+   * tool result. Validated here, since the shim only carries the object across. It is the
+   * bare `Task` of a `CreateTaskResult`: whatever state it is in, its outcome is not
+   * inlined here but fetched with `tasks/get` (see {@link followCreatedTask}).
    */
   private takeCreatedTask(result: CallToolResult): ExtensionTask | undefined {
     const created = this.tasksShim.takeCreatedTask(result);
     if (!created) return undefined;
-    const task = validateExtensionTask(created);
+    const task = validateCreatedTask(created);
     if (task instanceof Error) {
       throw new ServerError(`Server answered tools/call with a task, but ${task.message}`);
     }
@@ -1455,10 +1457,26 @@ export class McpClient implements IMcpClient {
   }
 
   /**
+   * Follow the task a server created in lieu of a tool result to its end. The seed of a
+   * `CreateTaskResult` never inlines the outcome — only `tasks/get` does — so a task
+   * handed out already in a terminal state is fetched once before it is unwrapped; one
+   * still running is polled like any other.
+   */
+  private async followCreatedTask(
+    seed: ExtensionTask,
+    onUpdate?: (update: TaskUpdate) => void
+  ): Promise<CallToolResult> {
+    if (!isTerminalTaskStatus(seed.status)) return this.awaitExtensionTask(seed, onUpdate);
+    this.logger.debug(`Task ${seed.taskId} was handed out already ${seed.status}, fetching it`);
+    return this.extensionTaskOutcome(await this.getExtensionTask(seed.taskId));
+  }
+
+  /**
    * Follow a 2026-07-28 task to its end: poll `tasks/get` at the cadence the server asks
    * for until the status is terminal, then return the tool result it carries or throw
-   * the outcome that ended it. A task waiting for input is reported and left alone —
-   * mcpc has nothing to answer it with.
+   * the outcome that ended it. `initial` is a detailed task (from `tasks/get`) or a seed
+   * that is still running; a terminal seed goes through {@link followCreatedTask}. A task
+   * waiting for input is reported and left alone — mcpc has nothing to answer it with.
    */
   private async awaitExtensionTask(
     initial: ExtensionTask,
