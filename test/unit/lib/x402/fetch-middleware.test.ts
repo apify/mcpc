@@ -14,6 +14,7 @@ import {
   extractAcceptFromPaymentRequired,
   withSettlementReceipt,
   type X402PaymentCache,
+  withSettlementReceiptOnDetachedCall,
 } from '../../../../src/lib/x402/fetch-middleware.js';
 import type { PaymentRequiredAccept, SignerWallet } from '../../../../src/lib/x402/signer.js';
 
@@ -509,5 +510,51 @@ describe('settlement receipts (PAYMENT-RESPONSE)', () => {
     await fetchFn('https://example.test/mcp', { method: 'POST', body: toolsCallBody('paid-tool') });
 
     expect(cache.lastSettlement).toBeUndefined();
+  });
+});
+
+describe('withSettlementReceiptOnDetachedCall', () => {
+  const receipt = { success: true, transaction: '0xdetached', network: 'eip155:8453' };
+  const settled = (): X402PaymentCache => ({
+    signature: null,
+    lastSettlement: { toolName: 'paid-tool', receipt },
+  });
+  const task = {
+    taskId: 't-1',
+    status: 'working' as const,
+    createdAt: '2026-10-06T00:00:00Z',
+    lastUpdatedAt: '2026-10-06T00:00:00Z',
+    ttlMs: null,
+  };
+
+  it('puts the receipt on the task a paid detached call created', () => {
+    const cache = settled();
+    const outcome = withSettlementReceiptOnDetachedCall({ task }, cache, 'paid-tool');
+    expect(outcome?.task).toEqual({ ...task, _meta: { 'x402/payment-response': receipt } });
+    expect(outcome?.result).toBeUndefined();
+    expect(cache.lastSettlement).toBeUndefined();
+  });
+
+  it('puts the receipt on the tool result when the server ran the call synchronously', () => {
+    const cache = settled();
+    const outcome = withSettlementReceiptOnDetachedCall(
+      { result: { content: [] } },
+      cache,
+      'paid-tool'
+    );
+    expect(outcome?.result).toEqual({ content: [], _meta: { 'x402/payment-response': receipt } });
+    expect(outcome?.task).toBeUndefined();
+  });
+
+  it('consumes the receipt even when the call produced nothing', () => {
+    const cache = settled();
+    expect(withSettlementReceiptOnDetachedCall(undefined, cache, 'paid-tool')).toBeUndefined();
+    expect(cache.lastSettlement).toBeUndefined();
+  });
+
+  it("leaves another tool's receipt alone", () => {
+    const cache = settled();
+    expect(withSettlementReceiptOnDetachedCall({ task }, cache, 'free-tool')).toEqual({ task });
+    expect(cache.lastSettlement).toEqual({ toolName: 'paid-tool', receipt });
   });
 });

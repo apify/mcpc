@@ -15,6 +15,7 @@ import {
   SCHEMA_BASE,
   LEGACY_SCHEMA_BASE,
   SKILLS_SPEC_URL,
+  TASKS_SPEC_URL,
   SESSION_DETAILS_HELP,
   outputHelp,
   serverDetailsJsonHelp,
@@ -1144,19 +1145,26 @@ ${jsonHelp(
     `${SCHEMA_BASE}#calltoolresult`
   );
 
-  // TODO: CreateTaskResult/Task only exist on the 2025-11-25 schema page — tasks moved to the
-  // io.modelcontextprotocol/tasks extension for 2026-07-28, which the SDK doesn't implement yet
-  // (see CLAUDE.md). Once the SDK adds it, point this (and the #task links on tasks-list/
-  // tasks-get/tasks-result) at wherever that extension's schema ends up living.
+  // The Task shape differs per protocol era: the 2025-11-25 core schema defines one, the
+  // 2026-07-28 tasks extension another. Every task command prints whichever the connection
+  // uses, so they all describe both, in this order, and link both schema pages.
+  const taskJsonShapes = [
+    'on MCP 2025-11-25: `{ taskId, status, ttl, createdAt, lastUpdatedAt, statusMessage?, pollInterval? }`',
+    'on MCP 2026-07-28: `{ taskId, status, ttlMs, createdAt, lastUpdatedAt, statusMessage?, pollIntervalMs?,',
+    '                    result? (completed), error? (failed), inputRequests? (input_required) }`',
+  ].join('\n  ');
+  const taskSchemaUrls = [`${LEGACY_SCHEMA_BASE}#task`, TASKS_SPEC_URL];
+
   const toolsCallCombinedJsonHelp = `
 ${chalk.bold('JSON output (--json):')}
   \`CallToolResult\` object:
   \`{ content: [{ type, text?, ... }], isError?, structuredContent?: { ... } }\`
   Schema: ${SCHEMA_BASE}#calltoolresult
 
-  With \`--detach\`: \`CreateTaskResult\` object:
-  \`{ taskId: string, status: string }\`
-  Schema: ${LEGACY_SCHEMA_BASE}#createtaskresult
+  With \`--detach\`: the created \`Task\` object,
+  ${taskJsonShapes}
+  or the \`CallToolResult\` above when the server ran the tool synchronously.
+  Schema: ${taskSchemaUrls.join('\n          ')}
 
   With \`--x402\` on the session: the server's settlement receipt, when it sends
   one, is at \`_meta["x402/payment-response"]\`.
@@ -1185,16 +1193,14 @@ ${chalk.bold('Arguments:')}
   Tip: mcpc ${session} tools-call <tool> --help prints the tool's parameter schema.
 
 ${chalk.bold('Async tasks (--task, --detach):')}
-  --task shows a progress spinner while the task runs on the server.
-  If you press Ctrl+C, the task keeps running and a hint with the task ID
-  is printed so you can fetch or cancel it later.
-  --detach returns the task ID immediately without waiting.
-  Both flags require a server that advertises the tasks capability and uses
-  MCP protocol 2025-11-25 (on 2026-07-28 servers tasks are an extension not
-  yet supported by mcpc). If it does not, the command fails instead of
-  running the tool synchronously — the flags change the output shape, so the
-  fallback would silently return a result where a task ID is expected.
-  Check per-tool support in tools-list: [task:optional|required|forbidden].
+  --task shows a progress spinner; Ctrl+C leaves the task running and prints
+  its ID for tasks-get, tasks-result or tasks-cancel.
+  --detach prints the task ID (the whole Task with --json) once the server
+  has created the task.
+  Both fail unless the server supports tasks (the tasks capability on MCP
+  2025-11-25, per-tool in tools-list; the tasks extension on 2026-07-28).
+  A 2026-07-28 server decides per call: a plain call it turns into a task is
+  waited for, and --detach prints the tool result if it ran synchronously.
 
 ${chalk.bold('Schema validation:')}
   --schema <file>       Validate tool schema before calling (save with tools-get --json)
@@ -1212,17 +1218,18 @@ ${toolsCallCombinedJsonHelp}`
       });
     });
 
-  // Tasks commands
+  // Tasks commands. Two dialects behind one surface: the core tasks feature of MCP
+  // 2025-11-25 and the io.modelcontextprotocol/tasks extension of MCP 2026-07-28.
   program
     .command('tasks-list')
-    .description('List all MCP tasks.')
+    .description('List MCP tasks (see below).')
     .addHelpText(
       'after',
-      jsonHelp(
-        '`{ tasks: Task[] }`',
-        '`{ tasks: [{ taskId, status, ttl, createdAt, lastUpdatedAt, statusMessage?, pollInterval? }] }`',
-        `${LEGACY_SCHEMA_BASE}#task`
-      )
+      `
+${chalk.bold('Notes:')}
+  MCP 2025-11-25 servers list all their tasks. The 2026-07-28 tasks extension
+  has no listing, so there this shows the tasks this session created.
+${jsonHelp('`{ tasks: Task[] }`, each `Task` shaped', taskJsonShapes, taskSchemaUrls)}`
     )
     .action(async (_options, command) => {
       await tasks.listTasks(session, getOptionsFromCommand(command));
@@ -1233,11 +1240,11 @@ ${toolsCallCombinedJsonHelp}`
     .description('Get MCP task status.')
     .addHelpText(
       'after',
-      jsonHelp(
-        '`Task` object',
-        '`{ taskId, status, ttl, createdAt, lastUpdatedAt, statusMessage?, pollInterval? }`',
-        `${LEGACY_SCHEMA_BASE}#task`
-      )
+      `
+${chalk.bold('Notes:')}
+  On MCP 2026-07-28 a finished task carries its result or error (shown with
+  --json).
+${jsonHelp('`Task` object', taskJsonShapes, taskSchemaUrls)}`
     )
     .action(async (taskId, _options, command) => {
       await tasks.getTask(session, taskId, getOptionsFromCommand(command));
@@ -1246,7 +1253,14 @@ ${toolsCallCombinedJsonHelp}`
   program
     .command('tasks-result <taskId>')
     .description("Get a task's result (waits until it finishes).")
-    .addHelpText('after', toolsCallJsonHelp)
+    .addHelpText(
+      'after',
+      `
+${chalk.bold('Notes:')}
+  Polls tasks/get on MCP 2026-07-28. A task waiting for client input
+  (input_required) is reported as an error: mcpc never prompts.
+${toolsCallJsonHelp}`
+    )
     .action(async (taskId, _options, command) => {
       await tasks.getTaskResult(session, taskId, getOptionsFromCommand(command));
     });
@@ -1256,11 +1270,11 @@ ${toolsCallCombinedJsonHelp}`
     .description('Cancel an MCP task.')
     .addHelpText(
       'after',
-      jsonHelp(
-        '`Task` object',
-        '`{ taskId, status, ttl, createdAt, lastUpdatedAt, statusMessage?, pollInterval? }`',
-        `${LEGACY_SCHEMA_BASE}#task`
-      )
+      `
+${chalk.bold('Notes:')}
+  On MCP 2026-07-28 cancellation is cooperative: the status shown right after
+  may still be working. Exit code 2 only if the task had already finished.
+${jsonHelp('`Task` object (its state after the request)', taskJsonShapes, taskSchemaUrls)}`
     )
     .action(async (taskId, _options, command) => {
       await tasks.cancelTask(session, taskId, getOptionsFromCommand(command));
