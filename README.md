@@ -90,7 +90,7 @@ many AI agents on the same machine. Authenticate once, reuse everywhere.
 With [Homebrew](https://brew.sh) (macOS and Linux), which brings its own Node.js:
 
 ```bash
-brew install apify/tap/mcpc
+brew install mcpc
 ```
 
 Otherwise install the latest [Node.js](https://nodejs.org/en/download) or [Bun](https://bun.sh) first, then:

@@ -115,7 +115,7 @@ export function createStreamableHttpTransport(
     hasRequestInit: !!options.requestInit,
   });
 
-  // Default reconnection options matching CLAUDE.md specs
+  // Default reconnection options matching AGENTS.md specs
   const defaultReconnectionOptions = {
     initialReconnectionDelay: 1000, // 1s
     maxReconnectionDelay: 30000, // 30s

@@ -14,7 +14,7 @@
 theme: jekyll-theme-cayman
 
 exclude:
-  - CLAUDE.md
+  - AGENTS.md
   - CONTRIBUTING.md
   - _config.yml
   - bin/

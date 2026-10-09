@@ -3,7 +3,7 @@
  * Generates docs/REFERENCE.md — the `--help` output of every mcpc command, in the order
  * the commands appear in `mcpc --help`.
  *
- * The CLI's help text is mcpc's primary documentation surface (see CLAUDE.md), so the
+ * The CLI's help text is mcpc's primary documentation surface (see AGENTS.md), so the
  * reference is never hand-written: it is captured from the built CLI itself, exactly
  * like the Usage block in README.md is. Run it with `--check` to fail when the
  * committed file has drifted from the CLI.

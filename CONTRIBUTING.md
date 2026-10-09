@@ -146,7 +146,7 @@ in the OS keychain via [`@napi-rs/keyring`](https://www.npmjs.com/package/@napi-
 `0600` file fallback on headless systems.
 
 For a deeper walkthrough of the protocol implementation, session lifecycle, error recovery, and
-security model, see [`CLAUDE.md`](./CLAUDE.md) — it's the reference document maintained for AI
+security model, see [`AGENTS.md`](./AGENTS.md) — it's the reference document maintained for AI
 coding agents, but it's plain Markdown and useful to humans too.
 
 ## References
