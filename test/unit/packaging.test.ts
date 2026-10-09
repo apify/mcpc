@@ -56,7 +56,8 @@ describe('published package contents', () => {
 
   it('does not ship repo-only content (docs, sources, tests, scripts)', () => {
     const repoOnly = packedPaths().filter(
-      (path) => /^(docs|src|test|scripts)\//.test(path) || path === 'AGENTS.md'
+      (path) =>
+        /^(docs|src|test|scripts)\//.test(path) || path === 'CLAUDE.md' || path === 'AGENTS.md'
     );
     expect(repoOnly).toEqual([]);
   }, 60_000);
