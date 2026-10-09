@@ -35,7 +35,7 @@ node_modules/
 .gitignore
 
 # Documentation drafts
-CLAUDE.md
+AGENTS.md
 README.placeholder.md
 
 # Misc
