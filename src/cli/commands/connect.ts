@@ -53,7 +53,7 @@ import {
   storeKeychainProxyBearerToken,
 } from '../../lib/auth/keychain.js';
 import { getWallet } from '../../lib/wallets.js';
-import chalk from 'chalk';
+import chalk from 'roundel/chalk';
 // ora is loaded lazily at the spinner call site — it is only needed for
 // human-mode bulk connects and costs ~50 ms at import.
 import { createLogger } from '../../lib/logger.js';
@@ -803,7 +803,7 @@ async function bulkConnectEntries(
   if (options.outputMode === 'human' && results.some((r) => r.status === 'created')) {
     const total = results.length;
     let done = 0;
-    const { default: ora } = await import('ora');
+    const { default: ora } = await import('flagstaff/ora');
     const spinner = ora(`Connecting to ${total} server${total === 1 ? '' : 's'}...`).start();
     results = await waitForBulkConnectReady(results, options, () => {
       done += 1;

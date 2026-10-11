@@ -9,7 +9,7 @@ import { initProxy } from '../lib/proxy.js';
 import { Command, CommanderError, Help } from 'commander';
 import { setVerbose, setJsonMode, closeFileLogger } from '../lib/index.js';
 import { isMcpError, formatHumanError, ClientError } from '../lib/index.js';
-import chalk from 'chalk';
+import chalk from 'roundel/chalk';
 import { formatJson, formatJsonError, jsonHelp, rainbow, theme } from './output.js';
 import {
   SCHEMA_BASE,

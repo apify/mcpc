@@ -6,7 +6,7 @@ import type { MockInstance } from 'vitest';
 import { extractAllTextContent } from '../../../src/cli/tool-result.js';
 
 // Mock chalk to return plain strings (required because Jest can't handle chalk's ESM imports)
-vi.mock('chalk', () => {
+vi.mock('roundel/chalk', () => {
   const identity = (s: string): string => s;
   const hex = (): ((s: string) => string) => identity;
   const palette = {

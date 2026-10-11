@@ -89,7 +89,7 @@ function resetKeychainCalls() {
 // Mock chalk to keep the test runtime untouched by ANSI codes.
 // ---------------------------------------------------------------------------
 
-vi.mock('chalk', () => ({
+vi.mock('roundel/chalk', () => ({
   __esModule: true,
   default: { red: (s: string) => s },
 }));

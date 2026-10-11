@@ -2,7 +2,7 @@
  * Server-level commands (ping, server-discover, etc.)
  */
 
-import chalk from 'chalk';
+import chalk from 'roundel/chalk';
 import { formatSuccess, formatOutput, formatDiscoverResult } from '../output.js';
 import { withMcpClient } from '../helpers.js';
 import { ServerError } from '../../lib/errors.js';

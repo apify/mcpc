@@ -7,7 +7,7 @@
  * cancellation is cooperative (so `tasks-cancel` reports what the server made of it).
  */
 
-import chalk from 'chalk';
+import chalk from 'roundel/chalk';
 import {
   formatOutput,
   formatSuccess,

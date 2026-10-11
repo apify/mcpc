@@ -6,7 +6,7 @@
  * instead of being repeated — or drifting — across command definitions.
  */
 
-import chalk from 'chalk';
+import chalk from 'roundel/chalk';
 import { jsonHelp } from './output.js';
 
 /** Base URL of the MCP schema reference the `--json` help sections link to */

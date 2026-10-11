@@ -13,7 +13,7 @@
 
 import { readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
-import chalk from 'chalk';
+import chalk from 'roundel/chalk';
 import { createLogger, getJsonMode } from '../logger.js';
 import { getServerHost, getMcpcHome, fileExists } from '../utils.js';
 import { withFileLock } from '../file-lock.js';

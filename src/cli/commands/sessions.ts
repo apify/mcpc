@@ -39,7 +39,7 @@ import {
   reconnectCrashedSessions,
   loadSessionEnv,
 } from '../../lib/bridge-manager.js';
-import chalk from 'chalk';
+import chalk from 'roundel/chalk';
 import { createLogger } from '../../lib/logger.js';
 import { getBridgeLogPath } from '../../lib/log-reader.js';
 

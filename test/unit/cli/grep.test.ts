@@ -23,7 +23,7 @@ const { chalkApi } = vi.hoisted(() => {
     },
   };
 });
-vi.mock('chalk', () => ({
+vi.mock('roundel/chalk', () => ({
   default: chalkApi,
   ...chalkApi,
 }));

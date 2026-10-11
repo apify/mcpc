@@ -3,7 +3,7 @@
  * Supports both human-readable and JSON output modes
  */
 
-import chalk from 'chalk';
+import chalk from 'roundel/chalk';
 import type {
   CompleteRequestParams,
   CompleteResult,

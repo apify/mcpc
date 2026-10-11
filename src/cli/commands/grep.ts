@@ -2,7 +2,7 @@
  * Grep command handler - search tools, resources, prompts, and instructions
  */
 
-import chalk from 'chalk';
+import chalk from 'roundel/chalk';
 import type { Tool, Resource, Prompt, CommandOptions, SessionData } from '../../lib/types.js';
 import { ClientError } from '../../lib/errors.js';
 import { isProcessAlive, fetchAllPages } from '../../lib/utils.js';

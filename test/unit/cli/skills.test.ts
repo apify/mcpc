@@ -8,7 +8,7 @@
 // at module-load). Matches the mock shape used in output.test.ts — the
 // `theme` object in src/cli/output.ts calls chalk.hex(...) at module load,
 // so hex must return a function that yields a string-passthrough callable.
-vi.mock('chalk', () => {
+vi.mock('roundel/chalk', () => {
   const identity = (s: string): string => s;
   const hex = (): ((s: string) => string) => identity;
   const palette = {

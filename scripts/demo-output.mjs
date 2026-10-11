@@ -6,7 +6,7 @@
  * Usage: node scripts/demo-output.mjs
  */
 
-import chalk from 'chalk';
+import chalk from 'roundel/chalk';
 
 /**
  * Convert HSL to RGB hex color

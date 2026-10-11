@@ -3,7 +3,7 @@
  */
 
 import { Command } from 'commander';
-import chalk from 'chalk';
+import chalk from 'roundel/chalk';
 import qrcode from 'qrcode-terminal';
 import {
   base,

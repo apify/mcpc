@@ -2,7 +2,7 @@
  * Resources command handlers
  */
 
-import chalk from 'chalk';
+import chalk from 'roundel/chalk';
 import {
   formatOutput,
   formatSuccess,

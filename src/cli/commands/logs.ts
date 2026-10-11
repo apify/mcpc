@@ -3,7 +3,7 @@
  */
 
 import { stat } from 'fs/promises';
-import chalk from 'chalk';
+import chalk from 'roundel/chalk';
 import { ClientError } from '../../lib/errors.js';
 import { getSession } from '../../lib/sessions.js';
 import {
