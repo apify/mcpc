@@ -40,9 +40,18 @@ describe('parseCommandArgs', () => {
       expect(result).toEqual({ query: 'hello', limit: 10 });
     });
 
-    it('should parse inline JSON array', () => {
-      const result = parseCommandArgs(['[1,2,3]']);
-      expect(result).toEqual([1, 2, 3]);
+    it('should reject an inline JSON array (MCP arguments must be an object)', () => {
+      expect(() => parseCommandArgs(['[1,2,3]'])).toThrow(ClientError);
+      expect(() => parseCommandArgs(['[1,2,3]'])).toThrow('Inline JSON must be an object');
+    });
+
+    it('should keep a "__proto__" key as an own property', () => {
+      const result = parseCommandArgs(['{"__proto__":{"x":1},"name":"hi"}']);
+      expect(JSON.stringify(result)).toBe('{"__proto__":{"x":1},"name":"hi"}');
+    });
+
+    it('should reject numbers out of the double range instead of sending null', () => {
+      expect(() => parseCommandArgs(['{"n":1e400}'])).toThrow('Invalid JSON: number out of range');
     });
 
     it('should parse nested JSON object', () => {
@@ -104,6 +113,19 @@ describe('parseCommandArgs', () => {
     it('should keep large negative integers as strings', () => {
       const result = parseCommandArgs(['id:=-12345678901234567890']);
       expect(result).toEqual({ id: '-12345678901234567890' });
+    });
+
+    it('should keep numbers out of the double range as strings (not Infinity → null)', () => {
+      expect(parseCommandArgs(['n:=1e400'])).toEqual({ n: '1e400' });
+      expect(parseCommandArgs(['n:=-1e400'])).toEqual({ n: '-1e400' });
+      expect(parseCommandArgs(['a:=[1,1e400]'])).toEqual({ a: '[1,1e400]' });
+      expect(parseCommandArgs(['n:=1e308'])).toEqual({ n: 1e308 });
+    });
+
+    it('should keep a "__proto__" key as an own property', () => {
+      const result = parseCommandArgs(['__proto__:={"x":1}', 'name:=hi']);
+      expect(JSON.stringify(result)).toBe('{"__proto__":{"x":1},"name":"hi"}');
+      expect(Object.getPrototypeOf(result)).toBe(Object.prototype);
     });
 
     it('should still parse safe 16+ digit-looking numbers within range', () => {
@@ -629,6 +651,11 @@ describe('stringifyArgValues', () => {
     expect(
       stringifyArgValues({ s: 'py', n: 10, b: true, o: { k: 'v' }, a: [1, 2], z: null })
     ).toEqual({ s: 'py', n: '10', b: 'true', o: '{"k":"v"}', a: '[1,2]', z: 'null' });
+  });
+
+  it('keeps a "__proto__" key as an own property', () => {
+    const result = stringifyArgValues(parseCommandArgs(['__proto__:=x', 'name:=hi']));
+    expect(JSON.stringify(result)).toBe('{"__proto__":"x","name":"hi"}');
   });
 });
 

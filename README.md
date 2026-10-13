@@ -288,7 +288,7 @@ mcpc @session tools-call <tool-name> config:='{"key":"value"}' items:='[1,2,3]'
 # Force string type with JSON quotes
 mcpc @session tools-call <tool-name> id:='"123"' flag:='"true"'
 
-# Inline JSON object (if first arg starts with { or [)
+# Inline JSON object (if first arg starts with {)
 mcpc @session tools-call <tool-name> '{"greeting":"hello world","count":10}'
 
 # Read from stdin (automatic when no positional args and input is piped)
@@ -299,7 +299,7 @@ cat args.json | mcpc @session tools-call <tool-name>
 **Auto-parsing rules** for `key:=value`: valid JSON keeps its type
 (`count:=10` → number, `enabled:=true` → boolean, `cfg:='{"k":"v"}'` → object); anything
 else is a string (`greeting:=hello` → `"hello"`). Force a string literal with JSON quotes:
-`id:='"123"'`. Inline JSON is detected when the first arg starts with `{` or `[`. Stdin is
+`id:='"123"'`. Inline JSON (an object) is detected when the first arg starts with `{`. Stdin is
 read when no positional args are given and input is piped.
 
 **Pitfalls:** no spaces around `:=` (use `query:=hello world`, not `query := ...`); quote
