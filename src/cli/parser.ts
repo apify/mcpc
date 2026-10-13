@@ -543,6 +543,39 @@ export function parseServerArg(
 }
 
 /**
+ * JSON.parse that rejects numbers beyond the double range: they parse to
+ * Infinity, which JSON.stringify would silently send as null.
+ */
+function parseJsonFinite(text: string): unknown {
+  return JSON.parse(text, (_key, value: unknown) => {
+    if (typeof value === 'number' && !Number.isFinite(value)) {
+      throw new SyntaxError('number out of range');
+    }
+    return value;
+  });
+}
+
+/**
+ * Set an own property, even for the key "__proto__" (plain assignment would
+ * replace the object's prototype instead, and the argument would vanish).
+ */
+function setOwnProperty(target: Record<string, unknown>, key: string, value: unknown): void {
+  Object.defineProperty(target, key, {
+    value,
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  });
+}
+
+/**
+ * Check that parsed JSON is usable as MCP `arguments`, which must be an object
+ */
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
  * Auto-parse a value: try JSON.parse, if fails treat as string
  * This allows natural CLI usage like: count:=10, enabled:=true, name:=hello
  */
@@ -558,9 +591,9 @@ function autoParseValue(value: string): unknown {
 
   // Try to parse as JSON (handles numbers, booleans, null, arrays, objects)
   try {
-    return JSON.parse(value);
+    return parseJsonFinite(value);
   } catch {
-    // Not valid JSON, treat as string
+    // Not valid JSON (or a number out of range, e.g. 1e400), treat as string
     return value;
   }
 }
@@ -568,7 +601,7 @@ function autoParseValue(value: string): unknown {
 /**
  * Parse command arguments (positional args after tool/prompt name)
  * Supports two formats:
- * 1. Inline JSON: '{"key":"value"}' or '[...]'
+ * 1. Inline JSON object: '{"key":"value"}'
  * 2. Key:=value pairs: key:=value (auto-parsed as JSON or string)
  *
  * @param args - Array of positional argument strings
@@ -580,7 +613,7 @@ export function parseCommandArgs(args: string[] | undefined): Record<string, unk
     return {};
   }
 
-  // Check if first arg is inline JSON object/array
+  // Check if first arg is inline JSON (arrays are detected only to reject them clearly)
   const firstArg = args[0];
   if (firstArg && (firstArg.startsWith('{') || firstArg.startsWith('['))) {
     // Parse as inline JSON
@@ -588,11 +621,11 @@ export function parseCommandArgs(args: string[] | undefined): Record<string, unk
       throw new ClientError('When using inline JSON, only one argument is allowed');
     }
     try {
-      const parsedArgs: unknown = JSON.parse(firstArg);
-      if (typeof parsedArgs !== 'object' || parsedArgs === null) {
-        throw new ClientError('Inline JSON must be an object or array');
+      const parsedArgs: unknown = parseJsonFinite(firstArg);
+      if (!isJsonObject(parsedArgs)) {
+        throw new ClientError(`Inline JSON must be an object, e.g. '{"key":"value"}'`);
       }
-      return parsedArgs as Record<string, unknown>;
+      return parsedArgs;
     } catch (error) {
       if (error instanceof ClientError) {
         throw error;
@@ -621,7 +654,7 @@ export function parseCommandArgs(args: string[] | undefined): Record<string, unk
     }
 
     // Auto-parse: try JSON, fallback to string
-    parsedArgs[key] = autoParseValue(rawValue);
+    setOwnProperty(parsedArgs, key, autoParseValue(rawValue));
   }
 
   return parsedArgs;
@@ -657,12 +690,12 @@ export async function readStdinArgs(): Promise<Record<string, unknown>> {
       }
 
       try {
-        const parsed: unknown = JSON.parse(data);
-        if (typeof parsed !== 'object' || parsed === null) {
+        const parsed: unknown = parseJsonFinite(data);
+        if (!isJsonObject(parsed)) {
           reject(new ClientError('Stdin must contain a JSON object'));
           return;
         }
-        resolve(parsed as Record<string, unknown>);
+        resolve(parsed);
       } catch (error) {
         reject(new ClientError(`Invalid JSON from stdin: ${(error as Error).message}`));
       }
@@ -704,7 +737,7 @@ export async function readCommandArgs(
 export function stringifyArgValues(args: Record<string, unknown>): Record<string, string> {
   const result: Record<string, string> = {};
   for (const [key, value] of Object.entries(args)) {
-    result[key] = typeof value === 'string' ? value : JSON.stringify(value);
+    setOwnProperty(result, key, typeof value === 'string' ? value : JSON.stringify(value));
   }
   return result;
 }

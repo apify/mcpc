@@ -132,7 +132,7 @@ mcpc @apify tools-call search query:="hello world" limit:=10 enabled:=true
 mcpc @apify tools-call search config:='{"nested":"value"}' items:='[1,2,3]'
 mcpc @apify tools-call search id:='"123"'          # force a string with JSON quotes
 
-# 2) inline JSON — when the first arg starts with { or [
+# 2) inline JSON object — when the first arg starts with {
 mcpc @apify tools-call search '{"query":"hello","limit":10}'
 
 # 3) stdin — auto-detected when piped and no positional args are given

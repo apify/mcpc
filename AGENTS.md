@@ -369,7 +369,7 @@ Tools and prompts accept arguments as positional parameters after the tool/promp
    mcpc @apify tools-call search config:='{"key":"value"}' items:='[1,2,3]'
    ```
 
-2. **Inline JSON** (if first arg starts with `{` or `[`):
+2. **Inline JSON object** (if first arg starts with `{`):
 
    ```bash
    mcpc @apify tools-call search '{"query":"hello","limit":10}'
