@@ -14,6 +14,8 @@
  * is reported as such, never silently passed.
  */
 
+import { getOwnProperty, setOwnProperty } from './own-property.js';
+
 /** Thrown for malformed frontmatter, or YAML outside the supported subset. */
 export class FrontmatterParseError extends Error {
   constructor(message: string) {
@@ -173,13 +175,13 @@ function parseMapping(
     const blockScalar = matchBlockScalar(rest);
     if (blockScalar) {
       const { value, next } = readBlockScalar(lines, index + 1, indent, blockScalar);
-      result[key] = value;
+      setOwnProperty(result, key, value);
       index = next;
       continue;
     }
 
     if (rest.length > 0) {
-      result[key] = parseScalarOrFlow(rest, line.number, depth + 1);
+      setOwnProperty(result, key, parseScalarOrFlow(rest, line.number, depth + 1));
       index += 1;
       continue;
     }
@@ -189,7 +191,7 @@ function parseMapping(
     const child = lines[index + 1];
     if (child && child.indent > indent) {
       const { value, next } = parseBlock(lines, index + 1, child.indent, depth + 1);
-      result[key] = value;
+      setOwnProperty(result, key, value);
       index = next;
     } else if (
       child &&
@@ -197,10 +199,10 @@ function parseMapping(
       (child.text.startsWith('- ') || child.text === '-')
     ) {
       const { value, next } = parseSequence(lines, index + 1, indent, depth + 1);
-      result[key] = value;
+      setOwnProperty(result, key, value);
       index = next;
     } else {
-      result[key] = null;
+      setOwnProperty(result, key, null);
       index += 1;
     }
   }
@@ -410,7 +412,11 @@ function parseFlow(text: string, lineNumber: number, depth: number): unknown {
       );
     }
     const key = unquote(part.slice(0, separator).trim());
-    map[key] = parseScalarOrFlow(part.slice(separator + 1).trim(), lineNumber, depth + 1);
+    setOwnProperty(
+      map,
+      key,
+      parseScalarOrFlow(part.slice(separator + 1).trim(), lineNumber, depth + 1)
+    );
   }
   return map;
 }
@@ -535,7 +541,9 @@ export function diffFrontmatter(
   const keys = new Set([...Object.keys(documentFields), ...Object.keys(entryFields)]);
   const differing: string[] = [];
   for (const key of keys) {
-    if (!looseEqual(documentFields[key], entryFields[key])) differing.push(key);
+    if (!looseEqual(getOwnProperty(documentFields, key), getOwnProperty(entryFields, key))) {
+      differing.push(key);
+    }
   }
   return differing.sort();
 }
@@ -554,7 +562,7 @@ function looseEqual(a: unknown, b: unknown): boolean {
     const right = b as Record<string, unknown>;
     const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
     for (const key of keys) {
-      if (!looseEqual(left[key], right[key])) return false;
+      if (!looseEqual(getOwnProperty(left, key), getOwnProperty(right, key))) return false;
     }
     return true;
   }

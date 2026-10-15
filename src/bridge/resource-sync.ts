@@ -16,6 +16,7 @@ import type { ReadResourceResult } from '@modelcontextprotocol/client';
 import type { ResourceSubscriptionEntry, ResourceSyncResult } from '../lib/types.js';
 import { selectResourceContent, writeResourceFile } from '../lib/resource-content.js';
 import { ClientError } from '../lib/errors.js';
+import { setOwnProperty } from '../lib/own-property.js';
 import type { Logger } from '../lib/logger.js';
 
 /**
@@ -189,7 +190,7 @@ export class ResourceSyncManager {
   private async persist(): Promise<void> {
     const record: Record<string, ResourceSubscriptionEntry> = {};
     for (const [uri, entry] of this.entries) {
-      record[uri] = entry;
+      setOwnProperty(record, uri, entry);
     }
     await this.options.persist(record);
   }

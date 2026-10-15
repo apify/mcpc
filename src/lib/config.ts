@@ -9,6 +9,7 @@ import { join, resolve } from 'path';
 import type { McpConfig, ServerConfig } from './types.js';
 import { ClientError } from './errors.js';
 import { createLogger } from './logger.js';
+import { getOwnProperty, setOwnProperty } from './own-property.js';
 import { normalizeServerUrl, redactServerConfig } from './utils.js';
 
 const logger = createLogger('config');
@@ -81,7 +82,7 @@ export function loadConfig(configPath: string): McpConfig {
  * @throws ClientError if server name not found
  */
 export function getServerConfig(config: McpConfig, serverName: string): ServerConfig {
-  const serverConfig = config.mcpServers[serverName];
+  const serverConfig = getOwnProperty(config.mcpServers, serverName);
 
   if (!serverConfig) {
     const availableServers = Object.keys(config.mcpServers);
@@ -219,7 +220,7 @@ function substituteEnvObject(obj: Record<string, string>): Record<string, string
   const result: Record<string, string> = {};
 
   for (const [key, value] of Object.entries(obj)) {
-    result[key] = substituteString(value);
+    setOwnProperty(result, key, substituteString(value));
   }
 
   return result;
@@ -285,7 +286,7 @@ export function validateServerConfig(config: ServerConfig): boolean {
  * (i.e. has a `command` field rather than a `url`).
  */
 export function isStdioEntry(config: McpConfig, entryName: string): boolean {
-  return config.mcpServers[entryName]?.command !== undefined;
+  return getOwnProperty(config.mcpServers, entryName)?.command !== undefined;
 }
 
 // ----------------------------------------------------------------------------
