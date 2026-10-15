@@ -19,6 +19,11 @@ vi.mock('../../../../src/lib/auth/profiles.js', () => ({
 
 import type { AuthProfile } from '../../../../src/lib/types.js';
 import { getAuthProfile, saveAuthProfile } from '../../../../src/lib/auth/profiles.js';
+import {
+  readKeychainOAuthClientInfo,
+  storeKeychainOAuthClientInfo,
+  storeKeychainOAuthTokenInfo,
+} from '../../../../src/lib/auth/keychain.js';
 import { OAuthProvider } from '../../../../src/lib/auth/oauth-provider.js';
 
 describe('OAuthProvider discovery state (SEP-2352)', () => {
@@ -179,5 +184,110 @@ describe('OAuthProvider records the resource indicator the login sent (#395)', (
     const provider = makeProvider() as unknown as Record<string, unknown>;
     expect(provider.isRuntimeMode).toBeUndefined();
     expect(provider.tokenManager).toBeUndefined();
+  });
+});
+
+describe('OAuthProvider state parameter (M1)', () => {
+  const makeProvider = () =>
+    new OAuthProvider({
+      serverUrl: 'https://mcp.example.com',
+      profileName: 'default',
+      redirectUrl: 'http://127.0.0.1:13316/callback',
+      forceReauth: true,
+    });
+
+  it('generates one random state per login so the SDK sends it and the callback can be matched', async () => {
+    const provider = makeProvider();
+    const state = await provider.state();
+    expect(state).toMatch(/^[0-9a-f]{32}$/);
+    // Stable within one login: the authorization URL and the callback check use the same value.
+    expect(await provider.state()).toBe(state);
+    // Unpredictable across logins.
+    expect(await makeProvider().state()).not.toBe(state);
+  });
+});
+
+describe('OAuthProvider keeps the old client registration until the login succeeds (M2)', () => {
+  const tokens = { access_token: 'at', token_type: 'Bearer', refresh_token: 'rt' };
+
+  beforeEach(() => {
+    vi.mocked(readKeychainOAuthClientInfo).mockReset();
+    vi.mocked(storeKeychainOAuthClientInfo).mockReset();
+    vi.mocked(storeKeychainOAuthTokenInfo).mockReset();
+    vi.mocked(getAuthProfile).mockReset();
+    vi.mocked(saveAuthProfile).mockReset();
+    vi.mocked(getAuthProfile).mockResolvedValue(undefined as never);
+  });
+
+  it('registers a fresh client on login without consulting the stored one', async () => {
+    const provider = new OAuthProvider({
+      serverUrl: 'https://mcp.example.com',
+      profileName: 'default',
+      forceReauth: true,
+    });
+    vi.mocked(readKeychainOAuthClientInfo).mockResolvedValue({ clientId: 'old-client' } as never);
+
+    expect(await provider.clientInformation()).toBeUndefined();
+    expect(readKeychainOAuthClientInfo).not.toHaveBeenCalled();
+  });
+
+  it('writes the new registration to the keychain only once tokens arrive, before the tokens', async () => {
+    const provider = new OAuthProvider({
+      serverUrl: 'https://mcp.example.com',
+      profileName: 'default',
+      forceReauth: true,
+    });
+    const calls: string[] = [];
+    vi.mocked(storeKeychainOAuthClientInfo).mockImplementation(async () => {
+      calls.push('client');
+    });
+    vi.mocked(storeKeychainOAuthTokenInfo).mockImplementation(async () => {
+      calls.push('tokens');
+    });
+
+    await provider.saveClientInformation({ client_id: 'new-client', client_secret: 's3cret' });
+    // A cancelled or failed login ends here: the old registration is untouched.
+    expect(storeKeychainOAuthClientInfo).not.toHaveBeenCalled();
+    // The code exchange leg reads the new registration from memory.
+    expect(await provider.clientInformation()).toEqual({
+      client_id: 'new-client',
+      client_secret: 's3cret',
+    });
+
+    await provider.saveTokens(tokens);
+    expect(storeKeychainOAuthClientInfo).toHaveBeenCalledWith(
+      'https://mcp.example.com',
+      'default',
+      { clientId: 'new-client', clientSecret: 's3cret' }
+    );
+    expect(calls).toEqual(['client', 'tokens']);
+  });
+
+  it('persists command-line client credentials the same way, after the tokens are issued', async () => {
+    const provider = new OAuthProvider({
+      serverUrl: 'https://mcp.example.com',
+      profileName: 'default',
+      forceReauth: true,
+      clientCredentials: { clientId: 'preset-client' },
+    });
+
+    expect(await provider.clientInformation()).toEqual({ client_id: 'preset-client' });
+    expect(storeKeychainOAuthClientInfo).not.toHaveBeenCalled();
+
+    await provider.saveTokens(tokens);
+    expect(storeKeychainOAuthClientInfo).toHaveBeenCalledWith(
+      'https://mcp.example.com',
+      'default',
+      { clientId: 'preset-client' }
+    );
+  });
+
+  it('still writes the registration immediately when not re-authenticating', async () => {
+    const provider = new OAuthProvider({
+      serverUrl: 'https://mcp.example.com',
+      profileName: 'default',
+    });
+    await provider.saveClientInformation({ client_id: 'client' });
+    expect(storeKeychainOAuthClientInfo).toHaveBeenCalledTimes(1);
   });
 });

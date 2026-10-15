@@ -7,6 +7,8 @@ import { validateClientMetadataUrl } from '../../../../src/lib/auth/oauth-utils.
 import {
   assertHttpAuthorizationUrl,
   explainOAuthRegistrationFailure,
+  extractCodeFromUrl,
+  startCallbackServer,
   getBrowserOpenCommand,
 } from '../../../../src/lib/auth/oauth-flow.js';
 import { AuthError } from '../../../../src/lib/errors.js';
@@ -296,5 +298,126 @@ describe('assertHttpAuthorizationUrl', () => {
   it('allows http and https', () => {
     expect(() => assertHttpAuthorizationUrl(new URL('http://localhost/a'))).not.toThrow();
     expect(() => assertHttpAuthorizationUrl(new URL('https://a.example/b'))).not.toThrow();
+  });
+});
+
+describe('OAuth callback server verifies the state parameter (M1)', () => {
+  const context = { serverUrl: 'https://mcp.example.com', profileName: 'default' };
+
+  type Started = ReturnType<typeof startCallbackServer> & { base: string };
+  const started: Started[] = [];
+
+  const listen = async (): Promise<Started> => {
+    const callback = startCallbackServer(0, context);
+    await new Promise<void>((resolve) => callback.server.listen(0, '127.0.0.1', resolve));
+    const { port } = callback.server.address() as { port: number };
+    const entry = { ...callback, base: `http://127.0.0.1:${port}` };
+    started.push(entry);
+    return entry;
+  };
+
+  const settled = (promise: Promise<unknown>): Promise<'resolved' | 'rejected' | 'pending'> =>
+    Promise.race([
+      promise.then(
+        () => 'resolved' as const,
+        () => 'rejected' as const
+      ),
+      new Promise<'pending'>((resolve) => setTimeout(() => resolve('pending'), 50)),
+    ]);
+
+  afterEach(() => {
+    for (const entry of started.splice(0)) {
+      entry.destroyConnections();
+      entry.server.close();
+    }
+  });
+
+  it('resolves with the code when the callback echoes the expected state', async () => {
+    const cb = await listen();
+    cb.expectState('expected-state');
+    const res = await fetch(`${cb.base}/callback?code=abc&state=expected-state&iss=https://as`);
+    expect(res.status).toBe(200);
+    await expect(cb.codePromise).resolves.toEqual({
+      code: 'abc',
+      state: 'expected-state',
+      iss: 'https://as',
+    });
+  });
+
+  it('ignores a callback with a foreign or missing state: no code, no abort, 400 to the sender', async () => {
+    const cb = await listen();
+    cb.expectState('expected-state');
+
+    const foreign = await fetch(`${cb.base}/callback?code=attacker&state=other`);
+    expect(foreign.status).toBe(400);
+    expect(await foreign.text()).toContain('ignored');
+    expect(await settled(cb.codePromise)).toBe('pending');
+
+    const missing = await fetch(`${cb.base}/callback?code=attacker`);
+    expect(missing.status).toBe(400);
+    expect(await settled(cb.codePromise)).toBe('pending');
+
+    // An attacker-sent error must not abort the login either.
+    const error = await fetch(`${cb.base}/callback?error=access_denied&state=other`);
+    expect(error.status).toBe(400);
+    expect(await settled(cb.codePromise)).toBe('pending');
+
+    // The genuine callback still goes through afterwards.
+    await fetch(`${cb.base}/callback?code=real&state=expected-state`);
+    await expect(cb.codePromise).resolves.toMatchObject({ code: 'real' });
+  });
+
+  it('ignores every callback before the authorization URL is known', async () => {
+    const cb = await listen();
+    const res = await fetch(`${cb.base}/callback?code=early&state=anything`);
+    expect(res.status).toBe(400);
+    expect(await settled(cb.codePromise)).toBe('pending');
+  });
+
+  it('rejects on a genuine error callback without crashing the process when no handler is attached yet', async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      const cb = await listen();
+      cb.expectState('expected-state');
+      const res = await fetch(
+        `${cb.base}/callback?error=access_denied&error_description=nope&state=expected-state`
+      );
+      expect(res.status).toBe(400);
+      // Give the microtask queue and the unhandled-rejection tracker a turn.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(unhandled).toEqual([]);
+      // The flow's own handler, attached later, still sees the rejection.
+      await expect(cb.codePromise).rejects.toThrow('OAuth error: nope');
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+  });
+});
+
+describe('extractCodeFromUrl verifies the state parameter (M1)', () => {
+  it('accepts a pasted callback URL that echoes the state', () => {
+    expect(
+      extractCodeFromUrl('http://127.0.0.1:13316/callback?code=abc&state=s1&iss=https://as', 's1')
+    ).toEqual({ code: 'abc', state: 's1', iss: 'https://as' });
+    expect(extractCodeFromUrl('/callback?code=abc&state=s1', 's1')).toEqual({
+      code: 'abc',
+      state: 's1',
+    });
+  });
+
+  it('refuses a pasted URL with a missing or mismatched state before looking at code or error', () => {
+    expect(() => extractCodeFromUrl('http://127.0.0.1:13316/callback?code=abc', 's1')).toThrow(
+      /does not belong to this login/
+    );
+    expect(() =>
+      extractCodeFromUrl('http://127.0.0.1:13316/callback?code=abc&state=s2', 's1')
+    ).toThrow(/does not belong to this login/);
+    expect(() =>
+      extractCodeFromUrl('http://127.0.0.1:13316/callback?error=access_denied&state=s2', 's1')
+    ).toThrow(/does not belong to this login/);
   });
 });
