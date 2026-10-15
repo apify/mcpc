@@ -771,3 +771,16 @@ describe('schema-validator', () => {
     });
   });
 });
+
+describe('validateToolSchema with names inherited from Object.prototype', () => {
+  const schema: ToolSchema = {
+    name: 'one-arg',
+    inputSchema: { type: 'object', properties: { arg1: { type: 'string' } } },
+  };
+
+  it('does not treat a passed "constructor" argument as a schema property', () => {
+    const result = validateToolSchema(schema, schema, 'compatible', { constructor: 'x' });
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain('Argument "constructor" no longer exists in schema');
+  });
+});

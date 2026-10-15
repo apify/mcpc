@@ -131,6 +131,18 @@ describe('getServerConfig', () => {
     );
   });
 
+  it('should not resolve names inherited from Object.prototype', () => {
+    expect(() => getServerConfig(config, 'constructor')).toThrow('Server "constructor" not found');
+    expect(() => getServerConfig(config, '__proto__')).toThrow('Server "__proto__" not found');
+  });
+
+  it('should keep a "__proto__" env variable as an own property', () => {
+    const withProto = {
+      mcpServers: { s: { command: 'node', env: JSON.parse('{"__proto__":"x","A":"1"}') } },
+    };
+    expect(Object.keys(getServerConfig(withProto, 's').env!)).toEqual(['__proto__', 'A']);
+  });
+
   it('should list available servers in error message', () => {
     expect(() => getServerConfig(config, 'unknown')).toThrow(
       'Available servers: http-server, stdio-server'

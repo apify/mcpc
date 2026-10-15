@@ -9,6 +9,7 @@ import { homedir, tmpdir } from 'os';
 import { join, resolve, isAbsolute } from 'path';
 import { mkdir, access, constants, rename, lstat, chmod } from 'fs/promises';
 import { ClientError, ServerError } from './errors.js';
+import { setOwnProperty } from './own-property.js';
 import type { ServerConfig } from './types.js';
 
 /**
@@ -649,7 +650,7 @@ export function redactHeaders(headers: Record<string, string>): Record<string, s
   if (Object.keys(headers).length === 0) return headers;
   const redacted: Record<string, string> = {};
   for (const key of Object.keys(headers)) {
-    redacted[key] = REDACTED_HEADER_VALUE;
+    setOwnProperty(redacted, key, REDACTED_HEADER_VALUE);
   }
   return redacted;
 }

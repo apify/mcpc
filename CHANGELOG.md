@@ -26,6 +26,7 @@ Argument completions for prompts and resource templates, tasks on MCP 2026-07-28
 
 - `login --grant client-credentials` and `login --grant id-jag` now bind the stored client secret or key to the authorization server they were validated against, so a server that later points at a different authorization server is refused instead of receiving the credentials. Profiles created earlier keep working; log in again to bind them.
 - The `env` of a stdio config entry, where API tokens such as `GITHUB_PERSONAL_ACCESS_TOKEN` usually live, is now stored in the OS keychain and delivered to the bridge over IPC like session headers, instead of being written in plaintext to `sessions.json`, printed by `mcpc --json` and `mcpc @session`, and passed on the bridge's command line where `ps` showed it to every local user. Verbose output and the bridge log no longer record header values, env values, or tool-call arguments either, and bridge log files are created owner-only. (#341)
+- `skills-get` no longer accepts a `SKILL.md` that hides extra frontmatter under a `__proto__` key from the check against the skill's entry. Config entries, auth profiles, headers and schema checks also no longer mistake names like `__proto__` or `constructor` for built-in object properties. (GHSA-4qmw-95fx-fhvx)
 
 ### Removed
 

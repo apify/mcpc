@@ -3,6 +3,7 @@
  * Pure functions with no external dependencies for easy testing
  */
 import { ClientError } from '../lib/index.js';
+import { setOwnProperty } from '../lib/own-property.js';
 import { X402_SCHEME_PREFERENCES } from '../lib/types.js';
 
 /**
@@ -556,19 +557,6 @@ function parseJsonFinite(text: string): unknown {
 }
 
 /**
- * Set an own property, even for the key "__proto__" (plain assignment would
- * replace the object's prototype instead, and the argument would vanish).
- */
-function setOwnProperty(target: Record<string, unknown>, key: string, value: unknown): void {
-  Object.defineProperty(target, key, {
-    value,
-    enumerable: true,
-    writable: true,
-    configurable: true,
-  });
-}
-
-/**
  * Check that parsed JSON is usable as MCP `arguments`, which must be an object
  */
 function isJsonObject(value: unknown): value is Record<string, unknown> {
@@ -756,7 +744,7 @@ export function parseHeaderFlags(headerFlags: string[] | undefined): Record<stri
       }
       const key = header.substring(0, colonIndex).trim();
       const value = header.substring(colonIndex + 1).trim();
-      headers[key] = value;
+      setOwnProperty(headers, key, value);
     }
   }
   return headers;

@@ -19,6 +19,7 @@ import { loadSessions } from '../sessions.js';
 import { withFileLock } from '../file-lock.js';
 import { createLogger } from '../logger.js';
 import { ClientError } from '../errors.js';
+import { getOwnProperty, setOwnProperty } from '../own-property.js';
 import {
   removeKeychainOAuthClientInfo,
   removeKeychainOAuthTokenInfo,
@@ -131,7 +132,7 @@ export async function getAuthProfile(
 ): Promise<AuthProfile | undefined> {
   const storage = await loadAuthProfiles();
   const host = getServerHost(serverUrl);
-  return storage.profiles[host]?.[profileName];
+  return getOwnProperty(getOwnProperty(storage.profiles, host), profileName);
 }
 
 /**
@@ -146,13 +147,16 @@ export async function saveAuthProfile(profile: AuthProfile): Promise<void> {
       const storage = await loadAuthProfilesInternal();
       const host = getServerHost(profile.serverUrl);
 
-      // Ensure server entry exists
-      if (!storage.profiles[host]) {
-        storage.profiles[host] = {};
+      // Ensure server entry exists. Hosts and profile names are external input, and a
+      // plain assignment would treat `__proto__` (a valid profile name) as the prototype.
+      let serverProfiles = getOwnProperty(storage.profiles, host);
+      if (!serverProfiles) {
+        serverProfiles = {};
+        setOwnProperty(storage.profiles, host, serverProfiles);
       }
 
       // Update profile
-      storage.profiles[host]![profile.name] = profile;
+      setOwnProperty(serverProfiles, profile.name, profile);
 
       await saveAuthProfilesInternal(storage);
       logger.debug(`Saved auth profile: ${profile.name} for ${host}`);
@@ -176,7 +180,7 @@ export async function updateAuthProfileRefreshedAt(
       const storage = await loadAuthProfilesInternal();
       const host = getServerHost(serverUrl);
 
-      const profile = storage.profiles[host]?.[profileName];
+      const profile = getOwnProperty(getOwnProperty(storage.profiles, host), profileName);
       if (profile) {
         profile.refreshedAt = new Date().toISOString();
         await saveAuthProfilesInternal(storage);
@@ -233,7 +237,7 @@ export async function deleteAuthProfiles(
       if (deleteSpecific) {
         // Delete specific profile
         const host = getServerHost(serverUrl);
-        const profile = storage.profiles[host]?.[profileName];
+        const profile = getOwnProperty(getOwnProperty(storage.profiles, host), profileName);
         if (profile) {
           profilesToDelete.push(profile);
         }
@@ -301,7 +305,7 @@ export async function deleteAuthProfiles(
       if (deleteSpecific) {
         // Remove specific profile from storage
         const host = getServerHost(serverUrl);
-        const serverProfiles = storage.profiles[host];
+        const serverProfiles = getOwnProperty(storage.profiles, host);
         if (serverProfiles) {
           delete serverProfiles[profileName];
           // Clean up empty server entries
