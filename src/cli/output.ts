@@ -1722,7 +1722,12 @@ export function quoteShellArg(value: string, platform: NodeJS.Platform = process
       ? /^[A-Za-z0-9_./:@%+,=~\\-]+$/.test(value)
       : /^[A-Za-z0-9_./:@%+,=~-]+$/.test(value);
   if (isSafe) return value;
-  return `"${value.replace(/(["`$])/g, '\\$&')}"`;
+  // Inside POSIX double quotes `$`, a backtick, `"` and `\` stay special. The backslash must be
+  // escaped too: left alone, `\$(id)` would render as `\\$(id)`, where `\\` is a literal backslash
+  // and `$(id)` still runs, and a trailing backslash would escape the closing quote. On Windows
+  // the backslash is the path separator and is passed through unchanged.
+  const special = platform === 'win32' ? /(["`$])/g : /(["`$\\])/g;
+  return `"${value.replace(special, '\\$&')}"`;
 }
 
 /**

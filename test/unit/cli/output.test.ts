@@ -3,6 +3,7 @@
  */
 
 import type { MockInstance } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import { extractAllTextContent } from '../../../src/cli/tool-result.js';
 
 // Mock chalk to return plain strings (required because Jest can't handle chalk's ESM imports)
@@ -2530,6 +2531,42 @@ describe('quoteShellArg', () => {
     expect(quoteShellArg('a$(id)b')).toBe('"a\\$(id)b"');
     expect(quoteShellArg('a`id`b')).toBe('"a\\`id\\`b"');
   });
+
+  it('escapes backslashes so they cannot neutralize the escaping of `$` or the closing quote', () => {
+    // Unescaped, `\$(id)` would render as `"\\$(id)"`: a literal backslash followed by a live
+    // command substitution.
+    expect(quoteShellArg('\\$(id)', 'linux')).toBe('"\\\\\\$(id)"');
+    expect(quoteShellArg('a b\\', 'linux')).toBe('"a b\\\\"');
+    expect(quoteShellArg('\\`id`', 'linux')).toBe('"\\\\\\`id\\`"');
+    expect(quoteShellArg('x\\"; id; "', 'linux')).toBe('"x\\\\\\"; id; \\""');
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'round-trips hostile values through a real POSIX shell as one literal argument',
+    () => {
+      const hostile = [
+        '\\$(echo PWNED)',
+        '$(echo PWNED)',
+        '`echo PWNED`',
+        'a b\\',
+        'x\\"; echo PWNED; "',
+        '\\\\$(echo PWNED)',
+        'pdf; echo PWNED #',
+        'C:\\Program Files\\x $HOME',
+      ];
+      for (const value of hostile) {
+        const out = execFileSync('sh', ['-c', `printf %s ${quoteShellArg(value, 'linux')}`], {
+          encoding: 'utf8',
+          env: { PATH: process.env.PATH ?? '/usr/bin:/bin' },
+        });
+        expect(out).toBe(value);
+      }
+    }
+  );
+
+  it('leaves backslashes alone on Windows, where they separate path segments', () => {
+    expect(quoteShellArg('C:\\Program Files\\x', 'win32')).toBe('"C:\\Program Files\\x"');
+  });
 });
 
 describe('formatPath', () => {
@@ -2555,7 +2592,7 @@ describe('formatPath', () => {
   });
 
   it('quotes backslash paths on POSIX, where backslash is a shell escape character', () => {
-    expect(formatPath('/tmp/a\\b/mcp.json', 'linux')).toBe('"/tmp/a\\b/mcp.json"');
+    expect(formatPath('/tmp/a\\b/mcp.json', 'linux')).toBe('"/tmp/a\\\\b/mcp.json"');
   });
 
   it('escapes characters that stay special inside double quotes', () => {
