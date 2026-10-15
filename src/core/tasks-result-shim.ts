@@ -1,9 +1,9 @@
 /**
- * Lets the official SDK v2 client (`@modelcontextprotocol/client` 2.3.0) carry the one
+ * Lets the official SDK v2 client (`@modelcontextprotocol/client` 2.3.1) carry the one
  * piece of the tasks extension (`io.modelcontextprotocol/tasks`, MCP 2026-07-28) it does
  * not decode yet: a `tools/call` answered with a task instead of a tool result.
  *
- * SDK 2.3.0 does the rest itself. `tasks/get` and `tasks/cancel` pass its outbound era
+ * SDK 2.3.1 does the rest itself. `tasks/get` and `tasks/cancel` pass its outbound era
  * gate when issued through `client.request()` with an explicit result schema, and its
  * Streamable HTTP transport sets the `Mcp-Name: <taskId>` routing header the spec requires
  * on them. But its 2026-07-28 result decoder accepts only `resultType: "complete"` and
