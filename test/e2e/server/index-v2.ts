@@ -63,6 +63,8 @@ import {
   getTestPrompt,
   completeTestArgument,
   handleOAuthEndpoints,
+  applyScopeGate,
+  type ScopeGateConfig,
 } from './fixtures.js';
 
 // Configuration from environment (same variables as index.ts)
@@ -86,6 +88,13 @@ const WITH_OAUTH = process.env.WITH_OAUTH === 'true';
 const OAUTH_CLIENT_ID = process.env.OAUTH_CLIENT_ID || 'test-client';
 const OAUTH_CLIENT_SECRET = process.env.OAUTH_CLIENT_SECRET || 's3cr3t';
 const OAUTH_NO_METADATA = process.env.OAUTH_NO_METADATA === 'true';
+// Step-up authorization fixture: SCOPE_GATE_TOOL calls need SCOPE_GATE_SCOPE (see applyScopeGate)
+const SCOPE_GATE: ScopeGateConfig | undefined = process.env.SCOPE_GATE_TOOL
+  ? {
+      tool: process.env.SCOPE_GATE_TOOL,
+      requiredScope: process.env.SCOPE_GATE_SCOPE || 'files:write',
+    }
+  : undefined;
 const LEGACY_MODE = process.env.LEGACY_MODE === 'stateless' ? 'stateless' : 'reject';
 
 // Control state (manipulated via /control/* endpoints). Module-level so it is
@@ -800,6 +809,13 @@ async function main() {
 
     // MCP endpoint
     if (url.pathname === '/' || url.pathname === '/mcp') {
+      // Step-up authorization fixture: 403 insufficient_scope for the gated tool
+      if (SCOPE_GATE && req.method === 'POST') {
+        const gate = await applyScopeGate(req, res, SCOPE_GATE);
+        if (gate.handled) return;
+        await nodeHandler(req, res, gate.parsedBody);
+        return;
+      }
       await nodeHandler(req, res);
       return;
     }

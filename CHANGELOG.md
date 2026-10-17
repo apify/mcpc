@@ -9,10 +9,12 @@ Each version opens with a one-line summary, which also opens its GitHub release.
 
 ## [Unreleased]
 
-Argument completions for prompts and resource templates, tasks on MCP 2026-07-28 servers, MCP TypeScript SDK 2.3.1, stdio server secrets kept out of plaintext files, logs and `ps`, and no more duplicate bridges on Windows.
+Step-up authorization for scope challenges, argument completions for prompts and resource templates, tasks on MCP 2026-07-28 servers, MCP TypeScript SDK 2.3.1, stdio server secrets kept out of plaintext files, logs and `ps`, and no more duplicate bridges on Windows.
 
 ### Added
 
+- Step-up authorization ([MCP spec](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization#step-up-authorization-flow)): a command the server answers with `403 insufficient_scope` now fails with exit code 4, names the missing scope and prints the exact `mcpc login <server> --scope "<current scopes plus the missing one>"` to run, instead of a generic "Insufficient scope" server error. The session stays usable for everything else.
+- `login` without `--scope` now asks the server which scopes it wants (the `scope` of its 401 `WWW-Authenticate` challenge, which the spec puts ahead of `scopes_supported`) and adds the scopes the profile already holds, so a re-login never drops a permission. `--scope` still requests exactly what you pass.
 - New `completion-complete prompt|resource <ref> <arg:=val ...>` command asks the server for argument suggestions (MCP `completion/complete`): pass the arguments in the `prompts-get` syntax and the last one is completed. The `--proxy` server forwards completions too.
 - Support for the MCP [Tasks extension](https://modelcontextprotocol.io/extensions/tasks/overview) (`io.modelcontextprotocol/tasks`) on MCP 2026-07-28 servers: `tools-call --task`/`--detach`, `tasks-get`, `tasks-result` and `tasks-cancel` now work there too, mcpc declares the extension on every request, and a server that answers a plain `tools-call` with a task is followed to its result. `tasks-list` shows the tasks the session created, since the extension has no server-side listing. Everything keeps working unchanged on 2025-11-25 servers, where tasks are part of the core protocol. (#430)
 

@@ -62,7 +62,9 @@ import {
   storeKeychainIdJagCredentials,
   readKeychainIdJagCredentials,
 } from '../lib/auth/keychain.js';
-import { updateAuthProfileRefreshedAt } from '../lib/auth/profiles.js';
+import { updateAuthProfileRefreshedAt, getAuthProfile } from '../lib/auth/profiles.js';
+import { findScopeChallenge, describeScopeChallenge } from '../lib/auth/scope-challenge.js';
+import { quoteShellArg } from '../lib/utils.js';
 import { createClientCredentialsProvider } from '../lib/auth/client-credentials.js';
 import { createIdJagProvider } from '../lib/auth/id-jag.js';
 import type { Tool, Resource, Prompt } from '@modelcontextprotocol/client';
@@ -124,6 +126,11 @@ class BridgeProcess {
 
   // OAuth token manager (created when CLI sends auth credentials via IPC)
   private tokenManager: OAuthTokenManager | null = null;
+
+  // The OAuth profile this session authenticates with (null for sessions that carry
+  // static headers or no auth). Names the profile in step-up hints when the server
+  // answers 403 insufficient_scope.
+  private authProfileRef: { serverUrl: string; profileName: string } | null = null;
 
   // Auth provider for the SDK transport. Either mcpc's bearer-token provider
   // (authorization-code grant: wraps tokenManager, refreshes on 401) or an SDK
@@ -217,6 +224,15 @@ class BridgeProcess {
     logger.debug(`  env: ${credentials.env ? Object.keys(credentials.env).length : 0}`);
     logger.debug(`  proxyBearerToken: ${credentials.proxyBearerToken ? 'present' : 'absent'}`);
     logger.debug(`  idJag: ${credentials.idJag ? 'present' : 'absent'}`);
+
+    // Only a profile delivers tokens or a grant; header-only sessions carry a
+    // placeholder profile name.
+    if (credentials.refreshToken || credentials.accessToken || credentials.oauthGrant) {
+      this.authProfileRef = {
+        serverUrl: credentials.serverUrl,
+        profileName: credentials.profileName,
+      };
+    }
 
     // Enterprise-managed authorization (id_jag): build the SDK cross-app-access
     // provider. It exchanges the stored IdP ID token for an ID-JAG and the ID-JAG
@@ -568,6 +584,12 @@ class BridgeProcess {
           classifiedError = new ClientError(errorMsg);
         } else if (isAuthenticationError(errorMsg) && !(error instanceof AuthError)) {
           classifiedError = new AuthError(errorMsg);
+        }
+        // A 403 insufficient_scope on the very first request: the token is fine, the
+        // scope is not. Name the missing scope and the login that adds it.
+        const scopeError = await this.scopeChallengeError(error);
+        if (scopeError) {
+          classifiedError = scopeError;
         }
         // Append recent stdio server stderr so the CLI can show the user why
         // startup failed (common case: missing NODE_EXTRA_CA_CERTS etc.).
@@ -1171,6 +1193,42 @@ class BridgeProcess {
   }
 
   /**
+   * Turn a 403 `insufficient_scope` challenge (MCP step-up authorization) into an
+   * AuthError that names the missing scope and the `login --scope` that adds it.
+   * Returns undefined for every other error.
+   *
+   * The bridge cannot step up on its own — that opens a browser, which only `login`
+   * may do — so the hint is the step-up: it unions the scopes the profile already
+   * holds with the challenged one, as the spec asks.
+   */
+  private async scopeChallengeError(error: unknown): Promise<AuthError | undefined> {
+    const challenge = findScopeChallenge(error);
+    if (!challenge) return undefined;
+    logger.warn(
+      `Server answered 403 insufficient_scope (required scope: ${challenge.requiredScope ?? 'not given'})`
+    );
+    let profile: { name: string; scopes?: string[] | undefined } | undefined;
+    if (this.authProfileRef) {
+      const stored = await getAuthProfile(
+        this.authProfileRef.serverUrl,
+        this.authProfileRef.profileName
+      ).catch(() => undefined);
+      profile = { name: this.authProfileRef.profileName, scopes: stored?.scopes };
+    }
+    const serverUrl =
+      this.authProfileRef?.serverUrl ?? this.options.serverConfig.url ?? this.options.sessionName;
+    return new AuthError(
+      describeScopeChallenge(challenge, {
+        serverUrl,
+        sessionName: this.options.sessionName,
+        ...(profile ? { profile } : {}),
+        quote: quoteShellArg,
+      }),
+      { originalError: error }
+    );
+  }
+
+  /**
    * Check if an error indicates session expiration or auth failure and handle accordingly.
    * Session expiry is checked first since it's more specific (404/session-not-found),
    * while auth errors are broader (401/403/unauthorized) and could overlap.
@@ -1187,6 +1245,12 @@ class BridgeProcess {
    * leave the session looping instead of marked unauthorized.
    */
   private async handlePossibleExpiration(error: Error): Promise<void> {
+    // An insufficient_scope challenge is not an auth failure: the token is valid,
+    // the session stays live. Never mark it unauthorized.
+    if (findScopeChallenge(error)) {
+      return;
+    }
+
     // ServerError wraps errors from mcp-client.ts methods. Check the original error
     // to distinguish application-level JSON-RPC errors (tool not found, etc.) from
     // transport-level errors (HTTP 401/403/404). The SDK's ProtocolError class (named
@@ -1833,6 +1897,14 @@ class BridgeProcess {
       }
     } catch (error) {
       logger.error('Failed to forward MCP request to server:', error);
+
+      // A 403 insufficient_scope means the token is valid but lacks a scope this
+      // operation needs: the session stays usable, the user gets the step-up login.
+      const scopeError = await this.scopeChallengeError(error);
+      if (scopeError) {
+        this.sendError(socket, scopeError, message.id);
+        return;
+      }
 
       // Update session status BEFORE sending error to CLI, so the status is
       // visible when the CLI (or test) checks sessions.json immediately after

@@ -79,6 +79,13 @@ export interface OAuthProviderOptions {
   forceReauth?: boolean;
 
   /**
+   * The `scope` the login requests. Recorded on the profile when the token response
+   * omits `scope` (RFC 6749 §5.1 lets the server leave it out when it granted exactly
+   * what was requested), so a later step-up login knows what to union with.
+   */
+  requestedScope?: string;
+
+  /**
    * Pre-configured client credentials (for servers without dynamic client registration)
    */
   clientCredentials?: {
@@ -104,6 +111,7 @@ export class OAuthProvider implements OAuthClientProvider {
   private profileName: string;
   private _redirectUrl: string;
   private _forceReauth: boolean;
+  private _requestedScope: string | undefined;
   private _clientCredentials?: { clientId: string; clientSecret?: string };
 
   /**
@@ -127,6 +135,7 @@ export class OAuthProvider implements OAuthClientProvider {
     this.profileName = options.profileName;
     this._redirectUrl = options.redirectUrl || 'http://localhost/callback';
     this._forceReauth = options.forceReauth || false;
+    this._requestedScope = options.requestedScope;
 
     if (options.clientCredentials) {
       this._clientCredentials = options.clientCredentials;
@@ -286,8 +295,9 @@ export class OAuthProvider implements OAuthClientProvider {
       delete profile.oauthResource;
     }
 
-    if (tokens.scope) {
-      profile.scopes = tokens.scope.split(' ');
+    const grantedScope = tokens.scope || this._requestedScope;
+    if (grantedScope) {
+      profile.scopes = grantedScope.split(/\s+/).filter((s) => s !== '');
     }
 
     // Extract user info from OIDC id_token if present

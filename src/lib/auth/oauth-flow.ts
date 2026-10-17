@@ -23,6 +23,9 @@ import {
   getOAuthServerUrl,
 } from './oauth-utils.js';
 import { renderAuthPage } from './auth-page.js';
+import { getAuthProfile } from './profiles.js';
+import { proxyFetch } from '../proxy.js';
+import { parseBearerChallenge, unionScopes } from './scope-challenge.js';
 
 const logger = createLogger('oauth-flow');
 
@@ -667,6 +670,99 @@ export async function runInteractiveAuthorization(
   }
 }
 
+/** How long the unauthenticated probe for the server's 401 challenge may take. */
+const AUTH_CHALLENGE_PROBE_TIMEOUT_MILLIS = 10_000;
+
+/** What an MCP server's `WWW-Authenticate` challenge told an unauthenticated probe. */
+export interface AuthChallenge {
+  /** The `scope` parameter: the scopes the server wants a client to request. */
+  scope?: string;
+  /** The `resource_metadata` parameter: where the server's RFC 9728 document lives. */
+  resourceMetadataUrl?: URL;
+}
+
+/**
+ * Ask the MCP server, without credentials, which scopes it wants.
+ *
+ * The MCP authorization spec puts the `scope` parameter of the server's 401
+ * `WWW-Authenticate` challenge first in the scope selection order, ahead of the
+ * `scopes_supported` list in its protected resource metadata. The SDK's `auth()`
+ * never sends a request to the MCP server itself, so mcpc issues one JSON-RPC
+ * `ping` and reads the challenge. Any failure, or a server that answers without
+ * a challenge, yields undefined and leaves scope selection to the metadata.
+ */
+export async function probeAuthChallenge(serverUrl: string): Promise<AuthChallenge | undefined> {
+  try {
+    const response = await proxyFetch(serverUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 0, method: 'ping' }),
+      signal: AbortSignal.timeout(AUTH_CHALLENGE_PROBE_TIMEOUT_MILLIS),
+    });
+    await response.body?.cancel().catch(() => undefined);
+    if (response.status !== 401 && response.status !== 403) {
+      logger.debug(`Auth challenge probe: server answered HTTP ${response.status}, no challenge`);
+      return undefined;
+    }
+    const challenge = parseBearerChallenge(response.headers.get('www-authenticate'));
+    if (!challenge) {
+      logger.debug(`Auth challenge probe: HTTP ${response.status} without a Bearer challenge`);
+      return undefined;
+    }
+    logger.debug(
+      `Auth challenge probe: HTTP ${response.status}, scope: ${challenge.scope ?? 'none'}, ` +
+        `resource_metadata: ${challenge.resourceMetadata ?? 'none'}`
+    );
+    let resourceMetadataUrl: URL | undefined;
+    if (challenge.resourceMetadata) {
+      try {
+        resourceMetadataUrl = new URL(challenge.resourceMetadata);
+      } catch {
+        logger.debug('Auth challenge probe: ignoring malformed resource_metadata URL');
+      }
+    }
+    return {
+      ...(challenge.scope ? { scope: challenge.scope } : {}),
+      ...(resourceMetadataUrl ? { resourceMetadataUrl } : {}),
+    };
+  } catch (error) {
+    logger.debug(`Auth challenge probe failed: ${(error as Error).message}`);
+    return undefined;
+  }
+}
+
+/**
+ * Decide which scopes the login requests (MCP spec "Scope Selection Strategy" and
+ * "Step-Up Authorization Flow"):
+ *
+ * - `--scope` wins verbatim; the user asked for exactly these.
+ * - Otherwise the union of the server's 401 challenge scope and the scopes the
+ *   profile being refreshed was granted before, so a re-login after a 403
+ *   `insufficient_scope` keeps every permission it already had.
+ * - Nothing known: undefined, and the SDK falls back to `scopes_supported`.
+ */
+export async function resolveLoginScope(
+  serverUrl: string,
+  profileName: string,
+  explicitScope: string | undefined,
+  challenge: AuthChallenge | undefined
+): Promise<{ scope: string | undefined; reason: string | undefined }> {
+  if (explicitScope !== undefined) {
+    return { scope: explicitScope, reason: undefined };
+  }
+  const existing = await getAuthProfile(serverUrl, profileName).catch(() => undefined);
+  const granted = existing?.scopes ?? [];
+  const scope = unionScopes(challenge?.scope, granted);
+  if (!scope) return { scope: undefined, reason: undefined };
+  const sources: string[] = [];
+  if (challenge?.scope) sources.push("the server's WWW-Authenticate challenge");
+  if (granted.length > 0) sources.push(`the scopes profile "${profileName}" already holds`);
+  return { scope, reason: sources.join(' and ') };
+}
+
 /**
  * Perform interactive OAuth flow
  * Opens browser for user authentication and handles callback
@@ -697,6 +793,19 @@ export async function performOAuthFlow(
     parsedUrl.hostname !== '127.0.0.1'
   ) {
     console.warn('\nWarning: OAuth over plain HTTP is insecure. Only use for local development.\n');
+  }
+
+  // Scope selection: --scope verbatim, else the server's 401 challenge unioned
+  // with what this profile already holds (see resolveLoginScope).
+  const challenge = scope === undefined ? await probeAuthChallenge(normalizedServerUrl) : undefined;
+  const { scope: requestedScope, reason: scopeReason } = await resolveLoginScope(
+    normalizedServerUrl,
+    profileName,
+    scope,
+    challenge
+  );
+  if (requestedScope !== undefined && scopeReason) {
+    console.error(`Requesting scopes: ${requestedScope} (from ${scopeReason})`);
   }
 
   // When --callback-port is set, use that exact port. Otherwise try the
@@ -744,6 +853,9 @@ export async function performOAuthFlow(
     redirectUrl,
     forceReauth: true,
   };
+  if (requestedScope !== undefined) {
+    providerOptions.requestedScope = requestedScope;
+  }
   if (resolvedClientCredentials) {
     providerOptions.clientCredentials = resolvedClientCredentials;
   }
@@ -757,8 +869,8 @@ export async function performOAuthFlow(
     serverUrl: normalizedServerUrl,
     profileName,
   };
-  if (scope !== undefined) {
-    callbackContext.scope = scope;
+  if (requestedScope !== undefined) {
+    callbackContext.scope = requestedScope;
   }
   const { server, codePromise, destroyConnections } = startCallbackServer(port, callbackContext);
 
@@ -840,11 +952,16 @@ export async function performOAuthFlow(
     try {
       // Start OAuth flow
       logger.debug('Calling SDK auth()...');
-      const authOptions: { serverUrl: string; scope?: string } = {
+      const authOptions: { serverUrl: string; scope?: string; resourceMetadataUrl?: URL } = {
         serverUrl: normalizedServerUrl,
       };
-      if (scope !== undefined) {
-        authOptions.scope = scope;
+      if (requestedScope !== undefined) {
+        authOptions.scope = requestedScope;
+      }
+      // The challenge's resource_metadata points straight at the RFC 9728 document,
+      // which may live somewhere the well-known probes would not find.
+      if (challenge?.resourceMetadataUrl) {
+        authOptions.resourceMetadataUrl = challenge.resourceMetadataUrl;
       }
       const result = await sdkAuth(provider, authOptions);
 
@@ -876,8 +993,8 @@ export async function performOAuthFlow(
           serverUrl: normalizedServerUrl,
           authorizationCode: code,
         };
-        if (scope !== undefined) {
-          tokenOptions.scope = scope;
+        if (requestedScope !== undefined) {
+          tokenOptions.scope = requestedScope;
         }
         if (iss !== undefined) {
           tokenOptions.iss = iss;

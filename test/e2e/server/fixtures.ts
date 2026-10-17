@@ -793,10 +793,12 @@ export async function handleOAuthEndpoints(
     }
 
     const scope = params.get('scope');
+    const accessToken = `cc-token-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    issuedTokenScopes.set(accessToken, scope ?? '');
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(
       JSON.stringify({
-        access_token: `cc-token-${Date.now()}`,
+        access_token: accessToken,
         token_type: 'Bearer',
         expires_in: 3600,
         ...(scope ? { scope } : {}),
@@ -806,4 +808,64 @@ export async function handleOAuthEndpoints(
   }
 
   return false;
+}
+
+/** Scopes each access token the `/token` endpoint issued was granted (for the scope gate). */
+const issuedTokenScopes = new Map<string, string>();
+
+/** Configuration for the step-up authorization scope gate (SCOPE_GATE_TOOL / SCOPE_GATE_SCOPE). */
+export interface ScopeGateConfig {
+  /** Tool whose calls require `requiredScope`. */
+  tool: string;
+  /** Scope a token must have been issued with to call `tool`. */
+  requiredScope: string;
+}
+
+/**
+ * MCP step-up authorization fixture: a `tools/call` of `config.tool` whose bearer
+ * token was not issued with `config.requiredScope` (by this server's `/token`
+ * endpoint) is answered `403 Forbidden` with the `insufficient_scope` challenge the
+ * MCP authorization spec prescribes. Tokens the `/token` endpoint never issued
+ * (static `--header` tokens) hold no scope at all.
+ *
+ * Reads the request body to inspect it, so the caller must hand `parsedBody` to the
+ * SDK transport instead of letting it read the (now consumed) stream. Returns
+ * `handled: true` when the 403 was sent.
+ */
+export async function applyScopeGate(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  config: ScopeGateConfig
+): Promise<{ handled: true } | { handled: false; parsedBody: unknown }> {
+  let parsedBody: unknown;
+  try {
+    parsedBody = JSON.parse(await readBody(req));
+  } catch {
+    parsedBody = undefined;
+  }
+  const messages = Array.isArray(parsedBody) ? parsedBody : [parsedBody];
+  const gated = messages.some(
+    (m) =>
+      m &&
+      typeof m === 'object' &&
+      (m as { method?: unknown }).method === 'tools/call' &&
+      ((m as { params?: { name?: unknown } }).params?.name ?? undefined) === config.tool
+  );
+  if (!gated) {
+    return { handled: false, parsedBody };
+  }
+  const authz = req.headers.authorization ?? '';
+  const token = authz.startsWith('Bearer ') ? authz.slice('Bearer '.length) : '';
+  const granted = (issuedTokenScopes.get(token) ?? '').split(' ').filter(Boolean);
+  if (granted.includes(config.requiredScope)) {
+    return { handled: false, parsedBody };
+  }
+  res.writeHead(403, {
+    'Content-Type': 'application/json',
+    'WWW-Authenticate':
+      `Bearer error="insufficient_scope", scope="${config.requiredScope}", ` +
+      `error_description="Tool ${config.tool} needs scope ${config.requiredScope}"`,
+  });
+  res.end(JSON.stringify({ error: 'insufficient_scope' }));
+  return { handled: true };
 }

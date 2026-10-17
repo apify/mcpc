@@ -10,6 +10,8 @@
  *   LATENCY_MS - artificial latency in ms (default: 0)
  *   REQUIRE_AUTH - require Authorization header (default: false)
  *   EXPECTED_BEARER_TOKEN - with REQUIRE_AUTH, the exact token to demand (default: any)
+ *   SCOPE_GATE_TOOL / SCOPE_GATE_SCOPE - answer tools/call of that tool with 403 insufficient_scope
+ *     unless the bearer token was issued by this server's /token with that scope (default scope: files:write)
  *   NO_TOOLS - disable tools capability (default: false)
  *   NO_TASKS - serve tools but withhold the tasks capability, so --task/--detach
  *     must be refused rather than silently run synchronously (default: false)
@@ -73,6 +75,8 @@ import {
   getTestPrompt,
   completeTestArgument,
   handleOAuthEndpoints,
+  applyScopeGate,
+  type ScopeGateConfig,
 } from './fixtures.js';
 
 // Configuration from environment
@@ -99,6 +103,13 @@ const OAUTH_CLIENT_SECRET = process.env.OAUTH_CLIENT_SECRET || 's3cr3t';
 // When true, serve /token but NOT the .well-known metadata, so discovery fails and
 // only an explicit --token-endpoint can locate the token endpoint.
 const OAUTH_NO_METADATA = process.env.OAUTH_NO_METADATA === 'true';
+// Step-up authorization fixture: SCOPE_GATE_TOOL calls need SCOPE_GATE_SCOPE (see applyScopeGate)
+const SCOPE_GATE: ScopeGateConfig | undefined = process.env.SCOPE_GATE_TOOL
+  ? {
+      tool: process.env.SCOPE_GATE_TOOL,
+      requiredScope: process.env.SCOPE_GATE_SCOPE || 'files:write',
+    }
+  : undefined;
 
 // Control state (manipulated via /control/* endpoints)
 let failNextCount = 0;
@@ -680,8 +691,16 @@ async function main() {
         return;
       }
 
+      // Step-up authorization fixture: 403 insufficient_scope for the gated tool
+      let parsedBody: unknown;
+      if (SCOPE_GATE && req.method === 'POST') {
+        const gate = await applyScopeGate(req, res, SCOPE_GATE);
+        if (gate.handled) return;
+        parsedBody = gate.parsedBody;
+      }
+
       // Let transport handle the request
-      await transport.handleRequest(req, res);
+      await transport.handleRequest(req, res, parsedBody);
       return;
     }
 

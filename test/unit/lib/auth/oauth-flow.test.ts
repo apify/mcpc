@@ -8,8 +8,12 @@ import {
   assertHttpAuthorizationUrl,
   explainOAuthRegistrationFailure,
   getBrowserOpenCommand,
+  probeAuthChallenge,
+  resolveLoginScope,
 } from '../../../../src/lib/auth/oauth-flow.js';
 import { AuthError } from '../../../../src/lib/errors.js';
+import * as proxyModule from '../../../../src/lib/proxy.js';
+import * as profilesModule from '../../../../src/lib/auth/profiles.js';
 
 describe('explainOAuthRegistrationFailure', () => {
   const serverUrl = 'https://mcp.figma.com/mcp';
@@ -296,5 +300,116 @@ describe('assertHttpAuthorizationUrl', () => {
   it('allows http and https', () => {
     expect(() => assertHttpAuthorizationUrl(new URL('http://localhost/a'))).not.toThrow();
     expect(() => assertHttpAuthorizationUrl(new URL('https://a.example/b'))).not.toThrow();
+  });
+});
+
+describe('probeAuthChallenge', () => {
+  let fetchSpy: ReturnType<typeof vi.spyOn>;
+
+  const response = (status: number, wwwAuthenticate?: string): Response =>
+    ({
+      status,
+      headers: new Headers(wwwAuthenticate ? { 'WWW-Authenticate': wwwAuthenticate } : {}),
+      body: null,
+    }) as unknown as Response;
+
+  beforeEach(() => {
+    fetchSpy = vi.spyOn(proxyModule, 'proxyFetch');
+  });
+
+  afterEach(() => {
+    fetchSpy.mockRestore();
+  });
+
+  it('reads scope and resource_metadata from the 401 challenge of an unauthenticated ping', async () => {
+    fetchSpy.mockResolvedValue(
+      response(
+        401,
+        'Bearer resource_metadata="https://mcp.example.com/.well-known/oauth-protected-resource", scope="files:read"'
+      )
+    );
+
+    const challenge = await probeAuthChallenge('https://mcp.example.com/mcp');
+
+    expect(challenge).toEqual({
+      scope: 'files:read',
+      resourceMetadataUrl: new URL('https://mcp.example.com/.well-known/oauth-protected-resource'),
+    });
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://mcp.example.com/mcp');
+    expect(init.method).toBe('POST');
+    expect(new Headers(init.headers).get('Authorization')).toBeNull();
+    expect(JSON.parse(init.body as string)).toMatchObject({ method: 'ping' });
+  });
+
+  it('yields nothing for servers that answer without a challenge or are unreachable', async () => {
+    fetchSpy.mockResolvedValueOnce(response(200));
+    expect(await probeAuthChallenge('https://mcp.example.com')).toBeUndefined();
+
+    fetchSpy.mockResolvedValueOnce(response(401));
+    expect(await probeAuthChallenge('https://mcp.example.com')).toBeUndefined();
+
+    fetchSpy.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+    expect(await probeAuthChallenge('https://mcp.example.com')).toBeUndefined();
+  });
+
+  it('drops a malformed resource_metadata URL but keeps the scope', async () => {
+    fetchSpy.mockResolvedValue(response(403, 'Bearer scope="a b", resource_metadata="not a url"'));
+    expect(await probeAuthChallenge('https://mcp.example.com')).toEqual({ scope: 'a b' });
+  });
+});
+
+describe('resolveLoginScope', () => {
+  let profileSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    profileSpy = vi.spyOn(profilesModule, 'getAuthProfile');
+  });
+
+  afterEach(() => {
+    profileSpy.mockRestore();
+  });
+
+  const existingProfile = {
+    name: 'default',
+    serverUrl: 'https://mcp.example.com',
+    authType: 'oauth' as const,
+    oauthIssuer: 'https://auth.example.com',
+    scopes: ['files:read', 'profile'],
+    createdAt: '2026-01-01T00:00:00Z',
+  };
+
+  it('uses --scope verbatim, without consulting the profile', async () => {
+    const result = await resolveLoginScope('https://mcp.example.com', 'default', 'only this', {
+      scope: 'files:write',
+    });
+    expect(result).toEqual({ scope: 'only this', reason: undefined });
+    expect(profileSpy).not.toHaveBeenCalled();
+  });
+
+  it('unions the challenge scope with the scopes the profile already holds', async () => {
+    profileSpy.mockResolvedValue(existingProfile);
+    const result = await resolveLoginScope('https://mcp.example.com', 'default', undefined, {
+      scope: 'files:write files:read',
+    });
+    expect(result.scope).toBe('files:write files:read profile');
+    expect(result.reason).toContain("server's WWW-Authenticate challenge");
+    expect(result.reason).toContain('profile "default" already holds');
+  });
+
+  it('falls back to the profile alone, or to nothing, when there is no challenge', async () => {
+    profileSpy.mockResolvedValueOnce(existingProfile);
+    expect(
+      await resolveLoginScope('https://mcp.example.com', 'default', undefined, undefined)
+    ).toEqual({
+      scope: 'files:read profile',
+      reason: 'the scopes profile "default" already holds',
+    });
+
+    profileSpy.mockResolvedValueOnce(undefined);
+    expect(await resolveLoginScope('https://mcp.example.com', 'default', undefined, {})).toEqual({
+      scope: undefined,
+      reason: undefined,
+    });
   });
 });

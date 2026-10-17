@@ -704,6 +704,15 @@ ${chalk.bold('Interactive login:')}
   named profile:   mcpc login mcp.apify.com --profile work
   then connect:    mcpc connect mcp.apify.com @app --profile work
 
+${chalk.bold('Scopes and step-up authorization:')}
+  Without --scope, mcpc asks the server which scopes it wants (the scope in its
+  401 WWW-Authenticate challenge) and adds the scopes the profile already holds,
+  so logging in again never drops a permission. With --scope, exactly those
+  scopes are requested. When a server later answers a command with 403
+  insufficient_scope, the error names the missing scope and the login command
+  that requests it together with the profile's current scopes; run that, then
+  restart the session.
+
 ${chalk.bold('Client registration (how mcpc identifies itself to the server):')}
   1. Client ID Metadata Documents (CIMD): the default. mcpc's hosted CIMD at
      https://apify.github.io/mcpc/client-metadata.json identifies all mcpc
