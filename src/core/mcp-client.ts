@@ -1240,7 +1240,7 @@ export class McpClient implements IMcpClient {
   // cooperative acknowledgement, and there is no listing — a client follows the tasks it
   // created (the bridge keeps that record for `tasks-list`).
   //
-  // The v2 SDK (2.3.0) has a client API for neither: it kept the 2025 wire schemas as
+  // The v2 SDK (2.3.1) has a client API for neither: it kept the 2025 wire schemas as
   // importable vocabulary, and of the extension it knows just enough to let `tasks/get`
   // and `tasks/cancel` through its outbound era gate (when issued with an explicit result
   // schema) and to set the `Mcp-Name` routing header on them. So every task request goes
