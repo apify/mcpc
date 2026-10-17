@@ -137,8 +137,14 @@ test_case "env survives an automatic restart after a bridge crash"
 run_mcpc --json
 bridge_pid=$(json_get ".sessions[] | select(.name == \"$SESSION\") | .pid")
 assert_not_empty "$bridge_pid" "should have a bridge PID"
-kill "$bridge_pid" 2>/dev/null || true
-wait_for "! process_is_running $bridge_pid" 10
+# Use the framework's kill helper: bash's built-in kill cannot terminate a
+# Windows-native PID (the bridge is spawned by Node, so its PID is not an MSYS
+# one), and a bridge left running makes the wait below time out.
+_kill_tree "$bridge_pid"
+if ! wait_for_process_exit "$bridge_pid"; then
+  test_fail "bridge process should have been killed"
+  exit 1
+fi
 run_mcpc "$SESSION" tools-call env name:="$SECRET_NAME"
 assert_success
 assert_contains "$STDOUT" "$SECRET_VALUE"
