@@ -1009,6 +1009,78 @@ describe('formatToolCallExample', () => {
     expect(output).toContain(`ids:='[]'`);
     expect(output).toContain(`options:='{}'`);
   });
+
+  it('should use an array or object example for nullable array and object params', () => {
+    const tool: Tool = {
+      name: 'crawl',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          ids: { type: ['array', 'null'], items: { type: 'integer' } },
+          options: { type: ['null', 'object'] },
+          tags: { anyOf: [{ type: 'array', items: { type: 'string' } }, { type: 'null' }] },
+        },
+        required: ['ids', 'options', 'tags'],
+      },
+    };
+
+    const output = formatToolCallExample(tool, '@s');
+    expect(output).toContain(`ids:='[1]'`);
+    expect(output).toContain(`options:='{}'`);
+    expect(output).toContain(`tags:='["something"]'`);
+  });
+
+  it('should resolve $ref, tuple and required object properties in examples', () => {
+    const tool: Tool = {
+      name: 'plot',
+      inputSchema: {
+        type: 'object',
+        $defs: {
+          Point: {
+            type: 'object',
+            properties: { x: { type: 'number' }, label: { type: 'string' } },
+            required: ['x'],
+          },
+        },
+        properties: {
+          points: { type: 'array', items: { $ref: '#/$defs/Point' } },
+          range: {
+            type: 'array',
+            prefixItems: [{ type: 'integer', minimum: 0 }, { type: 'number' }],
+          },
+          mode: { const: 'fast' },
+        },
+        required: ['points', 'range', 'mode'],
+      },
+    };
+
+    const output = formatToolCallExample(tool, '@s');
+    expect(output).toContain(`points:='[{"x":1}]'`);
+    expect(output).toContain(`range:='[0,1]'`);
+    expect(output).toContain(`mode:='"fast"'`);
+  });
+
+  it('should stop following a recursive $ref', () => {
+    const tool: Tool = {
+      name: 'tree',
+      inputSchema: {
+        type: 'object',
+        $defs: {
+          Node: {
+            type: 'object',
+            properties: { child: { $ref: '#/$defs/Node' } },
+            required: ['child'],
+          },
+        },
+        properties: { root: { $ref: '#/$defs/Node' }, bad: { $ref: '#/$defs/%zz' } },
+        required: ['root', 'bad'],
+      },
+    };
+
+    const output = formatToolCallExample(tool, '@s');
+    expect(output).toContain(`root:='{"child":{"child":{}}}'`);
+    expect(output).toContain(`bad:='"something"'`);
+  });
 });
 
 describe('formatToolHints', () => {
