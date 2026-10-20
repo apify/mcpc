@@ -654,6 +654,14 @@ function exampleValue(propSchema: Record<string, unknown>): string {
     return String(min ?? 1);
   }
   if (schemaType === 'boolean') return 'true';
+  if (schemaType === 'array') {
+    const items = propSchema.items;
+    if (items && typeof items === 'object' && !Array.isArray(items)) {
+      return `[${exampleValue(items as Record<string, unknown>)}]`;
+    }
+    return '[]';
+  }
+  if (schemaType === 'object') return '{}';
 
   // Union types like ['string', 'null']
   if (Array.isArray(schemaType)) {
