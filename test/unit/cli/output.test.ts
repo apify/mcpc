@@ -989,6 +989,26 @@ describe('formatToolCallExample', () => {
     const output = formatToolCallExample(tool, '@s');
     expect(output).toContain(`config:='{"key":"value"}'`);
   });
+
+  it('should use an array or object example for array and object params without defaults', () => {
+    const tool: Tool = {
+      name: 'crawl',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          urls: { type: 'array', items: { type: 'string' } },
+          ids: { type: 'array' },
+          options: { type: 'object' },
+        },
+        required: ['urls', 'ids', 'options'],
+      },
+    };
+
+    const output = formatToolCallExample(tool, '@s');
+    expect(output).toContain(`urls:='["something"]'`);
+    expect(output).toContain(`ids:='[]'`);
+    expect(output).toContain(`options:='{}'`);
+  });
 });
 
 describe('formatToolHints', () => {
