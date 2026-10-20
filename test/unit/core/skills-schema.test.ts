@@ -68,6 +68,18 @@ describe('ListSkillsResultSchema', () => {
     expect((result.value?.skills[0] as Record<string, unknown>).futureField).toBe(42);
   });
 
+  it('keeps an entry _meta object and rejects a non-object one', () => {
+    const meta = { 'com.example/provenance': 'signed' };
+    const accepted = validate(ListSkillsResultSchema, { skills: [{ ...ENTRY, _meta: meta }] });
+    expect(accepted.issues).toBeUndefined();
+    expect(accepted.value?.skills[0]?._meta).toEqual(meta);
+
+    const rejected = validate(ListSkillsResultSchema, {
+      skills: [{ ...ENTRY, _meta: 'signed' }],
+    });
+    expect(rejected.issues?.[0]?.path).toEqual(['skills', '0', '_meta']);
+  });
+
   it('rejects an entry with no resources manifest', () => {
     const { resources: _dropped, ...withoutManifest } = ENTRY;
     const result = validate(ListSkillsResultSchema, { skills: [withoutManifest] });
@@ -113,17 +125,21 @@ describe('GetSkillResultSchema', () => {
 });
 
 describe('ReadResourceDirectoryResultSchema', () => {
-  it('accepts a directory listing', () => {
+  it('accepts a directory listing and keeps the caching hints', () => {
     const result = validate(ReadResourceDirectoryResultSchema, {
       resources: [
         { uri: 'skill://pdf/templates/invoice.md', name: 'invoice.md', mimeType: 'text/markdown' },
         { uri: 'skill://pdf/templates/regional', name: 'regional', mimeType: 'inode/directory' },
       ],
       nextCursor: 'page-2',
+      ttlMs: 300000,
+      cacheScope: 'public',
     });
     expect(result.issues).toBeUndefined();
     expect(result.value?.resources).toHaveLength(2);
     expect(result.value?.nextCursor).toBe('page-2');
+    expect(result.value?.ttlMs).toBe(300000);
+    expect(result.value?.cacheScope).toBe('public');
   });
 
   it('accepts an empty directory', () => {
