@@ -633,10 +633,17 @@ export function formatToolDetail(tool: Tool): string {
  * Generate an example placeholder value for a JSON Schema property.
  * Uses the default value if available, otherwise a reasonable placeholder.
  */
-function exampleValue(propSchema: Record<string, unknown>): string {
+function exampleValue(
+  propSchema: Record<string, unknown>,
+  rootSchema?: Record<string, unknown>,
+  depth = 0
+): string {
   // Use default value if available
   if (propSchema.default !== undefined) {
     return JSON.stringify(propSchema.default);
+  }
+  if (propSchema.const !== undefined) {
+    return JSON.stringify(propSchema.const);
   }
 
   // Use first enum value if available
@@ -644,7 +651,31 @@ function exampleValue(propSchema: Record<string, unknown>): string {
     return JSON.stringify(propSchema.enum[0]);
   }
 
-  const schemaType = propSchema.type;
+  // Nested schemas are followed only so deep, so a recursive $ref cannot loop forever
+  const canRecurse = depth < MAX_EXAMPLE_DEPTH;
+  const recurse = (schema: unknown): string =>
+    exampleValue(asSchema(schema) ?? {}, rootSchema, depth + 1);
+
+  // Local references like '#/$defs/Item', as emitted by Pydantic and zod
+  if (typeof propSchema.$ref === 'string' && canRecurse) {
+    const target = resolveLocalRef(propSchema.$ref, rootSchema);
+    if (target) return recurse(target);
+  }
+
+  // anyOf/oneOf, e.g. Pydantic's Optional[...]: use the first non-null branch
+  const variants = propSchema.anyOf ?? propSchema.oneOf;
+  if (Array.isArray(variants)) {
+    const variant = variants.find((v) => asSchema(v)?.type !== 'null');
+    if (variant) return exampleValue(asSchema(variant) ?? {}, rootSchema, depth);
+  }
+
+  // Union types like ['string', 'null'] are reduced to their most likely member
+  let schemaType = propSchema.type;
+  if (Array.isArray(schemaType)) {
+    schemaType = ['string', 'number', 'integer', 'boolean', 'array', 'object'].find((t) =>
+      (schemaType as unknown[]).includes(t)
+    );
+  }
 
   if (schemaType === 'string') return '"something"';
   if (schemaType === 'number') return '1';
@@ -655,23 +686,49 @@ function exampleValue(propSchema: Record<string, unknown>): string {
   }
   if (schemaType === 'boolean') return 'true';
   if (schemaType === 'array') {
-    const items = propSchema.items;
-    if (items && typeof items === 'object' && !Array.isArray(items)) {
-      return `[${exampleValue(items as Record<string, unknown>)}]`;
-    }
+    if (!canRecurse) return '[]';
+    // Tuples: draft 2020-12 `prefixItems`, or the older array form of `items`
+    const tuple = Array.isArray(propSchema.prefixItems) ? propSchema.prefixItems : propSchema.items;
+    if (Array.isArray(tuple)) return `[${tuple.map(recurse).join(',')}]`;
+    if (asSchema(propSchema.items)) return `[${recurse(propSchema.items)}]`;
     return '[]';
   }
-  if (schemaType === 'object') return '{}';
-
-  // Union types like ['string', 'null']
-  if (Array.isArray(schemaType)) {
-    const nonNull = schemaType.filter((t) => t !== 'null');
-    if (nonNull.includes('string')) return '"something"';
-    if (nonNull.includes('number') || nonNull.includes('integer')) return '1';
-    if (nonNull.includes('boolean')) return 'true';
+  if (schemaType === 'object') {
+    if (!canRecurse) return '{}';
+    // Fill in required properties only, so the example passes validation but stays short
+    const properties = asSchema(propSchema.properties) ?? {};
+    const required = Array.isArray(propSchema.required) ? propSchema.required : [];
+    const entries = required
+      .filter((name): name is string => typeof name === 'string' && name in properties)
+      .map((name) => `${JSON.stringify(name)}:${recurse(properties[name])}`);
+    return `{${entries.join(',')}}`;
   }
 
   return '"something"';
+}
+
+const MAX_EXAMPLE_DEPTH = 5;
+
+function asSchema(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+/**
+ * Resolve a same-document JSON pointer reference (e.g. '#/$defs/Item') against the root schema.
+ */
+function resolveLocalRef(
+  ref: string,
+  rootSchema: Record<string, unknown> | undefined
+): Record<string, unknown> | undefined {
+  if (!ref.startsWith('#/')) return undefined;
+  let node: unknown = rootSchema;
+  for (const segment of ref.slice(2).split('/')) {
+    const key = segment.replace(/~1/g, '/').replace(/~0/g, '~');
+    node = asSchema(node)?.[key];
+  }
+  return asSchema(node);
 }
 
 /**
@@ -729,7 +786,7 @@ export function formatToolCallExample(tool: Tool, sessionName?: string): string 
   }
 
   const argParts = params.map((name) => {
-    const val = shellSafeExampleValue(exampleValue(properties[name] ?? {}));
+    const val = shellSafeExampleValue(exampleValue(properties[name] ?? {}, schema));
     return `${name}:=${val}`;
   });
 
