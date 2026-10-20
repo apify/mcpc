@@ -12,8 +12,8 @@
  * either a complete file list or the string `"dynamic"` — because an entry that
  * violates those is one a host "MUST NOT load", and a precise error naming the
  * offending entry is more useful to a server author than a silently dropped skill.
- * The caching hints (`ttlMs`, `cacheScope`) are accepted as optional: they are
- * REQUIRED by the spec but carry no meaning for a one-shot CLI, so a server that
+ * The caching hints (`ttlMs`, `cacheScope`) the spec requires on all three results are
+ * accepted as optional: they carry no meaning for a one-shot CLI, so a server that
  * omits them still gets its skills listed.
  *
  * Spec: https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/stable/skills.mdx
@@ -132,6 +132,12 @@ function parseSkill(value: unknown, path: string[], issues: Issues): Skill | und
       issues.add([...path, 'frontmatter', 'description'], 'must be a string');
       valid = false;
     }
+  }
+
+  const meta = value._meta;
+  if (meta !== undefined && !isRecord(meta)) {
+    issues.add([...path, '_meta'], 'must be an object when present');
+    valid = false;
   }
 
   const rawResources = value.resources;
