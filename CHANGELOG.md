@@ -13,6 +13,7 @@ Argument completions for prompts and resource templates, tasks on MCP 2026-07-28
 
 ### Added
 
+- New `login --client-name <name>` registers the OAuth client under a name other than `mcpc` with Dynamic Client Registration, for authorization servers that show or check `client_name`. It disables CIMD, since the hosted document sets its own name.
 - New `completion-complete prompt|resource <ref> <arg:=val ...>` command asks the server for argument suggestions (MCP `completion/complete`): pass the arguments in the `prompts-get` syntax and the last one is completed. The `--proxy` server forwards completions too.
 - Support for the MCP [Tasks extension](https://modelcontextprotocol.io/extensions/tasks/overview) (`io.modelcontextprotocol/tasks`) on MCP 2026-07-28 servers: `tools-call --task`/`--detach`, `tasks-get`, `tasks-result` and `tasks-cancel` now work there too, mcpc declares the extension on every request, and a server that answers a plain `tools-call` with a task is followed to its result. `tasks-list` shows the tasks the session created, since the extension has no server-side listing. Everything keeps working unchanged on 2025-11-25 servers, where tasks are part of the core protocol. (#430)
 

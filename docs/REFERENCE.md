@@ -225,6 +225,7 @@ Options:
   --idp-scope <scopes>          OIDC scopes for the IdP SSO (id-jag only, see below)
   --client-metadata-url <url>   HTTPS URL of an OAuth CIMD (default: mcpc CIMD)
   --no-client-metadata-url      Disable CIMD; force DCR on CIMD-capable servers
+  --client-name <name>          Client name to register with DCR (default: mcpc)
   --callback-port <port>        Loopback port for OAuth callback (default: 13316/31613/16133)
   --callback-host <host>        OAuth callback host: 127.0.0.1 (default) or localhost
   --json                        Output in JSON format
@@ -246,7 +247,9 @@ Client registration (how mcpc identifies itself to the server):
      client's redirect URI uses localhost (e.g. localhost:3118), match it with
      --callback-host localhost --callback-port 3118.
   3. Dynamic Client Registration (DCR): fallback when CIMD is unsupported or
-     disabled and the server exposes a registration_endpoint.
+     disabled and the server exposes a registration_endpoint. mcpc registers
+     as "mcpc"; --client-name <name> registers under another name and
+     disables CIMD.
 
   See https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization
 

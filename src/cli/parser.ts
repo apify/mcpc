@@ -110,6 +110,7 @@ const OPTIONS_WITH_VALUES = [
   '--token-endpoint',
   '--client-metadata-url',
   '--no-client-metadata-url',
+  '--client-name',
   '--callback-port',
   '-o',
   '--output',
