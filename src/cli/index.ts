@@ -671,6 +671,9 @@ ${outputHelp([
     .option('--profile <name>', 'Profile name (default: "default")')
     .option('--scope <scopes>', 'OAuth scopes to request (e.g. --scope "read write")')
     .option('--grant <type>', 'Grant: authorization-code (default), client-credentials, id-jag')
+    .option('--client-metadata-url <url>', 'HTTPS URL of an OAuth CIMD (default: mcpc CIMD)')
+    .option('--no-client-metadata-url', 'Disable CIMD; force DCR on CIMD-capable servers')
+    .option('--client-name <name>', 'Client name to register with DCR (default: mcpc)')
     .option('--client-id <id>', 'Pre-registered OAuth client ID (skips CIMD and DCR)')
     .option('--client-secret <secret>', 'Pre-registered OAuth client secret (requires --client-id)')
     .option(
@@ -686,9 +689,6 @@ ${outputHelp([
     .option('--idp-client-id <id>', 'Client ID pre-registered at the enterprise IdP (id-jag only)')
     .option('--idp-client-secret <secret>', 'Client secret for the enterprise IdP (id-jag only)')
     .option('--idp-scope <scopes>', 'OIDC scopes for the IdP SSO (id-jag only, see below)')
-    .option('--client-metadata-url <url>', 'HTTPS URL of an OAuth CIMD (default: mcpc CIMD)')
-    .option('--no-client-metadata-url', 'Disable CIMD; force DCR on CIMD-capable servers')
-    .option('--client-name <name>', 'Client name to register with DCR (default: mcpc)')
     .option(
       '--callback-port <port>',
       `Loopback port for OAuth callback (default: ${MCPC_OAUTH_CALLBACK_PORTS.join('/')})`
@@ -714,9 +714,8 @@ ${chalk.bold('Client registration (how mcpc identifies itself to the server):')}
      client's redirect URI uses localhost (e.g. localhost:3118), match it with
      --callback-host localhost --callback-port 3118.
   3. Dynamic Client Registration (DCR): fallback when CIMD is unsupported or
-     disabled and the server exposes a registration_endpoint. mcpc registers
-     as "mcpc"; --client-name <name> registers under another name and
-     disables CIMD.
+     disabled and the server exposes a registration_endpoint. Registers as
+     "mcpc"; --client-name <name> registers under another name (disables CIMD).
 
   See https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization
 

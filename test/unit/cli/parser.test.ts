@@ -385,6 +385,8 @@ describe('optionTakesValue', () => {
     expect(optionTakesValue('--scope')).toBe(true);
     expect(optionTakesValue('--client-id')).toBe(true);
     expect(optionTakesValue('--client-secret')).toBe(true);
+    expect(optionTakesValue('--client-metadata-url')).toBe(true);
+    expect(optionTakesValue('--client-name')).toBe(true);
     expect(optionTakesValue('-o')).toBe(true);
     expect(optionTakesValue('--output')).toBe(true);
     expect(optionTakesValue('--amount')).toBe(true);
@@ -393,6 +395,7 @@ describe('optionTakesValue', () => {
 
   it('should return false for boolean flags', () => {
     expect(optionTakesValue('--verbose')).toBe(false);
+    expect(optionTakesValue('--no-client-metadata-url')).toBe(false);
     expect(optionTakesValue('--json')).toBe(false);
     expect(optionTakesValue('-j')).toBe(false);
     expect(optionTakesValue('-v')).toBe(false);
