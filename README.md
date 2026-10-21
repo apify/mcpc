@@ -884,6 +884,16 @@ mcpc x402 sign <base64-payment-required> --amount 1.00 --expiry 3600 --json
 The command outputs the signed `PAYMENT-SIGNATURE` header value and an MCP config snippet
 that can be used directly with other MCP clients.
 
+`x402 sign` also works for plain HTTP (non-MCP) x402 v2 endpoints. Read the challenge from the
+`PAYMENT-REQUIRED` response header, sign it, then send the request again with the signature:
+
+```bash
+URL=https://api.example.com/paid-resource
+REQ=$(curl -s -D - -o /dev/null "$URL" | awk -F': ' 'tolower($1)=="payment-required"{print $2}' | tr -d '\r\n')
+SIG=$(mcpc x402 sign "$REQ" --json | jq -r .paymentSignature)
+curl -s -D - -H "PAYMENT-SIGNATURE: $SIG" "$URL"   # 200 + PAYMENT-RESPONSE header with the settlement tx
+```
+
 ### Using x402 with MCP servers
 
 Pass the `--x402` flag when connecting to a session. It accepts an optional scheme preference
