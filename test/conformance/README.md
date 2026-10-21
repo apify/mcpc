@@ -86,3 +86,16 @@ advertises the `tasks` capability nor declares the extension.
 Note that the framework's client scenarios currently top out at protocol
 `2025-11-25`, so these runs exercise mcpc's legacy fallback path rather than the
 `2026-07-28` era it negotiates by default.
+
+## Proxy server conformance
+
+Run the first server-side scenario from #334 against a real `mcpc connect --proxy` chain:
+
+```bash
+pnpm run build
+node test/conformance/server.mjs
+```
+
+The runner starts the existing local e2e server, connects an isolated named session, and binds its proxy to `127.0.0.1`. The reference `dns-rebinding-protection` scenario checks rejection of invalid Host/Origin headers and acceptance of valid localhost requests. Readiness and commands are bounded; session and server cleanup run on success, failure and interruption. No remote MCP service or credentials are required.
+
+The server lane runs by default in the reusable conformance workflow, so it also gates releases. Like the existing client lane it resolves the conformance package through `npx -y`; set `CONFORMANCE_PACKAGE_VERSION` to a published version for a pinned local run. Remaining server scenarios need fixtures and are not covered yet.
