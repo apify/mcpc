@@ -144,8 +144,8 @@ export async function login(
       throw new ClientError(
         '--callback-host localhost cannot be used with the default hosted CIMD, which only ' +
           'registers 127.0.0.1 redirect URIs. Use --client-id (pre-registered client), ' +
-          '--client-metadata-url (custom CIMD listing localhost redirect URIs), or ' +
-          '--no-client-metadata-url (Dynamic Client Registration)'
+          '--client-metadata-url (custom CIMD listing localhost redirect URIs), or Dynamic ' +
+          'Client Registration via --no-client-metadata-url or --client-name'
       );
     }
 
