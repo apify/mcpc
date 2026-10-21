@@ -107,3 +107,28 @@ jobs:
           name: conformance-results-${{ matrix.slug }}
           path: results/
           if-no-files-found: ignore
+
+  proxy-server-conformance:
+    name: server / dns-rebinding-protection
+    if: ${{ inputs.scenario == '' || inputs.scenario == 'dns-rebinding-protection' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Install pnpm and dependencies
+        uses: apify/actions/pnpm-install@v1.1.2
+      - name: Build
+        run: pnpm run build
+      - name: Run proxy server conformance
+        run: node test/conformance/server.mjs --output-dir results/proxy-server
+      - name: Upload conformance results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: conformance-results-proxy-server
+          path: results/proxy-server/
+          if-no-files-found: ignore
