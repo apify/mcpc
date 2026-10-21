@@ -94,6 +94,11 @@ export interface OAuthProviderOptions {
    * Otherwise, the SDK falls back to Dynamic Client Registration.
    */
   clientMetadataUrl?: string;
+
+  /**
+   * client_name sent with Dynamic Client Registration (default: "mcpc")
+   */
+  clientName?: string;
 }
 
 /**
@@ -105,6 +110,7 @@ export class OAuthProvider implements OAuthClientProvider {
   private _redirectUrl: string;
   private _forceReauth: boolean;
   private _clientCredentials?: { clientId: string; clientSecret?: string };
+  private _clientName: string;
 
   /**
    * OAuth Client ID Metadata Document URL (CIMD).
@@ -127,6 +133,7 @@ export class OAuthProvider implements OAuthClientProvider {
     this.profileName = options.profileName;
     this._redirectUrl = options.redirectUrl || 'http://localhost/callback';
     this._forceReauth = options.forceReauth || false;
+    this._clientName = options.clientName || 'mcpc';
 
     if (options.clientCredentials) {
       this._clientCredentials = options.clientCredentials;
@@ -149,7 +156,7 @@ export class OAuthProvider implements OAuthClientProvider {
       token_endpoint_auth_method: this._clientCredentials?.clientSecret
         ? 'client_secret_post'
         : 'none',
-      client_name: 'mcpc',
+      client_name: this._clientName,
       client_uri: 'https://github.com/apify/mcpc',
       logo_uri: 'https://apify.github.io/mcpc/client-logo.svg',
       tos_uri: 'https://apify.github.io/mcpc/LICENSE',

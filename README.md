@@ -514,11 +514,11 @@ When logging in, `mcpc` supports all three OAuth client registration approaches 
 [MCP authorization spec](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization#client-registration-approaches),
 picking the one the authorization server advertises in its OAuth metadata:
 
-| **Approach**                            | **`mcpc login` flags**                              |
-| :-------------------------------------- | :-------------------------------------------------- |
-| **Pre-registration**                    | `--client-id` (and optional `--client-secret`)      |
-| **Client ID Metadata Documents (CIMD)** | default (or `--client-metadata-url <url>`)          |
-| **Dynamic Client Registration (DCR)**   | fallback (or force with `--no-client-metadata-url`) |
+| **Approach**                            | **`mcpc login` flags**                                                        |
+| :-------------------------------------- | :---------------------------------------------------------------------------- |
+| **Pre-registration**                    | `--client-id` (and optional `--client-secret`)                                |
+| **Client ID Metadata Documents (CIMD)** | default (or `--client-metadata-url <url>`)                                    |
+| **Dynamic Client Registration (DCR)**   | fallback (or force with `--no-client-metadata-url` or `--client-name <name>`) |
 
 `mcpc` ships with a hosted [Client ID Metadata Document](https://apify.github.io/mcpc/client-metadata.json)
 so every installation presents the same client identity to CIMD-capable authorization servers.
@@ -541,6 +541,9 @@ mcpc login mcp.example.com --client-metadata-url https://example.com/my-client.j
 
 # Disable CIMD: force Dynamic Client Registration even if the server supports CIMD.
 mcpc login mcp.example.com --no-client-metadata-url
+
+# Dynamic Client Registration under a client name other than "mcpc" (disables CIMD).
+mcpc login mcp.example.com --client-name "My Agent"
 ```
 
 See the [MCP authorization spec](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization#client-registration-approaches)

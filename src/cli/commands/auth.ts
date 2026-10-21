@@ -36,6 +36,7 @@ export async function login(
     clientKeyAlg?: string;
     tokenEndpoint?: string;
     clientMetadataUrl?: string | false;
+    clientName?: string;
     idp?: string;
     idpClientId?: string;
     idpClientSecret?: string;
@@ -93,6 +94,24 @@ export async function login(
       throw new ClientError('--client-secret requires --client-id');
     }
 
+    if (options.clientName !== undefined) {
+      if (!options.clientName.trim()) {
+        throw new ClientError('--client-name must not be empty');
+      }
+      if (options.clientId) {
+        throw new ClientError(
+          '--client-name cannot be combined with --client-id (a pre-registered client is ' +
+            'not registered again)'
+        );
+      }
+      if (typeof options.clientMetadataUrl === 'string') {
+        throw new ClientError(
+          '--client-name cannot be combined with --client-metadata-url (the CIMD document ' +
+            'sets client_name)'
+        );
+      }
+    }
+
     if (options.clientMetadataUrl && options.clientId) {
       throw new ClientError(
         '--client-metadata-url cannot be combined with --client-id (they are mutually exclusive ' +
@@ -102,13 +121,13 @@ export async function login(
 
     // Resolve the effective CIMD URL:
     // - --client-id → no CIMD (pre-registered client)
-    // - --no-client-metadata-url → explicitly disabled (force DCR)
+    // - --no-client-metadata-url or --client-name → disabled (force DCR)
     // - --client-metadata-url <url> → user override
     // - default → mcpc's hosted CIMD
     let resolvedClientMetadataUrl: string | undefined;
     if (options.clientId) {
       resolvedClientMetadataUrl = undefined;
-    } else if (options.clientMetadataUrl === false) {
+    } else if (options.clientMetadataUrl === false || options.clientName !== undefined) {
       resolvedClientMetadataUrl = undefined;
     } else if (typeof options.clientMetadataUrl === 'string') {
       resolvedClientMetadataUrl = options.clientMetadataUrl;
@@ -157,7 +176,8 @@ export async function login(
       options.scope,
       clientCredentials,
       options.callbackPort,
-      options.callbackHost
+      options.callbackHost,
+      options.clientName
     );
 
     if (options.outputMode === 'human') {
@@ -218,6 +238,7 @@ async function loginWithClientCredentials(
     clientKeyAlg?: string;
     tokenEndpoint?: string;
     clientMetadataUrl?: string | false;
+    clientName?: string;
     callbackPort?: number;
     callbackHost?: string;
   }
@@ -238,6 +259,9 @@ async function loginWithClientCredentials(
   // Browser-flow-only options have no meaning for the client-credentials grant.
   if (typeof options.clientMetadataUrl === 'string') {
     throw new ClientError('--client-metadata-url cannot be used with --grant client-credentials');
+  }
+  if (options.clientName !== undefined) {
+    throw new ClientError('--client-name cannot be used with --grant client-credentials');
   }
   if (options.callbackPort !== undefined || options.callbackHost !== undefined) {
     throw new ClientError(
@@ -321,6 +345,7 @@ async function loginWithIdJag(
     clientKeyAlg?: string;
     tokenEndpoint?: string;
     clientMetadataUrl?: string | false;
+    clientName?: string;
     idp?: string;
     idpClientId?: string;
     idpClientSecret?: string;
@@ -351,6 +376,9 @@ async function loginWithIdJag(
   }
   if (typeof options.clientMetadataUrl === 'string') {
     throw new ClientError('--client-metadata-url cannot be used with --grant id-jag');
+  }
+  if (options.clientName !== undefined) {
+    throw new ClientError('--client-name cannot be used with --grant id-jag');
   }
 
   if (options.outputMode === 'human') {

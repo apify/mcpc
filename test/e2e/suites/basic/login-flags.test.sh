@@ -28,6 +28,7 @@ assert_success
 assert_contains "$STDOUT" "--client-id"
 assert_contains "$STDOUT" "--client-secret"
 assert_contains "$STDOUT" "--client-metadata-url"
+assert_contains "$STDOUT" "--client-name"
 assert_contains "$STDOUT" "Pre-registration"
 assert_contains "$STDOUT" "Client ID Metadata Documents"
 assert_contains "$STDOUT" "Dynamic Client Registration"
@@ -88,6 +89,30 @@ test_case "login --client-metadata-url with dot segments is rejected"
 run_mcpc login mcp.example.com --client-metadata-url "https://example.com/../meta.json"
 assert_failure
 assert_contains "$STDERR" "path segments"
+test_pass
+
+test_case "login --client-name with --client-id is rejected"
+run_mcpc login mcp.example.com --client-id foo --client-name "My Agent"
+assert_failure
+assert_contains "$STDERR" "--client-name cannot be combined with --client-id"
+test_pass
+
+test_case "login --client-name with --client-metadata-url is rejected"
+run_mcpc login mcp.example.com --client-name "My Agent" --client-metadata-url https://example.com/meta.json
+assert_failure
+assert_contains "$STDERR" "--client-name cannot be combined with --client-metadata-url"
+test_pass
+
+test_case "login --client-name with an empty value is rejected"
+run_mcpc login mcp.example.com --client-name ""
+assert_failure
+assert_contains "$STDERR" "--client-name"
+test_pass
+
+test_case "login --client-name with --grant client-credentials is rejected"
+run_mcpc login mcp.example.com --grant client-credentials --client-id foo --client-secret bar --client-name "My Agent"
+assert_failure
+assert_contains "$STDERR" "--client-name cannot be used with --grant client-credentials"
 test_pass
 
 # =============================================================================
