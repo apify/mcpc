@@ -3,6 +3,8 @@
   "version": "0.7.0",
   "description": "Universal command-line client for the Model Context Protocol (MCP).",
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "keywords": [
     "Model Context Protocol",
     "MCP",
@@ -33,8 +35,9 @@
     "build:readme": "./scripts/update-readme.sh",
     "build:reference": "node scripts/generate-reference.mjs",
     "check:reference": "node scripts/generate-reference.mjs --check",
-    "test": "pnpm run build && pnpm run test:unit && ./test/e2e/run.sh --no-build --parallel 8 && ./test/e2e/run.sh --no-build --parallel 8 --server-protocol modern && ./test/e2e/run.sh --no-build --parallel 8 --runtime bun",
+    "test": "pnpm run build && pnpm run test:unit && pnpm run test:just-bash && ./test/e2e/run.sh --no-build --parallel 8 && ./test/e2e/run.sh --no-build --parallel 8 --server-protocol modern && ./test/e2e/run.sh --no-build --parallel 8 --runtime bun",
     "test:unit": "vitest run",
+    "test:just-bash": "node test/integration/just-bash.mjs",
     "test:watch": "vitest",
     "test:coverage": "pnpm run test:coverage:unit && pnpm run test:coverage:e2e && pnpm run test:coverage:merge",
     "test:coverage:unit": "vitest run --coverage",
@@ -69,6 +72,14 @@
     "qrcode-terminal": "^0.12.0",
     "undici": "^7.30.0"
   },
+  "peerDependencies": {
+    "just-bash": "^3.6.0"
+  },
+  "peerDependenciesMeta": {
+    "just-bash": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@modelcontextprotocol/node": "2.1.1",
@@ -83,6 +94,7 @@
     "esbuild": "^0.28.2",
     "eslint": "^10.12.0",
     "globals": "^17.13.0",
+    "just-bash": "3.6.0",
     "markdown-link-check": "^3.15.0",
     "nyc": "^18.0.0",
     "prettier": "^3.9.10",
