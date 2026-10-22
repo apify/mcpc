@@ -234,13 +234,32 @@ Expose an authenticated session as a local MCP server, so sandboxed AI code can 
 without ever seeing your real credentials:
 
 ```bash
-# Human: authenticated session + proxy listening on :8080
-mcpc connect mcp.apify.com @ai-proxy --profile ai-access --proxy 8080
+# Human: authenticate upstream once, then add an independent listener
+mcpc connect mcp.apify.com @ai-proxy --profile ai-access
+mcpc proxy @ai-proxy --name sandbox --listen 8080 --no-auth
 
 # AI in a sandbox limited to localhost: no access to the original tokens
 mcpc connect localhost:8080 @sandboxed
 mcpc @sandboxed tools-list
+
+# List listeners or stop only this one (no upstream reconnection)
+mcpc proxy @ai-proxy
+mcpc proxy @ai-proxy --stop sandbox
 ```
+
+Use `--bearer-token-file ./proxy-token` instead of `--no-auth` to require a separate
+listener token. Each listener needs its own name and address. Active listeners survive
+session restarts; closing the session stops them all. `proxy @session --json` reports
+desired and observed state, including failed restoration and unconfirmed stops.
+List/stop work with offline or expired sessions without starting a bridge. A pending
+start can be retired with `--stop`; retry a failed restore by stopping/recreating that
+listener or explicitly restarting the session.
+
+Named management requires a private, owned POSIX socket namespace and an updated
+bridge; restart an older bridge explicitly. Windows named management is unsupported.
+The deprecated `connect --proxy` workflow remains available and is listed as `legacy`;
+older binaries ignore named listeners. Original unmarked legacy configuration cannot
+tell whether a missing bearer token was intentional, so its auth is reported as `legacy`.
 
 A proxy does not make an untrusted server safe — stdio servers still touch your system,
 and HTTP servers still hold your credentials. Only connect to servers you trust.

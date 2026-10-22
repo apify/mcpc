@@ -116,6 +116,35 @@ export interface ServerConfig {
 export interface ProxyConfig {
   host: string; // Host to bind proxy server (default: 127.0.0.1)
   port: number; // Port to bind proxy server
+  /** New authenticated legacy listeners fail closed if their keychain item is missing. */
+  requireBearerToken?: boolean;
+}
+
+/** Named listeners have immutable identities; names can be reused only after retirement. */
+export interface ProxyListener {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  authentication: 'bearer' | 'none';
+  state: 'pending' | 'active' | 'stopped';
+  /** A foreground credential write may outlive a concurrent stop. Keep its receipt. */
+  credentialWriterPid?: number;
+  /** A stopped legacy listener retains its legacy key until the session is closed. */
+  legacy?: boolean;
+}
+
+export interface ProxyObservation {
+  id: string;
+  status: 'running' | 'failed' | 'stopped';
+  error?: string;
+}
+
+/** Ownership is a consistency fence, not authentication of the local IPC channel. */
+export interface BridgeOwner {
+  createdAt: string;
+  bridgeOwner: string;
+  pid: number;
 }
 
 /**
@@ -180,6 +209,9 @@ export interface SessionData {
   x402?: X402SchemePreference;
   insecure?: boolean; // Skip TLS certificate verification
   pid?: number; // Bridge process PID
+  bridgeOwner?: string; // Unique bridge lifetime, paired with pid and session createdAt
+  /** Durable close reservation; credentials are cleaned outside the shared sessions lock. */
+  deletion?: { id: string; workerPid?: number };
   protocolVersion?: string; // Negotiated MCP version
   /**
    * Every protocol version the server advertised in its `server/discover` result
@@ -214,7 +246,10 @@ export interface SessionData {
    */
   _meta?: Record<string, unknown>;
   status?: SessionStatus; // Session health status (default: active)
-  proxy?: ProxyConfig; // Proxy server configuration (if enabled)
+  proxy?: ProxyConfig | undefined; // Proxy server configuration (if enabled)
+  proxyListeners?: ProxyListener[];
+  proxyRevision?: number;
+  proxyObservations?: { bridgeOwner: string; listeners: ProxyObservation[] };
   notifications?: SessionNotifications; // Last list change notification timestamps
   activeTasks?: Record<string, ActiveTaskEntry>; // Active async tasks for crash recovery
   resourceSubscriptions?: Record<string, ResourceSubscriptionEntry>; // Resource→file syncs, keyed by URI
@@ -428,6 +463,8 @@ export interface AuthCredentials {
   // from the keychain itself — keeping the bridge's only keychain access on the
   // sanctioned OAuth-refresh path (see #55).
   proxyBearerToken?: string;
+  /** Named-listener tokens, keyed by immutable listener ID; never stored in sessions.json. */
+  proxyListenerTokens?: Record<string, string>;
 }
 
 /**

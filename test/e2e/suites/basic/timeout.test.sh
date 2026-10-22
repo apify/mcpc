@@ -12,6 +12,7 @@ start_test_server
 # =============================================================================
 
 SESSION=$(create_session "$TEST_SERVER_URL" "timeout-1")
+_SESSIONS_CREATED+=("$SESSION")
 
 test_case "tools-call times out when server is slower than --timeout"
 run_mcpc "$SESSION" tools-call slow ms:=10000 --timeout 2
@@ -29,6 +30,7 @@ run_mcpc "$SESSION" close 2>/dev/null || true
 # =============================================================================
 
 SESSION2=$(create_session "$TEST_SERVER_URL" "timeout-2")
+_SESSIONS_CREATED+=("$SESSION2")
 
 test_case "tools-call succeeds when --timeout is long enough"
 run_mcpc "$SESSION2" tools-call slow ms:=500 --timeout 10
@@ -60,6 +62,7 @@ test_pass
 # =============================================================================
 
 SESSION3=$(create_session "$TEST_SERVER_URL" "timeout-3")
+_SESSIONS_CREATED+=("$SESSION3")
 
 test_case "timeout error with --json outputs valid JSON to stderr"
 run_mcpc "$SESSION3" --json tools-call slow ms:=10000 --timeout 2

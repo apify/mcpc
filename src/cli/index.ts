@@ -528,6 +528,10 @@ ${chalk.bold('x402 payments (experimental):')}
   --x402 pays for paid tool calls from the wallet set up with: mcpc x402
   Schemes: auto (default, prefers upto), upto, exact.
   For more info, run: mcpc help x402
+
+${chalk.bold('Proxy compatibility:')}
+  --proxy is deprecated but remains supported as the legacy listener.
+  To add, list or stop independent listeners, run: mcpc proxy @session --help
 ${outputHelp([
   'For a single server, shows session, server info, capabilities, and tools.',
   'Bulk connects list every session with its state, then a summary.',
@@ -629,6 +633,71 @@ ${outputHelp([
           ...(globalOpts.insecure && { insecure: true }),
         });
       }
+    });
+
+  program
+    .command('proxy <@session>')
+    .description('List, start or stop session proxy listeners')
+    .option('--listen <[host:]port>', 'Start a listener on this address')
+    .option('--name <name>', 'Name of the new listener')
+    .option('--bearer-token-file <file>', 'Read the listener bearer token from a file')
+    .option('--no-auth', 'Explicitly allow access without a bearer token')
+    .option('--stop <name>', 'Stop and remove a listener')
+    .addHelpText(
+      'after',
+      `
+${chalk.bold('Usage:')}
+  Without flags, list desired listeners and their observed state.
+  --listen requires --name and either --bearer-token-file or --no-auth.
+  Names contain 1–64 letters, digits, hyphens or underscores; legacy is reserved.
+  The default host is 127.0.0.1. Other hosts must be localhost or IP addresses.
+  Bearer token files contain one token; tokens are stored in your OS keychain
+  (private file fallback when unavailable), never in session JSON or output.
+
+${chalk.bold('Lifecycle:')}
+  Adding/stopping a listener does not reconnect the upstream session.
+  Active listeners survive restart; closing the session stops all listeners.
+  List and stop work offline without starting a bridge. A stop with an
+  unreachable owner is saved but reports closure as unconfirmed; the owner
+  reconciles removals every five seconds while it is responsive.
+  A failed restore is shown per listener while the upstream stays usable.
+  Use --stop to retire interrupted starts, then start again to retry.
+
+${chalk.bold('Compatibility and local trust:')}
+  New management requires an updated bridge and a private, owned POSIX
+  socket namespace. Older bridges require an explicit session restart.
+  Windows named-pipe ownership is unverified: this command refuses there.
+  connect --proxy still works, listed as legacy. Older binaries ignore named
+  listeners. Legacy tokens stay paired with legacy config; a stopped legacy
+  token is retained until session close. Old unmarked configs cannot reveal
+  whether a missing legacy token was intentional; authentication is "legacy".
+
+${chalk.bold('Examples:')}
+  mcpc proxy @apify
+  mcpc proxy @apify --name sandbox --listen 8080 --bearer-token-file ./proxy-token
+  mcpc proxy @apify --name local --listen 8081 --no-auth
+  mcpc proxy @apify --stop sandbox
+${jsonHelp(
+  [
+    '`{ sessionName, bridge, listeners: [...] }`.',
+    'Each listener has name, host, port, authentication, desiredState and observedState;',
+    'legacy and error appear when applicable. No bearer tokens are returned.',
+    'Stop adds `stopped: { name, closed, credentialCleanupPending }`.',
+    'closed=false means removal is saved but the port closure is unconfirmed.',
+    'deletionPending=true means session close has credential cleanup to retry.',
+  ].join('\n')
+)}`
+    )
+    .action(async (sessionName, opts, command) => {
+      const { manageProxy } = await import('./commands/proxy.js');
+      await manageProxy(sessionName, {
+        outputMode: getOptionsFromCommand(command).outputMode,
+        ...(opts.listen && { listen: opts.listen as string }),
+        ...(opts.name && { name: opts.name as string }),
+        ...(opts.stop && { stop: opts.stop as string }),
+        ...(opts.bearerTokenFile && { bearerTokenFile: opts.bearerTokenFile as string }),
+        ...(opts.auth === false && { noAuth: true }),
+      });
     });
 
   // close command: mcpc close @<session>

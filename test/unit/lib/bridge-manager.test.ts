@@ -3,6 +3,15 @@
  */
 
 import { vi } from 'vitest';
+import { spawn } from 'child_process';
+import { mkdtemp, rm } from 'fs/promises';
+import { tmpdir } from 'os';
+import { join } from 'path';
+
+vi.mock('child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('child_process')>();
+  return { ...actual, spawn: vi.fn() };
+});
 
 vi.mock('../../../src/lib/auth/profiles.js', () => ({
   getAuthProfile: vi.fn(),
@@ -16,6 +25,7 @@ vi.mock('../../../src/lib/auth/keychain.js', () => ({
   readKeychainSessionHeaders: vi.fn(),
   readKeychainSessionEnv: vi.fn(),
   readKeychainProxyBearerToken: vi.fn(),
+  readKeychainProxyListenerToken: vi.fn(),
 }));
 
 import { getAuthProfile } from '../../../src/lib/auth/profiles.js';
@@ -23,8 +33,17 @@ import {
   readKeychainOAuthClientInfo,
   readKeychainOAuthTokenInfo,
   readKeychainSessionEnv,
+  readKeychainProxyListenerToken,
+  readKeychainProxyBearerToken,
 } from '../../../src/lib/auth/keychain.js';
-import { loadAuthCredentials, loadSessionEnv } from '../../../src/lib/bridge-manager.js';
+import {
+  loadAuthCredentials,
+  loadProxyListenerTokens,
+  loadSessionEnv,
+  startBridge,
+} from '../../../src/lib/bridge-manager.js';
+import { saveSession } from '../../../src/lib/sessions.js';
+import type { SessionData } from '../../../src/lib/types.js';
 import { REDACTED_HEADER_VALUE } from '../../../src/lib/utils.js';
 import { ClientError } from '../../../src/lib/errors.js';
 
@@ -44,6 +63,69 @@ beforeEach(() => {
     tokenType: 'Bearer',
   });
 });
+
+it('refuses a surviving owner before spawning or reading proxy credentials', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'mcpc-surviving-owner-'));
+  const previousHome = process.env.MCPC_HOME_DIR;
+  process.env.MCPC_HOME_DIR = home;
+  vi.mocked(spawn).mockClear();
+  vi.mocked(readKeychainProxyBearerToken).mockClear();
+  vi.mocked(readKeychainProxyListenerToken).mockClear();
+  try {
+    await saveSession('@surviving-owner', {
+      server: { url: SERVER_URL },
+      createdAt: '',
+      pid: process.pid,
+      bridgeOwner: 'still-live-owner',
+      status: 'reconnecting',
+      lastConnectionAttemptAt: new Date().toISOString(),
+    });
+    await expect(
+      startBridge({ sessionName: '@surviving-owner', serverConfig: { url: SERVER_URL } })
+    ).rejects.toThrow('already has a live bridge');
+    expect(spawn).not.toHaveBeenCalled();
+    expect(readKeychainProxyBearerToken).not.toHaveBeenCalled();
+    expect(readKeychainProxyListenerToken).not.toHaveBeenCalled();
+  } finally {
+    if (previousHome === undefined) delete process.env.MCPC_HOME_DIR;
+    else process.env.MCPC_HOME_DIR = previousHome;
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+it.skipIf(process.platform === 'win32')(
+  'isolates a denied optional proxy token and never reads pending or unauthenticated entries',
+  async () => {
+    vi.mocked(readKeychainProxyListenerToken).mockRejectedValueOnce(
+      new Error('native access denied')
+    );
+    vi.mocked(readKeychainProxyListenerToken).mockResolvedValueOnce('healthy-listener-token');
+    const listener = (id: string) => ({
+      id,
+      name: id,
+      host: '127.0.0.1',
+      port: 8001,
+      state: 'active' as const,
+      authentication: 'bearer' as const,
+    });
+    const session: SessionData = {
+      name: '@tokens',
+      createdAt: '',
+      server: {},
+      proxyListeners: [
+        listener('denied'),
+        listener('healthy'),
+        { ...listener('pending'), state: 'pending' },
+        { ...listener('public'), authentication: 'none' },
+      ],
+    };
+    expect(await loadProxyListenerTokens(session)).toEqual({ healthy: 'healthy-listener-token' });
+    expect(vi.mocked(readKeychainProxyListenerToken).mock.calls.map(([id]) => id)).toEqual([
+      'denied',
+      'healthy',
+    ]);
+  }
+);
 
 describe('loadAuthCredentials for the authorization-code grant (#387)', () => {
   it('includes the client secret so the bridge can refresh a confidential client', async () => {

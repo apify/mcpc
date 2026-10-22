@@ -5,6 +5,7 @@
  */
 
 import { readFile, writeFile, unlink } from 'fs/promises';
+import { randomUUID } from 'crypto';
 import { join } from 'path';
 import type { SessionData, SessionsStorage } from './types.js';
 import {
@@ -23,9 +24,51 @@ import {
   removeKeychainSessionHeaders,
   removeKeychainSessionEnv,
   removeKeychainProxyBearerToken,
+  removeKeychainProxyListenerToken,
 } from './auth/keychain.js';
 
 const logger = createLogger('sessions');
+
+/** Keep UUID credential receipts until every writer and serving owner has stopped. */
+function assertCanDeleteSession(session: SessionData, willStopBridge = false): void {
+  if (
+    !willStopBridge &&
+    (session.bridgeOwner || session.proxy || session.proxyListeners?.length) &&
+    session.pid &&
+    isProcessAlive(session.pid)
+  ) {
+    throw new ClientError(
+      `Session ${session.name} still has a live proxy owner. Stop the bridge before deleting it.`
+    );
+  }
+  if (!session.proxyListeners?.length) return;
+  for (const entry of session.proxyListeners) {
+    if (entry.credentialWriterPid && isProcessAlive(entry.credentialWriterPid)) {
+      throw new ClientError(
+        `Proxy ${entry.name} still has a credential writer. Retry closing the session after it exits.`
+      );
+    }
+  }
+}
+
+export function assertSessionNotDeleting(session: SessionData): void {
+  if (session.deletion) {
+    throw new ClientError(
+      `Session ${session.name} has pending deletion. Retry: mcpc ${session.name} close`
+    );
+  }
+}
+
+async function cleanupSessionCredentials(session: SessionData): Promise<void> {
+  for (const entry of session.proxyListeners ?? []) {
+    if (!entry.legacy && entry.authentication === 'bearer') {
+      await removeKeychainProxyListenerToken(entry.id);
+    }
+  }
+  await removeKeychainSessionHeaders(session.name);
+  await removeKeychainSessionEnv(session.name);
+  await removeKeychainProxyBearerToken(session.name);
+}
 
 /**
  * Load sessions from storage file
@@ -140,8 +183,9 @@ export async function getSession(sessionName: string): Promise<SessionData | und
  */
 export async function saveSession(
   sessionName: string,
-  sessionData: Omit<SessionData, 'name'>
-): Promise<void> {
+  sessionData: Omit<SessionData, 'name'>,
+  options?: { createOnly?: boolean }
+): Promise<SessionData> {
   const filePath = getSessionsFilePath();
   return withFileLock(
     filePath,
@@ -151,16 +195,24 @@ export async function saveSession(
       // Add name field and timestamps
       const now = new Date().toISOString();
       const existingSession = storage.sessions[sessionName];
+      if (existingSession) assertSessionNotDeleting(existingSession);
+      if (options?.createOnly && existingSession) {
+        throw new ClientError(
+          `Session ${sessionName} was created concurrently. Run the command again.`
+        );
+      }
 
-      storage.sessions[sessionName] = {
+      const saved: SessionData = {
         name: sessionName,
         ...sessionData,
         createdAt: existingSession?.createdAt || now,
       };
+      storage.sessions[sessionName] = saved;
 
       await saveSessionsInternal(storage);
 
       logger.debug(`Session ${sessionName} saved`);
+      return saved;
     },
     SESSIONS_DEFAULT_CONTENT
   );
@@ -202,6 +254,7 @@ export async function modifySession(
       if (!existingSession) {
         throw new ClientError(`Session not found: ${sessionName}`);
       }
+      assertSessionNotDeleting(existingSession);
 
       const updates = mutate(existingSession);
       if (updates === undefined) {
@@ -243,49 +296,90 @@ export async function modifySession(
  * Delete a session
  * @param sessionName - Name of the session to delete (without @ prefix)
  */
-export async function deleteSession(sessionName: string): Promise<void> {
+export async function deleteSession(
+  sessionName: string,
+  expected?: Pick<SessionData, 'createdAt' | 'bridgeOwner' | 'pid'>,
+  options?: { shutdownBridge?: boolean }
+): Promise<void> {
   const filePath = getSessionsFilePath();
-  return withFileLock(
+  const reservation = await withFileLock(
     filePath,
     async () => {
       const storage = await loadSessionsInternal();
-
-      if (!storage.sessions[sessionName]) {
-        throw new ClientError(`Session not found: ${sessionName}`);
+      const current = storage.sessions[sessionName];
+      if (!current) throw new ClientError(`Session not found: ${sessionName}`);
+      if (
+        expected &&
+        (current.createdAt !== expected.createdAt ||
+          current.bridgeOwner !== expected.bridgeOwner ||
+          current.pid !== expected.pid)
+      ) {
+        throw new ClientError('Session changed before deletion. Run the command again.');
       }
-
-      delete storage.sessions[sessionName];
-
+      assertCanDeleteSession(current, options?.shutdownBridge);
+      if (current.deletion?.workerPid && isProcessAlive(current.deletion.workerPid)) {
+        throw new ClientError(
+          `Session ${sessionName} already has a cleanup worker. Retry close after it exits.`
+        );
+      }
+      // Only one worker may touch the old shared legacy/header accounts. Otherwise
+      // a late second worker could delete credentials after the name is recreated.
+      const reserved = { ...current, deletion: { id: randomUUID(), workerPid: process.pid } };
+      storage.sessions[sessionName] = reserved;
       await saveSessionsInternal(storage);
-
-      // Delete headers from keychain (if any)
-      try {
-        await removeKeychainSessionHeaders(sessionName);
-        logger.debug(`Deleted headers from keychain for session: ${sessionName}`);
-      } catch {
-        // Ignore errors - headers may not exist
-      }
-
-      // Delete the stdio server's env from keychain (if any)
-      try {
-        await removeKeychainSessionEnv(sessionName);
-        logger.debug(`Deleted stdio env from keychain for session: ${sessionName}`);
-      } catch {
-        // Ignore errors - env may not exist
-      }
-
-      // Delete proxy bearer token from keychain (if any)
-      try {
-        await removeKeychainProxyBearerToken(sessionName);
-        logger.debug(`Deleted proxy bearer token from keychain for session: ${sessionName}`);
-      } catch {
-        // Ignore errors - token may not exist
-      }
-
-      logger.debug(`Session ${sessionName} deleted`);
+      return reserved;
     },
     SESSIONS_DEFAULT_CONTENT
   );
+
+  try {
+    // Reserve before stopping: otherwise another command can observe the dead
+    // PID and auto-restart the session between shutdown and credential cleanup.
+    if (options?.shutdownBridge) {
+      const { stopBridge } = await import('./bridge-manager.js');
+      await stopBridge(sessionName, { graceful: true, expected: reservation });
+      assertCanDeleteSession(reservation);
+    }
+    // Native keychain calls can block the event loop, including lock heartbeats.
+    // Keep the durable reservation, but never hold a shared file lock here.
+    await cleanupSessionCredentials(reservation);
+    await withFileLock(
+      filePath,
+      async () => {
+        const latest = await loadSessionsInternal();
+        const current = latest.sessions[sessionName];
+        if (
+          !current ||
+          current.createdAt !== reservation.createdAt ||
+          current.bridgeOwner !== reservation.bridgeOwner ||
+          current.pid !== reservation.pid ||
+          current.deletion?.id !== reservation.deletion.id
+        ) {
+          throw new ClientError('Session deletion reservation changed. Retry close.');
+        }
+        delete latest.sessions[sessionName];
+        await saveSessionsInternal(latest);
+      },
+      SESSIONS_DEFAULT_CONTENT
+    );
+  } catch (error) {
+    // A failed/partial cleanup remains visible and can be retried. A crashed worker
+    // leaves its PID; a subsequent close may reclaim it only after that PID exits.
+    await withFileLock(
+      filePath,
+      async () => {
+        const latest = await loadSessionsInternal();
+        const current = latest.sessions[sessionName];
+        if (current?.deletion?.id === reservation.deletion.id) {
+          current.deletion = { id: reservation.deletion.id };
+          await saveSessionsInternal(latest);
+        }
+      },
+      SESSIONS_DEFAULT_CONTENT
+    ).catch(() => {});
+    throw error;
+  }
+  logger.debug(`Session ${sessionName} deleted`);
 }
 
 /**
@@ -328,6 +422,7 @@ export async function consolidateSessions(
 
   const filePath = getSessionsFilePath();
   const defaultContent = JSON.stringify({ sessions: {} }, null, 2);
+  const toDelete: SessionData[] = [];
 
   await withFileLock(
     filePath,
@@ -344,48 +439,14 @@ export async function consolidateSessions(
           continue;
         }
 
+        if (session.deletion) {
+          if (cleanExpired) toDelete.push(session);
+          continue;
+        }
+
         // If session expired or unauthorized → remove it
         if (cleanExpired && (session.status === 'expired' || session.status === 'unauthorized')) {
-          logger.debug(`Removing ${session.status} session: ${name}`);
-          delete storage.sessions[name];
-          result.expiredSessions++;
-          hasChanges = true;
-
-          // Delete headers from keychain (if any)
-          try {
-            await removeKeychainSessionHeaders(name);
-            logger.debug(`Deleted headers from keychain for session: ${name}`);
-          } catch {
-            // Ignore errors - headers may not exist
-          }
-
-          // Delete the stdio server's env from keychain (if any)
-          try {
-            await removeKeychainSessionEnv(name);
-            logger.debug(`Deleted stdio env from keychain for session: ${name}`);
-          } catch {
-            // Ignore errors - env may not exist
-          }
-
-          // Delete proxy bearer token from keychain (if any)
-          try {
-            await removeKeychainProxyBearerToken(name);
-            logger.debug(`Deleted proxy bearer token from keychain for session: ${name}`);
-          } catch {
-            // Ignore errors - token may not exist
-          }
-
-          // Delete socket file (Unix only - Windows named pipes don't leave files)
-          if (process.platform !== 'win32' && session.pid) {
-            const socketPath = getSocketPath(name, session.pid);
-            try {
-              await unlink(socketPath);
-              logger.debug(`Removed stale socket: ${socketPath}`);
-            } catch {
-              // Ignore errors - file may already be deleted
-            }
-          }
-
+          toDelete.push(session);
           continue;
         }
 
@@ -435,6 +496,7 @@ export async function consolidateSessions(
       // Expire stale 'connecting'/'reconnecting' states — if the connection attempt
       // started more than the cooldown period ago and no PID exists, assume it failed
       for (const [name, session] of Object.entries(storage.sessions)) {
+        if (session?.deletion) continue;
         if (
           (session?.status === 'connecting' || session?.status === 'reconnecting') &&
           !session.pid
@@ -459,6 +521,7 @@ export async function consolidateSessions(
       // retrying would just flip the status back to 'connecting' on every `mcpc` call
       // and hide the real state from the user.
       for (const [name, session] of Object.entries(storage.sessions)) {
+        if (session?.deletion || toDelete.some((entry) => entry.name === name)) continue;
         const isRetryableUnauthorized = session?.status === 'unauthorized' && !!session.profileName;
         if ((session?.status === 'crashed' || isRetryableUnauthorized) && !session.pid) {
           // Skip if a connection was already attempted within the cooldown window
@@ -494,6 +557,20 @@ export async function consolidateSessions(
     },
     defaultContent
   );
+
+  for (const session of toDelete) {
+    try {
+      await deleteSession(session.name, session, { shutdownBridge: true });
+      delete result.sessions[session.name];
+      result.expiredSessions++;
+      if (process.platform !== 'win32' && session.pid) {
+        await unlink(getSocketPath(session.name, session.pid)).catch(() => {});
+      }
+    } catch {
+      logger.warn(`Keeping session ${session.name}: shutdown or credential cleanup is incomplete.`);
+    }
+  }
+  if (toDelete.length) result.sessions = (await loadSessions()).sessions;
 
   return result;
 }
