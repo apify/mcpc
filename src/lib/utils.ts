@@ -66,6 +66,39 @@ export async function fetchAllPages<TPage extends { nextCursor?: string | undefi
   return items;
 }
 
+/** Merge a list page's non-item fields; later pages win, including individual _meta keys. */
+export function mergeListPageFields(
+  result: Record<string, unknown>,
+  page: Record<string, unknown>,
+  itemsKey: string
+): void {
+  for (const [key, value] of Object.entries(page)) {
+    if (key === itemsKey || key === 'nextCursor') continue;
+    setOwnProperty(
+      result,
+      key,
+      key === '_meta' ? { ...(result._meta as object), ...(value as object) } : value
+    );
+  }
+}
+
+/** Fetch a complete MCP list result without leaking a pagination cursor. */
+export async function fetchAllPagesResult<
+  TPage extends { nextCursor?: string | undefined; [key: string]: unknown },
+  TKey extends keyof TPage & string,
+>(fetchPage: (cursor?: string) => Promise<TPage>, itemsKey: TKey): Promise<TPage> {
+  const result: Record<string, unknown> = {};
+  const items = await fetchAllPages(
+    async (cursor) => {
+      const page = await fetchPage(cursor);
+      mergeListPageFields(result, page, itemsKey);
+      return page;
+    },
+    (page) => page[itemsKey] as unknown[]
+  );
+  return { ...result, [itemsKey]: items } as TPage;
+}
+
 /**
  * Expand tilde (~) to home directory in paths
  */

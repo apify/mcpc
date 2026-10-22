@@ -50,26 +50,28 @@ assert_contains "$STDOUT" "name"
 assert_contains "$STDOUT" "[required]"
 test_pass
 
-test_case "prompts-list --json returns valid array"
+test_case "prompts-list --json returns ListPromptsResult"
 run_mcpc --json "$SESSION" prompts-list
 assert_success
 assert_json_valid "$STDOUT"
-assert_json "$STDOUT" '. | type == "array"'
-assert_json "$STDOUT" '. | length == 2'
+assert_json "$STDOUT" '. | type == "object"'
+assert_json "$STDOUT" '.prompts | type == "array"'
+assert_json "$STDOUT" '.prompts | length == 2'
+assert_json "$STDOUT" 'has("nextCursor") | not'
 test_pass
 
 test_case "prompts-list --json contains expected fields"
 run_mcpc --json "$SESSION" prompts-list
 assert_success
-assert_json "$STDOUT" '.[0].name'
-assert_json "$STDOUT" '.[0].description'
+assert_json "$STDOUT" '.prompts[0].name'
+assert_json "$STDOUT" '.prompts[0].description'
 test_pass
 
 test_case "prompts-list --json contains arguments"
 run_mcpc --json "$SESSION" prompts-list
 assert_success
 # greeting prompt has arguments
-greeting=$(echo "$STDOUT" | jq '.[] | select(.name == "greeting")')
+greeting=$(echo "$STDOUT" | jq '.prompts[] | select(.name == "greeting")')
 assert_json "$greeting" '.arguments'
 assert_json "$greeting" '.arguments | length > 0'
 test_pass

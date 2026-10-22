@@ -35,9 +35,10 @@ test_pass
 test_case "tools-list --json returns all tools"
 run_xmcpc "$SESSION" tools-list --json
 assert_success
-# Count tools in JSON output (returns array directly)
-tool_count=$(echo "$STDOUT" | jq 'length')
+# Count tools in the MCP ListToolsResult envelope
+tool_count=$(echo "$STDOUT" | jq '.tools | length')
 assert_eq "$tool_count" "6" "should have all 6 tools"
+assert_json "$STDOUT" 'has("nextCursor") | not'
 test_pass
 
 # Test: resources-list fetches all pages
@@ -56,9 +57,10 @@ test_pass
 test_case "resources-list --json returns all resources"
 run_xmcpc "$SESSION" resources-list --json
 assert_success
-# Returns array directly
-resource_count=$(echo "$STDOUT" | jq 'length')
+# Count resources in the MCP ListResourcesResult envelope
+resource_count=$(echo "$STDOUT" | jq '.resources | length')
 assert_eq "$resource_count" "5" "should have all 5 resources"
+assert_json "$STDOUT" 'has("nextCursor") | not'
 test_pass
 
 # Test: prompts-list fetches all pages
@@ -74,9 +76,10 @@ test_pass
 test_case "prompts-list --json returns all prompts"
 run_xmcpc "$SESSION" prompts-list --json
 assert_success
-# Returns array directly
-prompt_count=$(echo "$STDOUT" | jq 'length')
+# Count prompts in the MCP ListPromptsResult envelope
+prompt_count=$(echo "$STDOUT" | jq '.prompts | length')
 assert_eq "$prompt_count" "2" "should have all 2 prompts"
+assert_json "$STDOUT" 'has("nextCursor") | not'
 test_pass
 
 test_done

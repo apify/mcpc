@@ -261,4 +261,30 @@ if [[ -n "$MISSING" ]]; then
 fi
 test_pass
 
+# List command JSON envelopes are part of the scripting interface. Keep their
+# schema references and automatic pagination policy discoverable from --help.
+for cmd in tools-list prompts-list resources-list tasks-list; do
+  case "$cmd" in
+    tools-list) LIST_RESULT_TYPE="ListToolsResult"; LIST_ARRAY="tools: Tool[]" ;;
+    prompts-list) LIST_RESULT_TYPE="ListPromptsResult"; LIST_ARRAY="prompts: Prompt[]" ;;
+    resources-list) LIST_RESULT_TYPE="ListResourcesResult"; LIST_ARRAY="resources: Resource[]" ;;
+    tasks-list) LIST_RESULT_TYPE="ListTasksResult"; LIST_ARRAY="tasks: Task[]" ;;
+  esac
+  test_case "$cmd help documents its MCP list result and pagination"
+  run_mcpc @test-session "$cmd" --help
+  assert_success
+  assert_contains "$STDOUT" "JSON output (--json):"
+  assert_contains "$STDOUT" "$LIST_RESULT_TYPE"
+  assert_contains "$STDOUT" "$LIST_ARRAY"
+  assert_contains "$STDOUT" "https://modelcontextprotocol.io/specification/2025-11-25/schema#$(echo "$LIST_RESULT_TYPE" | tr '[:upper:]' '[:lower:]')"
+  assert_contains "$STDOUT" "nextCursor omitted"
+  assert_contains "$STDOUT" "Other top-level fields and _meta keys"
+  assert_contains "$STDOUT" "merge shallowly in page order (later values win)"
+  if [[ "$cmd" == "tasks-list" ]]; then
+    assert_contains "$STDOUT" "2026-07-28 tasks extension"
+    assert_contains "$STDOUT" "tasks this session created"
+  fi
+  test_pass
+done
+
 test_done

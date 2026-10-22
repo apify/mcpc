@@ -9,6 +9,12 @@ import {
   MAX_CACHE_TTL_MS,
   SdkHttpError,
   type ClientOptions,
+  type CacheableRequestOptions,
+  type RequestOptions,
+  type Request,
+  type RequestMethod,
+  type ResultTypeMap,
+  type StandardSchemaV1,
 } from '@modelcontextprotocol/client';
 import type {
   Transport,
@@ -52,7 +58,12 @@ import {
 import { CreatedTaskShim } from './tasks-result-shim.js';
 import { createNoOpLogger, type Logger } from '../lib/logger.js';
 import { ClientError, ServerError, NetworkError, isShutdownError } from '../lib/errors.js';
-import { fetchAllPages, MAX_PAGINATION_PAGES, sleep } from '../lib/utils.js';
+import {
+  fetchAllPagesResult,
+  mergeListPageFields,
+  MAX_PAGINATION_PAGES,
+  sleep,
+} from '../lib/utils.js';
 import {
   isModernProtocolVersion,
   isSupportedProtocolVersion,
@@ -291,11 +302,36 @@ export function isExpectedProbeRejection(error: unknown): error is SdkHttpError 
   return status >= 400 && status < 500 && status !== 401 && status !== 403;
 }
 
+const onListPage = Symbol('onListPage');
+type ListPageOptions = RequestOptions & {
+  [onListPage]?: (page: Record<string, unknown>) => void;
+};
+
 /**
- * The SDK client with the tasks-extension shim installed: a `tools/call` a 2026-07-28
- * server answers with a task (`resultType: "task"`) is rewritten before the SDK decodes
- * it — see tasks-result-shim.ts. `_onresponse` is the SDK's documented subclass seam for
- * inbound responses; every response is delegated to the base class, rewritten or not.
+ * SDK 2.3.1 keeps page 1's object when aggregating a list, dropping later metadata.
+ * Observe validated pages at its public request boundary, before it finalizes and
+ * caches that object. Keep the typed list path: it owns cache invalidation, output
+ * validators and x-mcp-header filtering/mirroring. Each walk has its own callback,
+ * carried in options (never on the wire), so concurrent lists cannot mix fields.
+ */
+function listPageOptions(
+  itemsKey: string,
+  options: CacheableRequestOptions
+): CacheableRequestOptions & ListPageOptions {
+  let firstPage: Record<string, unknown> | undefined;
+  return {
+    ...options,
+    [onListPage](page) {
+      if (firstPage) mergeListPageFields(firstPage, page, itemsKey);
+      else firstPage = page;
+    },
+  };
+}
+
+/**
+ * Keep list metadata at the public request boundary and install the tasks-extension
+ * shim before decoding responses (see tasks-result-shim.ts). Both paths delegate
+ * validation and protocol handling to the SDK.
  */
 class TasksAwareClient extends SDKClient {
   constructor(
@@ -307,6 +343,49 @@ class TasksAwareClient extends SDKClient {
 
   protected override _onresponse(response: JSONRPCResponse): void {
     super._onresponse(this.shim.rewriteResponse(response));
+  }
+
+  override listTools(
+    ...[params, options]: Parameters<SDKClient['listTools']>
+  ): Promise<ListToolsResult> {
+    return super.listTools(params, listPageOptions('tools', options ?? {}));
+  }
+
+  override listPrompts(
+    ...[params, options]: Parameters<SDKClient['listPrompts']>
+  ): Promise<ListPromptsResult> {
+    return super.listPrompts(params, listPageOptions('prompts', options ?? {}));
+  }
+
+  override listResources(
+    ...[params, options]: Parameters<SDKClient['listResources']>
+  ): Promise<ListResourcesResult> {
+    return super.listResources(params, listPageOptions('resources', options ?? {}));
+  }
+
+  override request<M extends RequestMethod>(
+    request: { method: M; params?: Record<string, unknown> },
+    options?: RequestOptions
+  ): Promise<ResultTypeMap[M]>;
+  override request<T extends StandardSchemaV1>(
+    request: Request,
+    resultSchema: T,
+    options?: RequestOptions
+  ): Promise<StandardSchemaV1.InferOutput<T>>;
+  override async request(
+    request: Request,
+    schemaOrOptions?: StandardSchemaV1 | RequestOptions,
+    options?: RequestOptions
+  ): Promise<unknown> {
+    if (schemaOrOptions && '~standard' in schemaOrOptions) {
+      return super.request(request, schemaOrOptions, options);
+    }
+    const result = await super.request(
+      request as { method: RequestMethod; params?: Record<string, unknown> },
+      schemaOrOptions
+    );
+    (schemaOrOptions as ListPageOptions | undefined)?.[onListPage]?.(result);
+    return result;
   }
 }
 
@@ -325,7 +404,7 @@ export class McpClient implements IMcpClient {
   private requestTimeoutMillis: number = DEFAULT_REQUEST_TIMEOUT_MILLIS;
   /** Baseline timeout from the constructor — what resetRequestTimeout() restores. */
   private readonly configuredRequestTimeoutMillis: number;
-  private cachedTools: Tool[] | null = null;
+  private cachedTools: ListToolsResult | null = null;
   private cachedToolsExpiresAt: number | null = null;
   private isClosing = false;
   /**
@@ -694,22 +773,17 @@ export class McpClient implements IMcpClient {
    */
   async listAllTools(options?: { refreshCache?: boolean }): Promise<ListToolsResult> {
     if (!options?.refreshCache && this.cachedTools && !this.isToolsCacheExpired()) {
-      return { tools: this.cachedTools };
+      return this.cachedTools;
     }
 
-    let firstPage: ListToolsResult | undefined;
-    const allTools: Tool[] = await fetchAllPages(
-      async (cursor) => {
-        const page = await this.listTools(cursor, options?.refreshCache);
-        firstPage ??= page;
-        return page;
-      },
-      (page) => page.tools
+    const result = await fetchAllPagesResult(
+      (cursor) => this.listTools(cursor, options?.refreshCache),
+      'tools'
     );
 
-    this.cachedTools = allTools;
-    this.cachedToolsExpiresAt = this.deriveToolsCacheExpiry(firstPage);
-    return { tools: allTools };
+    this.cachedTools = result;
+    this.cachedToolsExpiresAt = this.deriveToolsCacheExpiry(result);
+    return result;
   }
 
   /**
@@ -726,9 +800,9 @@ export class McpClient implements IMcpClient {
    * bridge process serving exactly one session, i.e. one authorization context, so a
    * `private` result is never shared with another principal.
    */
-  private deriveToolsCacheExpiry(firstPage: ListToolsResult | undefined): number | null {
+  private deriveToolsCacheExpiry(result: ListToolsResult): number | null {
     // Typed `unknown` — the hint rides the result's loose passthrough fields.
-    const ttlMillis = firstPage?.ttlMs;
+    const ttlMillis = result.ttlMs;
     if (typeof ttlMillis === 'number') {
       return Date.now() + Math.min(Math.max(0, ttlMillis), MAX_CACHE_TTL_MS);
     }
@@ -745,7 +819,7 @@ export class McpClient implements IMcpClient {
    * Get the cached tools list synchronously (returns null if not yet populated).
    */
   getCachedTools(): Tool[] | null {
-    return this.cachedTools;
+    return this.cachedTools?.tools ?? null;
   }
 
   /**

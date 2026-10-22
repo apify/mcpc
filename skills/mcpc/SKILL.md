@@ -144,12 +144,24 @@ echo '{"query":"hello"}' | mcpc @apify tools-call search
 Add `--json` for machine-readable output: results on stdout, errors on stderr,
 shaped strictly per the MCP spec.
 
+`tools-list`, `prompts-list`, `resources-list`, and `tasks-list` return result
+objects with `tools`, `prompts`, `resources`, and `tasks` arrays, respectively,
+including empty arrays. All pages are combined and `nextCursor` is omitted;
+other top-level fields and `_meta` keys are shallowly merged in page order
+(later values win). On MCP 2026-07-28, `tasks-list` lists the tasks this session
+created in the same object shape.
+
+**Breaking migration:** tools, prompts, and resources lists previously returned
+bare arrays. Replace `jq '.[]'` with `jq '.tools[]'`, `jq '.prompts[]'`, or
+`jq '.resources[]'`; `tasks-list` keeps its existing `jq '.tasks[]'` filter.
+Human-readable lists are unchanged.
+
 Human-readable tool results omit text blocks that duplicate `structuredContent`.
 When other content remains, a hint points to `--json` for the structured data;
 otherwise it is printed directly. JSON output always includes the full result.
 
 ```bash
-mcpc --json @apify tools-list | jq -r '.[].name'
+mcpc --json @apify tools-list | jq -r '.tools[].name'
 mcpc --json @apify tools-call search query:="test" | jq -r '.content[0].text'
 mcpc --json @apify tools-call search query:="test" | jq '.structuredContent'
 

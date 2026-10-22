@@ -211,6 +211,9 @@ assert_contains "$STDOUT" "$CANCEL_ID"
 assert_contains "$STDOUT" "keep no task listing"
 run_mcpc --json "$SESSION" tasks-list
 assert_success
+assert_json "$STDOUT" '. | type == "object"'
+assert_json "$STDOUT" '.tasks | type == "array"'
+assert_json "$STDOUT" 'has("nextCursor") | not'
 assert_json "$STDOUT" '[.tasks[] | select(.taskId == "'"$TASK_ID"'")][0].status == "completed"'
 assert_json "$STDOUT" '[.tasks[] | select(.taskId == "'"$CANCEL_ID"'")][0].status == "cancelled"'
 test_pass

@@ -600,9 +600,11 @@ Options:
   --json  Output in JSON format
 
 JSON output (--json):
-  Array of `Tool` objects:
-  `[{ name, description?, inputSchema, outputSchema?, annotations? }, ...]`
-  Schema: https://modelcontextprotocol.io/specification/2026-07-28/schema#tool
+  `ListToolsResult` object:
+  `{ tools: Tool[], _meta?: { ... }, ... }`
+  All pages combined; nextCursor omitted. Other top-level fields and _meta keys
+  merge shallowly in page order (later values win).
+  Schema: https://modelcontextprotocol.io/specification/2025-11-25/schema#listtoolsresult
 ```
 
 ### `mcpc @<session> tools-get`
@@ -696,11 +698,15 @@ Notes:
   has no listing, so there this shows the tasks this session created.
 
 JSON output (--json):
-  `{ tasks: Task[] }`, each `Task` shaped:
+  `ListTasksResult` object; each `Task` follows the negotiated protocol:
+  `{ tasks: Task[], _meta?: { ... }, ... }`
   on MCP 2025-11-25: `{ taskId, status, ttl, createdAt, lastUpdatedAt, statusMessage?, pollInterval? }`
   on MCP 2026-07-28: `{ taskId, status, ttlMs, createdAt, lastUpdatedAt, statusMessage?, pollIntervalMs?,
                       result? (completed), error? (failed), inputRequests? (input_required) }`
-  Schema: https://modelcontextprotocol.io/specification/2025-11-25/schema#task
+  All legacy pages combined; nextCursor omitted. Other top-level fields and _meta keys
+  merge shallowly in page order (later values win).
+  Schema: https://modelcontextprotocol.io/specification/2025-11-25/schema#listtasksresult
+          https://modelcontextprotocol.io/specification/2025-11-25/schema#task
           https://github.com/modelcontextprotocol/ext-tasks/blob/main/specification/2026-07-28/tasks.md
 ```
 
@@ -781,9 +787,11 @@ Options:
   --json  Output in JSON format
 
 JSON output (--json):
-  Array of `Prompt` objects:
-  `[{ name, description?, arguments?: [{ name, required? }] }, ...]`
-  Schema: https://modelcontextprotocol.io/specification/2026-07-28/schema#prompt
+  `ListPromptsResult` object:
+  `{ prompts: Prompt[], _meta?: { ... }, ... }`
+  All pages combined; nextCursor omitted. Other top-level fields and _meta keys
+  merge shallowly in page order (later values win).
+  Schema: https://modelcontextprotocol.io/specification/2025-11-25/schema#listpromptsresult
 ```
 
 ### `mcpc @<session> prompts-get`
@@ -859,9 +867,11 @@ Options:
   --json  Output in JSON format
 
 JSON output (--json):
-  Array of `Resource` objects:
-  `[{ uri, name, description?, mimeType? }, ...]`
-  Schema: https://modelcontextprotocol.io/specification/2026-07-28/schema#resource
+  `ListResourcesResult` object:
+  `{ resources: Resource[], _meta?: { ... }, ... }`
+  All pages combined; nextCursor omitted. Other top-level fields and _meta keys
+  merge shallowly in page order (later values win).
+  Schema: https://modelcontextprotocol.io/specification/2025-11-25/schema#listresourcesresult
 ```
 
 ### `mcpc @<session> resources-read`

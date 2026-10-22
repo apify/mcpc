@@ -9,7 +9,7 @@ Each version opens with a one-line summary, which also opens its GitHub release.
 
 ## [Unreleased]
 
-Argument completions for prompts and resource templates, tasks on MCP 2026-07-28 servers, MCP TypeScript SDK 2.3.1, stdio server secrets kept out of plaintext files, logs and `ps`, and no more duplicate bridges on Windows.
+MCP result objects for JSON lists, argument completions, tasks on MCP 2026-07-28, SDK 2.3.1, and session security improvements.
 
 ### Added
 
@@ -19,6 +19,7 @@ Argument completions for prompts and resource templates, tasks on MCP 2026-07-28
 
 ### Changed
 
+- **Breaking JSON change:** `tools-list`, `prompts-list`, and `resources-list` now return MCP result objects (`{ tools: [...] }`, `{ prompts: [...] }`, `{ resources: [...] }`) instead of bare arrays; update `jq '.[]'` filters to `.tools[]`, `.prompts[]`, or `.resources[]` (`tasks-list` keeps `{ tasks: [...] }`). These four lists combine all pages without `nextCursor`, retaining other top-level fields and `_meta` keys in page order (later values win); human-readable output is unchanged. (#183)
 - Updated to MCP TypeScript SDK 2.3.1. Large tool results over Streamable HTTP now arrive in a fraction of the time, and HTTP redirects are followed only within the server's own origin (plus `http` to `https` on the same host): a server that redirects elsewhere is reported with the target URL so you can connect to it directly.
 - `tools-call --detach --json` prints the whole created `Task` object (id, status, TTL, poll interval) instead of just `{ taskId, status }`. On a 2026-07-28 server that runs a detached call synchronously — the server decides per call whether to create a task — it prints the tool result instead, so check for `taskId`.
 - `tasks-cancel` on a 2026-07-28 server reports the status the server shows right after acknowledging the request (cancellation is cooperative there, so a task may still be `working` for a moment) and exits with code 2 only when the task had already finished.
