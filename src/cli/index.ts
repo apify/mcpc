@@ -10,7 +10,15 @@ import { Command, CommanderError, Help } from 'commander';
 import { setVerbose, setJsonMode, closeFileLogger } from '../lib/index.js';
 import { isMcpError, formatHumanError, ClientError } from '../lib/index.js';
 import chalk from 'chalk';
-import { formatJson, formatJsonError, jsonHelp, rainbow, theme } from './output.js';
+import {
+  formatJson,
+  formatJsonError,
+  jsonHelp,
+  rainbow,
+  theme,
+  commandExample,
+  styleInlineCode,
+} from './output.js';
 import {
   SCHEMA_BASE,
   LEGACY_SCHEMA_BASE,
@@ -396,7 +404,15 @@ function createTopLevelProgram(): Command {
 
   // Configure help output width to avoid wrapping (default is 80)
   program.configureOutput({
-    outputError: (str, write) => write(str),
+    outputError: (str) => {
+      process.stderr.write(str);
+    },
+    writeOut: (str) => {
+      process.stdout.write(styleInlineCode(str));
+    },
+    writeErr: (str) => {
+      process.stderr.write(styleInlineCode(str));
+    },
     getOutHelpWidth: () => 100,
     getErrHelpWidth: () => 100,
   });
@@ -475,9 +491,9 @@ ${chalk.bold('MCP session commands (after connecting):')}
   <@session> ${theme.cyan('logs')} [-n N] [--follow] [--since 1h]
 
 Run "mcpc" without arguments to show active sessions and OAuth profiles.
-Run "mcpc --json" to get the same data as \`{ sessions: [...], profiles: [...] }\`.
+Run "${commandExample('mcpc --json')}" to get the same data as \`{ sessions: [...], profiles: [...] }\`.
 
-Agent guide: mcpc help --skill
+Agent guide: ${commandExample('mcpc help --skill')}
 Full docs: ${docsUrl}`
   );
 
@@ -512,7 +528,7 @@ ${chalk.bold('Auto-discovery:')}
   .vscode/mcp.json, .kiro/settings/mcp.json, ~/.claude.json,
   ~/.codeium/windsurf/mcp_config.json, plus VS Code & Claude Desktop configs.
   For security, configs in ./ are untrusted: entries that reference \${VAR}
-  are skipped and -H is refused. To connect those: mcpc connect ./.mcp.json
+  are skipped and -H is refused. To connect those: ${commandExample('mcpc connect ./.mcp.json')}
 
 ${chalk.bold('Session name:')}
   Omit @session to auto-generate from the server (mcp.apify.com → @apify)
@@ -525,9 +541,9 @@ ${chalk.bold('Protocol version:')}
   version instead — the connection fails if the server does not offer it.
 
 ${chalk.bold('x402 payments (experimental):')}
-  --x402 pays for paid tool calls from the wallet set up with: mcpc x402
+  --x402 pays for paid tool calls from the wallet set up with: ${commandExample('mcpc x402')}
   Schemes: auto (default, prefers upto), upto, exact.
-  For more info, run: mcpc help x402
+  For more info, run: ${commandExample('mcpc help x402')}
 ${outputHelp([
   'For a single server, shows session, server info, capabilities, and tools.',
   'Bulk connects list every session with its state, then a summary.',
@@ -701,9 +717,9 @@ ${chalk.bold('Interactive login:')}
   By default, the command opens your browser to authorize the server,
   then saves the credentials as a reusable profile any session can use:
 
-  default profile: mcpc login mcp.apify.com
-  named profile:   mcpc login mcp.apify.com --profile work
-  then connect:    mcpc connect mcp.apify.com @app --profile work
+  default profile: ${commandExample(`mcpc login mcp.apify.com`)}
+  named profile:   ${commandExample(`mcpc login mcp.apify.com --profile work`)}
+  then connect:    ${commandExample(`mcpc connect mcp.apify.com @app --profile work`)}
 
 ${chalk.bold('Client registration (how mcpc identifies itself to the server):')}
   1. Client ID Metadata Documents (CIMD): the default. mcpc's hosted CIMD at
@@ -722,10 +738,10 @@ ${chalk.bold('Client registration (how mcpc identifies itself to the server):')}
 ${chalk.bold('Machine-to-machine authentication (for CI/CD and daemons):')}
   Pass --grant client-credentials, --client-id, and one credential:
 
-  mcpc login mcp.example.com --grant client-credentials \\
-    --client-id my-svc --client-secret s3cr3t --scope "read write"
-  mcpc login mcp.example.com --grant client-credentials \\
-    --client-id my-svc --client-key ./key.pem
+  ${commandExample(`mcpc login mcp.example.com --grant client-credentials \\
+    --client-id my-svc --client-secret s3cr3t --scope "read write"`)}
+  ${commandExample(`mcpc login mcp.example.com --grant client-credentials \\
+    --client-id my-svc --client-key ./key.pem`)}
 
   --client-secret uses client_secret_basic; --client-key signs a private_key_jwt
   assertion (RFC 7523). The token endpoint is auto-discovered; pin it with
@@ -739,9 +755,9 @@ ${chalk.bold("Enterprise-managed authorization (SSO via your organization's IdP)
   your corporate SSO; mcpc then obtains MCP tokens via identity assertion
   grants (ID-JAG) without any per-server consent screens:
 
-  mcpc login mcp.example.com --grant id-jag \\
+  ${commandExample(`mcpc login mcp.example.com --grant id-jag \\
     --idp https://acme.okta.com --idp-client-id <idp-client> \\
-    --client-id <mcp-as-client> --client-secret <secret>
+    --client-id <mcp-as-client> --client-secret <secret>`)}
 
   Both clients are pre-registered by your IT team: --idp-client-id at the
   enterprise IdP (add --idp-client-secret if it is a confidential client),
@@ -880,13 +896,13 @@ ${chalk.bold('Type filters:')}
   to search those instead. Combine flags to search multiple types (e.g. --tools --resources).
 
 ${chalk.bold('Examples:')}
-  mcpc grep "search"                        Search tools and instructions in all sessions
-  mcpc grep "search" --resources            Search resources only
-  mcpc grep "search" --tools --prompts      Search tools and prompts
-  mcpc grep "search|find" -E                Regex search across tools and instructions
-  mcpc @apify grep "actor"                  Search within a single session
-  mcpc grep "file" --json                   JSON output for scripting
-  mcpc grep "actor" -m 5                    Show at most 5 results
+  ${commandExample(`mcpc grep "search"`)}                        Search tools and instructions in all sessions
+  ${commandExample(`mcpc grep "search" --resources`)}            Search resources only
+  ${commandExample(`mcpc grep "search" --tools --prompts`)}      Search tools and prompts
+  ${commandExample(`mcpc grep "search|find" -E`)}                Regex search across tools and instructions
+  ${commandExample(`mcpc @apify grep "actor"`)}                  Search within a single session
+  ${commandExample(`mcpc grep "file" --json`)}                   JSON output for scripting
+  ${commandExample(`mcpc grep "actor" -m 5`)}                    Show at most 5 results
 
 ${chalk.bold('Exit codes:')}
   0 = matches found, 1 = no matches (grep convention)
@@ -1079,9 +1095,9 @@ ${chalk.bold('Type filters:')}
   to search those instead. Combine flags to search multiple types.
 
 ${chalk.bold('Examples:')}
-  mcpc ${session} grep "search"                  Search tools and instructions
-  mcpc ${session} grep "search" --resources      Search resources only
-  mcpc ${session} grep "search|find" -E          Regex search
+  ${commandExample(`mcpc ${session} grep "search"`)}                  Search tools and instructions
+  ${commandExample(`mcpc ${session} grep "search" --resources`)}      Search resources only
+  ${commandExample(`mcpc ${session} grep "search|find" -E`)}          Regex search
 
 ${chalk.bold('Exit codes:')}
   0 = matches found, 1 = no matches (grep convention)
@@ -1187,13 +1203,13 @@ ${chalk.bold('JSON output (--json):')}
       'after',
       `
 ${chalk.bold('Arguments:')}
-  key:=value pairs    mcpc ${session} tools-call search query:=hello limit:=10
-  Inline JSON         mcpc ${session} tools-call search '{"query":"hello"}'
-  Stdin pipe          echo '{"query":"hello"}' | mcpc ${session} tools-call search
+  key:=value pairs    ${commandExample(`mcpc ${session} tools-call search query:=hello limit:=10`)}
+  Inline JSON         ${commandExample(`mcpc ${session} tools-call search '{"query":"hello"}'`)}
+  Stdin pipe          ${commandExample(`echo '{"query":"hello"}' | mcpc ${session} tools-call search`)}
 
   Values are auto-parsed: strings, numbers, booleans, JSON objects/arrays.
   To force a string, wrap in quotes: id:='"123"'
-  Tip: mcpc ${session} tools-call <tool> --help prints the tool's parameter schema.
+  Tip: ${commandExample(`mcpc ${session} tools-call <tool> --help`)} prints the tool's parameter schema.
 
 ${chalk.bold('Async tasks (--task, --detach):')}
   --task shows a progress spinner; Ctrl+C leaves the task running and prints
@@ -1345,7 +1361,7 @@ ${chalk.bold('Behavior:')}
   Subscribing to the same <uri> again just changes the target <file>.
 
 ${chalk.bold('Example:')}
-  mcpc ${session} resources-subscribe file:///app/config.json ./config.json
+  ${commandExample(`mcpc ${session} resources-subscribe file:///app/config.json ./config.json`)}
 ${jsonHelp('`{ subscribed: true, uri, file, bytes, mimeType? }`')}`
     )
     .action(async (uri, file, _options, command) => {
@@ -1414,9 +1430,9 @@ ${chalk.bold('Notes:')}
   With --json, --raw is ignored and \`contents\` holds only the verified item.
 
 ${chalk.bold('Examples:')}
-  mcpc ${session} skills-get pdf-processing
-  mcpc ${session} skills-get pdf-processing --raw > SKILL.md
-  mcpc ${session} skills-get pdf-processing references/FORMS.md
+  ${commandExample(`mcpc ${session} skills-get pdf-processing`)}
+  ${commandExample(`mcpc ${session} skills-get pdf-processing --raw > SKILL.md`)}
+  ${commandExample(`mcpc ${session} skills-get pdf-processing references/FORMS.md`)}
 ${jsonHelp(
   'The skill entry plus the content that was read',
   '`{ skill: { uri, frontmatter, resources }, contents: [{ uri, mimeType?, text? | blob? }] }`',
@@ -1443,8 +1459,8 @@ ${chalk.bold('Notes:')}
   trailing slash.
 
 ${chalk.bold('Examples:')}
-  mcpc ${session} resources-directory-read skill://pdf-processing
-  mcpc ${session} resources-directory-read skill://pdf-processing/templates
+  ${commandExample(`mcpc ${session} resources-directory-read skill://pdf-processing`)}
+  ${commandExample(`mcpc ${session} resources-directory-read skill://pdf-processing/templates`)}
 ${jsonHelp(
   'Array of `Resource` objects (the direct children)',
   '`[{ uri, name?, mimeType? }, ...]`',
@@ -1478,9 +1494,9 @@ ${jsonHelp(
       'after',
       `
 ${chalk.bold('Arguments:')}
-  key:=value pairs    mcpc ${session} prompts-get summarize style:=brief lang:=en
-  Inline JSON         mcpc ${session} prompts-get summarize '{"style":"brief"}'
-  Stdin pipe          echo '{"style":"brief"}' | mcpc ${session} prompts-get summarize
+  key:=value pairs    ${commandExample(`mcpc ${session} prompts-get summarize style:=brief lang:=en`)}
+  Inline JSON         ${commandExample(`mcpc ${session} prompts-get summarize '{"style":"brief"}'`)}
+  Stdin pipe          ${commandExample(`echo '{"style":"brief"}' | mcpc ${session} prompts-get summarize`)}
 
   Values are auto-parsed: strings, numbers, booleans, JSON objects/arrays.
   To force a string, wrap in quotes: id:='"123"'
@@ -1508,17 +1524,17 @@ ${chalk.bold('Arguments:')}
                       argument to complete, with the text typed so far as its value
                       (name:= for none); the ones before it are sent as context.
 
-  key:=value pairs    mcpc ${session} completion-complete prompt code_review language:=py
-  Inline JSON         mcpc ${session} completion-complete prompt code_review '{"language":"py"}'
-  Stdin pipe          echo '{"language":"py"}' | mcpc ${session} completion-complete prompt code_review
+  key:=value pairs    ${commandExample(`mcpc ${session} completion-complete prompt code_review language:=py`)}
+  Inline JSON         ${commandExample(`mcpc ${session} completion-complete prompt code_review '{"language":"py"}'`)}
+  Stdin pipe          ${commandExample(`echo '{"language":"py"}' | mcpc ${session} completion-complete prompt code_review`)}
 
 ${chalk.bold('Examples:')}
-  mcpc ${session} completion-complete prompt code_review language:=
-  mcpc ${session} completion-complete prompt code_review language:=python framework:=fla
-  mcpc ${session} completion-complete resource 'file:///{path}' path:=/ho
+  ${commandExample(`mcpc ${session} completion-complete prompt code_review language:=`)}
+  ${commandExample(`mcpc ${session} completion-complete prompt code_review language:=python framework:=fla`)}
+  ${commandExample(`mcpc ${session} completion-complete resource 'file:///{path}' path:=/ho`)}
 
 ${chalk.bold('Notes:')}
-  The server must declare the completions capability (shown by: mcpc ${session}).
+  The server must declare the completions capability (shown by: ${commandExample(`mcpc ${session}`)}).
   Servers return at most 100 suggestions, ranked by relevance; hasMore says if there are more.
 ${jsonHelp('`CompleteResult` object', '`{ completion: { values: [...], total?, hasMore? } }`', `${SCHEMA_BASE}#completeresult`)}`
     )
@@ -1596,11 +1612,11 @@ ${jsonHelp(
       'after',
       `
 ${chalk.bold('Examples:')}
-  mcpc ${session} logs                  Last 50 lines
-  mcpc ${session} logs -n 200           Last 200 lines
-  mcpc ${session} logs --follow         Stream new lines (ESC/Ctrl+C/q to stop)
-  mcpc ${session} logs --since 1h       Lines from the last hour
-  mcpc ${session} logs --since 30m -n 50
+  ${commandExample(`mcpc ${session} logs`)}                  Last 50 lines
+  ${commandExample(`mcpc ${session} logs -n 200`)}           Last 200 lines
+  ${commandExample(`mcpc ${session} logs --follow`)}         Stream new lines (ESC/Ctrl+C/q to stop)
+  ${commandExample(`mcpc ${session} logs --since 1h`)}       Lines from the last hour
+  ${commandExample(`mcpc ${session} logs --since 30m -n 50`)}
 
 ${chalk.bold('Notes:')}
   Reads ~/.mcpc/logs/bridge-${session}.log and transparently spans
@@ -1648,6 +1664,12 @@ function createSessionProgram(): Command {
   program.configureOutput({
     // Suppress Commander's default error output; we handle errors in the catch block
     outputError: () => {},
+    writeOut: (str) => {
+      process.stdout.write(styleInlineCode(str));
+    },
+    writeErr: (str) => {
+      process.stderr.write(styleInlineCode(str));
+    },
     getOutHelpWidth: () => 100,
     getErrHelpWidth: () => 100,
   });
