@@ -273,7 +273,7 @@ fi
 # Shared home directory uses temp dir to keep socket paths short
 # (Unix socket paths are limited to ~104 bytes)
 E2E_SHARED_HOME="$_TMPDIR/mcpc-e2e-$E2E_RUN_ID"
-mkdir -p "$E2E_SHARED_HOME"
+mkdir -p -m 700 "$E2E_SHARED_HOME"
 export E2E_SHARED_HOME
 # Create a symlink in run directory for easy access (skip on Windows where symlinks need privileges)
 if ! _is_windows; then

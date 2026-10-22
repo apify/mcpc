@@ -290,11 +290,23 @@ export class BridgeClient extends EventEmitter {
         ? timeoutSecs * 1000 + IPC_TIMEOUT_MARGIN_MILLIS
         : REQUEST_TIMEOUT_MILLIS;
 
+    return this.requestMessage(message, timeoutMillis);
+  }
+
+  /** Bounded local management request; never uses the upstream request timeout or retries. */
+  async controlRequest(method: string, params?: unknown): Promise<unknown> {
+    return this.requestMessage({ type: 'request', id: generateRequestId(), method, params }, 3_000);
+  }
+
+  private requestMessage(message: IpcMessage, timeoutMillis: number): Promise<unknown> {
+    if (!this.socket || !message.id) throw new NetworkError('Not connected to bridge');
+    const id = message.id;
+
     // Create promise for response
     const promise = new Promise<unknown>((resolve, reject) => {
       const timeoutId = setTimeout(() => {
         this.pendingRequests.delete(id);
-        reject(new IpcTimeoutError(`Request timeout: ${method}`));
+        reject(new IpcTimeoutError(`Request timeout: ${message.method}`));
       }, timeoutMillis);
 
       this.pendingRequests.set(id, { resolve, reject, timeoutId });

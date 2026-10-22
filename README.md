@@ -147,6 +147,7 @@ Universal command-line client for the Model Context Protocol (MCP).
 
 Commands:
   connect [<server>] [@session]  Connect to an MCP server and start a new named @session
+  proxy <@session>               List, start or stop session proxy listeners
   close <@session>               Close a session
   restart <@session>             Restart a session (losing all state)
   login <server>                 Log in to a server and save an OAuth profile
@@ -620,7 +621,7 @@ mcpc connect mcp.apify.com @apify --x402
 
 ## MCP proxy
 
-For stronger isolation, `mcpc` can expose an MCP session as a new local proxy MCP server using the `--proxy` option.
+`mcpc proxy @session` exposes a saved MCP session through one or more independent local listeners.
 The proxy forwards all MCP requests to the upstream server but **never exposes the original authentication tokens** to the client.
 This is useful when you want to give someone or something MCP access without revealing your credentials.
 The proxy itself serves protocol `2025-11-25` to its clients, regardless of the protocol
@@ -630,8 +631,11 @@ version negotiated with the upstream server. See also [AI sandboxes](#ai-sandbox
 # Human authenticates to a remote server
 mcpc login mcp.apify.com
 
-# Create authenticated session with proxy server on localhost:8080
-mcpc connect mcp.apify.com @open-relay --proxy 8080
+# Create the authenticated upstream session once
+mcpc connect mcp.apify.com @relay
+
+# Add a local listener, explicitly allowing access without a separate token
+mcpc proxy @relay --name sandbox --listen 8080 --no-auth
 
 # Now any MCP client can connect to proxy like to a regular MCP server
 # The client has NO access to the original OAuth tokens or HTTP headers
@@ -639,45 +643,78 @@ mcpc connect mcp.apify.com @open-relay --proxy 8080
 mcpc connect localhost:8080 @sandboxed
 mcpc @sandboxed tools-call search-actors keywords:="web scraper"
 
-# Optionally protect the proxy with a bearer token (stored in the OS keychain)
-mcpc connect mcp.apify.com @secure-relay --proxy 8081 --proxy-bearer-token secret123
-# To use the proxy, the caller needs to pass the bearer token in the Authorization header
-mcpc connect localhost:8081 @sandboxed2 --header "Authorization: Bearer secret123"
+# Add a second listener using a token read from a file (one token per file)
+mcpc proxy @relay --name private --listen 8081 --bearer-token-file ./proxy-token
+
+# List both, or stop only the first; the upstream session keeps running
+mcpc proxy @relay
+mcpc proxy @relay --stop sandbox
 ```
 
-**Proxy options for `connect` command:**
+**Listener options:**
 
-| Option                         | Description                                                                    |
-| ------------------------------ | ------------------------------------------------------------------------------ |
-| `--proxy [host:]port`          | Start proxy MCP server. Default host: `127.0.0.1` (localhost only)             |
-| `--proxy-bearer-token <token>` | Requires `Authorization: Bearer <token>` header to access the proxy MCP server |
+| Option | Description |
+| --- | --- |
+| No flags | List saved listeners, desired state, observed state, and restore errors |
+| `--name <name> --listen [host:]port` | Add a uniquely named listener; default host is `127.0.0.1` |
+| `--bearer-token-file <file>` | Require this listener's separate `Authorization: Bearer <token>` value |
+| `--no-auth` | Explicitly allow access without listener authentication |
+| `--stop <name>` | Persist removal, close that listener, and retire its credential |
 
-**Security model:**
+Starting requires either `--bearer-token-file` or `--no-auth`. Tokens are stored in the OS
+keychain (a private file fallback when unavailable) and delivered to the bridge over local
+IPC. They never appear in listener arguments, session JSON, or list output. Each named
+listener has its own credential; one listener's token does not authorize another.
 
-- **Localhost by default**: `--proxy 8080` binds to `127.0.0.1` only, preventing network access
-- **Tokens hidden**: Original OAuth tokens and/or HTTP headers are never exposed to proxy clients
-- **Optional auth**: Use `--proxy-bearer-token` to add another layer of security
-- **Explicit opt-in**: Proxy only starts when `--proxy` flag is provided
+**Lifecycle and recovery:**
 
-**Binding to network interfaces:**
+- Adding and stopping listeners leaves the existing upstream connection intact. Active
+  listeners are restored after a bridge restart; session close stops every listener.
+- List and stop do not run an upstream health check or automatically restart a bridge.
+  They work with expired, unauthorized, or offline sessions. Attaching a new listener
+  requires a usable upstream session.
+- A missing required token or occupied address leaves only that listener failed and
+  visible in the list. No authentication is silently removed. Stop/recreate it, or fix
+  the cause and explicitly restart the session, to retry.
+- An interrupted start stays `pending` and is never restored. Use `--stop <name>` to
+  retire it. If a foreground credential write is still running, cleanup remains pending
+  until that process finishes or exits; repeat stop afterward.
+- Removal is saved before closing the socket. If closure cannot be confirmed, output
+  reports `closed: false` and `stop-pending`. A responsive owning bridge reconciles
+  removals within five seconds. The saved stop prevents restoration on its next restart.
+- If session close cannot finish shutdown or credential cleanup, the session stays reserved for
+  deletion. List reports `deletionPending: true`; retry `mcpc @session close` after the
+  cleanup worker finishes or exits. New connections and listener writes cannot reuse
+  that reserved lifetime, and cleanup does not hold the shared sessions-file lock.
 
 ```bash
-# Localhost only (default, most secure)
-mcpc connect mcp.apify.com @relay --proxy 8080
+# Structured desired/observed state, with no secrets
+mcpc proxy @relay --json
 
-# Bind to all interfaces (allows network access - use with caution!)
-mcpc connect mcp.apify.com @relay --proxy 0.0.0.0:8080
-
-# Bind to specific interface
-mcpc connect mcp.apify.com @relay --proxy 192.168.1.100:8080
+# Deliberately expose a separate authenticated listener on a network interface
+mcpc proxy @relay --name network --listen 192.168.1.100:8082 --bearer-token-file ./network-token
 ```
 
-When listing sessions, proxy info is displayed prominently:
+Listeners bind only to loopback by default. Explicit IP addresses and `localhost` are
+accepted; IPv6 addresses use brackets, for example `[::1]:8080`. The proxy keeps its
+Host/Origin checks and never exposes upstream OAuth tokens or HTTP headers.
 
-```bash
-mcpc
-# @relay → https://mcp.apify.com (HTTP, OAuth: default) [proxy: 127.0.0.1:8080]
-```
+**Platform and compatibility:** Named management requires an updated bridge and a private,
+owned POSIX socket namespace. Bridge startup validates directory ownership, ancestor
+permissions, socket type, and the private session file before delivering credentials.
+An older bridge must be restarted explicitly. Windows named-pipe ownership has not been
+verified, so named management and restoration are unsupported there; the existing
+`connect --proxy` workflow remains available.
+
+`connect --proxy [host:]port` and `--proxy-bearer-token` are deprecated but continue to
+work. The existing listener is listed as `legacy`; listing never migrates its configuration
+or token. Stopping it removes its legacy config but retains the old shared credential until
+session close, preserving the config/token pairing across downgrades. Older binaries
+ignore named listeners. New authenticated legacy configs record that a token is required
+and fail closed if it is missing; older unmarked configs cannot reveal whether absent
+authentication was intentional, so their authentication is reported as `legacy`.
+Avoid concurrent management of one state directory by different mcpc versions: older
+binaries do not understand the new ownership and deletion reservations.
 
 ## AI agents
 
@@ -756,8 +793,9 @@ it's always a good idea to run them in a code sandbox with limited access to you
 The [proxy MCP server](#mcp-proxy) feature provides a security boundary for AI agents:
 
 1. **Human creates authentication profile**: `mcpc login mcp.apify.com --profile ai-access`
-2. **Human creates session**: `mcpc connect mcp.apify.com @ai-sandbox --profile ai-access --proxy 8080`
-3. **AI runs inside a sandbox**: If the sandbox's access is limited to `localhost:8080`,
+2. **Human creates session**: `mcpc connect mcp.apify.com @ai-sandbox --profile ai-access`
+3. **Human adds a listener**: `mcpc proxy @ai-sandbox --name sandbox --listen 8080 --no-auth`
+4. **AI runs inside a sandbox**: If the sandbox's access is limited to `localhost:8080`,
    it can only interact with the MCP server through the `@ai-sandbox` session,
    without access to the original OAuth credentials, HTTP headers, or `mcpc` configuration.
 

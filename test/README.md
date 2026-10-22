@@ -80,6 +80,16 @@ test/unit/
 End-to-end tests verify mcpc behavior from the command line, testing real MCP connections with
 session management, bridge processes, and various transports.
 
+`sessions/proxy-lifecycle.test.sh` uses real CLI processes and HTTP listeners to test
+independent credentials, restart/stop, missing-token and bind failures, offline control,
+creator process exits before/after credential storage, and owned cleanup. Its helper
+also accepts `MCPC_TEST_PACKAGE_DIR` pointing at an extracted, dependency-installed
+package, so the same gate can exercise `bin/mcpc` from a packed release under Node/Bun.
+`sessions/proxy-control-trust.test.sh` checks the actual CLI against a controlled old
+bridge and unsafe owned test namespaces. Neither test needs a remote service or user
+credentials. Windows runs an explicit unsupported-command assertion for named proxies;
+the existing `sessions/proxy.test.sh` retains legacy coverage there.
+
 ### E2E setup
 
 In order to test OAuth with real-world, remote MCP server, you need to run the following commands 

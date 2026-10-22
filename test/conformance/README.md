@@ -94,6 +94,8 @@ Run the first server-side scenario from #334 against a real `mcpc connect --prox
 ```bash
 pnpm run build
 node test/conformance/server.mjs
+# The same reference scenario through the named-listener lifecycle (POSIX)
+node test/conformance/server.mjs --named
 ```
 
 The runner starts the existing local e2e server, connects an isolated named session, and binds its proxy to `127.0.0.1`. The reference `dns-rebinding-protection` scenario checks rejection of invalid Host/Origin headers and acceptance of valid localhost requests. Readiness and commands are bounded; session and server cleanup run on success, failure and interruption. No remote MCP service or credentials are required.

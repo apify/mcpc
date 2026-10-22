@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+const named = process.argv.includes('--named');
 const homeDir = await mkdtemp(join(tmpdir(), 'mcpc-server-conformance-'));
 const session = `@conformance-proxy-${process.pid}`;
 const env = { ...process.env, MCPC_HOME_DIR: homeDir, MCPC_JSON: '1' };
@@ -145,9 +146,19 @@ try {
         `http://127.0.0.1:${upstreamPort}/mcp`,
         session,
         '--no-profile',
-        '--proxy',
-        `127.0.0.1:${proxyPort}`,
+        ...(named ? [] : ['--proxy', `127.0.0.1:${proxyPort}`]),
       ]);
+      if (named) {
+        await mcpc([
+          'proxy',
+          session,
+          '--name',
+          'conformance',
+          '--listen',
+          String(proxyPort),
+          '--no-auth',
+        ]);
+      }
       await waitHealthy(`http://127.0.0.1:${proxyPort}/health`);
       const version = process.env.CONFORMANCE_PACKAGE_VERSION;
       if (version && !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
@@ -162,7 +173,7 @@ try {
         `http://127.0.0.1:${proxyPort}/mcp`,
         '--scenario',
         'dns-rebinding-protection',
-        ...process.argv.slice(2),
+        ...process.argv.slice(2).filter((arg) => arg !== '--named'),
       ]);
       break;
     } catch (error) {

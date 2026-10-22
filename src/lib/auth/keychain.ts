@@ -585,6 +585,27 @@ export async function removeKeychainProxyBearerToken(sessionName: string): Promi
   return keychainDelete(proxyBearerTokenAccount(sessionName));
 }
 
+// UUIDs never get reused when a listener name (or its upstream session) is recreated.
+// Keep these accounts separate from the legacy token, which old binaries still read.
+function proxyListenerAccount(listenerId: string): string {
+  if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(listenerId)) {
+    throw new Error('Invalid proxy listener credential identity');
+  }
+  return `proxy-listener:${listenerId}:bearer-token`;
+}
+
+export async function storeKeychainProxyListenerToken(id: string, token: string): Promise<void> {
+  await keychainSet(proxyListenerAccount(id), token);
+}
+
+export async function readKeychainProxyListenerToken(id: string): Promise<string | undefined> {
+  return (await keychainGet(proxyListenerAccount(id))) ?? undefined;
+}
+
+export async function removeKeychainProxyListenerToken(id: string): Promise<boolean> {
+  return keychainDelete(proxyListenerAccount(id));
+}
+
 /** Store the x402 wallet data. */
 export async function storeKeychainX402Wallet<T>(wallet: T): Promise<void> {
   logger.debug(`Storing x402 wallet in OS keychain`);
