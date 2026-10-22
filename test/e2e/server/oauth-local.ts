@@ -1,18 +1,22 @@
 /** Strict, opt-in client-credentials fixture shared by both MCP protocol eras. */
 import { readFileSync } from 'node:fs';
 import type http from 'node:http';
+import { createAuthorizationCodeFixture, type AuthorizationCodeOptions } from './oauth-code.js';
 
 interface Identity {
   clientId: string;
   clientSecret: string;
   tokenPrefix: string;
+  refreshPrefix?: string;
 }
 
 export function createLocalOAuthFixture(filename: string | undefined, port: number) {
   if (!filename) return undefined;
-  const { identities } = JSON.parse(readFileSync(filename, 'utf8')) as {
+  const { identities, authorizationCode } = JSON.parse(readFileSync(filename, 'utf8')) as {
     identities: Record<string, Identity>;
+    authorizationCode?: AuthorizationCodeOptions;
   };
+  if (authorizationCode) return createAuthorizationCodeFixture(identities, authorizationCode, port);
   const origin = `http://localhost:${port}`;
   const state = Object.fromEntries(
     Object.keys(identities).map((name) => [

@@ -8,6 +8,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import * as keychain from '../../../dist/lib/auth/keychain.js';
+import { initializeAuthorizationCode, runAuthorizationCode } from './oauth-code.mjs';
 
 const exec = promisify(execFile);
 const cli = fileURLToPath(new URL('../../../dist/cli/index.js', import.meta.url));
@@ -53,8 +54,13 @@ function secrets(manifest) {
   return [
     manifest.wrongSecret,
     manifest.sentinelSecret,
-    ...Object.values(manifest.identities).flatMap((id) => [id.clientSecret, id.tokenPrefix]),
-  ];
+    manifest.authorizationCode?.codePrefix,
+    ...Object.values(manifest.identities).flatMap((id) => [
+      id.clientSecret,
+      id.tokenPrefix,
+      id.refreshPrefix,
+    ]),
+  ].filter(Boolean);
 }
 
 function assertNoSecrets(manifest, text, description) {
@@ -64,11 +70,11 @@ function assertNoSecrets(manifest, text, description) {
   );
 }
 
-async function command(manifest, args, home = manifest.home) {
+async function command(manifest, args, home = manifest.home, options = {}) {
   if (interrupted && !cleaning) throw new Error('Local OAuth test interrupted');
   let result;
   const pending = exec(process.execPath, [cli, '--json', ...args], {
-    env: { ...process.env, MCPC_HOME_DIR: home },
+    env: { ...process.env, ...options.env, MCPC_HOME_DIR: home },
     timeout: 20000,
     killSignal: 'SIGKILL',
     maxBuffer: 2 * 1024 * 1024,
@@ -448,10 +454,14 @@ async function run(manifest) {
       'echo',
       'message:=denied',
     ]);
-    // tools-call currently wraps this as a server error (code 2), while connect
-    // uses the authentication exit code. Pin refusal and its actual cause.
-    assert.notEqual(rejected.code, 0);
-    assert.match(JSON.parse(rejected.stderr).error, /401 after re-authentication/);
+    // Depending on which legacy transport request sees the rejection first,
+    // tools-call surfaces the SDK error or the bridge's classified AuthError.
+    // Require an authentication cause; counters below still bound both retries.
+    assert.ok([2, 4].includes(rejected.code), 'Expected a classified authentication rejection');
+    assert.match(
+      JSON.parse(rejected.stderr).error,
+      /401 after re-authentication|^Authentication required by server\./
+    );
     after = await stats();
     assert.ok(
       after.identities.alpha.issued - before.identities.alpha.issued <= 1,
@@ -595,9 +605,9 @@ async function run(manifest) {
 }
 
 try {
-  if (action === 'init') {
+  if (action === 'init' || action === 'init-code') {
     const prefix = `oauth-local-${randomBytes(12).toString('hex')}`;
-    await save({
+    const manifest = {
       prefix,
       home: resolve(argument),
       partialHome: join(dirname(filename), 'partial-home'),
@@ -616,11 +626,27 @@ try {
       sessions: Object.fromEntries(
         ['alpha', 'beta', 'cross', 'anonymous'].map((name) => [name, `@${prefix}-${name}`])
       ),
-    });
+    };
+    if (action === 'init-code') await initializeAuthorizationCode(manifest, filename);
+    await save(manifest);
   } else {
     const manifest = JSON.parse(await readFile(filename, 'utf8'));
     if (action === 'run') await run(manifest);
-    else if (action === 'cleanup') await cleanup(manifest);
+    else if (action === 'run-code') {
+      await runAuthorizationCode(manifest, argument, {
+        filename,
+        keychain,
+        save,
+        inHome,
+        command,
+        verifyBackend,
+        assertAbsent,
+        removeProfiles,
+        cleanup,
+        scanFiles,
+        bridgeArgs,
+      });
+    } else if (action === 'cleanup') await cleanup(manifest);
     else if (action === 'interrupt-login') {
       if (process.platform === 'win32') {
         process.stdin.once('data', () => process.emit('SIGTERM'));
