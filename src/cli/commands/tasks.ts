@@ -9,6 +9,7 @@
 
 import chalk from 'chalk';
 import {
+  commandHint,
   formatOutput,
   formatSuccess,
   formatError,
@@ -63,7 +64,9 @@ export async function listTasks(target: string, options: CommandOptions): Promis
           formatSuccess(tracked ? 'No tasks started from this session' : 'No active tasks')
         );
         console.log(
-          chalk.dim(`To start a new task, run: mcpc ${target} tools-call <name> [args] --task`)
+          chalk.dim(
+            `To start a new task, run: ${commandHint(`mcpc ${target} tools-call <name> [args] --task`)}`
+          )
         );
       } else {
         console.log(formatTasks(allTasks, { tracked }));

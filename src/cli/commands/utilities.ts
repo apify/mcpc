@@ -3,7 +3,7 @@
  */
 
 import chalk from 'chalk';
-import { formatSuccess, formatOutput, formatDiscoverResult } from '../output.js';
+import { commandHint, formatSuccess, formatOutput, formatDiscoverResult } from '../output.js';
 import { withMcpClient } from '../helpers.js';
 import { ServerError } from '../../lib/errors.js';
 import { isModernProtocolVersion, discoverUnavailableMessage } from '../../core/protocol.js';
@@ -30,7 +30,9 @@ export async function ping(target: string, options: CommandOptions): Promise<voi
         console.log(
           chalk.dim(`MCP ${protocolVersion} has no ping request; probed with server/discover.`)
         );
-        console.log(chalk.dim(`↳ see the full result: mcpc ${target} server-discover`));
+        console.log(
+          chalk.dim(`↳ see the full result: ${commandHint(`mcpc ${target} server-discover`)}`)
+        );
       }
     } else {
       console.log(

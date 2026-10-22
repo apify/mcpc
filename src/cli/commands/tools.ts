@@ -7,6 +7,8 @@
 import type { Ora } from 'ora';
 import chalk from 'chalk';
 import {
+  commandHint,
+  styleInlineCode,
   formatOutput,
   formatToolDetail,
   formatToolCallExample,
@@ -349,7 +351,7 @@ export async function callTool(
       }
       renderCallToolResult(syncResult, options, {
         error: `Tool ${name} returned an error`,
-        errorHint: `Run ${chalk.bold(`mcpc ${target} tools-get ${name}`)} to see the tool schema and usage`,
+        errorHint: `Run ${commandHint(`mcpc ${target} tools-get ${name}`)} to see the tool schema and usage`,
       });
       return;
     } else if (useTask) {
@@ -369,7 +371,9 @@ export async function callTool(
 
       const printDetachedHint = (taskId: string): void => {
         if (spinner) {
-          spinner.info(`Detached. Task ${chalk.bold(`\`${taskId}\``)} continues in background`);
+          spinner.info(
+            styleInlineCode(`Detached. Task ${chalk.bold(`\`${taskId}\``)} continues in background`)
+          );
         }
         console.log(formatTaskCommandsHint(target, taskId, capturedTaskStatus ?? 'working'));
       };
@@ -477,7 +481,7 @@ export async function callTool(
         success: `Tool ${name} executed successfully with these results:`,
         error: `Tool ${name} returned an error`,
       }),
-      errorHint: `Run ${chalk.bold(`mcpc ${target} tools-get ${name}`)} to see the tool schema and usage`,
+      errorHint: `Run ${commandHint(`mcpc ${target} tools-get ${name}`)} to see the tool schema and usage`,
     });
   });
 }
