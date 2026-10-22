@@ -9,7 +9,11 @@ Each version opens with a one-line summary, which also opens its GitHub release.
 
 ## [Unreleased]
 
-Repeated `connect -H` headers are all sent again.
+Named session proxies, and repeated `connect -H` headers are all sent again.
+
+### Added
+
+- New `proxy @session` manages multiple named listeners independently, with per-listener credentials, restart persistence, and offline list/stop. Named listener management currently requires POSIX; `connect --proxy` remains available but is deprecated. (#306)
 
 ### Fixed
 

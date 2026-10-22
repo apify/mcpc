@@ -26,6 +26,7 @@ import type {
   ServerConfig,
   ProxyConfig,
   ServerDetails,
+  SessionData,
   X402SchemePreference,
 } from '../../lib/types.js';
 import {
@@ -40,6 +41,7 @@ import { withMcpClient, resolveTarget, resolveAuthProfile } from '../helpers.js'
 // Imported directly (not via the core barrel) so the CLI doesn't eagerly load the MCP SDK
 import { isSupportedProtocolVersion, SUPPORTED_PROTOCOL_VERSIONS } from '../../core/protocol.js';
 import {
+  assertSessionNotDeleting,
   deleteSession,
   saveSession,
   updateSession,
@@ -47,6 +49,7 @@ import {
   loadSessions,
 } from '../../lib/sessions.js';
 import { startBridge, StartBridgeOptions, stopBridge } from '../../lib/bridge-manager.js';
+import { updateOwnedSession, updateSessionForIdentity } from '../../lib/proxy-listeners.js';
 import {
   storeKeychainSessionHeaders,
   storeKeychainSessionEnv,
@@ -273,6 +276,12 @@ export async function connectSession(
   let proxyConfig: ProxyConfig | undefined;
   if (options.proxy) {
     proxyConfig = parseProxyArg(options.proxy);
+    if (options.proxyBearerToken) proxyConfig.requireBearerToken = true;
+    if (options.outputMode === 'human') {
+      console.error(
+        'Note: connect --proxy is deprecated. Manage listeners with: mcpc proxy @session --help'
+      );
+    }
     logger.debug(`Proxy config: ${proxyConfig.host}:${proxyConfig.port}`);
 
     // Validate port is available before starting bridge
@@ -296,6 +305,7 @@ export async function connectSession(
   // Check if session already exists
   const existingSession = await getSession(name);
   if (existingSession) {
+    assertSessionNotDeleting(existingSession);
     const bridgeStatus = getBridgeStatus(existingSession);
 
     if (bridgeStatus === 'live') {
@@ -318,7 +328,7 @@ export async function connectSession(
 
     // Clean up old bridge resources before reconnecting
     try {
-      await stopBridge(name);
+      await stopBridge(name, { expected: existingSession });
     } catch {
       // Bridge may already be stopped
     }
@@ -421,17 +431,22 @@ export async function connectSession(
     ...(isReconnect && { status: 'active' }),
   };
 
-  if (isReconnect) {
-    await updateSession(name, sessionUpdate);
+  let createdSession: SessionData | undefined;
+  if (existingSession) {
+    await updateSessionForIdentity(name, existingSession, sessionUpdate);
     logger.debug(`Session record updated for reconnect: ${name}`);
   } else {
-    await saveSession(name, {
-      server: sessionTransportConfig,
-      createdAt: new Date().toISOString(),
-      status: 'connecting',
-      lastConnectionAttemptAt: new Date().toISOString(),
-      ...sessionUpdate,
-    });
+    createdSession = await saveSession(
+      name,
+      {
+        server: sessionTransportConfig,
+        createdAt: new Date().toISOString(),
+        status: 'connecting',
+        lastConnectionAttemptAt: new Date().toISOString(),
+        ...sessionUpdate,
+      },
+      { createOnly: true }
+    );
     logger.debug(`Initial session record created for: ${name}`);
   }
 
@@ -449,18 +464,19 @@ export async function connectSession(
       ...(options.insecure && { insecure: true }),
     };
 
-    const { pid } = await startBridge(bridgeOptions);
+    const owner = await startBridge(bridgeOptions);
+    const { pid } = owner;
 
     // Update session with bridge info and mark as active (clears 'connecting' status)
-    await updateSession(name, { pid, status: 'active' });
+    await updateOwnedSession(name, owner, { status: 'active' });
     logger.debug(`Session ${name} updated with bridge PID: ${pid}`);
   } catch (error) {
     // Clean up on bridge start failure
     logger.debug(`Bridge start failed, cleaning up session ${name}`);
-    if (!isReconnect) {
+    if (createdSession) {
       // Only delete session record for new sessions (not reconnects)
       try {
-        await deleteSession(name);
+        await deleteSession(name, createdSession);
       } catch {
         // Ignore cleanup errors
       }

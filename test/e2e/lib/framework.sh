@@ -260,7 +260,7 @@ test_init() {
     # Shared: all tests in this run share the same home directory
     export MCPC_HOME_DIR="$E2E_SHARED_HOME"
   fi
-  mkdir -p "$MCPC_HOME_DIR"
+  mkdir -p -m 700 "$MCPC_HOME_DIR"
 
   # Create temp directory for test artifacts
   export TEST_TMP="$_TEST_RUN_DIR/tmp"
@@ -565,7 +565,7 @@ edit_sessions_json() {
 
   local status=0
   if jq "$@" "$sessions_file" > "$tmp_file"; then
-    mv "$tmp_file" "$sessions_file" || status=1
+    chmod 600 "$tmp_file" && mv "$tmp_file" "$sessions_file" || status=1
   else
     status=1
   fi

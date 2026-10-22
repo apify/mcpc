@@ -9,6 +9,7 @@ version — run `mcpc help <command>` to get the same text in your terminal.
 New to mcpc? Start with the [README](../README.md), or run `mcpc help --skill` for the agent guide.
 
 - [`mcpc connect`](#mcpc-connect)
+- [`mcpc proxy`](#mcpc-proxy)
 - [`mcpc close`](#mcpc-close)
 - [`mcpc restart`](#mcpc-restart)
 - [`mcpc login`](#mcpc-login)
@@ -57,6 +58,7 @@ Universal command-line client for the Model Context Protocol (MCP).
 
 Commands:
   connect [<server>] [@session]  Connect to an MCP server and start a new named @session
+  proxy <@session>               List, start or stop session proxy listeners
   close <@session>               Close a session
   restart <@session>             Restart a session (losing all state)
   login <server>                 Log in to a server and save an OAuth profile
@@ -158,6 +160,10 @@ x402 payments (experimental):
   Schemes: auto (default, prefers upto), upto, exact.
   For more info, run: mcpc help x402
 
+Proxy compatibility:
+  --proxy is deprecated but remains supported as the legacy listener.
+  To add, list or stop independent listeners, run: mcpc proxy @session --help
+
 Output:
   For a single server, shows session, server info, capabilities, and tools.
   Bulk connects list every session with its state, then a summary.
@@ -167,6 +173,62 @@ JSON output (--json):
   `[{ protocolVersion?, supportedVersions?, capabilities?, serverInfo?, instructions?, _meta?, toolNames?, _mcpc: { ... } }]`
   Schema: https://modelcontextprotocol.io/specification/2025-11-25/schema#initializeresult
           https://modelcontextprotocol.io/specification/2026-07-28/schema#discoverresult
+```
+
+## `mcpc proxy`
+
+```text
+Usage: mcpc proxy [options] <@session>
+
+List, start or stop session proxy listeners
+
+Options:
+  --listen <[host:]port>      Start a listener on this address
+  --name <name>               Name of the new listener
+  --bearer-token-file <file>  Read the listener bearer token from a file
+  --no-auth                   Explicitly allow access without a bearer token
+  --stop <name>               Stop and remove a listener
+  --json                      Output in JSON format
+
+Usage:
+  Without flags, list desired listeners and their observed state.
+  --listen requires --name and either --bearer-token-file or --no-auth.
+  Names contain 1–64 letters, digits, hyphens or underscores; legacy is reserved.
+  The default host is 127.0.0.1. Other hosts must be localhost or IP addresses.
+  Bearer token files contain one token; tokens are stored in your OS keychain
+  (private file fallback when unavailable), never in session JSON or output.
+
+Lifecycle:
+  Adding/stopping a listener does not reconnect the upstream session.
+  Active listeners survive restart; closing the session stops all listeners.
+  List and stop work offline without starting a bridge. A stop with an
+  unreachable owner is saved but reports closure as unconfirmed; the owner
+  reconciles removals every five seconds while it is responsive.
+  A failed restore is shown per listener while the upstream stays usable.
+  Use --stop to retire interrupted starts, then start again to retry.
+
+Compatibility and local trust:
+  New management requires an updated bridge and a private, owned POSIX
+  socket namespace. Older bridges require an explicit session restart.
+  Windows named-pipe ownership is unverified: this command refuses there.
+  connect --proxy still works, listed as legacy. Older binaries ignore named
+  listeners. Legacy tokens stay paired with legacy config; a stopped legacy
+  token is retained until session close. Old unmarked configs cannot reveal
+  whether a missing legacy token was intentional; authentication is "legacy".
+
+Examples:
+  mcpc proxy @apify
+  mcpc proxy @apify --name sandbox --listen 8080 --bearer-token-file ./proxy-token
+  mcpc proxy @apify --name local --listen 8081 --no-auth
+  mcpc proxy @apify --stop sandbox
+
+JSON output (--json):
+  `{ sessionName, bridge, listeners: [...] }`.
+Each listener has name, host, port, authentication, desiredState and observedState;
+legacy and error appear when applicable. No bearer tokens are returned.
+Stop adds `stopped: { name, closed, credentialCleanupPending }`.
+closed=false means removal is saved but the port closure is unconfirmed.
+deletionPending=true means session close has credential cleanup to retry.
 ```
 
 ## `mcpc close`
