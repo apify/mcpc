@@ -9,7 +9,11 @@ Each version opens with a one-line summary, which also opens its GitHub release.
 
 ## [Unreleased]
 
-Repeated `connect -H` headers are all sent again.
+An explicitly granted just-bash integration, and repeated `connect -H` headers are all sent again.
+
+### Added
+
+- New `createMcpcJustBashCommand` package export runs the installed CLI as a just-bash custom command, with explicit full-session lifecycle and command grants, binary pipes, bounded input/output, and cancellation of the owned CLI. Detached session bridges remain host-owned; just-bash stays optional for ordinary CLI installations. (#317)
 
 ### Fixed
 
