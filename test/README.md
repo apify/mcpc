@@ -97,10 +97,24 @@ cannot be verified. The suite bypasses proxies for loopback auth requests.
 This covers the machine-to-machine grant, not browser authorization-code/PKCE or
 refresh-token flows.
 
+`auth/oauth-code.test.sh` covers the authorization-code flow with a local
+authorization server and a private `open`/`xdg-open` launcher on Linux and macOS.
+It follows actual HTTP authorization and callback redirects through the real
+CLI and SDK, including dynamic registration, S256 PKCE, callback Host/issuer
+checks, two profiles, rotating refresh tokens, persisted refresh after restart,
+refused refresh, logout, and cleanup when registration or token storage succeeds
+but login fails. State is sent and echoed; mcpc's existing CSRF policy relies on
+PKCE rather than comparing callback state. Windows reports an explicit skip
+until it has an equivalent launcher driver. No production browser or auth checks
+are bypassed, and the optional remote test remains separate.
+
 ```bash
 ./test/e2e/run.sh --no-build auth/oauth-local.test.sh
 ./test/e2e/run.sh --no-build --server-protocol modern auth/oauth-local.test.sh
 ./test/e2e/run.sh --no-build --runtime bun auth/oauth-local.test.sh
+./test/e2e/run.sh --no-build auth/oauth-code.test.sh
+./test/e2e/run.sh --no-build --server-protocol modern auth/oauth-code.test.sh
+./test/e2e/run.sh --no-build --runtime bun auth/oauth-code.test.sh
 ```
 
 The existing `auth/oauth-remote.test.sh` remains an optional integration smoke
