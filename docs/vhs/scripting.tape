@@ -39,7 +39,7 @@ Enter
 Sleep 1500ms
 Show
 
-Type "mcpc --json @apify tools-list | jq -r '.[].name'"
+Type "mcpc --json @apify tools-list | jq -r '.tools[].name'"
 Sleep 300ms
 Enter
 Sleep 3000ms
@@ -51,7 +51,7 @@ Enter
 Sleep 3500ms
 
 Enter
-Type "for tool in $(mcpc --json @apify tools-list | jq -r '.[].name'); do"
+Type "for tool in $(mcpc --json @apify tools-list | jq -r '.tools[].name'); do"
 Sleep 200ms
 Enter
 Type '  mcpc --json @apify tools-get "$tool" > "/tmp/$tool.json"'

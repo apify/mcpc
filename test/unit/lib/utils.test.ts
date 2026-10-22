@@ -28,6 +28,7 @@ import {
   isProcessAlive,
   generateRequestId,
   fetchAllPages,
+  fetchAllPagesResult,
   isProtocolMismatchError,
   redactHeaders,
   redactServerConfig,
@@ -669,6 +670,28 @@ describe('fetchAllPages', () => {
         async (cursor) => pages[cursor ?? 'start'],
         (page) => page.items
       )
+    ).rejects.toThrow(/pagination cursor/);
+  });
+});
+
+describe('fetchAllPagesResult', () => {
+  it('keeps prototype-shaped fields as own data without mutating pages', async () => {
+    const page = JSON.parse(
+      '{"items":[],"__proto__":{"first":true},"_meta":{"__proto__":{"meta":true},"constructor":"data"}}'
+    );
+    const original = JSON.stringify(page);
+    const result = await fetchAllPagesResult(async () => page, 'items');
+    expect(Object.getPrototypeOf(result)).toBe(Object.prototype);
+    expect(Object.hasOwn(result, '__proto__')).toBe(true);
+    expect(Object.hasOwn(result._meta, '__proto__')).toBe(true);
+    expect(result._meta.constructor).toBe('data');
+    expect(JSON.parse(JSON.stringify(result))).toEqual(JSON.parse(original));
+    expect(JSON.stringify(page)).toBe(original);
+  });
+
+  it('uses the existing cursor-cycle guard before returning an aggregate', async () => {
+    await expect(
+      fetchAllPagesResult(async () => ({ items: [], nextCursor: 'same' }), 'items')
     ).rejects.toThrow(/pagination cursor/);
   });
 });

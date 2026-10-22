@@ -19,7 +19,7 @@ import { isExtensionTask, type CommandOptions } from '../../lib/types.js';
 import { withMcpClient } from '../helpers.js';
 import { formatTask, formatTasks } from '../output.js';
 import { renderCallToolResult } from './tools.js';
-import { fetchAllPages } from '../../lib/utils.js';
+import { fetchAllPagesResult } from '../../lib/utils.js';
 import { isModernProtocolVersion } from '../../core/protocol.js';
 
 /**
@@ -48,14 +48,12 @@ export async function getTaskResult(
 export async function listTasks(target: string, options: CommandOptions): Promise<void> {
   await withMcpClient(target, options, async (client, _context) => {
     // Fetch all tasks across all pages
-    const [details, allTasks] = await Promise.all([
+    const [details, result] = await Promise.all([
       client.getServerDetails(),
-      fetchAllPages(
-        (cursor) => client.listTasks(cursor),
-        (page) => page.tasks
-      ),
+      fetchAllPagesResult((cursor) => client.listTasks(cursor), 'tasks'),
     ]);
     const tracked = !!details.protocolVersion && isModernProtocolVersion(details.protocolVersion);
+    const allTasks = result.tasks;
 
     if (options.outputMode === 'human') {
       if (allTasks.length === 0) {
@@ -78,7 +76,7 @@ export async function listTasks(target: string, options: CommandOptions): Promis
         console.log(formatTaskCommandsHint(target));
       }
     } else {
-      console.log(formatOutput({ tasks: allTasks }, 'json'));
+      console.log(formatOutput(result, 'json'));
     }
   });
 }

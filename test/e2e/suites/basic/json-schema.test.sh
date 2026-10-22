@@ -118,28 +118,31 @@ test_pass
 # MCP spec: ListToolsResult contains tools array
 # =============================================================================
 
-test_case "tools-list JSON is valid array"
+test_case "tools-list JSON is ListToolsResult"
 run_mcpc "$SESSION" tools-list --json
 assert_success
 assert_json_valid "$STDOUT"
-# Result should be an array of tools
-assert_json "$STDOUT" '.[0]' "should be a non-empty array"
+# Result should contain the tools array
+assert_json "$STDOUT" '. | type == "object"'
+assert_json "$STDOUT" '.tools | type == "array"'
+assert_json "$STDOUT" '.tools[0]' "should have a non-empty tools array"
+assert_json "$STDOUT" 'has("nextCursor") | not'
 test_pass
 
 test_case "tools-list JSON tool has required fields"
 run_mcpc "$SESSION" tools-list --json
 assert_success
 # Per MCP spec, Tool must have: name, inputSchema
-assert_json "$STDOUT" '.[0].name' "tool should have name"
-assert_json "$STDOUT" '.[0].inputSchema' "tool should have inputSchema"
+assert_json "$STDOUT" '.tools[0].name' "tool should have name"
+assert_json "$STDOUT" '.tools[0].inputSchema' "tool should have inputSchema"
 test_pass
 
 test_case "tools-list JSON tool inputSchema has type"
 run_mcpc "$SESSION" tools-list --json
 assert_success
 # inputSchema must be a valid JSON Schema object
-assert_json "$STDOUT" '.[0].inputSchema.type' "inputSchema should have type"
-input_type=$(json_get '.[0].inputSchema.type')
+assert_json "$STDOUT" '.tools[0].inputSchema.type' "inputSchema should have type"
+input_type=$(json_get '.tools[0].inputSchema.type')
 assert_eq "$input_type" "object" "inputSchema type should be 'object'"
 test_pass
 
@@ -147,7 +150,7 @@ test_case "tools-list JSON tool has optional description"
 run_mcpc "$SESSION" tools-list --json
 assert_success
 # description is optional but test server provides it
-assert_json "$STDOUT" '.[0].description' "tool should have description"
+assert_json "$STDOUT" '.tools[0].description' "tool should have description"
 test_pass
 
 # =============================================================================
@@ -170,27 +173,30 @@ test_pass
 # MCP spec: ListResourcesResult contains resources array
 # =============================================================================
 
-test_case "resources-list JSON is valid array"
+test_case "resources-list JSON is ListResourcesResult"
 run_mcpc "$SESSION" resources-list --json
 assert_success
 assert_json_valid "$STDOUT"
-# Result should be an array of resources
-assert_json "$STDOUT" '.[0]' "should be a non-empty array"
+# Result should contain the resources array
+assert_json "$STDOUT" '. | type == "object"'
+assert_json "$STDOUT" '.resources | type == "array"'
+assert_json "$STDOUT" '.resources[0]' "should have a non-empty resources array"
+assert_json "$STDOUT" 'has("nextCursor") | not'
 test_pass
 
 test_case "resources-list JSON resource has required uri"
 run_mcpc "$SESSION" resources-list --json
 assert_success
 # Per MCP spec, Resource must have: uri
-assert_json "$STDOUT" '.[0].uri' "resource should have uri"
+assert_json "$STDOUT" '.resources[0].uri' "resource should have uri"
 test_pass
 
 test_case "resources-list JSON resource has optional fields"
 run_mcpc "$SESSION" resources-list --json
 assert_success
 # Test server provides these optional fields
-assert_json "$STDOUT" '.[0].name' "resource should have name"
-assert_json "$STDOUT" '.[0].mimeType' "resource should have mimeType"
+assert_json "$STDOUT" '.resources[0].name' "resource should have name"
+assert_json "$STDOUT" '.resources[0].mimeType' "resource should have mimeType"
 test_pass
 
 # =============================================================================
@@ -218,28 +224,31 @@ test_pass
 # MCP spec: ListPromptsResult contains prompts array
 # =============================================================================
 
-test_case "prompts-list JSON is valid array"
+test_case "prompts-list JSON is ListPromptsResult"
 run_mcpc "$SESSION" prompts-list --json
 assert_success
 assert_json_valid "$STDOUT"
-# Result should be an array of prompts
-assert_json "$STDOUT" '.[0]' "should be a non-empty array"
+# Result should contain the prompts array
+assert_json "$STDOUT" '. | type == "object"'
+assert_json "$STDOUT" '.prompts | type == "array"'
+assert_json "$STDOUT" '.prompts[0]' "should have a non-empty prompts array"
+assert_json "$STDOUT" 'has("nextCursor") | not'
 test_pass
 
 test_case "prompts-list JSON prompt has required name"
 run_mcpc "$SESSION" prompts-list --json
 assert_success
 # Per MCP spec, Prompt must have: name
-assert_json "$STDOUT" '.[0].name' "prompt should have name"
+assert_json "$STDOUT" '.prompts[0].name' "prompt should have name"
 test_pass
 
 test_case "prompts-list JSON prompt arguments have required fields"
 run_mcpc "$SESSION" prompts-list --json
 assert_success
 # Per MCP spec, PromptArgument must have: name, required (boolean)
-assert_json "$STDOUT" '.[0].arguments[0].name' "argument should have name"
+assert_json "$STDOUT" '.prompts[0].arguments[0].name' "argument should have name"
 # required field should be boolean
-arg_required=$(json_get '.[0].arguments[0].required')
+arg_required=$(json_get '.prompts[0].arguments[0].required')
 if [[ "$arg_required" != "true" && "$arg_required" != "false" ]]; then
   test_fail "argument.required should be boolean, got: $arg_required"
 fi

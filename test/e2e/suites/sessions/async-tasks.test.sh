@@ -64,10 +64,13 @@ assert_success
 assert_contains "$STDOUT" "$TASK_ID"
 test_pass
 
-test_case "tasks-list --json returns tasks array"
+test_case "tasks-list --json returns ListTasksResult"
 run_mcpc --json "$SESSION" tasks-list
 assert_success
 assert_json_valid "$STDOUT"
+assert_json "$STDOUT" '. | type == "object"'
+assert_json "$STDOUT" '.tasks | type == "array"'
+assert_json "$STDOUT" 'has("nextCursor") | not'
 task_count=$(echo "$STDOUT" | jq '.tasks | length')
 assert_not_empty "$task_count"
 # At least the task we just started (may include the earlier one too)
