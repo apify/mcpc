@@ -34,6 +34,10 @@ jobs:
       - name: Unit tests
         run: pnpm run test:unit
 
+      - name: Installed just-bash integration
+        timeout-minutes: 5
+        run: pnpm run test:just-bash
+
   e2e-node:
     name: E2E tests (Node.js)
     runs-on: ubuntu-latest

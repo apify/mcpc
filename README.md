@@ -769,6 +769,38 @@ Local stdio servers will still have access to your local system, and HTTP server
 and both can easily perform destructive actions or leak credentials on their own, or let MCP clients do such actions.
 **Always use only trusted local and remote MCP servers and limit their access to the necessary minimum.**
 
+### just-bash integration
+
+Applications using [just-bash](https://github.com/vercel-labs/just-bash) can register
+mcpc as a custom command. The host first provisions a dedicated session directory,
+then grants the shell specific sessions and commands:
+
+```ts
+import { Bash } from 'just-bash';
+import { createMcpcJustBashCommand } from '@apify/mcpc';
+
+const mcpc = createMcpcJustBashCommand({
+  homeDir: '/absolute/host/path/to/provisioned-mcpc-home',
+  sessions: {
+    '@apify': {
+      authority: 'full-session-lifecycle',
+      commands: ['tools-list', 'tools-get'],
+    },
+  },
+});
+const bash = new Bash({ customCommands: [mcpc] });
+const result = await bash.exec('mcpc @apify tools-list --json | jq ".[0].name"');
+```
+
+A session grant includes its saved credentials, payment settings, stdio process,
+proxy, subscriptions, and bridge recovery, even for discovery commands. The host
+owns persistent bridges and teardown; `tools-call` needs a separate command grant.
+The adapter pins its installed CLI and host environment, preserves binary pipes,
+and bounds execution, input, and output. Guest environment variables and host
+file/configuration flags cannot redirect those capabilities. No sessions are
+granted by default. See [the integration guide](docs/JUST_BASH.md) for provisioning,
+supported commands, cancellation, and the full authority contract.
+
 ### Agent skills
 
 `mcpc` ships a built-in agent skill that always matches the installed version:
