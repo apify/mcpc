@@ -355,6 +355,21 @@ With `--json` option, `mcpc` always emits only a single JSON object (or array), 
 [MCP specification](https://modelcontextprotocol.io/specification/latest).**
 On success, the JSON object is printed to stdout, on error to stderr.
 
+`tools-list`, `prompts-list`, `resources-list`, and `tasks-list` return MCP
+`ListToolsResult`, `ListPromptsResult`, `ListResourcesResult`, and `ListTasksResult`
+objects: `{ "tools": [...] }`, `{ "prompts": [...] }`, `{ "resources": [...] }`,
+and `{ "tasks": [...] }`. Empty lists keep the same object shape with an empty array.
+mcpc fetches all pages automatically and omits `nextCursor`. Other top-level fields
+and `_meta` keys are shallowly merged in page order, with later values winning on
+duplicate keys. On MCP 2026-07-28, `tasks-list` uses the same `{ "tasks": [...] }`
+shape for the tasks this session created, since the tasks extension has no listing.
+
+**Breaking JSON migration:** `tools-list`, `prompts-list`, and `resources-list`
+previously returned bare arrays. Update `jq '.[]'` filters to `jq '.tools[]'`,
+`jq '.prompts[]'`, or `jq '.resources[]'`, respectively (for example,
+`jq -r '.tools[].name'`). `tasks-list` already returned an object and keeps its
+`jq '.tasks[]'` filter. Human-readable output is unchanged.
+
 Note that `--json` is not available for `mcpc --help`. For `login`, `--json` prints a single
 `{ profile, serverUrl, scopes }` object on stdout (interactive prompts go to stderr).
 
@@ -718,7 +733,7 @@ mcpc --json @apify tools-call search-actors keywords:="scraper" \
   | xargs -I {} mcpc @apify tools-call get-actor actorId:="{}"
 
 # Batch operations
-for tool in $(mcpc --json @server tools-list | jq -r '.[].name'); do
+for tool in $(mcpc --json @server tools-list | jq -r '.tools[].name'); do
   mcpc --json @server tools-get "$tool" > "schemas/$tool.json"
 done
 ```

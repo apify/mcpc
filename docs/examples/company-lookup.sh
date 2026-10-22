@@ -85,7 +85,7 @@ fi
 # Verify the required tool is available
 info "🔧 Checking for required tool..."
 
-TOOL_EXISTS=$(mcpc --json "${SESSION}" tools-list 2>/dev/null | jq -r ".[] | select(.name == \"${REQUIRED_TOOL}\") | .name" 2>/dev/null || echo "")
+TOOL_EXISTS=$(mcpc --json "${SESSION}" tools-list 2>/dev/null | jq -r ".tools[] | select(.name == \"${REQUIRED_TOOL}\") | .name" 2>/dev/null || echo "")
 
 if [ -z "$TOOL_EXISTS" ]; then
     error "Required tool '${REQUIRED_TOOL}' not found on server.

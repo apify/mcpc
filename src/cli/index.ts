@@ -1111,9 +1111,11 @@ ${jsonHelp('`{ tools?: Tool[], resources?: Resource[], prompts?: Prompt[], instr
     .addHelpText(
       'after',
       jsonHelp(
-        'Array of `Tool` objects',
-        '`[{ name, description?, inputSchema, outputSchema?, annotations? }, ...]`',
-        `${SCHEMA_BASE}#tool`
+        '`ListToolsResult` object',
+        '`{ tools: Tool[], _meta?: { ... }, ... }`\n' +
+          '  All pages combined; nextCursor omitted. Other top-level fields and _meta keys\n' +
+          '  merge shallowly in page order (later values win).',
+        `${LEGACY_SCHEMA_BASE}#listtoolsresult`
       )
     )
     .action(async (_options, command) => {
@@ -1232,7 +1234,14 @@ ${toolsCallCombinedJsonHelp}`
 ${chalk.bold('Notes:')}
   MCP 2025-11-25 servers list all their tasks. The 2026-07-28 tasks extension
   has no listing, so there this shows the tasks this session created.
-${jsonHelp('`{ tasks: Task[] }`, each `Task` shaped', taskJsonShapes, taskSchemaUrls)}`
+${jsonHelp(
+  '`ListTasksResult` object; each `Task` follows the negotiated protocol',
+  '`{ tasks: Task[], _meta?: { ... }, ... }`\n  ' +
+    taskJsonShapes +
+    '\n  All legacy pages combined; nextCursor omitted. Other top-level fields and _meta keys\n' +
+    '  merge shallowly in page order (later values win).',
+  [`${LEGACY_SCHEMA_BASE}#listtasksresult`, ...taskSchemaUrls]
+)}`
     )
     .action(async (_options, command) => {
       await tasks.listTasks(session, getOptionsFromCommand(command));
@@ -1290,9 +1299,11 @@ ${jsonHelp('`Task` object (its state after the request)', taskJsonShapes, taskSc
     .addHelpText(
       'after',
       jsonHelp(
-        'Array of `Resource` objects',
-        '`[{ uri, name, description?, mimeType? }, ...]`',
-        `${SCHEMA_BASE}#resource`
+        '`ListResourcesResult` object',
+        '`{ resources: Resource[], _meta?: { ... }, ... }`\n' +
+          '  All pages combined; nextCursor omitted. Other top-level fields and _meta keys\n' +
+          '  merge shallowly in page order (later values win).',
+        `${LEGACY_SCHEMA_BASE}#listresourcesresult`
       )
     )
     .action(async (_options, command) => {
@@ -1462,9 +1473,11 @@ ${jsonHelp(
     .addHelpText(
       'after',
       jsonHelp(
-        'Array of `Prompt` objects',
-        '`[{ name, description?, arguments?: [{ name, required? }] }, ...]`',
-        `${SCHEMA_BASE}#prompt`
+        '`ListPromptsResult` object',
+        '`{ prompts: Prompt[], _meta?: { ... }, ... }`\n' +
+          '  All pages combined; nextCursor omitted. Other top-level fields and _meta keys\n' +
+          '  merge shallowly in page order (later values win).',
+        `${LEGACY_SCHEMA_BASE}#listpromptsresult`
       )
     )
     .action(async (_options, command) => {
