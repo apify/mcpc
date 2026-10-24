@@ -94,6 +94,15 @@ const VALID_UPTO_ACCEPT: PaymentRequiredAccept = {
   },
 };
 
+const NANO_EXACT_ACCEPT: PaymentRequiredAccept = {
+  scheme: 'exact',
+  network: 'nano:mainnet',
+  amount: '1000000000000000000000000',
+  asset: 'XNO',
+  payTo: 'nano_1x7biz69cem95oo7gxkrw6kzhfywq4x5dupw4z1bdzkb74dk9kpxwzjbdhhs',
+  maxTimeoutSeconds: 60,
+};
+
 const MOCK_WALLET: SignerWallet = {
   privateKey: '0x1234567890abcdef',
   address: MOCK_ADDRESS,
@@ -165,6 +174,44 @@ describe('selectAcceptEntry', () => {
     const secondExact = { ...VALID_EXACT_ACCEPT, amount: '9999999' };
     const result = selectAcceptEntry([VALID_EXACT_ACCEPT, secondExact], 'auto');
     expect(result?.amount).toBe('1000000');
+  });
+});
+
+describe('selectAcceptEntry: networks', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('skips nano accepts when no Nano key is configured', () => {
+    vi.stubEnv('MCPC_X402_NANO_KEY', '');
+    const result = selectAcceptEntry([NANO_EXACT_ACCEPT, VALID_EXACT_ACCEPT], 'exact');
+    expect(result?.network).toBe('eip155:84532');
+  });
+
+  it('selects nano exact when a Nano key is configured', () => {
+    vi.stubEnv('MCPC_X402_NANO_KEY', '11'.repeat(32));
+    const result = selectAcceptEntry([NANO_EXACT_ACCEPT, VALID_EXACT_ACCEPT], 'exact');
+    expect(result?.network).toBe('nano:mainnet');
+  });
+
+  it('never selects upto on nano, or a network mcpc cannot sign for', () => {
+    vi.stubEnv('MCPC_X402_NANO_KEY', '11'.repeat(32));
+    const nanoUpto = {
+      ...NANO_EXACT_ACCEPT,
+      scheme: 'upto',
+      extra: { facilitatorAddress: '0x4020a4f3b7b90cca423b9fabcc0ce57c6c240002' },
+    };
+    expect(selectAcceptEntry([nanoUpto], 'upto')).toBeUndefined();
+    const unknown = { ...VALID_EXACT_ACCEPT, network: 'eip155:1' };
+    expect(selectAcceptEntry([unknown, VALID_EXACT_ACCEPT], 'exact')).toBe(VALID_EXACT_ACCEPT);
+  });
+
+  it('lists the networks, including nano, when nothing is payable', () => {
+    vi.stubEnv('MCPC_X402_NANO_KEY', '');
+    const b64 = buildPaymentRequired([NANO_EXACT_ACCEPT]);
+    expect(() => parsePaymentRequired(b64, 'auto')).toThrow(
+      'Available: exact on nano:mainnet. Supported networks: eip155:8453, eip155:84532, nano:mainnet (set MCPC_X402_NANO_KEY to pay on nano:mainnet)'
+    );
   });
 });
 
@@ -336,8 +383,51 @@ describe('signPayment', () => {
   it('unknown network: throws', async () => {
     const invalid = { ...VALID_EXACT_ACCEPT, network: 'eip155:99999' };
     await expect(signPayment({ wallet: MOCK_WALLET, accept: invalid })).rejects.toThrow(
-      'Unknown network'
+      'Supported: eip155:8453, eip155:84532, nano:mainnet'
     );
+  });
+
+  describe('nano:mainnet', () => {
+    beforeEach(() => {
+      vi.stubEnv('MCPC_X402_NANO_KEY', '11'.repeat(32));
+      vi.stubEnv('MCPC_X402_NANO_RPC', 'http://127.0.0.1:7076');
+      vi.stubEnv('MCPC_X402_NANO_MAX_RAW', '');
+      vi.stubGlobal('fetch', vi.fn());
+    });
+
+    afterEach(() => {
+      vi.unstubAllEnvs();
+      vi.unstubAllGlobals();
+    });
+
+    it('refuses to sign without a spend cap', async () => {
+      await expect(signPayment({ wallet: MOCK_WALLET, accept: NANO_EXACT_ACCEPT })).rejects.toThrow(
+        'without a spend cap: set MCPC_X402_NANO_MAX_RAW'
+      );
+      expect(fetch).not.toHaveBeenCalled();
+      expect(mockSignTypedData).not.toHaveBeenCalled();
+    });
+
+    it('refuses an amount above the spend cap', async () => {
+      vi.stubEnv('MCPC_X402_NANO_MAX_RAW', '999999999999999999999999');
+      await expect(signPayment({ wallet: MOCK_WALLET, accept: NANO_EXACT_ACCEPT })).rejects.toThrow(
+        'exceeds MCPC_X402_NANO_MAX_RAW'
+      );
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it('refuses --amount, which is in USD', async () => {
+      vi.stubEnv('MCPC_X402_NANO_MAX_RAW', NANO_EXACT_ACCEPT.amount);
+      await expect(
+        signPayment({ wallet: MOCK_WALLET, accept: NANO_EXACT_ACCEPT, amountOverride: 1n })
+      ).rejects.toThrow('--amount is in USD');
+    });
+
+    it('rejects the upto scheme', async () => {
+      await expect(
+        signPayment({ wallet: MOCK_WALLET, accept: { ...NANO_EXACT_ACCEPT, scheme: 'upto' } })
+      ).rejects.toThrow('Unsupported x402 scheme on nano:mainnet: upto');
+    });
   });
 
   // -------------------------------------------------------------------------

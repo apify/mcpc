@@ -30,6 +30,7 @@ import { ClientError, isMcpError } from '../../lib/errors.js';
 import { getJsonFromEnv } from '../parser.js';
 import type { OutputMode } from '../../lib/types.js';
 import { signPayment, parsePaymentRequired } from '../../lib/x402/signer.js';
+import { NANO_NETWORK } from '../../lib/x402/nano.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -337,7 +338,9 @@ async function signPaymentCommand(options: SignOptions): Promise<void> {
   console.log(formatInfo(`To        : ${result.to}`));
   console.log(
     formatInfo(
-      `Amount    : $${result.amountUsd.toFixed(2)} (${result.amountAtomicUnits.toString()} atomic units)`
+      accept.network === NANO_NETWORK
+        ? `Amount    : ${result.amountAtomicUnits.toString()} raw`
+        : `Amount    : $${result.amountUsd.toFixed(2)} (${result.amountAtomicUnits.toString()} atomic units)`
     )
   );
   console.log(formatInfo(`Expires   : ${result.expiresAt.toISOString()}`));

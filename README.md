@@ -919,10 +919,32 @@ If any request returns HTTP 402, the middleware transparently signs and retries.
 
 ### Supported networks
 
-| Network              | Status       |
-| -------------------- | ------------ |
-| Base Mainnet         | ✅ Supported |
-| Base Sepolia testnet | ✅ Supported |
+| Network                         | Status                    |
+| ------------------------------- | ------------------------- |
+| Base Mainnet                    | ✅ Supported              |
+| Base Sepolia testnet            | ✅ Supported              |
+| Nano Mainnet (`nano:mainnet`)   | 🧪 `exact` only, see below |
+
+### Nano (XNO)
+
+A server can also offer an `exact` payment on `nano:mainnet`, next to or instead of Base.
+`mcpc` pays it with a separate Nano account, configured through the environment (the Base
+wallet above is still needed for `--x402` sessions and `x402 sign`):
+
+```bash
+export MCPC_X402_NANO_KEY=<64-hex private key of the account, not the seed>
+export MCPC_X402_NANO_RPC=http://127.0.0.1:7076   # a Nano node RPC you trust
+export MCPC_X402_NANO_MAX_RAW=1000000000000000000000000000   # largest single payment (0.001 XNO)
+```
+
+`mcpc` reads the account's frontier block from the RPC, checks that it is signed by the account
+before using its balance, signs a state send block of the requested amount (in raw) to `payTo`,
+gets proof of work from the RPC (`work_generate`), and puts the block in `PAYMENT-SIGNATURE` as
+`payload.block` with its `payload.hash`. The block is not broadcast; the server publishes it to
+settle. Without `MCPC_X402_NANO_MAX_RAW`, or above it, `mcpc` refuses to sign. Accepts on
+`nano:mainnet` are only selected when `MCPC_X402_NANO_KEY` is set, and a Base wallet is never
+offered one. Sessions read these variables when their bridge starts, so restart a session after
+changing them. Funds must already be received (pending receives are not handled).
 
 ## MCP support
 
