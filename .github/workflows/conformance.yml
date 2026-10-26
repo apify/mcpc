@@ -124,7 +124,15 @@ jobs:
       - name: Build
         run: pnpm run build
       - name: Run proxy server conformance
-        run: node test/conformance/server.mjs --output-dir results/proxy-server
+        # Extra arguments are passed through to the conformance CLI.
+        run: |
+          ARGS=(--output-dir results/proxy-server)
+          if [ "${VERBOSE}" = "true" ]; then
+            ARGS+=(--verbose)
+          fi
+          node test/conformance/server.mjs "${ARGS[@]}"
+        env:
+          VERBOSE: ${{ inputs.verbose }}
       - name: Upload conformance results
         if: ${{ always() }}
         uses: actions/upload-artifact@v5
