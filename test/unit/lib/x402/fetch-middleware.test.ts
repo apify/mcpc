@@ -338,6 +338,18 @@ describe('extractAcceptFromPaymentRequired', () => {
     const result = extractAcceptFromPaymentRequired(uptoOnly, 'exact');
     expect(result).toBeUndefined();
   });
+
+  it('skips entries on networks mcpc cannot sign for', () => {
+    const solanaFirst = {
+      x402Version: 2,
+      accepts: [
+        { ...EXACT_ACCEPT, network: 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp' },
+        EXACT_ACCEPT,
+      ],
+    };
+    const result = extractAcceptFromPaymentRequired(solanaFirst, 'exact');
+    expect(result?.accept.network).toBe(EXACT_ACCEPT.network);
+  });
 });
 
 // ---------------------------------------------------------------------------
