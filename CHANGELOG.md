@@ -36,6 +36,7 @@ Argument completions for prompts and resource templates, tasks on MCP 2026-07-28
 
 ### Fixed
 
+- x402 payments no longer fail with "Unknown network" when a server lists a payment option on a chain mcpc cannot sign for (e.g. Solana) before the Base one: `x402 sign` and `--x402` sessions now pick the first option on a supported network. When there is none, the error lists what the server offered and which networks are supported.
 - `tools-call`, `prompts-get` and `completion-complete` no longer send arguments other than what you typed: a JSON array passed inline or on stdin is now rejected (MCP arguments must be an object), a `__proto__:=...` argument is no longer dropped, and a number too large to represent (e.g. `n:=1e400`) is kept as a string instead of being sent as `null`. (#448)
 - Bridge log rotation no longer races the file it rotates: under load the rename could run before the log file was opened or flushed, so the rotation was silently skipped and the first lines of the new file were lost.
 - Windows sessions no longer pile up duplicate bridge processes when `tasklist` is slow or unavailable. A liveness check that could not run used to report every bridge dead, so each command spawned a replacement without stopping the healthy original; the check now falls back to a signal probe, the old bridge is always asked to shut down, and a bridge that finds another one registered for its session exits on its own. (#427)
