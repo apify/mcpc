@@ -29,6 +29,7 @@ import type {
   X402SchemePreference,
 } from '../../lib/types.js';
 import {
+  commandHint,
   formatOutput,
   formatSuccess,
   formatWarning,
@@ -520,7 +521,7 @@ export async function connectSession(
           `Session ${name} created but server is not responding: ${errorMsg}\n` +
             pinHint +
             `  The session will auto-recover when the server becomes available.\n` +
-            `  Check status with: mcpc ${name}`
+            `  Check status with: ${commandHint(`mcpc ${name}`)}`
         )
       );
     }
@@ -1338,7 +1339,7 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
 
   // Only suggest --stdio when a stdio server isn't already connected.
   if (unconnectedStdio.length > 0) {
-    console.log('\nTo include stdio servers, run: mcpc connect --stdio');
+    console.log(`\nTo include stdio servers, run: ${commandHint(`mcpc connect --stdio`)}`);
   }
 
   // Same for project-scope entries skipped for reading ${VAR}: explain the trust rule once,

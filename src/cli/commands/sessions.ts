@@ -16,6 +16,7 @@ import {
 import { DISCONNECTED_THRESHOLD_MILLIS } from '../../lib/types.js';
 import type { ServerConfig, ConnectionMode } from '../../lib/types.js';
 import {
+  commandHint,
   formatOutput,
   formatSuccess,
   formatSessionLine,
@@ -162,7 +163,7 @@ export async function listSessionsAndAuthProfiles(options: {
     // Display sessions
     if (sessions.length === 0) {
       console.log(chalk.bold('No active MCP sessions.'));
-      console.log(chalk.dim('↳ run: mcpc connect mcp.example.com @test'));
+      console.log(chalk.dim(`↳ run: ${commandHint(`mcpc connect mcp.example.com @test`)}`));
     } else {
       console.log(chalk.bold('MCP sessions:'));
       for (const session of sessions) {
@@ -186,15 +187,15 @@ export async function listSessionsAndAuthProfiles(options: {
 
         // Show recovery hints for non-live sessions
         if (status === 'unauthorized') {
-          console.log(chalk.dim(`    ↳ run: mcpc ${session.name} restart`));
+          console.log(chalk.dim(`    ↳ run: ${commandHint(`mcpc ${session.name} restart`)}`));
         } else if (status === 'crashed') {
-          console.log(chalk.dim(`    ↳ run: mcpc ${session.name}`));
+          console.log(chalk.dim(`    ↳ run: ${commandHint(`mcpc ${session.name}`)}`));
         } else if (status === 'expired') {
-          console.log(chalk.dim(`    ↳ run: mcpc ${session.name} restart`));
+          console.log(chalk.dim(`    ↳ run: ${commandHint(`mcpc ${session.name} restart`)}`));
         } else if (status === 'disconnected') {
           // Bridge is alive and auto-recovers when the server responds again;
           // a restart forces a fresh connection if it stays stuck.
-          console.log(chalk.dim(`    ↳ run: mcpc ${session.name} restart`));
+          console.log(chalk.dim(`    ↳ run: ${commandHint(`mcpc ${session.name} restart`)}`));
         }
       }
     }
@@ -203,7 +204,7 @@ export async function listSessionsAndAuthProfiles(options: {
     console.log('');
     if (profiles.length === 0) {
       console.log(chalk.bold('No OAuth profiles.'));
-      console.log(chalk.dim('↳ run: mcpc login mcp.example.com'));
+      console.log(chalk.dim(`↳ run: ${commandHint(`mcpc login mcp.example.com`)}`));
     } else {
       console.log(chalk.bold('Saved OAuth profiles:'));
       for (const profile of profiles) {
