@@ -927,14 +927,22 @@ If any request returns HTTP 402, the middleware transparently signs and retries.
 ### Paying for Apify with x402
 
 To use the Apify MCP server (`mcp.apify.com`) without an Apify account, buy a prepaid, spend-capped Apify API token
-from [Apify AGI](https://agi.apify.com) with an x402 payment on Base mainnet (sign its challenge with `mcpc x402 sign --scheme exact`),
-then pass the token as a Bearer token:
+from [Apify AGI](https://agi.apify.com) with an x402 payment on Base mainnet, then pass the token as a Bearer token:
 
 ```bash
+# 1. Fetch the payment challenge (the `payment-required` response header).
+PR=$(curl -s -D - -o /dev/null 'https://agi.apify.com/protocols/x402/prepaid-tokens?amount=5&currency=usd' \
+  | awk 'BEGIN{IGNORECASE=1}/^payment-required:/{sub(/\r$/,"");sub(/^[^:]+:[ \t]*/,"");print;exit}')
+
+# 2. Sign it, then resubmit with the signature to receive the token.
+SIG=$(mcpc x402 sign "$PR" --scheme exact --json | jq -r .paymentSignature)
+curl -s 'https://agi.apify.com/protocols/x402/prepaid-tokens?amount=5&currency=usd' -H "payment-signature: $SIG"
+
+# 3. Connect with the token it returns.
 mcpc connect mcp.apify.com @apify --header "Authorization: Bearer <prepaid-token>"
 ```
 
-See [agi.apify.com/AGENTS.md](https://agi.apify.com/AGENTS.md) for the purchase steps and current terms.
+See [agi.apify.com/AGENTS.md](https://agi.apify.com/AGENTS.md) for current terms.
 
 ## MCP support
 
