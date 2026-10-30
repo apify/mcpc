@@ -98,10 +98,9 @@ export function tasksListUnavailableMessage(protocolVersion?: string): string {
 }
 
 /**
- * Explain why a task that asks for input cannot make progress with mcpc: it never
- * prompts (design rule — no unexpected interaction loops), so the elicitation or sampling
- * request a task surfaces via `inputRequests` has no one to answer it. `methods` names the
- * outstanding requests so the user can tell what the server wanted.
+ * Explain why a task that asks for input cannot make progress with mcpc: task input
+ * requests are not supported. `methods` names the outstanding requests so the user
+ * can tell what the server wanted.
  *
  * Same no-trailing-period convention as above.
  */
@@ -109,7 +108,7 @@ export function taskInputRequiredMessage(taskId: string, methods: readonly strin
   const wanted = methods.length > 0 ? ` (${methods.join(', ')})` : '';
   return (
     `Task ${taskId} is waiting for input from the client${wanted}, which mcpc cannot provide ` +
-    `(it never prompts and has no LLM). The task stays on the server until it is answered, ` +
+    `(task input is unsupported). The task stays on the server until it is answered, ` +
     `times out, or is cancelled with tasks-cancel ${taskId}`
   );
 }

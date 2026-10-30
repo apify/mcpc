@@ -26,6 +26,7 @@ import { clientExtensionDeclarations } from './extensions.js';
  */
 export function buildClientCapabilities(): ClientCapabilities {
   return {
+    elicitation: { form: {} },
     tasks: {
       list: {},
       cancel: {},

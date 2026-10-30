@@ -50,6 +50,11 @@ const logger = createLogger('session-client');
  * Implements IMcpClient by sending requests to bridge process via IPC
  */
 export class SessionClient implements IMcpClient {
+  private elicitationHandler?: import('./types.js').ElicitationHandler;
+
+  setElicitationHandler(handler: import('./types.js').ElicitationHandler): void {
+    this.elicitationHandler = handler;
+  }
   private bridgeClient: BridgeClient;
   private sessionName: string;
   private requestTimeoutSecs?: number; // Per-request timeout in seconds
@@ -218,7 +223,9 @@ export class SessionClient implements IMcpClient {
         this.bridgeClient.request(
           'callTool',
           params,
-          this.requestTimeoutSecs
+          this.requestTimeoutSecs,
+          undefined,
+          this.elicitationHandler
         ) as Promise<CallToolResult>,
       'callTool',
       { idempotent: false }

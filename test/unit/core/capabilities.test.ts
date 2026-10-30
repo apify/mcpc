@@ -15,6 +15,7 @@ describe('buildClientCapabilities', () => {
   it('declares tasks but not unimplemented capabilities (sampling, roots)', () => {
     const caps = buildClientCapabilities();
     expect(caps.tasks).toBeDefined();
+    expect(caps.elicitation).toEqual({ form: {} });
     // mcpc has no LLM and registers no roots handler — declaring these would
     // invite server requests that can only fail with "Method not found".
     expect(caps.sampling).toBeUndefined();
