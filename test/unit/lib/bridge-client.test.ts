@@ -95,6 +95,51 @@ describe.skipIf(onWindows)('BridgeClient.connect retry', () => {
     expect(Date.now() - start).toBeLessThan(2500);
   });
 
+  it('routes an elicitation response to the originating call on the same socket', async () => {
+    const p = sockPath();
+    const server = net.createServer((conn) => {
+      let buffer = '';
+      conn.on('data', (data) => {
+        buffer += data.toString();
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+        for (const line of lines) {
+          const message = JSON.parse(line);
+          if (message.type === 'request') {
+            expect(message.elicitation).toBe(true);
+            conn.write(
+              JSON.stringify({
+                type: 'elicitation-request',
+                id: message.id,
+                elicitationId: 'approval',
+                elicitationRequest: {
+                  message: 'Allow?',
+                  requestedSchema: { type: 'object', properties: {} },
+                },
+              }) + '\n'
+            );
+          } else {
+            expect(message).toEqual({
+              type: 'elicitation-response',
+              id: 'call',
+              elicitationId: 'approval',
+              elicitationResult: { action: 'decline' },
+            });
+            conn.write(JSON.stringify({ type: 'response', id: 'call', result: 'done' }) + '\n');
+          }
+        }
+      });
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(p, resolve));
+    const client = new BridgeClient(p);
+    clients.push(client);
+    await client.connect();
+    const handler = vi.fn(async () => ({ action: 'decline' as const }));
+    await expect(client.request('callTool', {}, undefined, 'call', handler)).resolves.toBe('done');
+    expect(handler).toHaveBeenCalledOnce();
+  });
+
   it('preserves UTF-8 in a response split inside a multibyte character', async () => {
     const p = sockPath();
     const server = net.createServer((conn) => {

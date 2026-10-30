@@ -139,6 +139,10 @@ mcpc @apify tools-call search '{"query":"hello","limit":10}'
 echo '{"query":"hello"}' | mcpc @apify tools-call search
 ```
 
+For a synchronous call that may request a form, pass `--elicitation` in an
+interactive terminal. Review the server's request before accepting; prompts go
+to stderr. Without the flag, requests are cancelled rather than approved.
+
 ## JSON output (code mode)
 
 Add `--json` for machine-readable output: results on stdout, errors on stderr,
@@ -199,8 +203,8 @@ never silently fall back to a synchronous call:
   decides per call whether to create a task. A plain `tools-call` that the server turns
   into a task is waited for automatically. A `--detach` call the server runs synchronously
   prints the tool result instead of a task — check `--json` output for `taskId` to tell the
-  two apart. A task that stops to ask for input (`input_required`) is reported as an
-  error, since mcpc never prompts; cancel it or wait.
+two apart. A task that stops to ask for input (`input_required`) is reported as an
+error; cancel it or wait. `--elicitation` cannot be combined with `--task` or `--detach`.
 
 ## Authentication
 
