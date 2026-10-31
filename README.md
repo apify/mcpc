@@ -927,7 +927,7 @@ If any request returns HTTP 402, the middleware transparently signs and retries.
 ### Paying for Apify with x402
 
 To use the Apify MCP server (`mcp.apify.com`) without an Apify account, buy a prepaid, spend-capped Apify API token
-from [Apify AGI](https://agi.apify.com) with an x402 payment on Base mainnet, then pass the token as a Bearer token. Signing needs a funded wallet (see [Wallet setup](#wallet-setup)):
+from [Apify AGI](https://agi.apify.com) with an x402 payment on Base mainnet, then pass the token as a Bearer token. The wallet must hold USDC on Base (see [Wallet setup](#wallet-setup)):
 
 ```bash
 # 1. Fetch the payment challenge (the `payment-required` response header).
