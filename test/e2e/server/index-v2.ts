@@ -582,7 +582,12 @@ function createTestServer(ctx?: McpRequestContext): Server {
             throw new ProtocolError(INVALID_PARAMS, `${params.uri} is not a directory resource`);
           }
           const { items, nextCursor } = paginate(children, params.cursor, PAGINATION_SIZE);
-          return { resources: items, ...(nextCursor !== undefined ? { nextCursor } : {}) };
+          return {
+            resources: items,
+            ...(nextCursor !== undefined ? { nextCursor } : {}),
+            ttlMs: 300000,
+            cacheScope: 'public',
+          };
         }
       );
     }

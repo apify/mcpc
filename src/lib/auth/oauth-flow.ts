@@ -757,7 +757,8 @@ export async function performOAuthFlow(
   scope?: string,
   clientCredentials?: { clientId?: string; clientSecret?: string; clientMetadataUrl?: string },
   callbackPort?: number,
-  callbackHost?: string
+  callbackHost?: string,
+  clientName?: string
 ): Promise<OAuthFlowResult> {
   logger.debug(`Starting OAuth flow for ${serverUrl} (profile: ${profileName})`);
 
@@ -825,6 +826,9 @@ export async function performOAuthFlow(
   }
   if (clientCredentials?.clientMetadataUrl) {
     providerOptions.clientMetadataUrl = clientCredentials.clientMetadataUrl;
+  }
+  if (clientName) {
+    providerOptions.clientName = clientName;
   }
   const provider = new OAuthProvider(providerOptions);
 

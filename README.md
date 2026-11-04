@@ -514,11 +514,11 @@ When logging in, `mcpc` supports all three OAuth client registration approaches 
 [MCP authorization spec](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization#client-registration-approaches),
 picking the one the authorization server advertises in its OAuth metadata:
 
-| **Approach**                            | **`mcpc login` flags**                              |
-| :-------------------------------------- | :-------------------------------------------------- |
-| **Pre-registration**                    | `--client-id` (and optional `--client-secret`)      |
-| **Client ID Metadata Documents (CIMD)** | default (or `--client-metadata-url <url>`)          |
-| **Dynamic Client Registration (DCR)**   | fallback (or force with `--no-client-metadata-url`) |
+| **Approach**                            | **`mcpc login` flags**                                                        |
+| :-------------------------------------- | :---------------------------------------------------------------------------- |
+| **Pre-registration**                    | `--client-id` (and optional `--client-secret`)                                |
+| **Client ID Metadata Documents (CIMD)** | default (or `--client-metadata-url <url>`)                                    |
+| **Dynamic Client Registration (DCR)**   | fallback (or force with `--no-client-metadata-url` or `--client-name <name>`) |
 
 `mcpc` ships with a hosted [Client ID Metadata Document](https://apify.github.io/mcpc/client-metadata.json)
 so every installation presents the same client identity to CIMD-capable authorization servers.
@@ -541,6 +541,9 @@ mcpc login mcp.example.com --client-metadata-url https://example.com/my-client.j
 
 # Disable CIMD: force Dynamic Client Registration even if the server supports CIMD.
 mcpc login mcp.example.com --no-client-metadata-url
+
+# Dynamic Client Registration under a client name other than "mcpc" (disables CIMD).
+mcpc login mcp.example.com --client-name "My Agent"
 ```
 
 See the [MCP authorization spec](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization#client-registration-approaches)
@@ -880,6 +883,16 @@ mcpc x402 sign <base64-payment-required> --amount 1.00 --expiry 3600 --json
 
 The command outputs the signed `PAYMENT-SIGNATURE` header value and an MCP config snippet
 that can be used directly with other MCP clients.
+
+`x402 sign` also works for plain HTTP (non-MCP) x402 v2 endpoints. Read the challenge from the
+`PAYMENT-REQUIRED` response header, sign it, then send the request again with the signature:
+
+```bash
+URL=https://api.example.com/paid-resource
+REQ=$(curl -s -D - -o /dev/null "$URL" | awk -F': ' 'tolower($1)=="payment-required"{print $2}' | tr -d '\r\n')
+SIG=$(mcpc x402 sign "$REQ" --json | jq -r .paymentSignature)
+curl -s -D - -H "PAYMENT-SIGNATURE: $SIG" "$URL"   # 200 + PAYMENT-RESPONSE header with the settlement tx
+```
 
 ### Using x402 with MCP servers
 
@@ -1545,27 +1558,27 @@ See [CONTRIBUTING](./CONTRIBUTING.md) for development setup, architecture overvi
 
 ### MCP CLI clients
 
-<!-- Stars, contributors, commits, and activity as of 2026-10-08. -->
+<!-- Stars, contributors, commits, and activity as of 2026-10-20. -->
 
 | Tool                                                                                                                | MCP        | Active | Lang   | Stars | Commits | Contrib | Tools | Resources | Prompts | Tasks | Skills | Code mode | Sessions | OAuth | Client creds | Enterprise auth | Stdio | HTTP | Tool search | x402 | LLM |
 | ------------------------------------------------------------------------------------------------------------------- | ---------- | ------ | ------ | ----: | ------: | ------: | ----- | --------- | ------- | ----- | ------ | --------- | -------- | ----- | ------------ | --------------- | ----- | ---- | ----------- | ---- | --- |
-| **[apify/mcpc](https://github.com/apify/mcpc)**                                                                     | 2026-07-28 | ✅     | TS     |  1.0k |     795 |      17 | ✅    | ✅        | ✅      | ✅    | ✅     | ✅        | ✅       | ✅    | ✅           | ✅              | ✅    | ✅   | ✅          | ✅   | —   |
-| [modelcontextprotocol/inspector (mcpdo)](https://github.com/modelcontextprotocol/inspector/tree/main/clients/mcpdo) | 2026-07-28 | ✅     | TS     | 11.0k |    4483 |     141 | ✅    | ✅        | ✅      | ✅    | ✅     | —         | ✅       | ✅    | —            | ✅              | ✅    | ✅   | —           | —    | —   |
-| [openclaw/mcporter](https://github.com/openclaw/mcporter)                                                           | 2026-07-28 | ✅     | TS     |  5.1k |     977 |      50 | ✅    | ✅        | —       | —     | —      | ✅        | ✅       | ✅    | —            | —               | ✅    | ✅   | —           | —    | —   |
-| [knowsuchagency/mcp2cli](https://github.com/knowsuchagency/mcp2cli)                                                 | 2025-11-25 | ✅     | Python |  2.4k |     168 |      19 | ✅    | ✅        | ✅      | —     | —      | ✅        | ✅       | ✅    | ✅           | —               | ✅    | ✅   | ✅          | —    | —   |
+| **[apify/mcpc](https://github.com/apify/mcpc)**                                                                     | 2026-07-28 | ✅     | TS     |  1.1k |     805 |      18 | ✅    | ✅        | ✅      | ✅    | ✅     | ✅        | ✅       | ✅    | ✅           | ✅              | ✅    | ✅   | ✅          | ✅   | —   |
+| [modelcontextprotocol/inspector (mcpdo)](https://github.com/modelcontextprotocol/inspector/tree/main/clients/mcpdo) | 2026-07-28 | ✅     | TS     | 11.1k |    4604 |     141 | ✅    | ✅        | ✅      | ✅    | ✅     | —         | ✅       | ✅    | —            | ✅              | ✅    | ✅   | —           | —    | —   |
+| [openclaw/mcporter](https://github.com/openclaw/mcporter)                                                           | 2026-07-28 | ✅     | TS     |  5.1k |    1000 |      55 | ✅    | ✅        | —       | —     | —      | ✅        | ✅       | ✅    | —            | —               | ✅    | ✅   | —           | —    | —   |
+| [knowsuchagency/mcp2cli](https://github.com/knowsuchagency/mcp2cli)                                                 | 2025-11-25 | ✅     | Python |  2.4k |     183 |      23 | ✅    | ✅        | ✅      | —     | —      | ✅        | ✅       | ✅    | ✅           | —               | ✅    | ✅   | ✅          | —    | —   |
 | [IBM/mcp-cli](https://github.com/IBM/mcp-cli)                                                                       | 2025-06-18 | ✅     | Python |  2.0k |     800 |      22 | ✅    | ✅        | ✅      | —     | —      | ✅        | ✅       | ✅    | —            | —               | ✅    | ✅   | —           | —    | ✅  |
 | [f/mcptools](https://github.com/f/mcptools)                                                                         | 2024-11-05 | ⚠️     | Go     |  1.6k |     174 |      16 | ✅    | ✅        | ✅      | —     | —      | ✅        | —        | —     | —            | —               | ✅    | ✅   | —           | —    | —   |
 | [philschmid/mcp-cli](https://github.com/philschmid/mcp-cli)                                                         | 2025-11-25 | ⚠️     | TS     |  1.3k |      30 |       2 | ✅    | —         | —       | —     | —      | ✅        | ✅       | —     | —            | —               | ✅    | ✅   | ✅          | —    | —   |
 | [adhikasp/mcp-client-cli](https://github.com/adhikasp/mcp-client-cli)                                               | 2025-06-18 | ⚠️     | Python |   675 |     113 |       5 | ✅    | —         | —       | —     | —      | —         | —        | —     | —            | —               | ✅    | —    | —           | —    | ✅  |
 | [thellimist/clihub](https://github.com/thellimist/clihub)                                                           | 2025-11-25 | ⚠️     | Go     |   666 |      60 |       1 | ✅    | —         | —       | —     | —      | —         | —        | ✅    | ✅           | —               | ✅    | ✅   | ✅          | —    | —   |
-| [wong2/mcp-cli](https://github.com/wong2/mcp-cli)                                                                   | 2025-11-25 | ⚠️     | JS     |   447 |      67 |       7 | ✅    | ✅        | ✅      | —     | —      | —         | —        | ✅    | —            | —               | ✅    | ✅   | —           | —    | —   |
-| [activeing123/mcptoon](https://github.com/activeing123/mcptoon)                                                     | 2026-07-28 | ✅     | Python |   216 |     396 |       3 | ✅    | —         | —       | —     | —      | ✅        | —        | —     | —            | —               | ✅    | ✅   | —           | —    | —   |
+| [wong2/mcp-cli](https://github.com/wong2/mcp-cli)                                                                   | 2025-11-25 | ⚠️     | JS     |   446 |      67 |       7 | ✅    | ✅        | ✅      | —     | —      | —         | —        | ✅    | —            | —               | ✅    | ✅   | —           | —    | —   |
+| [activeing123/mcptoon](https://github.com/activeing123/mcptoon)                                                     | 2026-07-28 | ✅     | Python |   356 |     481 |       4 | ✅    | —         | —       | —     | —      | ✅        | —        | —     | —            | —               | ✅    | ✅   | —           | —    | —   |
 | [mcpshim/mcpshim](https://github.com/mcpshim/mcpshim)                                                               | 2025-11-25 | ✅     | Go     |    66 |      17 |       1 | ✅    | —         | —       | —     | —      | ✅        | ✅       | ✅    | —            | —               | —     | ✅   | ✅          | —    | —   |
-| [lydakis/mcpx](https://github.com/lydakis/mcpx)                                                                     | 2026-07-28 | ✅     | Go     |    53 |     122 |       3 | ✅    | —         | —       | —     | —      | ✅        | ✅       | ✅    | —            | —               | ✅    | ✅   | —           | —    | —   |
-| [arcadeai-labs/mcpx](https://github.com/arcadeai-labs/mcpx)                                                         | 2026-07-28 | ✅     | TS     |    35 |     120 |       3 | ✅    | ✅        | ✅      | ✅    | —      | ✅        | —        | ✅    | —            | —               | ✅    | ✅   | ✅          | —    | —   |
+| [lydakis/mcpx](https://github.com/lydakis/mcpx)                                                                     | 2026-07-28 | ✅     | Go     |    54 |     122 |       3 | ✅    | —         | —       | —     | —      | ✅        | ✅       | ✅    | —            | —               | ✅    | ✅   | —           | —    | —   |
+| [arcadeai-labs/mcpx](https://github.com/arcadeai-labs/mcpx)                                                         | 2026-07-28 | ✅     | TS     |    37 |     124 |       3 | ✅    | ✅        | ✅      | ✅    | —      | ✅        | —        | ✅    | —            | —               | ✅    | ✅   | ✅          | —    | —   |
 | [EstebanForge/mcp-cli-ent](https://github.com/EstebanForge/mcp-cli-ent)                                             | 2026-07-28 | ✅     | Go     |    15 |      65 |       2 | ✅    | —         | —       | —     | —      | ✅        | ✅       | —     | —            | —               | ✅    | ✅   | ✅          | —    | —   |
-| [mcp2cli/source-code](https://github.com/mcp2cli/source-code)                                                       | 2026-07-28 | ✅     | Rust   |    11 |      93 |       3 | ✅    | ✅        | ✅      | ✅    | —         | ✅        | ✅       | ✅    | —            | —               | ✅    | ✅   | —           | —    | —   |
-| [domdomegg/call-mcp](https://github.com/domdomegg/call-mcp)                                                         | 2025-11-25 | ✅     | TS     |     3 |      38 |       3 | ✅    | —         | —       | —     | —      | ✅        | —        | ✅    | —            | —               | ✅    | ✅   | —           | —    | —   |
+| [mcp2cli/source-code](https://github.com/mcp2cli/source-code)                                                       | 2026-07-28 | ✅     | Rust   |    12 |      93 |       3 | ✅    | ✅        | ✅      | ✅    | —      | ✅        | ✅       | ✅    | —            | —               | ✅    | ✅   | —           | —    | —   |
+| [domdomegg/call-mcp](https://github.com/domdomegg/call-mcp)                                                         | 2025-11-25 | ✅     | TS     |     3 |      46 |       3 | ✅    | —         | —       | —     | —      | ✅        | —        | ✅    | —            | —               | ✅    | ✅   | —           | —    | —   |
 
 **Legend:** ✅ = supported, ⚠️ = stale (no commits in 3+ months), **MCP** = latest [MCP protocol version](https://modelcontextprotocol.io/specification/latest/basic/index#protocol-version) the client supports, per its pinned SDK/own implementation, **Commits** = total commits, **Contrib** = contributors, **Tasks** = [async tasks](https://modelcontextprotocol.io/specification/latest/basic/utilities/tasks), **Skills** = [skills extension](https://modelcontextprotocol.io/extensions/skills/overview), **Client creds** = [OAuth client credentials](https://modelcontextprotocol.io/extensions/auth/oauth-client-credentials) extension (machine-to-machine login, no browser), **Enterprise auth** = [enterprise-managed authorization](https://modelcontextprotocol.io/extensions/auth/enterprise-managed-authorization) extension (ID-JAG issued by a corporate IdP), **x402** = [x402 payment protocol](https://www.x402.org/) support, **LLM** = requires/uses an LLM.
 

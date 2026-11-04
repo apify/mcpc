@@ -291,3 +291,21 @@ describe('OAuthProvider keeps the old client registration until the login succee
     expect(storeKeychainOAuthClientInfo).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('OAuthProvider client metadata for Dynamic Client Registration', () => {
+  const makeProvider = (clientName?: string) =>
+    new OAuthProvider({
+      serverUrl: 'https://mcp.example.com',
+      profileName: 'default',
+      redirectUrl: 'http://127.0.0.1:13316/callback',
+      ...(clientName ? { clientName } : {}),
+    });
+
+  it('registers as "mcpc" by default', () => {
+    expect(makeProvider().clientMetadata.client_name).toBe('mcpc');
+  });
+
+  it('registers with the client name passed by --client-name', () => {
+    expect(makeProvider('My Agent').clientMetadata.client_name).toBe('My Agent');
+  });
+});
