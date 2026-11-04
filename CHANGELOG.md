@@ -9,6 +9,8 @@ Each version opens with a one-line summary, which also opens its GitHub release.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-04
+
 Argument completions for prompts and resource templates, tasks on MCP 2026-07-28 servers, MCP TypeScript SDK 2.3.1, stdio server secrets kept out of plaintext files, logs and `ps`, and no more duplicate bridges on Windows.
 
 ### Added
@@ -483,7 +485,8 @@ MCP Skills extension, directory resources, OAuth sessions that survive token exp
 - Interactive shell mode
 - JSON output mode for scripting
 
-[Unreleased]: https://github.com/apify/mcpc/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/apify/mcpc/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/apify/mcpc/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/apify/mcpc/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/apify/mcpc/compare/v0.5.0...v0.6.0
 [0.5.1]: https://github.com/apify/mcpc/compare/v0.5.0...v0.5.1
