@@ -15,6 +15,7 @@ Step-up authorization for scope challenges, argument completions for prompts and
 
 - Step-up authorization ([MCP spec](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization#step-up-authorization-flow)): a command the server answers with `403 insufficient_scope` now fails with exit code 4, names the missing scope and prints the exact `mcpc login <server> --scope "<current scopes plus the missing one>"` to run, instead of a generic "Insufficient scope" server error. The session stays usable for everything else.
 - `login` without `--scope` now asks the server which scopes it wants (the `scope` of its 401 `WWW-Authenticate` challenge, which the spec puts ahead of `scopes_supported`) and adds the scopes the profile already holds, so a re-login never drops a permission. `--scope` still requests exactly what you pass.
+- New `login --client-name <name>` registers the OAuth client under a name other than `mcpc` with Dynamic Client Registration, for authorization servers that show or check `client_name`. It disables CIMD, since the hosted document sets its own name.
 - New `completion-complete prompt|resource <ref> <arg:=val ...>` command asks the server for argument suggestions (MCP `completion/complete`): pass the arguments in the `prompts-get` syntax and the last one is completed. The `--proxy` server forwards completions too.
 - Support for the MCP [Tasks extension](https://modelcontextprotocol.io/extensions/tasks/overview) (`io.modelcontextprotocol/tasks`) on MCP 2026-07-28 servers: `tools-call --task`/`--detach`, `tasks-get`, `tasks-result` and `tasks-cancel` now work there too, mcpc declares the extension on every request, and a server that answers a plain `tools-call` with a task is followed to its result. `tasks-list` shows the tasks the session created, since the extension has no server-side listing. Everything keeps working unchanged on 2025-11-25 servers, where tasks are part of the core protocol. (#430)
 
@@ -37,9 +38,11 @@ Step-up authorization for scope challenges, argument completions for prompts and
 
 ### Fixed
 
+- x402 payments no longer fail with "Unknown network" when a server lists a payment option on a chain mcpc cannot sign for (e.g. Solana) before the Base one: `x402 sign` and `--x402` sessions now pick the first option on a supported network. When there is none, the error lists what the server offered and which networks are supported.
 - `tools-call`, `prompts-get` and `completion-complete` no longer send arguments other than what you typed: a JSON array passed inline or on stdin is now rejected (MCP arguments must be an object), a `__proto__:=...` argument is no longer dropped, and a number too large to represent (e.g. `n:=1e400`) is kept as a string instead of being sent as `null`. (#448)
 - Bridge log rotation no longer races the file it rotates: under load the rename could run before the log file was opened or flushed, so the rotation was silently skipped and the first lines of the new file were lost.
 - Windows sessions no longer pile up duplicate bridge processes when `tasklist` is slow or unavailable. A liveness check that could not run used to report every bridge dead, so each command spawned a replacement without stopping the healthy original; the check now falls back to a signal probe, the old bridge is always asked to shut down, and a bridge that finds another one registered for its session exits on its own. (#427)
+- The `tools-get` call example now shows a real array or object (e.g. `[1]`, `{"x":1}`) for array and object arguments that have no default, including nullable ones and ones defined via `$ref`, instead of a string the server rejects.
 
 ## [0.7.0] - 2026-09-23
 

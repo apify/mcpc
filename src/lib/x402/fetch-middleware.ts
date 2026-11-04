@@ -30,6 +30,7 @@ import {
   signPayment,
   parsePaymentRequired,
   selectAcceptEntry,
+  isSupportedNetwork,
   DEFAULT_PAYMENT_EXPIRY_SECONDS,
   type SignerWallet,
   type PaymentRequiredAccept,
@@ -520,7 +521,8 @@ function extractToolCallName(body: RequestInit['body'] | undefined): string | un
  * Pick an accept entry from a tool's `_meta.x402` block honoring `schemePreference`.
  *
  * Prefers the spec-shaped `accepts[]` array when present; falls back to the flat fields
- * only when the preference matches the flat scheme (or the preference is `auto`).
+ * only when the preference matches the flat scheme (or the preference is `auto`) and the
+ * flat network is one mcpc can sign for.
  * Returning undefined defers signing to the 402 fallback path, which re-runs the
  * selector against the authoritative PAYMENT-REQUIRED header.
  */
@@ -538,6 +540,9 @@ function selectAcceptFromToolMeta(
     return undefined;
   }
   if (preference !== 'auto' && preference !== x402.scheme) {
+    return undefined;
+  }
+  if (!isSupportedNetwork(x402.network)) {
     return undefined;
   }
 

@@ -63,8 +63,8 @@ pnpm link --global
 mcpc --help
 ```
 
-As a supply-chain hardening measure, `pnpm-workspace.yaml` sets `minimumReleaseAge: 4320`, so newly
-published third-party packages aren't installed until they're at least 3 days old. If a fresh
+As a supply-chain hardening measure, `pnpm-workspace.yaml` sets `minimumReleaseAge: 5760`, so newly
+published third-party packages aren't installed until they're at least 4 days old. If a fresh
 dependency bump seems "stuck," that's why — wait it out, or add a targeted exclusion in
 `minimumReleaseAgeExclude` if you have a justified reason.
 

@@ -109,7 +109,7 @@ const OPTIONS_WITH_VALUES = [
   '--client-key-alg',
   '--token-endpoint',
   '--client-metadata-url',
-  '--no-client-metadata-url',
+  '--client-name',
   '--callback-port',
   '-o',
   '--output',

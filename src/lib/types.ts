@@ -568,6 +568,8 @@ export interface Skill {
    * when the content is generated such that stable digests cannot be published.
    */
   resources: SkillResource[] | 'dynamic';
+  /** Keys defined by the extension use the `io.modelcontextprotocol.skills/` prefix. */
+  _meta?: Record<string, unknown>;
 }
 
 /** Result of `skills/list` (paginated; `ttlMs`/`cacheScope` are the caching hints). */
@@ -585,10 +587,12 @@ export interface GetSkillResult {
   cacheScope?: string;
 }
 
-/** Result of `resources/directory/read`: the direct children of a directory resource. */
+/** Result of `resources/directory/read` (paginated; `ttlMs`/`cacheScope` are the caching hints). */
 export interface ReadResourceDirectoryResult {
   resources: Resource[];
   nextCursor?: string;
+  ttlMs?: number;
+  cacheScope?: string;
 }
 
 /**
