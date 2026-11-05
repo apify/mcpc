@@ -9,6 +9,13 @@ Each version opens with a one-line summary, which also opens its GitHub release.
 
 ## [Unreleased]
 
+Safer bridge shutdown: a PID the OS recycled is never signalled, and a stopping bridge gets its full teardown time.
+
+### Fixed
+
+- A restart or `close` no longer kills an unrelated process that was given a dead bridge's PID (after a reboot, for example). The PID recorded for a session is signalled only once mcpc has confirmed it still belongs to the bridge; a recycled one is treated like a crashed bridge and the session reconnects.
+- `close`, `restart` and crash recovery now give the old bridge up to 10 seconds to finish its own shutdown before force-killing it, instead of one second, so a stdio server that is slow to exit is no longer orphaned and the request that ends the server-side session is no longer cut short.
+
 ## [0.8.0] - 2026-11-04
 
 Argument completions for prompts and resource templates, tasks on MCP 2026-07-28 servers, MCP TypeScript SDK 2.3.1, stdio server secrets kept out of plaintext files, logs and `ps`, and no more duplicate bridges on Windows.
