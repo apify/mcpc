@@ -38,14 +38,19 @@ export default tseslint.config(
               message:
                 'Import viem only via src/lib/x402/viem.ts — it is bundled at build time so viem stays a devDependency.',
             },
+            {
+              group: ['@opentelemetry/*'],
+              message:
+                'Import OpenTelemetry only via src/lib/otel/otel.ts — it is bundled at build time so the SDK stays a devDependency.',
+            },
           ],
         },
       ],
     },
   },
   {
-    // The boundary module is the single place allowed to import viem.
-    files: ['src/lib/x402/viem.ts'],
+    // The boundary modules are the single places allowed to import viem / OpenTelemetry.
+    files: ['src/lib/x402/viem.ts', 'src/lib/otel/otel.ts'],
     rules: { 'no-restricted-imports': 'off' },
   }
 );

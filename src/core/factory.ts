@@ -8,6 +8,7 @@ import type {
   AuthProvider,
   OAuthClientProvider,
   FetchLike,
+  Transport,
 } from '@modelcontextprotocol/client';
 import { McpClient, type McpClientOptions } from './mcp-client.js';
 import { createTransportFromConfig } from './transports.js';
@@ -75,6 +76,13 @@ export interface CreateMcpClientOptions {
    * Ignored for HTTP transports.
    */
   onStderrLine?: (line: string) => void;
+
+  /**
+   * Decorate the transport before the client connects over it (the OpenTelemetry
+   * instrumentation of an `--otel` bridge). Receives the transport built from
+   * `serverConfig`; the client connects over whatever this returns.
+   */
+  wrapTransport?: (transport: Transport) => Transport;
 
   /**
    * Whether to automatically connect after creation
@@ -185,7 +193,8 @@ export async function createMcpClient(options: CreateMcpClientOptions): Promise<
     if (options.onStderrLine) {
       transportOptions.onStderrLine = options.onStderrLine;
     }
-    const transport = createTransportFromConfig(options.serverConfig, transportOptions);
+    const created = createTransportFromConfig(options.serverConfig, transportOptions);
+    const transport = options.wrapTransport ? options.wrapTransport(created) : created;
     await client.connect(transport);
   }
 

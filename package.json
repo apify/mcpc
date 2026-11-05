@@ -28,7 +28,7 @@
     "node": ">=22.12.0"
   },
   "scripts": {
-    "build": "tsc && node scripts/bundle-viem.mjs",
+    "build": "tsc && node scripts/bundle-viem.mjs && node scripts/bundle-otel.mjs",
     "build:watch": "tsc --watch",
     "build:readme": "./scripts/update-readme.sh",
     "build:reference": "node scripts/generate-reference.mjs",
@@ -74,6 +74,14 @@
     "@modelcontextprotocol/node": "2.1.1",
     "@modelcontextprotocol/server": "2.3.1",
     "@modelcontextprotocol/server-filesystem": "2026.8.31",
+    "@opentelemetry/api": "1.10.0",
+    "@opentelemetry/context-async-hooks": "3.0.0",
+    "@opentelemetry/core": "3.0.0",
+    "@opentelemetry/exporter-metrics-otlp-http": "0.300.0",
+    "@opentelemetry/exporter-trace-otlp-http": "0.300.0",
+    "@opentelemetry/resources": "3.0.0",
+    "@opentelemetry/sdk-metrics": "3.0.0",
+    "@opentelemetry/sdk-trace": "3.0.0",
     "@types/node": "^26.6.5",
     "@types/proper-lockfile": "^4.1.4",
     "@types/qrcode-terminal": "^0.12.2",

@@ -24,6 +24,7 @@ server and its latest capabilities using the most universal programming interfac
 - 🤖 **AI sandboxing** - Proxy MCP server connections to protect credentials from AI-generated code.
 - 🪶 **Lightweight** - Minimal dependencies, works on Mac/Win/Linux, doesn't use LLMs on its own.
 - 💸 **Agentic payments** - Experimental support for the [x402](https://www.x402.org/) protocol on [Base](https://www.base.org/).
+- 📡 **Observability** - Export [OpenTelemetry](#opentelemetry) traces and metrics for every MCP request, joining the caller's trace.
 
 `mcpc` is the most [MCP specification](https://modelcontextprotocol.io/specification/latest)-compliant CLI client available:
 the only one that covers tools, resources, prompts, async tasks, and skills, plus the OAuth client-credentials and
@@ -46,6 +47,7 @@ clients (see [Related work](#related-work) for the full table, legend, and notes
 - [Sessions](#sessions)
 - [Authentication](#authentication)
 - [MCP proxy](#mcp-proxy)
+- [OpenTelemetry](#opentelemetry)
 - [AI agents](#ai-agents)
 - [Agentic payments (x402)](#agentic-payments-x402)
 - [MCP support](#mcp-support)
@@ -678,6 +680,52 @@ When listing sessions, proxy info is displayed prominently:
 mcpc
 # @relay → https://mcp.apify.com (HTTP, OAuth: default) [proxy: 127.0.0.1:8080]
 ```
+
+## OpenTelemetry
+
+`mcpc` can export [OpenTelemetry](https://opentelemetry.io/) traces and metrics for a session, so the
+MCP calls made from scripts and AI agents show up in your observability stack next to everything else.
+Pass `--otel` to `connect`, and the session's bridge process emits one client span and one duration
+measurement per MCP request and notification, following the OpenTelemetry
+[semantic conventions for MCP](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/mcp.md),
+and exports both over OTLP/HTTP (JSON). This is experimental and entirely opt-in.
+
+The exporter is configured with the standard `OTEL_*` environment variables, which the bridge reads
+from the environment of the `connect` (or `restart`) command that starts it:
+
+```bash
+# Export to a local OpenTelemetry Collector (http://localhost:4318 is the default endpoint)
+mcpc connect mcp.apify.com @apify --otel
+
+# Export to a hosted backend, under your own service name
+export OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp.example.com
+export OTEL_EXPORTER_OTLP_HEADERS="x-api-key=secret"
+export OTEL_SERVICE_NAME=my-agent
+mcpc connect mcp.apify.com @apify --otel
+```
+
+Spans are named `<method> <target>` (e.g. `tools/call search-actors`) and carry `mcp.method.name`,
+`mcp.protocol.version`, `gen_ai.tool.name`, `jsonrpc.request.id`, the server address, and
+`error.type` when a call fails. The `mcp.client.operation.duration` histogram (in seconds) carries
+the low-cardinality subset of those attributes. Tool arguments, tool results, and prompt arguments
+are never recorded.
+
+**Joining a trace.** Every request of an `--otel` session carries
+[W3C Trace Context](https://www.w3.org/TR/trace-context/) in its `_meta` (`traceparent`,
+`tracestate`, `baggage`, per [SEP-414](https://modelcontextprotocol.io/seps/414-request-meta)), so an
+MCP server instrumented with OpenTelemetry continues the same trace. To make the spans part of a trace
+of your own — a CI job, an agent harness — set `TRACEPARENT` (and optionally `TRACESTATE` and
+`BAGGAGE`) in the environment of each `mcpc` command, the convention used by `otel-cli` and the CI
+tracing plugins:
+
+```bash
+TRACEPARENT=00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01 \
+  mcpc @apify tools-call search-actors query:="web crawler"
+```
+
+`mcpc @apify` shows whether a session exports telemetry, and `mcpc --json` reports it as `otel: true`.
+Pending spans and metrics are flushed when the session is closed. The MCP semantic conventions are
+still experimental, so span and metric names may change.
 
 ## AI agents
 
@@ -1442,6 +1490,8 @@ Config files support environment variable substitution using `${VAR_NAME}` synta
 - `MCPC_JSON` - Enable JSON output (set to `1`, `true`, or `yes`, case-insensitive)
 - `HTTPS_PROXY` / `https_proxy` / `HTTP_PROXY` / `http_proxy` - Proxy URL for outbound connections (e.g. `http://proxy.example.com:8080`); `HTTPS_PROXY` takes precedence
 - `NO_PROXY` / `no_proxy` - Comma-separated list of hostnames/IPs to bypass the proxy (e.g. `localhost,127.0.0.1`)
+- `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_SERVICE_NAME`, and the other standard `OTEL_*` variables - Configure the export of `--otel` sessions (see [OpenTelemetry](#opentelemetry))
+- `TRACEPARENT` / `TRACESTATE` / `BAGGAGE` - W3C trace context of the caller; `--otel` sessions parent their spans to it and forward it to the server
 
 ### Cleanup
 

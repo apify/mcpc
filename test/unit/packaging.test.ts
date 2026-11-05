@@ -52,6 +52,8 @@ describe('published package contents', () => {
     expect(paths).toContain('dist/cli/commands/help.js');
     // The bundled viem boundary must ship — x402 resolves viem from it at runtime.
     expect(paths).toContain('dist/lib/x402/viem.js');
+    // Likewise the bundled OpenTelemetry boundary — `connect --otel` loads it in the bridge.
+    expect(paths).toContain('dist/lib/otel/otel.js');
   }, 60_000);
 
   it('does not ship repo-only content (docs, sources, tests, scripts)', () => {
@@ -67,5 +69,14 @@ describe('published package contents', () => {
       dependencies: Record<string, string>;
     };
     expect(pkg.dependencies['viem']).toBeUndefined();
+  });
+
+  it('does not ship the OpenTelemetry SDK as runtime dependencies (bundled at build time)', () => {
+    const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as {
+      dependencies: Record<string, string>;
+    };
+    expect(
+      Object.keys(pkg.dependencies).filter((name) => name.startsWith('@opentelemetry/'))
+    ).toEqual([]);
   });
 });

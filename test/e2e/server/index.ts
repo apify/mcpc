@@ -32,6 +32,7 @@
  *   GET  /control/get-active-sessions - list active MCP session IDs
  *   GET  /control/get-subscriptions - resource URIs subscribed per session
  *   GET  /control/get-client-capabilities - capabilities the client declared (latest tools/call)
+ *   GET  /control/get-last-tool-call-meta - params._meta of the latest tools/call (trace context etc.)
  *   POST /control/fail-next?count=N - fail next N MCP requests
  *   POST /control/expire-session - expire current session
  *   POST /control/bump-counter - increment test://dynamic/counter + notify subscribers
@@ -111,6 +112,10 @@ let counterValue = 0;
 // Client capabilities in effect for the latest tools/call (declared in `initialize`),
 // so tests can check what mcpc advertises on the wire
 let lastClientCapabilities: unknown = null;
+
+// `params._meta` of the latest tools/call, so tests can check what mcpc puts there
+// (the W3C trace context of an --otel session, SEP-414)
+let lastToolCallMeta: unknown = null;
 
 // Resource URIs subscribed per MCP server instance (resources/subscribe)
 const serverSubscriptions = new WeakMap<Server, Set<string>>();
@@ -227,6 +232,7 @@ function createMcpServer(): Server {
 
     server.setRequestHandler(CallToolRequestSchema, async (request) => {
       lastClientCapabilities = server.getClientCapabilities() ?? null;
+      lastToolCallMeta = request.params._meta ?? null;
       await maybeDelay();
       if (shouldFail()) {
         throw new Error('Simulated failure');
@@ -497,6 +503,11 @@ async function main() {
           res.end(JSON.stringify({ capabilities: lastClientCapabilities }));
           return;
         }
+        if (action === 'get-last-tool-call-meta') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ meta: lastToolCallMeta }));
+          return;
+        }
         if (action === 'get-subscriptions') {
           // Resource URIs subscribed per active MCP session
           const subscriptions: Record<string, string[]> = {};
@@ -539,6 +550,7 @@ async function main() {
           deletedSessions.length = 0;
           counterValue = 0;
           lastClientCapabilities = null;
+          lastToolCallMeta = null;
           res.writeHead(200);
           res.end('State reset');
           return;

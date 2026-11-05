@@ -96,6 +96,10 @@ let failNextCount = 0;
 // check that mcpc declares its extensions on every request, not just server/discover
 let lastClientCapabilities: unknown = null;
 
+// `params._meta` of the latest tools/call, so tests can check what mcpc puts there
+// (the W3C trace context of an --otel session, SEP-414)
+let lastToolCallMeta: unknown = null;
+
 // Mutable counter resource state (bumped via /control/bump-counter)
 let counterValue = 0;
 
@@ -394,6 +398,7 @@ function createTestServer(ctx?: McpRequestContext): Server {
 
     server.setRequestHandler('tools/call', async (request) => {
       lastClientCapabilities = server.getClientCapabilities() ?? null;
+      lastToolCallMeta = request.params._meta ?? null;
       await maybeDelay();
       if (shouldFail()) {
         throw new Error('Simulated failure');
@@ -694,6 +699,12 @@ async function main() {
         return;
       }
 
+      if (action === 'get-last-tool-call-meta' && req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ meta: lastToolCallMeta }));
+        return;
+      }
+
       if (action === 'get-task-routing' && req.method === 'GET') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ routing: taskRoutingLog }));
@@ -719,6 +730,7 @@ async function main() {
           failNextCount = 0;
           counterValue = 0;
           lastClientCapabilities = null;
+          lastToolCallMeta = null;
           taskRoutingLog.length = 0;
           res.writeHead(200);
           res.end('State reset');

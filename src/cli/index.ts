@@ -494,6 +494,7 @@ Full docs: ${docsUrl}`
     .option('--stdio', 'Launch all local stdio servers from selected config files')
     .option('--protocol-version <version>', 'Pin the MCP protocol version (see below)')
     .option('--x402 [scheme]', 'Enable x402 auto-payment (see below)')
+    .option('--otel', 'Export OpenTelemetry traces and metrics (see below)')
     .addHelpText(
       'after',
       `
@@ -528,6 +529,17 @@ ${chalk.bold('x402 payments (experimental):')}
   --x402 pays for paid tool calls from the wallet set up with: mcpc x402
   Schemes: auto (default, prefers upto), upto, exact.
   For more info, run: mcpc help x402
+
+${chalk.bold('OpenTelemetry (experimental):')}
+  --otel makes the session's bridge emit a client span and a duration metric
+  for every MCP request (OpenTelemetry semantic conventions for MCP), carry
+  W3C trace context in each request's _meta (traceparent, tracestate,
+  baggage), and export both over OTLP/HTTP. Configure the exporter with the
+  standard OTEL_* variables in the environment of the connect command, e.g.
+  OTEL_EXPORTER_OTLP_ENDPOINT (default http://localhost:4318),
+  OTEL_EXPORTER_OTLP_HEADERS, OTEL_SERVICE_NAME (default mcpc). To make the
+  spans part of a trace of your own, set TRACEPARENT (and optionally
+  TRACESTATE, BAGGAGE) in the environment of each mcpc command.
 ${outputHelp([
   'For a single server, shows session, server info, capabilities, and tools.',
   'Bulk connects list every session with its state, then a summary.',
@@ -559,6 +571,7 @@ ${outputHelp([
           ...(opts.stdio && { stdio: true }),
           ...(opts.protocolVersion && { protocolVersion: opts.protocolVersion as string }),
           ...(globalOpts.x402 && { x402: globalOpts.x402 }),
+          ...(opts.otel && { otel: true }),
           ...(globalOpts.insecure && { insecure: true }),
         });
         // Trailing blank line to match the spacing of other commands (human mode only).
@@ -591,6 +604,7 @@ ${outputHelp([
           ...(opts.stdio && { stdio: true }),
           ...(opts.protocolVersion && { protocolVersion: opts.protocolVersion as string }),
           ...(globalOpts.x402 && { x402: globalOpts.x402 }),
+          ...(opts.otel && { otel: true }),
           ...(globalOpts.insecure && { insecure: true }),
         });
         return;
@@ -616,6 +630,7 @@ ${outputHelp([
           proxyBearerToken: opts.proxyBearerToken,
           ...(opts.protocolVersion && { protocolVersion: opts.protocolVersion as string }),
           ...(globalOpts.x402 && { x402: globalOpts.x402 }),
+          ...(opts.otel && { otel: true }),
           ...(globalOpts.insecure && { insecure: true }),
         });
       } else {
@@ -626,6 +641,7 @@ ${outputHelp([
           proxyBearerToken: opts.proxyBearerToken,
           ...(opts.protocolVersion && { protocolVersion: opts.protocolVersion as string }),
           ...(globalOpts.x402 && { x402: globalOpts.x402 }),
+          ...(opts.otel && { otel: true }),
           ...(globalOpts.insecure && { insecure: true }),
         });
       }

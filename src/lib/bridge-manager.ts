@@ -123,6 +123,8 @@ export interface StartBridgeOptions {
   protocolVersion?: string; // Protocol version negotiated by the resumed session (only pass with mcpSessionId)
   /** x402 scheme preference; presence enables x402 auto-payment, absence disables. */
   x402?: X402SchemePreference;
+  /** Export OpenTelemetry traces and metrics from the bridge (`connect --otel`). */
+  otel?: boolean;
   insecure?: boolean; // Skip TLS certificate verification
 }
 
@@ -157,6 +159,7 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
     mcpSessionId,
     protocolVersion,
     x402,
+    otel,
     insecure,
   } = options;
 
@@ -239,6 +242,13 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
   if (x402) {
     args.push('--x402', x402);
     logger.debug(`Passing x402 scheme preference: ${x402}`);
+  }
+
+  // Pass the OpenTelemetry flag (if enabled); the exporter reads its OTEL_* configuration
+  // from the environment the bridge inherits from this process.
+  if (otel) {
+    args.push('--otel');
+    logger.debug('Passing otel flag to bridge');
   }
 
   // Pass insecure flag (if enabled)
@@ -545,6 +555,10 @@ export async function restartBridge(sessionName: string): Promise<StartBridgeRes
   if (session.x402) {
     bridgeOptions.x402 = session.x402;
     logger.debug(`Using saved x402 scheme preference: ${session.x402}`);
+  }
+  if (session.otel) {
+    bridgeOptions.otel = true;
+    logger.debug('Using saved otel flag');
   }
   if (session.insecure) {
     bridgeOptions.insecure = session.insecure;

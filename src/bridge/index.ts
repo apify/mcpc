@@ -79,8 +79,12 @@ import type { ProxyConfig } from '../lib/types.js';
 // only here and load the implementations lazily at the x402-gated call sites.
 import type { X402PaymentCache } from '../lib/x402/fetch-middleware.js';
 import type { SignerWallet } from '../lib/x402/signer.js';
-import type { FetchLike } from '@modelcontextprotocol/client';
+import type { FetchLike, Transport } from '@modelcontextprotocol/client';
 import { IpcLineBuffer } from '../lib/ipc-line-buffer.js';
+// The OpenTelemetry runtime pulls in the bundled SDK — import the type only here and
+// load the implementation lazily when the session was started with --otel.
+import type { OtelRuntime } from '../lib/otel/runtime.js';
+import { readTraceContextFromEnv, sanitizeTraceContext } from '../lib/trace-context.js';
 
 // HTTP proxy and TLS settings are configured in main() after parsing --insecure flag
 
@@ -105,6 +109,8 @@ interface BridgeOptions {
   protocolVersion?: string; // Protocol version negotiated by the resumed session (only set with mcpSessionId)
   /** x402 scheme preference; presence enables x402 auto-payment, absence disables. */
   x402?: X402SchemePreference;
+  /** Export OpenTelemetry traces and metrics for this session (`connect --otel`). */
+  otel?: boolean;
   insecure?: boolean; // Skip TLS certificate verification
 }
 
@@ -147,6 +153,9 @@ class BridgeProcess {
 
   // Shared payment signature cache — middleware reads/writes, bridge invalidates on payment-required results
   private x402PaymentCache: X402PaymentCache = { signature: null };
+
+  // OpenTelemetry SDK handle (created at startup when the session was started with --otel)
+  private otel: OtelRuntime | null = null;
 
   // Resource→file sync for resources-subscribe (created once the MCP client connects)
   private resourceSync: ResourceSyncManager | null = null;
@@ -490,6 +499,17 @@ class BridgeProcess {
       logger.warn('TLS certificate verification is disabled (--insecure)');
     }
 
+    // 1b. Register the OpenTelemetry SDK before anything can emit a span (--otel). Loaded
+    // lazily: only sessions that asked for it pay for the bundled SDK.
+    if (this.options.otel) {
+      const { startOpenTelemetry } = await import('../lib/otel/runtime.js');
+      this.otel = startOpenTelemetry({
+        serviceVersion: mcpcVersion,
+        logger: createLogger('otel'),
+      });
+      logger.info('OpenTelemetry export enabled (--otel)');
+    }
+
     // 2. Clean up orphaned log files (runs asynchronously in background)
     this.runOrphanedLogCleanup();
 
@@ -734,10 +754,18 @@ class BridgeProcess {
       });
     }
 
+    const otel = this.otel;
     const clientConfig: CreateMcpClientOptions = {
       clientInfo: { name: 'mcpc', version: mcpcVersion },
       serverConfig,
       capabilities: buildClientCapabilities(),
+      // Trace and measure every MCP request, and carry trace context in _meta (--otel)
+      ...(otel && {
+        wrapTransport: (transport: Transport) =>
+          otel.instrumentTransport(transport, {
+            ...(serverConfig.url && { serverUrl: serverConfig.url }),
+          }),
+      }),
       // Pass auth provider for automatic token refresh (HTTP transport only)
       ...(this.authProvider && { authProvider: this.authProvider }),
       // Pass session ID for resumption (HTTP transport only)
@@ -802,8 +830,14 @@ class BridgeProcess {
     }
 
     // Connect to MCP server - if session ID is rejected, this will throw
-    // and the bridge will mark the session as expired (user must explicitly restart)
-    this.client = await createMcpClient(clientConfig);
+    // and the bridge will mark the session as expired (user must explicitly restart).
+    // With --otel, the handshake spans join the trace of the command that started this
+    // bridge when it carried one (the bridge inherits the CLI's TRACEPARENT environment).
+    this.client = otel
+      ? await otel.runWithTraceContext(readTraceContextFromEnv(), () =>
+          createMcpClient(clientConfig)
+        )
+      : await createMcpClient(clientConfig);
 
     logger.info('Connected to MCP server');
     logger.debug('MCP client created successfully, authProvider was:', !!clientConfig.authProvider);
@@ -1465,8 +1499,23 @@ class BridgeProcess {
   /**
    * Forward an MCP request to the MCP server
    * Blocks until MCP client is connected, propagates connection errors to caller
+   *
+   * With --otel, the request runs under the trace context the CLI forwarded (its
+   * TRACEPARENT environment), so the spans the transport emits for it become children of
+   * the caller's span instead of starting a trace of their own.
    */
   private async handleMcpRequest(socket: Socket, message: IpcMessage): Promise<void> {
+    const traceContext = this.otel ? sanitizeTraceContext(message.traceContext) : undefined;
+    if (this.otel && traceContext) {
+      await this.otel.runWithTraceContext(traceContext, () =>
+        this.dispatchMcpRequest(socket, message)
+      );
+    } else {
+      await this.dispatchMcpRequest(socket, message);
+    }
+  }
+
+  private async dispatchMcpRequest(socket: Socket, message: IpcMessage): Promise<void> {
     logger.debug(`>>> handleMcpRequest: ${message.method} <<<`);
 
     // Wait for MCP client to be ready (blocks if still connecting, throws if connection failed)
@@ -2089,6 +2138,16 @@ class BridgeProcess {
       }
     }
 
+    // Flush the last spans and metrics and release the exporters (--otel)
+    if (this.otel) {
+      try {
+        await this.otel.shutdown();
+        logger.debug('OpenTelemetry shut down');
+      } catch (error) {
+        logger.warn('Failed to shut down OpenTelemetry:', error);
+      }
+    }
+
     // Close file logger
     try {
       await closeFileLogger();
@@ -2108,7 +2167,7 @@ async function main(): Promise<void> {
 
   if (args.length < 2) {
     console.error(
-      'Usage: node dist/bridge/index.js <sessionName> <transportConfigJson> [--verbose] [--profile <name>] [--proxy-host <host>] [--proxy-port <port>] [--mcp-session-id <id>] [--protocol-version <version>] [--x402 <auto|upto|exact>] [--insecure]'
+      'Usage: node dist/bridge/index.js <sessionName> <transportConfigJson> [--verbose] [--profile <name>] [--proxy-host <host>] [--proxy-port <port>] [--mcp-session-id <id>] [--protocol-version <version>] [--x402 <auto|upto|exact>] [--otel] [--insecure]'
     );
     process.exit(1);
   }
@@ -2164,6 +2223,9 @@ async function main(): Promise<void> {
     x402 = value as X402SchemePreference;
   }
 
+  // Parse --otel flag (export OpenTelemetry traces and metrics)
+  const otel = args.includes('--otel');
+
   // Parse --insecure flag (skip TLS certificate verification)
   const insecure = args.includes('--insecure');
 
@@ -2191,6 +2253,9 @@ async function main(): Promise<void> {
     }
     if (x402) {
       bridgeOptions.x402 = x402;
+    }
+    if (otel) {
+      bridgeOptions.otel = true;
     }
     if (insecure) {
       bridgeOptions.insecure = true;

@@ -22,6 +22,7 @@ import { createLogger } from './logger.js';
 import { NetworkError, ClientError, ServerError, AuthError, IpcTimeoutError } from './errors.js';
 import { generateRequestId, sleep } from './utils.js';
 import { IpcLineBuffer } from './ipc-line-buffer.js';
+import { readTraceContextFromEnv } from './trace-context.js';
 
 const logger = createLogger('bridge-client');
 
@@ -272,12 +273,16 @@ export class BridgeClient extends EventEmitter {
 
     const id = requestId || generateRequestId();
 
+    // The caller's trace context (TRACEPARENT and friends) rides along so an `--otel`
+    // bridge parents this request's spans to it; other bridges ignore the field.
+    const traceContext = readTraceContextFromEnv();
     const message: IpcMessage = {
       type: 'request',
       id,
       method,
       params,
       ...(timeoutSecs !== undefined && { timeoutSecs }),
+      ...(traceContext && { traceContext }),
     };
 
     logger.debug('Sending request:', { id, method });

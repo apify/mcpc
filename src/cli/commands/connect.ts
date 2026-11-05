@@ -151,6 +151,7 @@ type ConnectSessionOptions = {
   proxyBearerToken?: string;
   protocolVersion?: string;
   x402?: X402SchemePreference;
+  otel?: boolean;
   insecure?: boolean;
   skipDetails?: boolean;
   quiet?: boolean;
@@ -416,6 +417,7 @@ export async function connectSession(
     ...(profileName && { profileName }),
     ...(proxyConfig && { proxy: proxyConfig }),
     ...(options.x402 && { x402: options.x402 }),
+    ...(options.otel && { otel: true }),
     ...(options.insecure && { insecure: true }),
     // Clear any previous error status (unauthorized, expired) when reconnecting
     ...(isReconnect && { status: 'active' }),
@@ -446,6 +448,7 @@ export async function connectSession(
       ...(profileName && { profileName }),
       ...(proxyConfig && { proxyConfig }),
       ...(options.x402 && { x402: options.x402 }),
+      ...(options.otel && { otel: true }),
       ...(options.insecure && { insecure: true }),
     };
 
@@ -660,6 +663,7 @@ type BulkConnectOptions = {
   stdio?: boolean;
   protocolVersion?: string;
   x402?: X402SchemePreference;
+  otel?: boolean;
   insecure?: boolean;
 };
 

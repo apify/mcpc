@@ -318,7 +318,8 @@ export async function showServerDetails(
           target,
           tools,
           resourceSubscriptions,
-          context.serverConfig?.protocolVersion
+          context.serverConfig?.protocolVersion,
+          sessionData?.otel === true
         )
       );
     } else {
@@ -351,6 +352,7 @@ export async function showServerDetails(
               ...statelessField(connectionMode),
               ...(logPath && { logPath }),
               ...(resourceSubscriptions.length > 0 && { resourceSubscriptions }),
+              ...(sessionData?.otel && { otel: true }),
             },
             protocolVersion,
             ...(supportedVersions && { supportedVersions }),
@@ -437,6 +439,7 @@ export async function restartSession(
     ...(profileName && { profileName }),
     ...(session.proxy && { proxyConfig: session.proxy }),
     ...(session.x402 && { x402: session.x402 }),
+    ...(session.otel && { otel: true }),
     ...(session.insecure && { insecure: session.insecure }),
   };
 

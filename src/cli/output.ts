@@ -1895,7 +1895,10 @@ export function formatSessionLine(session: SessionData): string {
       theme.green(']');
   }
 
-  const suffix = [infoStr, proxyStr].filter(Boolean).join(' ');
+  // OpenTelemetry export (connect --otel)
+  const otelStr = session.otel ? theme.blue('[otel]') : '';
+
+  const suffix = [infoStr, proxyStr, otelStr].filter(Boolean).join(' ');
   return `${nameStr} → ${targetStr}${suffix ? ' ' + suffix : ''}`;
 }
 
@@ -2153,7 +2156,8 @@ export function formatServerDetails(
   target: string,
   tools?: Tool[],
   resourceSubscriptions?: ResourceSubscriptionEntry[],
-  pinnedProtocolVersion?: string
+  pinnedProtocolVersion?: string,
+  otel?: boolean
 ): string {
   const lines: string[] = [];
   const bullet = chalk.dim('*');
@@ -2174,6 +2178,13 @@ export function formatServerDetails(
     const mode = connectionMode && connectionMode !== 'unknown' ? ` (${connectionMode})` : '';
     const via = transport ? chalk.gray(' / ') + `${formatTransportKind(transport)}${mode}` : '';
     lines.push(chalk.bold('MCP:') + ` version ${protocolVersion}${pinned}${via}`);
+  }
+  // The bridge exports OpenTelemetry traces and metrics (connect --otel); sits with the
+  // MCP line since both describe the connection rather than the server.
+  if (otel) {
+    lines.push(chalk.bold('Telemetry:') + ' OpenTelemetry traces and metrics exported (--otel)');
+  }
+  if (protocolVersion || otel) {
     lines.push('');
   }
 

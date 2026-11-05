@@ -281,6 +281,11 @@ your user's say-so.
 A paid tool result carries the server's settlement receipt at `_meta["x402/payment-response"]`;
 one receipt is held at a time, so run paid calls sequentially if you need every one of them.
 
+For observability, `mcpc connect <server> @s --otel` (experimental) exports OpenTelemetry
+traces and metrics for the session's MCP requests; the standard `OTEL_*` env vars configure the
+exporter, and setting `TRACEPARENT` in a command's environment makes its spans part of your own
+trace — see `mcpc help connect`.
+
 ## Debugging
 
 ```bash

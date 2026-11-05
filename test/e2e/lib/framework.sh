@@ -301,6 +301,13 @@ _test_cleanup() {
     _PROXY_SERVER_PID=""
   fi
 
+  # Stop OTLP receiver if started
+  if [[ -n "${_OTLP_RECEIVER_PID:-}" ]]; then
+    _kill_tree "$_OTLP_RECEIVER_PID"
+    _wait_killed "$_OTLP_RECEIVER_PID"
+    _OTLP_RECEIVER_PID=""
+  fi
+
   # Clean up keychain entries for our sessions
   _cleanup_keychain
 
@@ -780,6 +787,7 @@ TEST_SERVER_PORT="${TEST_SERVER_PORT:-0}"  # 0 = random port
 _TEST_SERVER_PID=""
 _PROXY_SERVER_PID=""
 _HTTPS_WRAPPER_PID=""
+_OTLP_RECEIVER_PID=""
 
 # Protocol era served by the test server (the protocol-version test matrix):
 #   legacy - test/e2e/server/index.ts (MCP SDK v1, protocol 2025-11-25)
@@ -992,6 +1000,50 @@ proxy_request_count() {
 # Reset the proxy request counter to zero.
 proxy_reset_count() {
   curl -s -X POST "$PROXY_CONTROL_URL/reset" >/dev/null
+}
+
+# Start a minimal OTLP/HTTP receiver that records the spans and metrics an `--otel`
+# session exports (see test/e2e/server/otlp-receiver.ts).
+# Sets OTLP_RECEIVER_URL — point OTEL_EXPORTER_OTLP_ENDPOINT at it.
+start_otlp_receiver() {
+  local log="$_TEST_RUN_DIR/otlp-receiver.log"
+  cd "$PROJECT_ROOT"
+  $TSX test/e2e/server/otlp-receiver.ts >"$log" 2>&1 &
+  _OTLP_RECEIVER_PID=$!
+
+  # Wait for OTLP_PORT= line in log (up to 10 seconds)
+  local max_wait=50
+  local waited=0
+  while ! grep -q "^OTLP_PORT=" "$log" 2>/dev/null; do
+    sleep 0.2
+    ((waited++)) || true
+    if [[ $waited -ge $max_wait ]]; then
+      echo "Error: OTLP receiver failed to start" >&2
+      cat "$log" >&2
+      kill $_OTLP_RECEIVER_PID 2>/dev/null || true
+      exit 1
+    fi
+  done
+
+  local port
+  port=$(grep "^OTLP_PORT=" "$log" | cut -d= -f2 | tr -d '[:space:]')
+  export OTLP_RECEIVER_URL="http://127.0.0.1:${port}"
+  echo "# OTLP receiver started at $OTLP_RECEIVER_URL (PID: $_OTLP_RECEIVER_PID)"
+}
+
+# The spans the OTLP receiver has collected so far, as JSON: { spans: [...] }
+otlp_spans() {
+  curl -s "$OTLP_RECEIVER_URL/control/spans"
+}
+
+# The histogram data points the OTLP receiver has collected so far: { points: [...] }
+otlp_metrics() {
+  curl -s "$OTLP_RECEIVER_URL/control/metrics"
+}
+
+# Forget everything the OTLP receiver has collected
+otlp_reset() {
+  curl -s -X POST "$OTLP_RECEIVER_URL/control/reset" >/dev/null
 }
 
 # Start an HTTPS wrapper around the test server using a self-signed certificate.

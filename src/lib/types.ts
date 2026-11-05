@@ -4,6 +4,7 @@
  */
 
 // Import types for use in interface definitions
+import type { TraceContextCarrier } from './trace-context.js';
 import type {
   Tool,
   Resource,
@@ -178,6 +179,8 @@ export interface SessionData {
    * Absent / undefined means x402 is disabled.
    */
   x402?: X402SchemePreference;
+  /** Bridge exports OpenTelemetry traces and metrics for this session (`connect --otel`). */
+  otel?: boolean;
   insecure?: boolean; // Skip TLS certificate verification
   pid?: number; // Bridge process PID
   protocolVersion?: string; // Negotiated MCP version
@@ -604,6 +607,11 @@ export interface IpcMessage {
   method?: string; // MCP method name
   params?: unknown; // Method parameters
   timeoutSecs?: number; // Per-request timeout in seconds (overrides default)
+  /**
+   * W3C trace context of the CLI invocation (its TRACEPARENT / TRACESTATE / BAGGAGE
+   * environment), so an `--otel` bridge parents the request's spans to the caller's trace.
+   */
+  traceContext?: TraceContextCarrier;
   result?: unknown; // Response result
   taskUpdate?: TaskUpdate; // Task progress update (for type='task-update')
   authCredentials?: AuthCredentials; // Auth credentials (for type='set-auth-credentials')
