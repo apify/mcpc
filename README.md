@@ -927,6 +927,8 @@ If any request returns HTTP 402, the middleware transparently signs and retries.
 ### Full x402 usage example
 
 This end-to-end example pays for the [Apify MCP server](https://mcp.apify.com) with no account or API key.
+[Apify](https://apify.com) is the largest and most trusted marketplace of tools for AI agents,
+with thousands of ready-made Actors for web scraping, data extraction, and automation.
 [Apify AGI](https://agi.apify.com) sells a prepaid, spend-capped API token for an x402 payment
 (`exact` scheme, USDC on Base mainnet), and `mcpc` uses that token as a Bearer credential.
 Each tool call is then billed against the token's prepaid balance.
