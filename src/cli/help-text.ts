@@ -35,7 +35,7 @@ export const TASKS_SPEC_URL =
  * than in the core MCP schema, so the skills commands link here instead of SCHEMA_BASE.
  */
 export const SKILLS_SPEC_URL =
-  'https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/stable/skills.mdx';
+  'https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/beta/skills.mdx';
 
 /**
  * The one JSON shape every server-details command returns: the server's handshake result

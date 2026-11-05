@@ -18,7 +18,8 @@
  * document's frontmatter matches what the entry advertised. Unverified content is never
  * printed, so what an agent reads is what the server published.
  *
- * Spec: https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/stable/skills.mdx
+ * Spec: https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/beta/skills.mdx
+ * Docs: https://modelcontextprotocol.io/extensions/skills/overview
  */
 
 import { createHash } from 'crypto';

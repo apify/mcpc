@@ -16,7 +16,8 @@
  * accepted as optional: they carry no meaning for a one-shot CLI, so a server that
  * omits them still gets its skills listed.
  *
- * Spec: https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/stable/skills.mdx
+ * Spec: https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/beta/skills.mdx
+ * Docs: https://modelcontextprotocol.io/extensions/skills/overview
  */
 
 import type { StandardSchemaV1 } from '@modelcontextprotocol/client';
