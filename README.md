@@ -939,8 +939,8 @@ Each tool call is then billed against the token's prepaid balance.
 mcpc x402 init
 mcpc x402
 
-# 2. Fetch the payment challenge for a $5 token (the PAYMENT-REQUIRED header of the 402 response).
-URL='https://agi.apify.com/protocols/x402/prepaid-tokens?amount=5&currency=usd'
+# 2. Fetch the payment challenge for a $1 token, the minimum (the PAYMENT-REQUIRED header).
+URL='https://agi.apify.com/protocols/x402/prepaid-tokens?amount=1&currency=usd'
 REQ=$(curl -s -D - -o /dev/null "$URL" | awk -F': ' 'tolower($1)=="payment-required"{print $2}' | tr -d '\r\n')
 
 # 3. Sign it with the wallet and resubmit; the server settles the payment and returns the token.
