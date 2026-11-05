@@ -599,7 +599,7 @@ is missing, expired, or invalid, `mcpc` fails with an error that includes the ri
 | `--x402 [scheme]`               | Skip OAuth auto-detection; use x402 payments instead. Optional scheme: `auto` (default), `upto`, `exact`. Combine with `--profile` to use both. |
 | _(none)_                        | Use `default` profile if it exists; otherwise connect anonymously.                                                                              |
 
-Config file headers (from `--config`) apply to servers loaded from that file.
+Headers set on a config file entry (`file:entry`) apply to the server that entry describes.
 
 ```bash
 # Default: 'default' profile if it exists, else anonymous
@@ -1338,7 +1338,7 @@ You can configure `mcpc` using a config file, environment variables, or command-
 
 **Precedence** (highest to lowest):
 
-1. Command-line flags (including `--config` option)
+1. Command-line flags and config file entries (`file:entry`)
 2. Environment variables
 3. Built-in defaults
 

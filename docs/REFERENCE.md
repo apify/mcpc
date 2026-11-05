@@ -990,7 +990,7 @@ Notes:
 JSON output (--json):
   Array of `Skill` entries:
   `[{ uri, frontmatter: { name, description, ... }, resources: [{ uri, digest, size }] | "dynamic" }, ...]`
-  Schema: https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/stable/skills.mdx
+  Schema: https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/beta/skills.mdx
 ```
 
 ### `mcpc @<session> skills-get`
@@ -1021,7 +1021,7 @@ Examples:
 JSON output (--json):
   The skill entry plus the content that was read:
   `{ skill: { uri, frontmatter, resources }, contents: [{ uri, mimeType?, text? | blob? }] }`
-  Schema: https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/stable/skills.mdx
+  Schema: https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/beta/skills.mdx
 ```
 
 ### `mcpc @<session> logging-set-level`

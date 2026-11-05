@@ -28,7 +28,7 @@ export const ENTERPRISE_MANAGED_AUTH_EXTENSION_KEY =
  * Skills over MCP — discovering skills and reading their instructions and supporting
  * files (`skills/list`, `skills/get`, and the optional `resources/directory/read`).
  *
- * Spec: https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/stable/skills.mdx
+ * Spec: https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/beta/skills.mdx
  */
 export const SKILLS_EXTENSION_KEY = 'io.modelcontextprotocol/skills';
 
