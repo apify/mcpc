@@ -229,6 +229,7 @@ old cached copy.
 | `skills.tape` | MCP Skills extension: `skills-list` / `skills-get` / `resources-directory-read` against the e2e test server served as `mcp.example.com` |
 | `tasks.tape` | MCP Tasks extension (2026-07-28): `tools-call --task` with live progress, `--detach` captured through `jq`, then `tasks-get` / `tasks-list` / `tasks-result`, against the same e2e test server as `mcp.example.com` |
 | `security.tape` | Auto-discovery skipping a checked-in `.mcp.json` entry that reads `${GITHUB_TOKEN}` (fixture: `security.mcp.json`, copied into a `mktemp -d` HOME so no real configs are discovered); needs `mcp.example.com` for the trusted entry |
+| `x402.tape` | Full x402 usage example from README.md: funded wallet → sign the agi.apify.com challenge → prepaid token → `mcp.apify.com`. Each render pays **1 USDC for real**; rehearse with a copy cut before the `TOKEN=` line first. The token is saved off-screen to `$X402_DEMO_HOME/token` |
 
 All focused tapes follow the same conventions as the hero (bold `$` prompt,
 bold-white commands, no comments, blank-line separation, `mktemp` home).
