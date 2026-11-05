@@ -615,7 +615,7 @@ mcpc connect mcp.apify.com @apify --header "Authorization: Bearer ${APIFY_TOKEN}
 mcpc connect mcp.apify.com @apify-anon --no-profile
 
 # x402 micropayments instead of OAuth
-mcpc connect mcp.apify.com @apify --x402
+mcpc connect mcp.example.com @paid --x402
 ```
 
 ## MCP proxy
@@ -901,17 +901,17 @@ Pass the `--x402` flag when connecting to a session. It accepts an optional sche
 
 ```bash
 # Create a session with x402 payment support (auto picks the best advertised scheme)
-mcpc connect mcp.apify.com @apify --x402
+mcpc connect mcp.example.com @paid --x402
 
 # Pin a specific scheme — position doesn't matter, before or after positional args
-mcpc connect --x402 upto mcp.apify.com @apify
-mcpc connect mcp.apify.com @apify --x402 exact
+mcpc connect --x402 upto mcp.example.com @paid
+mcpc connect mcp.example.com @paid --x402 exact
 
 # The session now automatically handles 402 responses using your preference
-mcpc @apify tools-call expensive-tool query:="hello"
+mcpc @paid tools-call expensive-tool query:="hello"
 
 # Restart re-uses the saved scheme from sessions.json — no need to repeat the flag
-mcpc @apify restart
+mcpc @paid restart
 ```
 
 When `--x402` is active, a fetch middleware wraps all HTTP requests to the MCP server.
@@ -923,6 +923,27 @@ If any request returns HTTP 402, the middleware transparently signs and retries.
 | -------------------- | ------------ |
 | Base Mainnet         | ✅ Supported |
 | Base Sepolia testnet | ✅ Supported |
+
+### Paying for Apify with x402
+
+To use the Apify MCP server (`mcp.apify.com`) without an Apify account, buy a prepaid, spend-capped Apify API token
+from [Apify AGI](https://agi.apify.com) with an x402 payment on Base mainnet, then pass the token as a Bearer token. The wallet must hold USDC on Base (see [Wallet setup](#wallet-setup)):
+
+```bash
+# 1. Fetch the payment challenge (the `payment-required` response header).
+PR=$(curl -s -D - -o /dev/null 'https://agi.apify.com/protocols/x402/prepaid-tokens?amount=5&currency=usd' \
+  | awk 'BEGIN{IGNORECASE=1}/^payment-required:/{sub(/\r$/,"");sub(/^[^:]+:[ \t]*/,"");print;exit}')
+
+# 2. Sign it, then resubmit with the signature to receive the token.
+SIG=$(mcpc x402 sign "$PR" --scheme exact --json | jq -r .paymentSignature)
+TOKEN=$(curl -s 'https://agi.apify.com/protocols/x402/prepaid-tokens?amount=5&currency=usd' \
+  -H "payment-signature: $SIG" | jq -r .token)
+
+# 3. Connect with the token.
+mcpc connect mcp.apify.com @apify --header "Authorization: Bearer $TOKEN"
+```
+
+See [agi.apify.com/AGENTS.md](https://agi.apify.com/AGENTS.md) for current terms.
 
 ## MCP support
 
