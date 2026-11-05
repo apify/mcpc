@@ -1305,6 +1305,8 @@ mcpc @apify tasks-result <taskId>
 mcpc @apify tasks-cancel <taskId>
 ```
 
+![mcpc tools-call --task, --detach and tasks-result demo](https://raw.githubusercontent.com/apify/mcpc/main/docs/vhs/tasks.gif?v=1)
+
 With `--task`, the CLI shows a progress spinner with elapsed time, server status messages,
 and progress notifications. Press **ESC** during execution to detach and get the task ID
 for later retrieval. With `--detach`, the task starts and its ID is printed immediately
