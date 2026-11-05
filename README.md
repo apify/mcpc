@@ -274,7 +274,7 @@ mcpc @fs tools-list
 mcpc @fs tools-call list_directory path:=/
 ```
 
-See [MCP feature support](#mcp-feature-support) for details about all supported MCP features and commands.
+See [MCP support](#mcp-support) for details about all supported MCP features and commands.
 
 #### Command arguments
 
@@ -932,8 +932,6 @@ major client-facing features of the [MCP specification](https://modelcontextprot
 from tools, resources, and prompts to the newest additions like async tasks and skills. Each is exposed as
 a first-class command with consistent human-readable and `--json` output.
 
-### MCP feature support
-
 Where `mcpc` stands on each part of the MCP specification:
 
 | **Feature**                                          | **Status**                                                       |
@@ -962,7 +960,7 @@ Beyond the interactive browser login, the **Authorization** row also covers the 
 [MCP authorization extensions](#mcp-authorization-extensions): OAuth client credentials and
 enterprise-managed authorization.
 
-#### MCP extensions
+### MCP extensions
 
 Extensions are the optional, modular parts of MCP, negotiated through the `extensions` field of
 client and server capabilities. Where `mcpc` stands on the
@@ -982,7 +980,7 @@ issued, and can answer a tool call with a task handle. Skills is declared by ser
 client issues `skills/list` and `skills/get` once it sees that declaration. `mcpc @session` lists
 what a server declares in return, and says which of those `mcpc` can use.
 
-#### Server instructions
+### Server instructions
 
 MCP servers can provide instructions describing their capabilities and usage. These are displayed when you connect to a server or show its session overview:
 
@@ -1036,7 +1034,7 @@ on `2025-11-25` connections.
 }
 ```
 
-#### Tools
+### Tools
 
 Tools are the heart of MCP, and `mcpc` gives you the whole toolbox to discover, inspect, validate, and call them:
 
@@ -1083,7 +1081,7 @@ server's current tools.
 - **Schema validation**: pin a tool's schema with `--schema` to catch breaking changes in CI and
   scripts before they bite (see [Schema validation](#schema-validation)).
 
-#### Prompts
+### Prompts
 
 List and retrieve server-defined prompt templates:
 
@@ -1097,7 +1095,7 @@ mcpc @apify prompts-get analyze-website url:=https://example.com
 
 <!-- TODO: Add example of prompt templates -->
 
-#### Resources
+### Resources
 
 Access server-provided data sources by URI:
 
@@ -1135,7 +1133,7 @@ mcpc @apify resources-subscribe "file:///config.json" ./config.json
 mcpc @apify resources-unsubscribe "file:///config.json"
 ```
 
-#### Completion
+### Completion
 
 Servers that declare the `completions` capability can suggest values for prompt arguments and
 resource template variables
@@ -1158,7 +1156,7 @@ mcpc @apify completion-complete resource 'file:///{path}' path:=/ho
 Servers return at most 100 suggestions ranked by relevance; `hasMore` in the `--json` output says
 whether there were more. Completion works the same on `2025-11-25` and `2026-07-28` servers.
 
-#### Skills
+### Skills
 
 Implements the [MCP Skills extension](https://github.com/modelcontextprotocol/ext-skills)
 (`io.modelcontextprotocol/skills`), which requires MCP `2026-07-28` or later.
@@ -1204,7 +1202,7 @@ Skills appear under capabilities in `mcpc @session` output when a server declare
 input — `mcpc` only reads and prints it; it never executes hooks, scripts, or other frontmatter-declared
 behavior, and `allowed-tools` grants nothing.
 
-#### List change notifications
+### List change notifications
 
 When connected via a [session](#sessions), `mcpc` automatically handles `list_changed`
 notifications for tools, resources, and prompts. On `2025-11-25` servers these arrive as
@@ -1218,7 +1216,7 @@ The bridge process tracks when each notification type was last received.
 The timestamps are available in the JSON output of `mcpc @session --json` under the `_mcpc.notifications`
 field - see [Server instructions](#server-instructions).
 
-#### Server logs
+### Server logs
 
 `mcpc` supports server logging settings (`logging/setLevel`) and log messages (`notifications/message`).
 Log messages are printed to bridge log or stderr, subject to [verbosity level](#verbose-mode).
@@ -1241,14 +1239,14 @@ The actual log output depends on the server's implementation.
 > only on servers using protocol `2025-11-25` or older and will be removed in a future mcpc
 > release. Server log messages (`notifications/message`) are still recorded in the bridge log.
 
-#### Pagination
+### Pagination
 
 MCP servers may return paginated results for list operations
 (`tools-list`, `resources-list`, `prompts-list`, `resources-templates-list`).
 `mcpc` handles this automatically and always fetches all available pages using the `nextCursor`
 token - you always get the complete list without manual iteration. Keep it simple.
 
-#### Ping
+### Ping
 
 Sessions automatically send periodic pings to keep the [connection alive](#session-lifecycle) and detect failures early.
 Send a ping to check if a server connection is alive:
@@ -1264,7 +1262,7 @@ sends a `server/discover` probe instead — same round trip, same liveness signa
 command works identically on both protocol versions. The human-readable output says so,
 so a `server/discover` entry in the server's access log is not a surprise.
 
-#### Server discovery
+### Server discovery
 
 On `2026-07-28` connections you can also send that request yourself and see what the server
 answers right now — every protocol version it supports, its capabilities, its instructions,
@@ -1280,7 +1278,7 @@ when it was created, this is a live request. Protocol `2026-07-28` introduced
 `server/discover`, so the command fails on `2025-11-25` (and older) connections, where the
 `initialize` handshake carries the same information — run `mcpc @apify` there instead.
 
-#### Async tasks
+### Async tasks
 
 MCP servers can execute tools as [async tasks](https://modelcontextprotocol.io/specification/latest/basic/utilities/tasks)
 that run in the background and report progress. `mcpc` supports the full task lifecycle:
