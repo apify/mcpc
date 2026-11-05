@@ -128,6 +128,7 @@ mcpc/
 - Socket location: `~/.mcpc/bridges/<session-name>.<pid>.sock` (falls back to a short hashed path under the system temp dir when the path would exceed the OS socket limit)
 - Keepalive ping every 30 seconds, `lastSeenAt` recorded in `sessions.json`
 - Orphaned log and socket file cleanup; a bridge that finds a *different* PID registered for its session in `sessions.json` (checked on every keepalive tick) exits on its own without ending the server-side MCP session, so a replacement spawned by mistake never leaves the original running (#427)
+- A bridge PID is signalled only after `identifyBridgeProcess()` (`src/lib/bridge-process.ts`) has confirmed it is still that session's bridge — its IPC socket answers, or its command line names the bridge script followed by the session name. PIDs are recycled, so after a reboot the number in `sessions.json` may belong to an unrelated process; such a PID is treated as a crashed bridge and never killed. `stopBridge()` then waits up to 10 s for the bridge's own teardown (HTTP DELETE, stdio child shutdown) before SIGKILL
 - Atomic writes for session file (write to temp, then rename)
 - File lock acquisition: up to 10 retries with randomized backoff (5s max per retry)
 
@@ -257,6 +258,7 @@ Run `mcpc --help` and `mcpc help <command>` for the authoritative, always-curren
 
 - CLI detects socket connection failure
 - Reads `sessions.json` for last known config
+- Signals the old PID only if it is still the bridge (`src/lib/bridge-process.ts`); a PID the OS has recycled is left alone
 - Spawns new bridge, re-initializes MCP connection
 - Retries the request once — but only for idempotent operations. Tool calls are
   NOT re-executed (the server may already have run them); the session is

@@ -125,9 +125,13 @@ README (`README.md:1354`) and CLAUDE.md promise "no credentials logged even in v
 
 ### M5. PID reuse makes mcpc SIGTERM/SIGKILL an unrelated process
 
+**Status: fixed.** No PID from `sessions.json` is signalled before `identifyBridgeProcess()` (`src/lib/bridge-process.ts`) has confirmed it is still the session's bridge. The check connects to the PID-specific IPC socket first — on Windows a named pipe cannot outlive its process, and on Unix the stale socket file is probed rather than trusted — and, when nothing listens there, reads the process command line (`/proc/<pid>/cmdline` on Linux, `ps` elsewhere), which must name the bridge script immediately followed by the session name. A recycled or dead PID is never signalled: `stopBridge`, `ensureBridgeReady` and `consolidateSessions` all treat it as a crashed bridge, so the session is reconnected and the stranger is left alone. Covered by unit tests with real sockets and processes, and by `test/e2e/suites/basic/bridge-pid-reuse.test.sh`.
+
 `src/lib/utils.ts:541-551` `isProcessAlive` is `process.kill(pid, 0)`, true for any live process of the same user. `src/lib/sessions.ts:350` keeps a PID that is "alive". `src/lib/bridge-manager.ts:784-808` then sees the PID alive, fails to reach the socket, and falls through to `stopBridge` (`:374-404`), which sends SIGTERM then SIGKILL to that PID without checking it is a bridge. After a reboot, `sessions.json` still lists small PIDs that the OS reassigns to the user's own processes; the next `mcpc @s tools-list` kills one. Verify identity before killing: the PID-suffixed socket path exists, or `/proc/<pid>/cmdline` contains the bridge script and session name, or store the process start time.
 
 ### M6. `stopBridge` SIGKILLs the bridge after one second, before its teardown budget
+
+**Status: fixed.** After SIGTERM (or the IPC shutdown message on Windows) `stopBridge` polls for the bridge to exit for up to 10 s — the bridge's own budget of 2 s for the HTTP DELETE plus 6 s for the SDK's stdio close escalation — before SIGKILL, and returns as soon as the process is gone. Covered by unit tests.
 
 `bridge-manager.ts:390-404` waits 1 s after SIGTERM. The bridge's shutdown gives HTTP DELETE 2 s and `client.close()` up to 6 s (`src/core/mcp-client.ts:401-427`); the SDK's stdio close is `stdin.end → 2 s → SIGTERM → 2 s → SIGKILL`. So for any stdio server that does not exit on stdin EOF within a second (typical for `npx`-launched servers), the bridge is killed before it ever signals its child, and the child is orphaned. For HTTP, the DELETE is frequently cut off. Poll for exit up to the bridge's real budget, or have the bridge put its child in a process group it kills on exit.
 

@@ -13,9 +13,9 @@ import {
   fileExists,
   ensureDir,
   getMcpcHome,
-  isProcessAlive,
   atomicRename,
 } from './utils.js';
+import { isBridgeProcess } from './bridge-process.js';
 import { withFileLock } from './file-lock.js';
 import { createLogger } from './logger.js';
 import { ClientError } from './errors.js';
@@ -389,8 +389,10 @@ export async function consolidateSessions(
           continue;
         }
 
-        // Check bridge status - always remove pid if process is not alive
-        if (session.pid && !isProcessAlive(session.pid)) {
+        // Check bridge status - always remove pid if the bridge is gone. A PID that is
+        // alive but no longer the bridge (recycled by the OS since the bridge died) counts
+        // as gone too, so the session reads as crashed and is reconnected like any other.
+        if (session.pid && !(await isBridgeProcess(name, session.pid))) {
           logger.debug(`Clearing crashed bridge PID for session: ${name} (PID: ${session.pid})`);
           // Clean up the PID-based socket file for this dead bridge
           if (process.platform !== 'win32') {
