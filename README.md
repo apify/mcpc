@@ -958,6 +958,8 @@ mcpc @apify tools-call search-actors keywords:="Google Maps"
 curl -s -H "Authorization: Bearer $TOKEN" https://agi.apify.com/prepaid-tokens/balance
 ```
 
+![mcpc paying for a prepaid token with x402 and using it with an MCP server](https://raw.githubusercontent.com/apify/mcpc/main/docs/vhs/x402.gif?v=1)
+
 `mcpc` keeps the token only for the `@apify` session, so save `$TOKEN` if you want to reuse it elsewhere.
 See [agi.apify.com/AGENTS.md](https://agi.apify.com/AGENTS.md) for current prices, limits, and terms.
 
