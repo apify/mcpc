@@ -19,6 +19,7 @@
  * printed, so what an agent reads is what the server published.
  *
  * Spec: https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/beta/skills.mdx
+ * Docs: https://modelcontextprotocol.io/extensions/skills/overview
  */
 
 import { createHash } from 'crypto';

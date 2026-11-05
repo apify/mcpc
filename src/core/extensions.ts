@@ -29,6 +29,7 @@ export const ENTERPRISE_MANAGED_AUTH_EXTENSION_KEY =
  * files (`skills/list`, `skills/get`, and the optional `resources/directory/read`).
  *
  * Spec: https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/beta/skills.mdx
+ * Docs: https://modelcontextprotocol.io/extensions/skills/overview
  */
 export const SKILLS_EXTENSION_KEY = 'io.modelcontextprotocol/skills';
 
