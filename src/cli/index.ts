@@ -1502,13 +1502,16 @@ ${jsonHelp('`GetPromptResult` object', '`{ description?, messages: [{ role, cont
 ${chalk.bold('Arguments:')}
   <type>     \`prompt\` or \`resource\` (the MCP ref/prompt or ref/resource reference)
   <ref>      Prompt name, or resource URI template (\`file:///{path}\`)
-  [args...]  Arguments in the prompts-get syntax. The last one is the argument to
-             complete, with the text typed so far as its value (\`name:=\` for none);
-             the ones before it are sent as context.
+  [args...]  Prompt or template arguments, in one of the three forms below. The last
+             one is the argument to complete, with the text typed so far as its value
+             (\`name:=\` for none); the ones before it are sent as context.
 
   key:=value pairs    mcpc ${session} completion-complete prompt code_review language:=py
   Inline JSON         mcpc ${session} completion-complete prompt code_review '{"language":"py"}'
   Stdin pipe          echo '{"language":"py"}' | mcpc ${session} completion-complete prompt code_review
+
+  Values are always sent as strings: \`count:=10\` sends "10", and a JSON object
+  or array is sent as its JSON text.
 
 ${chalk.bold('Examples:')}
   mcpc ${session} completion-complete prompt code_review language:=
