@@ -228,6 +228,12 @@ With no auth flags, mcpc uses the `default` profile if one exists, otherwise it
 connects anonymously. Use `--no-profile` to force an anonymous connection, or
 `--profile <name>` to require a specific one.
 
+**Scopes:** `login` without `--scope` requests the scopes the server asks for in its 401
+challenge plus the scopes the profile already holds. A command that fails with
+`Insufficient scope` (the server answered 403 `insufficient_scope`) prints the exact
+`mcpc login <server> --scope "<all scopes>"` to run; run it, then `mcpc restart @session`.
+The session itself stays usable for everything else.
+
 ## Proxy for AI isolation
 
 Expose an authenticated session as a local MCP server, so sandboxed AI code can use it

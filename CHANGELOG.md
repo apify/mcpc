@@ -9,6 +9,13 @@ Each version opens with a one-line summary, which also opens its GitHub release.
 
 ## [Unreleased]
 
+Step-up authorization for OAuth scope challenges: a 403 insufficient_scope now names the missing scope and the login that adds it.
+
+### Added
+
+- Step-up authorization ([MCP spec](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization#step-up-authorization-flow)): a command the server answers with `403 insufficient_scope` now fails with exit code 4, names the missing scope and prints the exact `mcpc login <server> --scope "<current scopes plus the missing one>"` to run, instead of a generic "Insufficient scope" server error. The session stays usable for everything else.
+- `login` without `--scope` now asks the server which scopes it wants (the `scope` of its 401 `WWW-Authenticate` challenge, which the spec puts ahead of `scopes_supported`) and adds the scopes the profile already holds, so a re-login never drops a permission. `--scope` still requests exactly what you pass.
+
 ## [0.8.0] - 2026-11-04
 
 Argument completions for prompts and resource templates, tasks on MCP 2026-07-28 servers, MCP TypeScript SDK 2.3.1, stdio server secrets kept out of plaintext files, logs and `ps`, and no more duplicate bridges on Windows.

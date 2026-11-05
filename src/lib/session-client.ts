@@ -43,6 +43,16 @@ import { NetworkError, IpcTimeoutError } from './errors.js';
 import { getSocketPath, generateRequestId } from './utils.js';
 import { createLogger } from './logger.js';
 
+/**
+ * Append the `logs` hint to a bridge error. A one-line message gets it on the same line;
+ * a multi-line message (one that ends in a copy-paste command, like the step-up login
+ * hint) gets it on a line of its own, so the trailing period never sticks to the command.
+ */
+function appendLogsHint(message: string, sessionName: string): string {
+  const hint = `For details, run: mcpc ${sessionName} logs`;
+  return message.includes('\n') ? `${message}\n\n${hint}` : `${message}. ${hint}`;
+}
+
 const logger = createLogger('session-client');
 
 /**
@@ -97,7 +107,7 @@ export class SessionClient implements IMcpClient {
       if (!(error instanceof NetworkError)) {
         // Add log hint for MCP/server errors
         const err = error as Error;
-        err.message = `${err.message}. For details, run: mcpc ${this.sessionName} logs`;
+        err.message = appendLogsHint(err.message, this.sessionName);
         throw error;
       }
 
@@ -432,7 +442,7 @@ export class SessionClient implements IMcpClient {
     } catch (error) {
       if (!(error instanceof NetworkError)) {
         const err = error as Error;
-        err.message = `${err.message}. For details, run: mcpc ${this.sessionName} logs`;
+        err.message = appendLogsHint(err.message, this.sessionName);
         throw error;
       }
 

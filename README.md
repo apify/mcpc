@@ -508,6 +508,28 @@ mcpc logout mcp.apify.com
 mcpc logout mcp.apify.com --profile work
 ```
 
+#### Scopes and step-up authorization
+
+Without `--scope`, `login` asks the server which scopes it wants (the `scope` parameter of its 401
+`WWW-Authenticate` challenge, as the [scope selection strategy](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization#scope-selection-strategy)
+prescribes) and adds the scopes the profile already holds, so logging in again never drops a
+permission. Pass `--scope "a b"` to request exactly those scopes instead.
+
+`mcpc` never opens a browser on its own, so when a server answers a command with
+`403 insufficient_scope` (the [step-up authorization flow](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization#step-up-authorization-flow)),
+the session stays usable and the error names the missing scope together with the exact
+`login --scope` command that requests it on top of the profile's current scopes:
+
+```bash
+mcpc @apify tools-call delete-file path:=/tmp/x
+# Error: Insufficient scope: the server requires scope "files:write" for this operation.
+#   mcpc login mcp.apify.com --scope "files:read files:write"
+#   mcpc @apify restart
+```
+
+Sessions authenticated with `--grant client-credentials` or `--grant id-jag` step up on their own:
+the grant is repeated with the widened scope and the command retried once.
+
 ### Client registration approaches
 
 When logging in, `mcpc` supports all three OAuth client registration approaches defined in the
