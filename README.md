@@ -934,9 +934,11 @@ with thousands of ready-made Actors for web scraping, data extraction, and autom
 Each tool call is then billed against the token's prepaid balance.
 
 ```bash
-# 1. Create a wallet (or import one), then send USDC on Base to the printed address.
+# 1. Create a wallet (or import one) and send USDC on Base to the printed address or QR code.
 #    Signing is gasless, so the wallet needs no ETH.
 mcpc x402 init
+
+#    Once sent, check that the USDC balance has arrived.
 mcpc x402
 
 # 2. Fetch the payment challenge for a $1 token, the minimum (the PAYMENT-REQUIRED header).
