@@ -10,6 +10,7 @@
  * an OAuthTokenManager and refreshes tokens without any interactive flow.
  */
 
+import { randomBytes } from 'crypto';
 import type {
   OAuthClientProvider,
   OAuthClientMetadata,
@@ -79,13 +80,6 @@ export interface OAuthProviderOptions {
   forceReauth?: boolean;
 
   /**
-   * The `scope` the login requests. Recorded on the profile when the token response
-   * omits `scope` (RFC 6749 §5.1 lets the server leave it out when it granted exactly
-   * what was requested), so a later step-up login knows what to union with.
-   */
-  requestedScope?: string;
-
-  /**
    * Pre-configured client credentials (for servers without dynamic client registration)
    */
   clientCredentials?: {
@@ -135,13 +129,13 @@ export class OAuthProvider implements OAuthClientProvider {
   private _discoveryState?: OAuthDiscoveryState;
   private _resourceUrl?: string;
   private _clientInformation?: OAuthClientInformationMixed;
+  private _state?: string;
 
   constructor(options: OAuthProviderOptions) {
     this.serverUrl = options.serverUrl;
     this.profileName = options.profileName;
     this._redirectUrl = options.redirectUrl || 'http://localhost/callback';
     this._forceReauth = options.forceReauth || false;
-    this._requestedScope = options.requestedScope;
     this._clientName = options.clientName || 'mcpc';
 
     if (options.clientCredentials) {
@@ -150,6 +144,16 @@ export class OAuthProvider implements OAuthClientProvider {
     if (options.clientMetadataUrl) {
       this.clientMetadataUrl = options.clientMetadataUrl;
     }
+  }
+
+  /**
+   * Record the `scope` the login requests. It is written to the profile when the
+   * token response omits `scope` (RFC 6749 §5.1 lets the server leave it out when it
+   * granted exactly what was requested), so a later step-up login knows what to
+   * union with.
+   */
+  setRequestedScope(scope: string): void {
+    this._requestedScope = scope;
   }
 
   get redirectUrl(): string {
@@ -172,6 +176,19 @@ export class OAuthProvider implements OAuthClientProvider {
     };
   }
 
+  /**
+   * OAuth `state` for the authorization request. Generated once per login so
+   * the callback server can discard any callback that does not echo it: the
+   * loopback redirect URI is a fixed public port that any page open in the
+   * browser can hit, and the first hit used to win (login CSRF / abort).
+   */
+  async state(): Promise<string> {
+    if (!this._state) {
+      this._state = randomBytes(16).toString('hex');
+    }
+    return this._state;
+  }
+
   async clientInformation(): Promise<OAuthClientInformationMixed | undefined> {
     // Pre-configured client credentials: skip dynamic registration
     if (this._clientCredentials) {
@@ -182,6 +199,15 @@ export class OAuthProvider implements OAuthClientProvider {
         info.client_secret = this._clientCredentials.clientSecret;
       }
       return info;
+    }
+
+    // A fresh login registers a new client (the stored one may carry a
+    // different redirect URI, or the server may have started supporting
+    // CIMD), so the keychain copy is deliberately not consulted. It is kept
+    // in place until the new registration has produced tokens, so a
+    // cancelled or failed login leaves the existing profile refreshable (M2).
+    if (this._forceReauth) {
+      return this._clientInformation;
     }
 
     // Try to load from memory or keychain
@@ -200,11 +226,41 @@ export class OAuthProvider implements OAuthClientProvider {
   async saveClientInformation(clientInformation: OAuthClientInformationMixed): Promise<void> {
     this._clientInformation = clientInformation;
 
+    // During a fresh login the keychain is written only once tokens arrive
+    // (see `saveTokens`), so the previous registration survives a login that
+    // the user cancels or the server rejects.
+    if (this._forceReauth) {
+      logger.debug('Deferring OAuth client registration write until the login succeeds');
+      return;
+    }
+    await this.persistClientInformation();
+  }
+
+  /**
+   * Write the client registration this login uses (dynamically registered,
+   * CIMD, or the credentials passed on the command line) to the keychain,
+   * where token refresh reads it.
+   */
+  private async persistClientInformation(): Promise<void> {
+    const info = this._clientCredentials
+      ? {
+          clientId: this._clientCredentials.clientId,
+          clientSecret: this._clientCredentials.clientSecret,
+        }
+      : this._clientInformation
+        ? {
+            clientId: this._clientInformation.client_id,
+            clientSecret: this._clientInformation.client_secret,
+          }
+        : undefined;
+    if (!info) {
+      return;
+    }
     const clientInfo: Parameters<typeof storeKeychainOAuthClientInfo>[2] = {
-      clientId: clientInformation.client_id,
+      clientId: info.clientId,
     };
-    if (clientInformation.client_secret) {
-      clientInfo.clientSecret = clientInformation.client_secret;
+    if (info.clientSecret) {
+      clientInfo.clientSecret = info.clientSecret;
     }
     await storeKeychainOAuthClientInfo(this.serverUrl, this.profileName, clientInfo);
   }
@@ -256,6 +312,12 @@ export class OAuthProvider implements OAuthClientProvider {
       tokenInfo.scope = tokens.scope;
     }
 
+    // The login succeeded: now replace the stored client registration with
+    // the one these tokens were issued to, before the tokens themselves so
+    // a refresh can never find tokens without their client.
+    if (this._forceReauth) {
+      await this.persistClientInformation();
+    }
     await storeKeychainOAuthTokenInfo(this.serverUrl, this.profileName, tokenInfo);
 
     // Update profile metadata

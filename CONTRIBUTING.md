@@ -130,7 +130,7 @@ provenance), and GitHub release creation.
 
 ## Architecture
 
-The codebase is a single TypeScript package with three internal modules:
+The codebase is a single TypeScript package with four internal modules:
 
 ```
 src/

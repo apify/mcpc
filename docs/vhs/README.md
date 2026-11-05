@@ -32,6 +32,7 @@ replays it, runs the commands against a live MCP server, and renders a GIF.
 | [`grep.tape`](./grep.tape) | `mcpc grep` across two sessions (Apify + local filesystem) | |
 | [`proxy.tape`](./proxy.tape) | MCP proxy / AI sandboxing (keeps a bearer token on purpose) | |
 | [`skills.tape`](./skills.tape) | MCP Skills extension: `skills-list` / `skills-get` (SKILL.md + a supporting file) / `resources-directory-read` | Needs a skills server at `mcp.example.com` (see the tape header) |
+| [`tasks.tape`](./tasks.tape) | MCP Tasks extension: `tools-call --task` (live progress) → `--detach` (task ID via `jq`) → `tasks-get` / `tasks-list` / `tasks-result` | Needs a tasks server at `mcp.example.com` (see the tape header). Width 1280 so the `tasks-list` note fits |
 | [`security.tape`](./security.tape) | Bare `mcpc connect` skipping a checked-in `.mcp.json` entry that reads `${GITHUB_TOKEN}`, and refusing `-H` | Copies [`security.mcp.json`](./security.mcp.json); the trusted entry needs `mcp.example.com`. Width 1280 so the skip marker and error fit |
 
 ## Recording

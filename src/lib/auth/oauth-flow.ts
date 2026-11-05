@@ -8,14 +8,13 @@ import { createServer, type Server, type IncomingMessage, type ServerResponse } 
 import type { Socket } from 'net';
 import { URL } from 'url';
 import { createInterface } from 'readline';
-import { randomBytes } from 'crypto';
+import { timingSafeEqual } from 'crypto';
 import { auth as sdkAuth, OAuthError as SdkOAuthError } from '@modelcontextprotocol/client';
 import { OAuthProvider, type OAuthProviderOptions } from './oauth-provider.js';
 import { getServerHost } from '../utils.js';
 import { AuthError, ClientError } from '../errors.js';
 import { createLogger } from '../logger.js';
 import { describeAuthError } from './client-credentials.js';
-import { removeKeychainOAuthClientInfo, storeKeychainOAuthClientInfo } from './keychain.js';
 import type { AuthProfile } from '../types.js';
 import {
   MCPC_OAUTH_CALLBACK_PORTS,
@@ -276,22 +275,40 @@ export interface OAuthFlowResult {
 /**
  * Start a local HTTP server for OAuth callback
  * Returns the server, a promise that resolves with the authorization code, and a destroy function
+ *
+ * The callback URI is a fixed, well-known loopback port, so any web page open
+ * during a login can request it (a plain GET needs no CORS preflight). The
+ * server therefore acts only on a callback whose `state` echoes the value
+ * registered via `expectState()` for this login; every other request gets a
+ * 400 page and is otherwise ignored — it neither resolves nor rejects
+ * `codePromise`, so a foreign hit can neither abort the login nor plant its
+ * own authorization code (login CSRF).
+ *
+ * Exported for unit tests.
  */
-function startCallbackServer(
+export function startCallbackServer(
   port: number,
   context: { serverUrl: string; profileName: string; scope?: string }
 ): {
   server: Server;
   codePromise: Promise<CallbackResult>;
   destroyConnections: () => void;
+  expectState: (state: string) => void;
 } {
   let resolveCode: (value: CallbackResult) => void;
   let rejectCode: (error: Error) => void;
+  let expectedState: string | undefined;
 
   const codePromise = new Promise<CallbackResult>((resolve, reject) => {
     resolveCode = resolve;
     rejectCode = reject;
   });
+  // The flow attaches its handlers only once the SDK has finished discovery
+  // and registration and the user has confirmed the browser launch. A
+  // callback that arrives before that (a stale tab reloading an old
+  // `?error=` redirect) must not become an unhandled rejection that crashes
+  // the CLI; the race below still observes the rejection.
+  codePromise.catch(() => {});
 
   // Track active connections so we can forcibly close them
   const sockets = new Set<Socket>();
@@ -323,6 +340,27 @@ function startCallbackServer(
         { label: 'Profile', value: context.profileName },
         { label: 'Scopes', value: context.scope },
       ];
+
+      // Discard callbacks that do not belong to this login (OAuth 2.1 §7.15,
+      // MCP security best practices). Checked before `error` on purpose: an
+      // attacker-sent `?error=` must not abort the login either.
+      if (expectedState === undefined || state === undefined || !safeEqual(state, expectedState)) {
+        logger.warn(
+          `Ignored OAuth callback with ${state === undefined ? 'no' : 'a mismatched'} state parameter`
+        );
+        res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(
+          renderAuthPage({
+            success: false,
+            title: 'mcpc login: callback ignored',
+            message:
+              'This callback does not match the login mcpc is waiting for, so it was ignored.',
+            detail: 'Return to the terminal and complete the authorization from the URL it shows.',
+            info,
+          })
+        );
+        return;
+      }
 
       if (error) {
         const message = errorDescription || error;
@@ -394,7 +432,35 @@ function startCallbackServer(
     sockets.clear();
   };
 
-  return { server, codePromise, destroyConnections };
+  const expectState = (state: string): void => {
+    expectedState = state;
+  };
+
+  return { server, codePromise, destroyConnections, expectState };
+}
+
+/**
+ * Constant-time string comparison for the OAuth `state` echo. The state is
+ * random and single-use, so timing hardly matters, but the comparison is
+ * cheap and removes the question.
+ */
+function safeEqual(a: string, b: string): boolean {
+  const bufA = Buffer.from(a, 'utf8');
+  const bufB = Buffer.from(b, 'utf8');
+  return bufA.length === bufB.length && timingSafeEqual(bufA, bufB);
+}
+
+/**
+ * The `state` the authorization URL carries. Every interactive login must
+ * send one, otherwise the callback server could not tell this login's
+ * callback from a foreign request on the same loopback port.
+ */
+function requireState(authorizationUrl: URL): string {
+  const state = authorizationUrl.searchParams.get('state');
+  if (!state) {
+    throw new ClientError('Internal error: authorization URL carries no state parameter');
+  }
+  return state;
 }
 
 /**
@@ -502,8 +568,9 @@ async function tryOpenBrowser(url: URL): Promise<boolean> {
 /**
  * Extract authorization code, state, and issuer (RFC 9207 `iss`) from a callback URL
  * Parses URLs like: http://localhost:8000/callback?code=abc123&state=xyz
+ * The `state` must echo `expectedState`, like on the callback server.
  */
-function extractCodeFromUrl(callbackUrl: string): CallbackResult {
+export function extractCodeFromUrl(callbackUrl: string, expectedState: string): CallbackResult {
   try {
     // Handle both full URLs and just query strings
     const url = callbackUrl.startsWith('http')
@@ -515,6 +582,13 @@ function extractCodeFromUrl(callbackUrl: string): CallbackResult {
     const errorDescription = url.searchParams.get('error_description');
     const state = url.searchParams.get('state') || undefined;
     const iss = url.searchParams.get('iss') || undefined;
+
+    if (state === undefined || !safeEqual(state, expectedState)) {
+      throw new ClientError(
+        'The pasted URL does not belong to this login (missing or mismatched state parameter). ' +
+          'Paste the callback URL the browser reached from the authorization URL shown above.'
+      );
+    }
 
     if (error) {
       const message = errorDescription || error;
@@ -547,7 +621,7 @@ function extractCodeFromUrl(callbackUrl: string): CallbackResult {
  * Prompt user to paste the callback URL from their browser
  * Uses readline (not raw mode) so it works in all terminal environments
  */
-function promptForCallbackUrl(): {
+function promptForCallbackUrl(expectedState: string): {
   promise: Promise<CallbackResult>;
   cleanup: () => void;
 } {
@@ -572,7 +646,7 @@ function promptForCallbackUrl(): {
         return;
       }
       try {
-        resolve(extractCodeFromUrl(trimmed));
+        resolve(extractCodeFromUrl(trimmed, expectedState));
       } catch (e) {
         reject(e);
       }
@@ -615,7 +689,12 @@ export async function runInteractiveAuthorization(
   port: number,
   context: { serverUrl: string; profileName: string; scope?: string }
 ): Promise<CallbackResult> {
-  const { server, codePromise, destroyConnections } = startCallbackServer(port, context);
+  const expectedState = requireState(authorizationUrl);
+  const { server, codePromise, destroyConnections, expectState } = startCallbackServer(
+    port,
+    context
+  );
+  expectState(expectedState);
   let escapeHandler: ReturnType<typeof waitForEscapeKey> | null = null;
   let pasteHandler: ReturnType<typeof promptForCallbackUrl> | null = null;
 
@@ -657,7 +736,7 @@ export async function runInteractiveAuthorization(
       console.error(
         'After authorizing, copy the full callback URL from the browser address bar and paste it here.'
       );
-      pasteHandler = promptForCallbackUrl();
+      pasteHandler = promptForCallbackUrl(expectedState);
       racers.push(pasteHandler.promise);
     }
 
@@ -796,19 +875,6 @@ export async function performOAuthFlow(
     console.warn('\nWarning: OAuth over plain HTTP is insecure. Only use for local development.\n');
   }
 
-  // Scope selection: --scope verbatim, else the server's 401 challenge unioned
-  // with what this profile already holds (see resolveLoginScope).
-  const challenge = scope === undefined ? await probeAuthChallenge(normalizedServerUrl) : undefined;
-  const { scope: requestedScope, reason: scopeReason } = await resolveLoginScope(
-    normalizedServerUrl,
-    profileName,
-    scope,
-    challenge
-  );
-  if (requestedScope !== undefined && scopeReason) {
-    console.error(`Requesting scopes: ${requestedScope} (from ${scopeReason})`);
-  }
-
   // When --callback-port is set, use that exact port. Otherwise try the
   // fixed mcpc port list that matches the hosted CIMD's redirect_uris.
   const port = await findAvailablePort(callbackPort ? [callbackPort] : MCPC_OAUTH_CALLBACK_PORTS);
@@ -826,8 +892,12 @@ export async function performOAuthFlow(
     validateClientMetadataUrl(clientCredentials.clientMetadataUrl);
   }
 
-  // When client credentials are provided, skip deleting existing client info
-  // and pre-store the credentials so the provider uses them instead of dynamic registration
+  // When client credentials are provided, the provider uses them instead of
+  // dynamic registration. Either way the registration stored in the keychain
+  // is left alone until the new login has produced tokens: a fresh client-id
+  // is obtained (an old one may carry a different redirect URI, or the server
+  // may now support CIMD), but a cancelled or failed login must leave the
+  // existing profile refreshable. See OAuthProvider for the deferred write.
   let resolvedClientCredentials: { clientId: string; clientSecret?: string } | undefined;
   if (clientCredentials?.clientId) {
     logger.debug(`Using provided client credentials for ${profileName} @ ${normalizedServerUrl}`);
@@ -835,28 +905,18 @@ export async function performOAuthFlow(
     if (clientCredentials.clientSecret) {
       resolvedClientCredentials.clientSecret = clientCredentials.clientSecret;
     }
-    await storeKeychainOAuthClientInfo(normalizedServerUrl, profileName, resolvedClientCredentials);
-  } else {
-    // Delete existing OAuth client info from keychain before re-authenticating.
-    // This ensures we get a fresh client-id with the correct redirect URI
-    // (an old client-id may have been registered with a different redirect URI,
-    // or the authorization server may now advertise CIMD support, etc).
-    logger.debug(`Removing existing OAuth client info for ${profileName} @ ${normalizedServerUrl}`);
-    await removeKeychainOAuthClientInfo(normalizedServerUrl, profileName);
   }
 
   // Create OAuth provider in auth flow mode with forceReauth=true
   // This allows users to change scope or switch accounts
-  // Old tokens are only overwritten after successful authentication
+  // Old tokens and the old client registration are only overwritten after
+  // successful authentication
   const providerOptions: OAuthProviderOptions = {
     serverUrl: normalizedServerUrl,
     profileName,
     redirectUrl,
     forceReauth: true,
   };
-  if (requestedScope !== undefined) {
-    providerOptions.requestedScope = requestedScope;
-  }
   if (resolvedClientCredentials) {
     providerOptions.clientCredentials = resolvedClientCredentials;
   }
@@ -873,13 +933,16 @@ export async function performOAuthFlow(
     serverUrl: normalizedServerUrl,
     profileName,
   };
-  if (requestedScope !== undefined) {
-    callbackContext.scope = requestedScope;
-  }
-  const { server, codePromise, destroyConnections } = startCallbackServer(port, callbackContext);
+  const { server, codePromise, destroyConnections, expectState } = startCallbackServer(
+    port,
+    callbackContext
+  );
 
   // Track whether browser failed so we can fall back to URL paste
   let browserFailed = false;
+
+  // The `state` this login sent; set once the SDK hands over the authorization URL
+  let expectedState: string | undefined;
 
   // Track whether the flow reached the authorization redirect. Used to
   // distinguish discovery/registration failures (before this point) from
@@ -888,6 +951,10 @@ export async function performOAuthFlow(
 
   // Handler refs for cleanup
   const pasteHandlerRef: { current: { cleanup: () => void } | null } = { current: null };
+
+  // What the server's 401 challenge said, and the scope this login requests
+  let challenge: AuthChallenge | undefined;
+  let requestedScope: string | undefined;
 
   try {
     // Start server
@@ -898,6 +965,21 @@ export async function performOAuthFlow(
         resolve();
       });
     });
+
+    // Scope selection: --scope verbatim, else the server's 401 challenge unioned
+    // with what this profile already holds (see resolveLoginScope). Runs after the
+    // callback server is up: the probe is one more request to the MCP server, and
+    // a server that stalls it must not delay the redirect port being bound.
+    challenge = scope === undefined ? await probeAuthChallenge(normalizedServerUrl) : undefined;
+    const resolved = await resolveLoginScope(normalizedServerUrl, profileName, scope, challenge);
+    requestedScope = resolved.scope;
+    if (requestedScope !== undefined) {
+      if (resolved.reason) {
+        console.error(`Requesting scopes: ${requestedScope} (from ${resolved.reason})`);
+      }
+      provider.setRequestedScope(requestedScope);
+      callbackContext.scope = requestedScope;
+    }
 
     // Escape handler - set up after browser opens (use object wrapper to avoid TypeScript closure narrowing)
     const escapeHandlerRef: { current: ReturnType<typeof waitForEscapeKey> | null } = {
@@ -910,13 +992,15 @@ export async function performOAuthFlow(
       // succeeded — any later failure is not a registration problem.
       reachedAuthorization = true;
 
-      // Inject a random `state` parameter if the SDK didn't add one. OAuth 2.1 treats
-      // `state` as RECOMMENDED rather than REQUIRED, but RFC 6749 §4.1.1 allows servers
-      // to require it, and some production MCP servers do (e.g. Ubersuggest). PKCE
-      // already provides CSRF protection on this flow, so the value need not be verified.
+      // The SDK adds the `state` from `provider.state()`. Should it ever not
+      // (it is RECOMMENDED, not REQUIRED, in OAuth 2.1), send the provider's
+      // value anyway: the callback server only accepts callbacks that echo it,
+      // and some authorization servers require the parameter outright.
       if (!authorizationUrl.searchParams.has('state')) {
-        authorizationUrl.searchParams.set('state', randomBytes(16).toString('hex'));
+        authorizationUrl.searchParams.set('state', await provider.state());
       }
+      expectedState = requireState(authorizationUrl);
+      expectState(expectedState);
 
       // Refuse non-http(s) URLs before showing them — the user would otherwise
       // be invited to paste them into a browser if the launcher fails.
@@ -976,7 +1060,10 @@ export async function performOAuthFlow(
 
         if (browserFailed) {
           // Browser didn't open - also accept pasted callback URL
-          const urlHandler = promptForCallbackUrl();
+          if (expectedState === undefined) {
+            throw new ClientError('Internal error: authorization was not started');
+          }
+          const urlHandler = promptForCallbackUrl(expectedState);
           pasteHandlerRef.current = urlHandler;
           racers.push(urlHandler.promise);
         } else if (escapeHandlerRef.current) {

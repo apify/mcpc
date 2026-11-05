@@ -90,6 +90,8 @@ README (`README.md:1354`) and CLAUDE.md promise "no credentials logged even in v
 
 ### M1. OAuth `state` is generated but never verified; the loopback callback accepts the first hit from anyone
 
+**Status: fixed.** `OAuthProvider.state()` generates one random value per login, which the SDK puts on the authorization request; the callback server acts only on a `/callback` whose `state` echoes it (constant-time compare) and answers every other request — including an attacker-sent `?error=` — with a 400 page without resolving or rejecting the code promise, so a foreign hit can neither abort the login nor plant a code. A pasted callback URL is checked the same way, `runInteractiveAuthorization` (id-jag) takes the expected state from the authorization URL it is given, and the code promise carries a no-op rejection handler so an early `?error=` callback can no longer crash the CLI. Covered by unit tests against a live callback server.
+
 - `src/lib/auth/oauth-flow.ts:741-743` injects a random `state` so that strict servers accept the request; the comment says PKCE makes verification unnecessary. The callback handler (`:292-353`) never compares it, and `:801` destructures only `{ code, iss }`.
 - The callback ports are fixed and public (13316, 31613, 16133, `src/lib/auth/oauth-utils.ts:23`). Any web page open during a login can `fetch('http://127.0.0.1:13316/callback?code=X')` (a simple GET, no preflight; Host is `127.0.0.1` so the DNS-rebinding check passes). The first request wins (`resolveCode` fires once), so at minimum every login can be aborted. Against an authorization server that does not require PKCE, an attacker's code minted without PKCE is exchanged with mcpc's verifier and the victim's profile ends up holding the attacker's tokens (login CSRF).
 - `codePromise` (`:270-273`) can be rejected by `/callback?error=...` before any handler is attached (handlers attach at `:801` after discovery and registration, and in `runInteractiveAuthorization` at `:601` after the user presses Enter). No `unhandledRejection` handler exists in `src/` or `bin/`, so a stale browser tab reloading an old failed callback crashes the CLI.
@@ -98,6 +100,8 @@ README (`README.md:1354`) and CLAUDE.md promise "no credentials logged even in v
 **Fix:** implement `OAuthClientProvider.state()`, compare in the callback, and ignore (do not resolve or reject on) mismatching or malformed requests. Attach rejection handling to `codePromise` at creation.
 
 ### M2. Existing client registration is destroyed before the new login succeeds
+
+**Status: fixed.** `mcpc login` no longer deletes or overwrites the stored client registration before the flow runs. The provider registers a fresh client without consulting the keychain copy, keeps the new registration (or the `--client-id` credentials) in memory for the code exchange, and writes it to the keychain only inside `saveTokens`, just before the tokens, so a cancelled or failed login leaves the previous profile refreshable. Covered by unit tests.
 
 `src/lib/auth/oauth-flow.ts:668-680` deletes or overwrites the stored client info before `sdkAuth()` runs. If the user presses Esc, closes the browser, or the exchange fails, the still-valid tokens of the existing profile can no longer be refreshed (`token-refresh.ts:107-113` → "OAuth client ID not found in keychain"). Keep the old registration in memory and write the new one only after `saveTokens` succeeds.
 
@@ -280,7 +284,7 @@ Release-time review of tag `v0.7.0-beta.1` (commit `c8e9d1f`, the candidate for 
 | Allowlist `http`/`https` for authorization URLs | Yes (since #382) | Checked before the URL is shown or opened (H1). |
 | PKCE S256, refuse if AS lacks PKCE support | Partial | SDK uses S256 and checks `code_challenge_methods_supported` only when present; the spec says refuse when absent. |
 | `resource` parameter on authorization and token requests | Yes (since #398) | Sent at login by the SDK, recorded as the profile's `oauthResource` and replayed verbatim on refresh (H5). |
-| Verify `state`, discard mismatches | No | Generated but not checked (M1). |
+| Verify `state`, discard mismatches | Yes | Provider-generated, checked on the loopback callback and on pasted URLs; mismatches are ignored, not acted on (M1). |
 | RFC 9207 `iss` validation | Yes | Passed through to the SDK at login. |
 | HTTPS for all OAuth endpoints except loopback | Partial | SDK enforces on login; the refresh token endpoint is checked since #389; `--token-endpoint` and the id-jag paths still are not (L5). |
 | Redeem codes and refresh tokens only at the recorded AS (mix-up) | Login yes; refresh yes for 0.7 profiles, no for older ones | H5, beta.1 addendum. |

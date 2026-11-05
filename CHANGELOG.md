@@ -9,12 +9,19 @@ Each version opens with a one-line summary, which also opens its GitHub release.
 
 ## [Unreleased]
 
-Step-up authorization for scope challenges, argument completions for prompts and resource templates, tasks on MCP 2026-07-28 servers, MCP TypeScript SDK 2.3.1, stdio server secrets kept out of plaintext files, logs and `ps`, and no more duplicate bridges on Windows.
+Step-up authorization for OAuth scope challenges: a 403 insufficient_scope now names the missing scope and the login that adds it.
 
 ### Added
 
 - Step-up authorization ([MCP spec](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization#step-up-authorization-flow)): a command the server answers with `403 insufficient_scope` now fails with exit code 4, names the missing scope and prints the exact `mcpc login <server> --scope "<current scopes plus the missing one>"` to run, instead of a generic "Insufficient scope" server error. The session stays usable for everything else.
 - `login` without `--scope` now asks the server which scopes it wants (the `scope` of its 401 `WWW-Authenticate` challenge, which the spec puts ahead of `scopes_supported`) and adds the scopes the profile already holds, so a re-login never drops a permission. `--scope` still requests exactly what you pass.
+
+## [0.8.0] - 2026-11-04
+
+Argument completions for prompts and resource templates, tasks on MCP 2026-07-28 servers, MCP TypeScript SDK 2.3.1, stdio server secrets kept out of plaintext files, logs and `ps`, and no more duplicate bridges on Windows.
+
+### Added
+
 - New `login --client-name <name>` registers the OAuth client under a name other than `mcpc` with Dynamic Client Registration, for authorization servers that show or check `client_name`. It disables CIMD, since the hosted document sets its own name.
 - New `completion-complete prompt|resource <ref> <arg:=val ...>` command asks the server for argument suggestions (MCP `completion/complete`): pass the arguments in the `prompts-get` syntax and the last one is completed. The `--proxy` server forwards completions too.
 - Support for the MCP [Tasks extension](https://modelcontextprotocol.io/extensions/tasks/overview) (`io.modelcontextprotocol/tasks`) on MCP 2026-07-28 servers: `tools-call --task`/`--detach`, `tasks-get`, `tasks-result` and `tasks-cancel` now work there too, mcpc declares the extension on every request, and a server that answers a plain `tools-call` with a task is followed to its result. `tasks-list` shows the tasks the session created, since the extension has no server-side listing. Everything keeps working unchanged on 2025-11-25 servers, where tasks are part of the core protocol. (#430)
@@ -27,6 +34,7 @@ Step-up authorization for scope challenges, argument completions for prompts and
 
 ### Security
 
+- `mcpc login` now verifies the OAuth `state` parameter: a callback on the local redirect port that does not echo the value this login sent is ignored, so another page open in the browser can neither abort the login nor slip its own authorization code into the profile. A pasted callback URL is checked the same way. The existing client registration is also kept until the new login has succeeded, so cancelling a `login` no longer breaks token refresh for the profile it was replacing.
 - The copy-paste `run: mcpc ...` hints no longer let a server-chosen name or URI run a command when pasted. Values containing a backslash followed by `$`, a backtick or `"` (for example `\$(id)`) were double-quoted without escaping the backslash, so a POSIX shell still expanded them. Backslashes are now escaped like the other characters that stay special inside double quotes. (GHSA-wmqm-r8wm-9f34)
 - `login --grant client-credentials` and `login --grant id-jag` now bind the stored client secret or key to the authorization server they were validated against, so a server that later points at a different authorization server is refused instead of receiving the credentials. Profiles created earlier keep working; log in again to bind them.
 - The `env` of a stdio config entry, where API tokens such as `GITHUB_PERSONAL_ACCESS_TOKEN` usually live, is now stored in the OS keychain and delivered to the bridge over IPC like session headers, instead of being written in plaintext to `sessions.json`, printed by `mcpc --json` and `mcpc @session`, and passed on the bridge's command line where `ps` showed it to every local user. Verbose output and the bridge log no longer record header values, env values, or tool-call arguments either, and bridge log files are created owner-only. (#341)
@@ -485,7 +493,8 @@ MCP Skills extension, directory resources, OAuth sessions that survive token exp
 - Interactive shell mode
 - JSON output mode for scripting
 
-[Unreleased]: https://github.com/apify/mcpc/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/apify/mcpc/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/apify/mcpc/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/apify/mcpc/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/apify/mcpc/compare/v0.5.0...v0.6.0
 [0.5.1]: https://github.com/apify/mcpc/compare/v0.5.0...v0.5.1

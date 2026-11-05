@@ -830,17 +830,18 @@ Options:
   --json  Output in JSON format
 
 Arguments:
-  <type>              prompt or resource: what is being completed, a prompt (by name)
-                      or a resource template (by URI template), like the MCP
-                      ref/prompt and ref/resource reference types.
-  <ref>               The prompt name or the resource URI template.
-  [args...]           The arguments in the prompts-get syntax. The last one is the
-                      argument to complete, with the text typed so far as its value
-                      (name:= for none); the ones before it are sent as context.
+  <type>     `prompt` or `resource` (the MCP ref/prompt or ref/resource reference)
+  <ref>      Prompt name, or resource URI template (`file:///{path}`)
+  [args...]  Prompt or template arguments, in one of the three forms below. The last
+             one is the argument to complete, with the text typed so far as its value
+             (`name:=` for none); the ones before it are sent as context.
 
   key:=value pairs    mcpc @<session> completion-complete prompt code_review language:=py
   Inline JSON         mcpc @<session> completion-complete prompt code_review '{"language":"py"}'
   Stdin pipe          echo '{"language":"py"}' | mcpc @<session> completion-complete prompt code_review
+
+  Values are always sent as strings: `count:=10` sends "10", and a JSON object
+  or array is sent as its JSON text.
 
 Examples:
   mcpc @<session> completion-complete prompt code_review language:=
@@ -849,11 +850,12 @@ Examples:
 
 Notes:
   The server must declare the completions capability (shown by: mcpc @<session>).
-  Servers return at most 100 suggestions, ranked by relevance; hasMore says if there are more.
+  Servers return at most 100 suggestions, ranked by relevance; `total` is the
+  number of matches when known, `hasMore` says if there are more than returned.
 
 JSON output (--json):
   `CompleteResult` object:
-  `{ completion: { values: [...], total?, hasMore? } }`
+  `{ completion: { values: string[], total?: number, hasMore?: boolean }, _meta? }`
   Schema: https://modelcontextprotocol.io/specification/2026-07-28/schema#completeresult
 ```
 
@@ -1000,7 +1002,7 @@ Notes:
 JSON output (--json):
   Array of `Skill` entries:
   `[{ uri, frontmatter: { name, description, ... }, resources: [{ uri, digest, size }] | "dynamic" }, ...]`
-  Schema: https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/stable/skills.mdx
+  Schema: https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/beta/skills.mdx
 ```
 
 ### `mcpc @<session> skills-get`
@@ -1031,7 +1033,7 @@ Examples:
 JSON output (--json):
   The skill entry plus the content that was read:
   `{ skill: { uri, frontmatter, resources }, contents: [{ uri, mimeType?, text? | blob? }] }`
-  Schema: https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/stable/skills.mdx
+  Schema: https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/beta/skills.mdx
 ```
 
 ### `mcpc @<session> logging-set-level`
