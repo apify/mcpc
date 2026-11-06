@@ -61,6 +61,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { randomUUID } from 'crypto';
 import http from 'http';
+import { createLocalOAuthFixture } from './oauth-local.js';
 import {
   TOOLS,
   RESOURCES,
@@ -99,6 +100,7 @@ const OAUTH_CLIENT_SECRET = process.env.OAUTH_CLIENT_SECRET || 's3cr3t';
 // When true, serve /token but NOT the .well-known metadata, so discovery fails and
 // only an explicit --token-endpoint can locate the token endpoint.
 const OAUTH_NO_METADATA = process.env.OAUTH_NO_METADATA === 'true';
+const localOAuth = createLocalOAuthFixture(process.env.OAUTH_IDENTITIES_FILE, PORT);
 
 // Control state (manipulated via /control/* endpoints)
 let failNextCount = 0;
@@ -469,6 +471,8 @@ async function main() {
   const httpServer = http.createServer(async (req, res) => {
     const url = new URL(req.url || '/', `http://localhost:${PORT}`);
 
+    if (localOAuth && (await localOAuth(req, res, url))) return;
+
     // Health check
     if (url.pathname === '/health' && req.method === 'GET') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -690,7 +694,7 @@ async function main() {
     res.end('Not found');
   });
 
-  httpServer.listen(PORT, () => {
+  httpServer.listen(PORT, localOAuth ? '127.0.0.1' : undefined, () => {
     console.log(`E2E test server running on http://localhost:${PORT}`);
     console.log(
       `  Pagination: ${PAGINATION_SIZE > 0 ? `${PAGINATION_SIZE} items/page` : 'disabled'}`
