@@ -140,6 +140,26 @@ folded: >-
     expect(() => parse('name: a\nname: b')).toThrow(/duplicate key/);
   });
 
+  it('keeps a field named __proto__ as an own property', () => {
+    // A plain assignment would make the block the object's prototype: invisible to
+    // Object.keys (and so to diffFrontmatter), yet readable as result.name.
+    const block = parse('__proto__:\n  name: evil');
+    expect(Object.keys(block)).toEqual(['__proto__']);
+    expect(block.name).toBeUndefined();
+    expect(Object.getPrototypeOf(block)).toBe(Object.prototype);
+
+    const scalar = parse('__proto__: 5');
+    expect(Object.keys(scalar)).toEqual(['__proto__']);
+
+    const flow = parse('metadata: {__proto__: {name: evil}}');
+    expect(Object.keys(flow.metadata as object)).toEqual(['__proto__']);
+    expect((flow.metadata as Record<string, unknown>).name).toBeUndefined();
+  });
+
+  it('rejects a duplicate __proto__ key', () => {
+    expect(() => parse('__proto__: a\n__proto__: b')).toThrow(/duplicate key/);
+  });
+
   it('rejects anchors, aliases and tags rather than guessing', () => {
     expect(() => parse('base: &anchor value')).toThrow(FrontmatterParseError);
     expect(() => parse('ref: *anchor')).toThrow(FrontmatterParseError);
@@ -224,6 +244,20 @@ describe('hostile or malformed input', () => {
 });
 
 describe('diffFrontmatter', () => {
+  it('reports a __proto__ field the entry does not have', () => {
+    const { frontmatter } = parseSkillDocument(
+      '---\nname: a\ndescription: b\n__proto__:\n  extra: hidden\n---\nbody'
+    );
+    expect(diffFrontmatter(frontmatter, { name: 'a', description: 'b' })).toEqual(['__proto__']);
+  });
+
+  it('never matches a field against a value inherited from Object.prototype', () => {
+    const inherited = String(Object.prototype.toString);
+    expect(diffFrontmatter({ name: 'a' }, { name: 'a', toString: inherited })).toEqual([
+      'toString',
+    ]);
+  });
+
   it('reports no differences for identical fields', () => {
     expect(
       diffFrontmatter({ name: 'a', description: 'b' }, { name: 'a', description: 'b' })

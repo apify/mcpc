@@ -14,11 +14,7 @@
  * the bridge can import it.
  */
 
-import {
-  CrossAppAccessProvider,
-  requestJwtAuthorizationGrant,
-  type OAuthClientProvider,
-} from '@modelcontextprotocol/client';
+import { CrossAppAccessProvider, requestJwtAuthorizationGrant } from '@modelcontextprotocol/client';
 import type { IdJagCredentials } from '../types.js';
 import { AuthError } from '../errors.js';
 import { proxyFetch } from '../proxy.js';
@@ -168,7 +164,7 @@ function buildReloginHint(serverUrl: string, profileName: string): string {
 export function createIdJagProvider(
   info: IdJagCredentials,
   options: CreateIdJagProviderOptions
-): OAuthClientProvider {
+): CrossAppAccessProvider {
   const { serverUrl, profileName, callbacks } = options;
   let current = info;
 
@@ -240,5 +236,9 @@ export function createIdJagProvider(
     clientSecret: info.mcpClientSecret,
     clientName: CLIENT_NAME,
     fetchFn: proxyFetch,
+    // SEP-2352: bind the MCP client secret to the authorization server login
+    // discovered, so the SDK never sends it anywhere else. Material stored before
+    // mcpc recorded it stays unbound (the SDK warns on stderr); re-login records it.
+    ...(info.mcpAuthorizationServer ? { expectedIssuer: info.mcpAuthorizationServer } : {}),
   });
 }

@@ -174,7 +174,18 @@ describe('enrichErrorMessage', () => {
 
   it('enriches redirect errors', () => {
     const result = enrichErrorMessage('301 Moved Permanently', 'https://example.com');
+    expect(result).toContain('Server returned a redirect at https://example.com');
+    expect(result).toContain('connect to that URL directly');
     expect(result).toContain("doesn't look like an MCP endpoint");
+  });
+
+  it('keeps the redirect target the SDK names in the original error', () => {
+    const result = enrichErrorMessage(
+      'Error POSTing to endpoint (HTTP 307): Redirect to https://other.example.com/mcp not followed; use that URL as the endpoint if it is the intended server',
+      'https://example.com'
+    );
+    expect(result).toContain('only followed within the same origin');
+    expect(result).toContain('https://other.example.com/mcp');
   });
 
   it('enriches timeout errors', () => {

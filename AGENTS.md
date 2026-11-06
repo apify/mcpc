@@ -1,4 +1,4 @@
-# CLAUDE.md
+# AGENTS.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -99,8 +99,7 @@ mcpc/
 │       ├── auth/       # Authentication management (OAuth, bearer tokens, profiles)
 │       └── ...         # Other utilities
 ├── bin/
-│   ├── mcpc            # Main CLI executable
-│   └── mcpc-bridge     # Bridge process executable
+│   └── mcpc            # Main CLI executable
 └── test/
     └── e2e/
         └── server/     # Test MCP servers for E2E tests (2025-11-25 + 2026-07-28)
@@ -122,7 +121,7 @@ mcpc/
 
 **2. Bridge Process (`src/bridge/`)**
 
-- Separate executable (`mcpc-bridge`) that maintains persistent MCP connections
+- Separate process (`dist/bridge/index.js`, spawned by the CLI with the same Node.js binary) that maintains persistent MCP connections
 - Session persistence via `~/.mcpc/sessions.json` with file locking (`proper-lockfile` package)
 - Process lifecycle management for local package servers (stdio transport)
 - Unix domain socket server for CLI-to-bridge IPC (named pipes on Windows)
@@ -150,6 +149,7 @@ mcpc/
   - Tools: `tools-list`, `tools-get`, `tools-call` (with `--task`/`--detach` for async tasks, `--schema`/`--schema-mode` for schema validation)
   - Resources: `resources-list`, `resources-read`, `resources-subscribe`, `resources-unsubscribe`, `resources-templates-list`, `resources-directory-read`
   - Prompts: `prompts-list`, `prompts-get`
+  - Completions: `completion-complete` (argument suggestions for prompts and resource templates)
   - Tasks: `tasks-list`, `tasks-get`, `tasks-result`, `tasks-cancel`
   - Skills: `skills-list`, `skills-get` (io.modelcontextprotocol/skills extension, 2026-07-28+)
   - Other: `grep`, `logs`, `ping`, `logging-set-level`, `restart`, `close`, `help`
@@ -329,7 +329,7 @@ When making changes, follow these rules to maintain the security posture:
 2. Server responds with agreed version and server capabilities
 3. Client sends `initialized` notification to activate session
 
-**Era-dependent behavior in mcpc:** `ping` maps to `server/discover` on modern connections; `logging-set-level` and the task commands are 2025-11-25-only (tasks moved to the `io.modelcontextprotocol/tasks` extension, which the SDK does not implement yet); `resources-subscribe` uses `subscriptions/listen` on modern connections and `resources/subscribe` on legacy ones.
+**Era-dependent behavior in mcpc:** `ping` maps to `server/discover` on modern connections; `logging-set-level` is 2025-11-25-only; `resources-subscribe` uses `subscriptions/listen` on modern connections and `resources/subscribe` on legacy ones. The task commands speak the 2025-11-25 core tasks feature on legacy connections and the `io.modelcontextprotocol/tasks` extension on modern ones. SDK 2.3.1 has no client API for the extension; it lets `tasks/get` and `tasks/cancel` through its era gate when issued via `client.request()` with an explicit result schema and sets their `Mcp-Name` header, so mcpc issues them itself with the validators in `src/core/tasks-schema.ts`. The one thing the SDK still rejects, a `tools/call` answered with `resultType: "task"`, is rewritten before it decodes it by `src/core/tasks-result-shim.ts`, installed through the SDK client's `_onresponse` hook (read its header before touching task code; it is the one module to delete once the SDK ships `client/ext/tasks`). Under the extension task creation is the server's decision, so `tools-call` handles a task answer even without `--task`, `--detach` may return the tool result, and `tasks-list` shows the tasks the session created (there is no `tasks/list`).
 
 **One server-details shape for both eras:** `ServerDetails` (`src/lib/types.ts`) reconciles `InitializeResult` and `DiscoverResult` — the fields both carry (`protocolVersion`, `capabilities`, `serverInfo`, `instructions`) plus the discover-only `supportedVersions` and `_meta`, which are absent on legacy connections. It is what `mcpc connect --json`, `mcpc @session --json` and `restart --json` print, and what the bridge persists in `sessions.json` (so a resumed session, which skips the handshake, can still report all of it). Never fabricate an era's missing field — a legacy connection has no `supportedVersions` because the server never advertised one.
 
@@ -369,7 +369,7 @@ Tools and prompts accept arguments as positional parameters after the tool/promp
    mcpc @apify tools-call search config:='{"key":"value"}' items:='[1,2,3]'
    ```
 
-2. **Inline JSON** (if first arg starts with `{` or `[`):
+2. **Inline JSON object** (if first arg starts with `{`):
 
    ```bash
    mcpc @apify tools-call search '{"query":"hello","limit":10}'
@@ -446,7 +446,7 @@ Environment variable substitution supported: `${VAR_NAME}`
 - **Node.js:** ≥22.12.0
 - **Bun:** ≥1.0.0 (alternative runtime)
 - **OS support:** macOS, Linux, Windows
-- **Linux dependency:** `libsecret` (for OS keychain access via `@napi-rs/keyring`)
+- **Linux keychain:** a Secret Service provider (e.g. GNOME Keyring, KWallet) on the session D-Bus; `@napi-rs/keyring` talks D-Bus directly and does not need `libsecret`. Without one, credentials fall back to `~/.mcpc/credentials.json`
 
 ## Authentication Architecture
 
@@ -594,7 +594,7 @@ credential that fits still costs one keychain write and one read. Credentials ov
 
 All state files are stored in `~/.mcpc/` directory (unless overridden by `MCPC_HOME_DIR` environment variable):
 
-- `~/.mcpc/sessions.json` - Active sessions with references to auth profiles, active async tasks, and resource subscriptions (file-locked for concurrent access)
+- `~/.mcpc/sessions.json` - Active sessions with references to auth profiles, the tasks each session created (crash recovery; on 2026-07-28 connections also what `tasks-list` shows), and resource subscriptions (file-locked for concurrent access)
 - `~/.mcpc/profiles.json` - Authentication profiles (OAuth metadata, scopes, expiry)
 - `~/.mcpc/bridges/` - Unix domain socket files for bridge processes
 - `~/.mcpc/logs/bridge-<session>.log` - Bridge process logs (rotated at 10MB, up to 5 rotated files kept)
@@ -738,8 +738,10 @@ Bridge logs location: `~/.mcpc/logs/bridge-<session>.log`
   - `tools-list`, `tools-get`, `tools-call` (incl. `--task`/`--detach` async execution and `--schema` validation)
   - `resources-list`, `resources-read`, `resources-subscribe`, `resources-unsubscribe`, `resources-templates-list`, `resources-directory-read`
   - `prompts-list`, `prompts-get`
+  - `completion-complete` (prompt argument and resource template variable suggestions)
   - `tasks-list`, `tasks-get`, `tasks-result`, `tasks-cancel`
   - `skills-list`, `skills-get` (skills extension: manifest-verified reads)
+  - Tasks extension (`io.modelcontextprotocol/tasks`, 2026-07-28): server-directed task creation on `tools-call`, `tasks/get` polling at the server's `pollIntervalMs`, cooperative `tasks/cancel`, the `Mcp-Name` routing header, and a per-session task record standing in for the missing `tasks/list`
   - `grep` (per-session and global), `logs` (with `--follow`)
   - `logging-set-level`
   - `ping` (with roundtrip timing)
@@ -819,10 +821,9 @@ The script validates preconditions locally (including `pnpm run check:deps-age`,
 
 `pnpm-workspace.yaml` sets `minimumReleaseAge` to keep freshly-published (potentially compromised) packages out of the tree, but pnpm applies it only when *resolving* new versions — pnpm 10 does not re-check an existing lockfile on a `--frozen-lockfile` install (that landed in pnpm 11). `scripts/check-dependency-age.mjs` closes that gap: it reads the publish time of every version pinned in `pnpm-lock.yaml` and fails the release if anything is too young. Packages listed in `minimumReleaseAgeExclude` get a shorter 48-hour floor instead of a free pass. The check fails closed — a registry error is a failure, never a skip. Remove the script once the repo moves to pnpm ≥ 11 and native lockfile age verification covers it.
 
-Homebrew formulae live outside this repo, in [Homebrew/homebrew-core](https://github.com/Homebrew/homebrew-core/blob/main/Formula/m/mcpc.rb) (`brew install mcpc`) and [apify/homebrew-tap](https://github.com/apify/homebrew-tap) (`brew install apify/tap/mcpc`). After a release, the `homebrew` job in `release.yml` updates both: it runs `brew bump-formula-pr` to open a version-bump PR in homebrew-core (merged by Homebrew maintainers once their CI passes) and dispatches the tap's `update_formula.yaml`. It runs as a separate job, so a failure there never affects the npm release; to retry by hand:
+Homebrew formulae live outside this repo, in [Homebrew/homebrew-core](https://github.com/Homebrew/homebrew-core/blob/main/Formula/m/mcpc.rb) (`brew install mcpc`) and [apify/homebrew-tap](https://github.com/apify/homebrew-tap) (`brew install apify/tap/mcpc`). The homebrew-core formula is bumped by Homebrew's own autobump, which waits out a one-day cooldown on new npm releases (a supply-chain safeguard), so nothing here pushes to it. After a release, the `homebrew` job in `release.yml` dispatches the tap's `update_formula.yaml`; it runs as a separate job, so a failure there never affects the npm release. To retry by hand:
 
 ```bash
-brew bump-formula-pr mcpc --version <version>
 gh workflow run update_formula.yaml --repo apify/homebrew-tap \
   --field package=mcpc --field npm_package=@apify/mcpc --field version=<version>
 ```

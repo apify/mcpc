@@ -15,6 +15,7 @@ import {
   SCHEMA_BASE,
   LEGACY_SCHEMA_BASE,
   SKILLS_SPEC_URL,
+  TASKS_SPEC_URL,
   SESSION_DETAILS_HELP,
   outputHelp,
   serverDetailsJsonHelp,
@@ -24,6 +25,7 @@ import * as resources from './commands/resources.js';
 import * as skills from './commands/skills.js';
 import * as help from './commands/help.js';
 import * as prompts from './commands/prompts.js';
+import * as completion from './commands/completion.js';
 import * as sessions from './commands/sessions.js';
 import * as connect from './commands/connect.js';
 import * as logging from './commands/logging.js';
@@ -458,6 +460,7 @@ ${chalk.bold('MCP session commands (after connecting):')}
   <@session> ${theme.cyan('tasks-cancel')} <taskId>
   <@session> ${theme.cyan('prompts-list')}
   <@session> ${theme.cyan('prompts-get')} <name> [arg:=val ... | <json> | <stdin]
+  <@session> ${theme.cyan('completion-complete')} prompt|resource <ref> <arg:=val ... | <json> | <stdin>
   <@session> ${theme.cyan('resources-list')}
   <@session> ${theme.cyan('resources-read')} <uri> [-o <file> | --raw]
   <@session> ${theme.cyan('resources-subscribe')} <uri> <file>
@@ -668,6 +671,9 @@ ${outputHelp([
     .option('--profile <name>', 'Profile name (default: "default")')
     .option('--scope <scopes>', 'OAuth scopes to request (e.g. --scope "read write")')
     .option('--grant <type>', 'Grant: authorization-code (default), client-credentials, id-jag')
+    .option('--client-metadata-url <url>', 'HTTPS URL of an OAuth CIMD (default: mcpc CIMD)')
+    .option('--no-client-metadata-url', 'Disable CIMD; force DCR on CIMD-capable servers')
+    .option('--client-name <name>', 'Client name to register with DCR (default: mcpc)')
     .option('--client-id <id>', 'Pre-registered OAuth client ID (skips CIMD and DCR)')
     .option('--client-secret <secret>', 'Pre-registered OAuth client secret (requires --client-id)')
     .option(
@@ -683,8 +689,6 @@ ${outputHelp([
     .option('--idp-client-id <id>', 'Client ID pre-registered at the enterprise IdP (id-jag only)')
     .option('--idp-client-secret <secret>', 'Client secret for the enterprise IdP (id-jag only)')
     .option('--idp-scope <scopes>', 'OIDC scopes for the IdP SSO (id-jag only, see below)')
-    .option('--client-metadata-url <url>', 'HTTPS URL of an OAuth CIMD (default: mcpc CIMD)')
-    .option('--no-client-metadata-url', 'Disable CIMD; force DCR on CIMD-capable servers')
     .option(
       '--callback-port <port>',
       `Loopback port for OAuth callback (default: ${MCPC_OAUTH_CALLBACK_PORTS.join('/')})`
@@ -710,7 +714,8 @@ ${chalk.bold('Client registration (how mcpc identifies itself to the server):')}
      client's redirect URI uses localhost (e.g. localhost:3118), match it with
      --callback-host localhost --callback-port 3118.
   3. Dynamic Client Registration (DCR): fallback when CIMD is unsupported or
-     disabled and the server exposes a registration_endpoint.
+     disabled and the server exposes a registration_endpoint. Registers as
+     "mcpc"; --client-name <name> registers under another name (disables CIMD).
 
   See https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization
 
@@ -787,6 +792,7 @@ ${jsonHelp('Interactive prompts go to stderr; stdout is a clean JSON object', '`
         clientKeyAlg: opts.clientKeyAlg,
         tokenEndpoint: opts.tokenEndpoint,
         clientMetadataUrl: opts.clientMetadataUrl,
+        clientName: opts.clientName,
         idp: opts.idp,
         idpClientId: opts.idpClientId,
         idpClientSecret: opts.idpClientSecret,
@@ -1142,19 +1148,26 @@ ${jsonHelp(
     `${SCHEMA_BASE}#calltoolresult`
   );
 
-  // TODO: CreateTaskResult/Task only exist on the 2025-11-25 schema page — tasks moved to the
-  // io.modelcontextprotocol/tasks extension for 2026-07-28, which the SDK doesn't implement yet
-  // (see CLAUDE.md). Once the SDK adds it, point this (and the #task links on tasks-list/
-  // tasks-get/tasks-result) at wherever that extension's schema ends up living.
+  // The Task shape differs per protocol era: the 2025-11-25 core schema defines one, the
+  // 2026-07-28 tasks extension another. Every task command prints whichever the connection
+  // uses, so they all describe both, in this order, and link both schema pages.
+  const taskJsonShapes = [
+    'on MCP 2025-11-25: `{ taskId, status, ttl, createdAt, lastUpdatedAt, statusMessage?, pollInterval? }`',
+    'on MCP 2026-07-28: `{ taskId, status, ttlMs, createdAt, lastUpdatedAt, statusMessage?, pollIntervalMs?,',
+    '                    result? (completed), error? (failed), inputRequests? (input_required) }`',
+  ].join('\n  ');
+  const taskSchemaUrls = [`${LEGACY_SCHEMA_BASE}#task`, TASKS_SPEC_URL];
+
   const toolsCallCombinedJsonHelp = `
 ${chalk.bold('JSON output (--json):')}
   \`CallToolResult\` object:
   \`{ content: [{ type, text?, ... }], isError?, structuredContent?: { ... } }\`
   Schema: ${SCHEMA_BASE}#calltoolresult
 
-  With \`--detach\`: \`CreateTaskResult\` object:
-  \`{ taskId: string, status: string }\`
-  Schema: ${LEGACY_SCHEMA_BASE}#createtaskresult
+  With \`--detach\`: the created \`Task\` object,
+  ${taskJsonShapes}
+  or the \`CallToolResult\` above when the server ran the tool synchronously.
+  Schema: ${taskSchemaUrls.join('\n          ')}
 
   With \`--x402\` on the session: the server's settlement receipt, when it sends
   one, is at \`_meta["x402/payment-response"]\`.
@@ -1183,16 +1196,14 @@ ${chalk.bold('Arguments:')}
   Tip: mcpc ${session} tools-call <tool> --help prints the tool's parameter schema.
 
 ${chalk.bold('Async tasks (--task, --detach):')}
-  --task shows a progress spinner while the task runs on the server.
-  If you press Ctrl+C, the task keeps running and a hint with the task ID
-  is printed so you can fetch or cancel it later.
-  --detach returns the task ID immediately without waiting.
-  Both flags require a server that advertises the tasks capability and uses
-  MCP protocol 2025-11-25 (on 2026-07-28 servers tasks are an extension not
-  yet supported by mcpc). If it does not, the command fails instead of
-  running the tool synchronously — the flags change the output shape, so the
-  fallback would silently return a result where a task ID is expected.
-  Check per-tool support in tools-list: [task:optional|required|forbidden].
+  --task shows a progress spinner; Ctrl+C leaves the task running and prints
+  its ID for tasks-get, tasks-result or tasks-cancel.
+  --detach prints the task ID (the whole Task with --json) once the server
+  has created the task.
+  Both fail unless the server supports tasks (the tasks capability on MCP
+  2025-11-25, per-tool in tools-list; the tasks extension on 2026-07-28).
+  A 2026-07-28 server decides per call: a plain call it turns into a task is
+  waited for, and --detach prints the tool result if it ran synchronously.
 
 ${chalk.bold('Schema validation:')}
   --schema <file>       Validate tool schema before calling (save with tools-get --json)
@@ -1210,17 +1221,18 @@ ${toolsCallCombinedJsonHelp}`
       });
     });
 
-  // Tasks commands
+  // Tasks commands. Two dialects behind one surface: the core tasks feature of MCP
+  // 2025-11-25 and the io.modelcontextprotocol/tasks extension of MCP 2026-07-28.
   program
     .command('tasks-list')
-    .description('List all MCP tasks.')
+    .description('List MCP tasks (see below).')
     .addHelpText(
       'after',
-      jsonHelp(
-        '`{ tasks: Task[] }`',
-        '`{ tasks: [{ taskId, status, ttl, createdAt, lastUpdatedAt, statusMessage?, pollInterval? }] }`',
-        `${LEGACY_SCHEMA_BASE}#task`
-      )
+      `
+${chalk.bold('Notes:')}
+  MCP 2025-11-25 servers list all their tasks. The 2026-07-28 tasks extension
+  has no listing, so there this shows the tasks this session created.
+${jsonHelp('`{ tasks: Task[] }`, each `Task` shaped', taskJsonShapes, taskSchemaUrls)}`
     )
     .action(async (_options, command) => {
       await tasks.listTasks(session, getOptionsFromCommand(command));
@@ -1231,11 +1243,11 @@ ${toolsCallCombinedJsonHelp}`
     .description('Get MCP task status.')
     .addHelpText(
       'after',
-      jsonHelp(
-        '`Task` object',
-        '`{ taskId, status, ttl, createdAt, lastUpdatedAt, statusMessage?, pollInterval? }`',
-        `${LEGACY_SCHEMA_BASE}#task`
-      )
+      `
+${chalk.bold('Notes:')}
+  On MCP 2026-07-28 a finished task carries its result or error (shown with
+  --json).
+${jsonHelp('`Task` object', taskJsonShapes, taskSchemaUrls)}`
     )
     .action(async (taskId, _options, command) => {
       await tasks.getTask(session, taskId, getOptionsFromCommand(command));
@@ -1243,8 +1255,15 @@ ${toolsCallCombinedJsonHelp}`
 
   program
     .command('tasks-result <taskId>')
-    .description('Get MCP task final result (blocks until the task finishes).')
-    .addHelpText('after', toolsCallJsonHelp)
+    .description("Get a task's result (waits until it finishes).")
+    .addHelpText(
+      'after',
+      `
+${chalk.bold('Notes:')}
+  Polls tasks/get on MCP 2026-07-28. A task waiting for client input
+  (input_required) is reported as an error: mcpc never prompts.
+${toolsCallJsonHelp}`
+    )
     .action(async (taskId, _options, command) => {
       await tasks.getTaskResult(session, taskId, getOptionsFromCommand(command));
     });
@@ -1254,11 +1273,11 @@ ${toolsCallCombinedJsonHelp}`
     .description('Cancel an MCP task.')
     .addHelpText(
       'after',
-      jsonHelp(
-        '`Task` object',
-        '`{ taskId, status, ttl, createdAt, lastUpdatedAt, statusMessage?, pollInterval? }`',
-        `${LEGACY_SCHEMA_BASE}#task`
-      )
+      `
+${chalk.bold('Notes:')}
+  On MCP 2026-07-28 cancellation is cooperative: the status shown right after
+  may still be working. Exit code 2 only if the task had already finished.
+${jsonHelp('`Task` object (its state after the request)', taskJsonShapes, taskSchemaUrls)}`
     )
     .action(async (taskId, _options, command) => {
       await tasks.cancelTask(session, taskId, getOptionsFromCommand(command));
@@ -1335,7 +1354,7 @@ ${jsonHelp('`{ subscribed: true, uri, file, bytes, mimeType? }`')}`
 
   program
     .command('resources-unsubscribe <uri>')
-    .description('Stop syncing a subscribed MCP resource (keeps the local file).')
+    .description('Stop syncing a resource, keep the local file.')
     .addHelpText('after', jsonHelp('`{ unsubscribed: true, uri, file }`'))
     .action(async (uri, _options, command) => {
       await resources.unsubscribeResource(session, uri, getOptionsFromCommand(command));
@@ -1474,6 +1493,48 @@ ${jsonHelp('`GetPromptResult` object', '`{ description?, messages: [{ role, cont
       });
     });
 
+  program
+    .command('completion-complete <type> <ref> [args...]')
+    .description('Suggest values for a prompt or template argument.')
+    .addHelpText(
+      'after',
+      `
+${chalk.bold('Arguments:')}
+  <type>     \`prompt\` or \`resource\` (the MCP ref/prompt or ref/resource reference)
+  <ref>      Prompt name, or resource URI template (\`file:///{path}\`)
+  [args...]  Prompt or template arguments, in one of the three forms below. The last
+             one is the argument to complete, with the text typed so far as its value
+             (\`name:=\` for none); the ones before it are sent as context.
+
+  key:=value pairs    mcpc ${session} completion-complete prompt code_review language:=py
+  Inline JSON         mcpc ${session} completion-complete prompt code_review '{"language":"py"}'
+  Stdin pipe          echo '{"language":"py"}' | mcpc ${session} completion-complete prompt code_review
+
+  Values are always sent as strings: \`count:=10\` sends "10", and a JSON object
+  or array is sent as its JSON text.
+
+${chalk.bold('Examples:')}
+  mcpc ${session} completion-complete prompt code_review language:=
+  mcpc ${session} completion-complete prompt code_review language:=python framework:=fla
+  mcpc ${session} completion-complete resource 'file:///{path}' path:=/ho
+
+${chalk.bold('Notes:')}
+  The server must declare the completions capability (shown by: mcpc ${session}).
+  Servers return at most 100 suggestions, ranked by relevance; \`total\` is the
+  number of matches when known, \`hasMore\` says if there are more than returned.
+${jsonHelp(
+  '`CompleteResult` object',
+  '`{ completion: { values: string[], total?: number, hasMore?: boolean }, _meta? }`',
+  `${SCHEMA_BASE}#completeresult`
+)}`
+    )
+    .action(async (refType, ref, args, _options, command) => {
+      await completion.complete(session, refType, ref, {
+        args,
+        ...getOptionsFromCommand(command),
+      });
+    });
+
   // Logging commands
   program
     .command('logging-set-level <level>')
@@ -1576,6 +1637,17 @@ ${jsonHelp(
  * Create a Commander program for session subcommands
  * Separate from top-level program to avoid command name conflicts
  */
+/**
+ * Shorter terms for the `mcpc @session --help` command list. Commander pads every
+ * command and option in that screen to the longest term, and the 100-column help width
+ * leaves room for the descriptions only while the longest term stays under ~40 columns.
+ * A command whose full usage would exceed that lists an abbreviated form here; its own
+ * `--help` screen still shows the complete usage.
+ */
+const SESSION_COMMAND_LIST_TERMS: Record<string, string> = {
+  'completion-complete': 'completion-complete <type> <ref> ...',
+};
+
 function createSessionProgram(): Command {
   const program = new Command();
 
@@ -1589,6 +1661,7 @@ function createSessionProgram(): Command {
   // Match the top-level help styling: bold titles, cyan subcommand text
   program.configureHelp({
     subcommandTerm: (cmd) =>
+      SESSION_COMMAND_LIST_TERMS[cmd.name()] ??
       `${cmd.name()} ${cmd.usage()}`.replace(/^\[options\]\s*|\s*\[options\]/g, '').trim(),
     styleTitle: (str) => chalk.bold(str),
     styleSubcommandText: (str) => theme.cyan(str),

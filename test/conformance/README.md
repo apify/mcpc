@@ -45,6 +45,7 @@ newly added scenarios.
 | `tools_call` | `tools-list`/`tools-get`/`tools-call` argument-parsing paths; `--task` is refused when the server has no `tasks` capability |
 | `auth/client-credentials-basic` | `login --grant client-credentials` with `client_secret_basic`, incl. RFC 9728 discovery of an authorization server on another origin |
 | `auth/client-credentials-jwt` | The same via `private_key_jwt` (`--client-key`), signed with ES256 |
+| `dns-rebinding-protection` | Server scenario, run through `mcpc connect --proxy` by `server.mjs` (see below): the proxy rejects non-loopback `Host`/`Origin` headers and accepts loopback ones |
 
 `sse-retry` is implemented but excluded from default runs: it surfaces a known
 mcpc SSE-reconnect timing issue. Run it explicitly with
@@ -64,11 +65,38 @@ they need no such scaffolding.
 implements no elicitation (it never prompts for input, the same reason sampling
 is unsupported).
 
+Completions (`completion/complete`, the `completion-complete` command) have no
+client-side scenario upstream: the suite's `completion-complete` scenario
+exercises servers, not clients. The e2e suites cover the client against both
+test servers instead.
+
 The `io.modelcontextprotocol/skills` extension has no client scenario upstream
 yet. It is exercised by `test/e2e/suites/basic/skills.test.sh` (against the
 2026-07-28 test server) in the meantime; wire up a scenario here as soon as one
 appears in `list --client`.
 
+The same goes for the `io.modelcontextprotocol/tasks` extension (MCP 2026-07-28):
+no client scenario upstream yet. `test/e2e/suites/sessions/tasks-extension.test.sh`
+covers it against the 2026-07-28 test server (server-directed task creation, the
+`tasks/get` poll loop and its inlined result, the `Mcp-Name` routing header,
+cooperative cancellation, `input_required`), and `sessions/async-tasks.test.sh`
+runs the shared command surface in both eras. The `tools_call` scenario's
+`--task` refusal above stays a 2025-11-25 check: the conformance server neither
+advertises the `tasks` capability nor declares the extension.
+
 Note that the framework's client scenarios currently top out at protocol
 `2025-11-25`, so these runs exercise mcpc's legacy fallback path rather than the
 `2026-07-28` era it negotiates by default.
+
+## Proxy server conformance
+
+Run the first server-side scenario from #334 against a real `mcpc connect --proxy` chain:
+
+```bash
+pnpm run build
+node test/conformance/server.mjs
+```
+
+The runner starts the existing local e2e server, connects an isolated named session, and binds its proxy to `127.0.0.1`. The reference `dns-rebinding-protection` scenario checks rejection of invalid Host/Origin headers and acceptance of valid localhost requests. Readiness and commands are bounded; session and server cleanup run on success, failure and interruption. No remote MCP service or credentials are required.
+
+The server lane runs by default in the reusable conformance workflow, so it also gates releases. Like the existing client lane it resolves the conformance package through `npx -y`; set `CONFORMANCE_PACKAGE_VERSION` to a published version for a pinned local run. Remaining server scenarios need fixtures and are not covered yet.

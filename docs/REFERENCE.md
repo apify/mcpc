@@ -34,6 +34,7 @@ New to mcpc? Start with the [README](../README.md), or run `mcpc help --skill` f
   - [`mcpc @<session> tasks-cancel`](#mcpc-session-tasks-cancel)
   - [`mcpc @<session> prompts-list`](#mcpc-session-prompts-list)
   - [`mcpc @<session> prompts-get`](#mcpc-session-prompts-get)
+  - [`mcpc @<session> completion-complete`](#mcpc-session-completion-complete)
   - [`mcpc @<session> resources-list`](#mcpc-session-resources-list)
   - [`mcpc @<session> resources-read`](#mcpc-session-resources-read)
   - [`mcpc @<session> resources-subscribe`](#mcpc-session-resources-subscribe)
@@ -87,6 +88,7 @@ MCP session commands (after connecting):
   <@session> tasks-cancel <taskId>
   <@session> prompts-list
   <@session> prompts-get <name> [arg:=val ... | <json> | <stdin]
+  <@session> completion-complete prompt|resource <ref> <arg:=val ... | <json> | <stdin>
   <@session> resources-list
   <@session> resources-read <uri> [-o <file> | --raw]
   <@session> resources-subscribe <uri> <file>
@@ -212,6 +214,9 @@ Options:
   --profile <name>              Profile name (default: "default")
   --scope <scopes>              OAuth scopes to request (e.g. --scope "read write")
   --grant <type>                Grant: authorization-code (default), client-credentials, id-jag
+  --client-metadata-url <url>   HTTPS URL of an OAuth CIMD (default: mcpc CIMD)
+  --no-client-metadata-url      Disable CIMD; force DCR on CIMD-capable servers
+  --client-name <name>          Client name to register with DCR (default: mcpc)
   --client-id <id>              Pre-registered OAuth client ID (skips CIMD and DCR)
   --client-secret <secret>      Pre-registered OAuth client secret (requires --client-id)
   --client-key <pem-or-path>    Private key (PEM path or literal) for private_key_jwt auth
@@ -221,8 +226,6 @@ Options:
   --idp-client-id <id>          Client ID pre-registered at the enterprise IdP (id-jag only)
   --idp-client-secret <secret>  Client secret for the enterprise IdP (id-jag only)
   --idp-scope <scopes>          OIDC scopes for the IdP SSO (id-jag only, see below)
-  --client-metadata-url <url>   HTTPS URL of an OAuth CIMD (default: mcpc CIMD)
-  --no-client-metadata-url      Disable CIMD; force DCR on CIMD-capable servers
   --callback-port <port>        Loopback port for OAuth callback (default: 13316/31613/16133)
   --callback-host <host>        OAuth callback host: 127.0.0.1 (default) or localhost
   --json                        Output in JSON format
@@ -244,7 +247,8 @@ Client registration (how mcpc identifies itself to the server):
      client's redirect URI uses localhost (e.g. localhost:3118), match it with
      --callback-host localhost --callback-port 3118.
   3. Dynamic Client Registration (DCR): fallback when CIMD is unsupported or
-     disabled and the server exposes a registration_endpoint.
+     disabled and the server exposes a registration_endpoint. Registers as
+     "mcpc"; --client-name <name> registers under another name (disables CIMD).
 
   See https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization
 
@@ -472,39 +476,40 @@ Usage: mcpc @<session> [options] [command]
 Show MCP session info or execute commands.
 
 Options:
-  --json                            Output in JSON format for scripting and code mode
-  --verbose                         Enable debug logging
-  --profile <name>                  OAuth profile override
-  --timeout <seconds>               Request timeout in seconds (default: 60)
-  --max-chars <n>                   Truncate output to n characters (ignored in --json mode)
-  --insecure                        Skip TLS certificate verification (for self-signed certs)
-  -h, --help                        Display help
+  --json                                Output in JSON format for scripting and code mode
+  --verbose                             Enable debug logging
+  --profile <name>                      OAuth profile override
+  --timeout <seconds>                   Request timeout in seconds (default: 60)
+  --max-chars <n>                       Truncate output to n characters (ignored in --json mode)
+  --insecure                            Skip TLS certificate verification (for self-signed certs)
+  -h, --help                            Display help
 
 Commands:
-  close                             Close MCP session.
-  restart                           Restart MCP session (losing all state).
-  grep <pattern>                    Search MCP session objects.
-  tools-list                        List all MCP tools.
-  tools-get <name>                  Get details and schema for an MCP tool.
-  tools-call <name> [args...]       Call an MCP tool with arguments.
-  tasks-list                        List all MCP tasks.
-  tasks-get <taskId>                Get MCP task status.
-  tasks-result <taskId>             Get MCP task final result (blocks until the task finishes).
-  tasks-cancel <taskId>             Cancel an MCP task.
-  resources-list                    List all MCP resources.
-  resources-read <uri>              Read an MCP resource by URI.
-  resources-subscribe <uri> <file>  Subscribe to an MCP resource and sync it to a local file.
-  resources-unsubscribe <uri>       Stop syncing a subscribed MCP resource (keeps the local file).
-  resources-templates-list          List MCP resource templates.
-  skills-list                       List the agent skills the server serves.
-  skills-get <skill> [file]         Read a skill's SKILL.md, or one of its files (see below).
-  resources-directory-read <uri>    List a directory resource's direct children.
-  prompts-list                      List all MCP prompts.
-  prompts-get <name> [args...]      Get an MCP prompt with arguments.
-  logging-set-level <level>         Set MCP server logging level (deprecated).
-  ping                              Ping the MCP server.
-  server-discover                   Ask the server what it supports (MCP 2026-07-28+).
-  logs                              Show or follow the bridge log file for this session.
+  close                                 Close MCP session.
+  restart                               Restart MCP session (losing all state).
+  grep <pattern>                        Search MCP session objects.
+  tools-list                            List all MCP tools.
+  tools-get <name>                      Get details and schema for an MCP tool.
+  tools-call <name> [args...]           Call an MCP tool with arguments.
+  tasks-list                            List MCP tasks (see below).
+  tasks-get <taskId>                    Get MCP task status.
+  tasks-result <taskId>                 Get a task's result (waits until it finishes).
+  tasks-cancel <taskId>                 Cancel an MCP task.
+  resources-list                        List all MCP resources.
+  resources-read <uri>                  Read an MCP resource by URI.
+  resources-subscribe <uri> <file>      Subscribe to an MCP resource and sync it to a local file.
+  resources-unsubscribe <uri>           Stop syncing a resource, keep the local file.
+  resources-templates-list              List MCP resource templates.
+  skills-list                           List the agent skills the server serves.
+  skills-get <skill> [file]             Read a skill's SKILL.md, or one of its files (see below).
+  resources-directory-read <uri>        List a directory resource's direct children.
+  prompts-list                          List all MCP prompts.
+  prompts-get <name> [args...]          Get an MCP prompt with arguments.
+  completion-complete <type> <ref> ...  Suggest values for a prompt or template argument.
+  logging-set-level <level>             Set MCP server logging level (deprecated).
+  ping                                  Ping the MCP server.
+  server-discover                       Ask the server what it supports (MCP 2026-07-28+).
+  logs                                  Show or follow the bridge log file for this session.
 
 Output:
   When no command is given, shows session, server info, capabilities, and tools.
@@ -646,16 +651,14 @@ Arguments:
   Tip: mcpc @<session> tools-call <tool> --help prints the tool's parameter schema.
 
 Async tasks (--task, --detach):
-  --task shows a progress spinner while the task runs on the server.
-  If you press Ctrl+C, the task keeps running and a hint with the task ID
-  is printed so you can fetch or cancel it later.
-  --detach returns the task ID immediately without waiting.
-  Both flags require a server that advertises the tasks capability and uses
-  MCP protocol 2025-11-25 (on 2026-07-28 servers tasks are an extension not
-  yet supported by mcpc). If it does not, the command fails instead of
-  running the tool synchronously — the flags change the output shape, so the
-  fallback would silently return a result where a task ID is expected.
-  Check per-tool support in tools-list: [task:optional|required|forbidden].
+  --task shows a progress spinner; Ctrl+C leaves the task running and prints
+  its ID for tasks-get, tasks-result or tasks-cancel.
+  --detach prints the task ID (the whole Task with --json) once the server
+  has created the task.
+  Both fail unless the server supports tasks (the tasks capability on MCP
+  2025-11-25, per-tool in tools-list; the tasks extension on 2026-07-28).
+  A 2026-07-28 server decides per call: a plain call it turns into a task is
+  waited for, and --detach prints the tool result if it ran synchronously.
 
 Schema validation:
   --schema <file>       Validate tool schema before calling (save with tools-get --json)
@@ -666,9 +669,13 @@ JSON output (--json):
   `{ content: [{ type, text?, ... }], isError?, structuredContent?: { ... } }`
   Schema: https://modelcontextprotocol.io/specification/2026-07-28/schema#calltoolresult
 
-  With `--detach`: `CreateTaskResult` object:
-  `{ taskId: string, status: string }`
-  Schema: https://modelcontextprotocol.io/specification/2025-11-25/schema#createtaskresult
+  With `--detach`: the created `Task` object,
+  on MCP 2025-11-25: `{ taskId, status, ttl, createdAt, lastUpdatedAt, statusMessage?, pollInterval? }`
+  on MCP 2026-07-28: `{ taskId, status, ttlMs, createdAt, lastUpdatedAt, statusMessage?, pollIntervalMs?,
+                      result? (completed), error? (failed), inputRequests? (input_required) }`
+  or the `CallToolResult` above when the server ran the tool synchronously.
+  Schema: https://modelcontextprotocol.io/specification/2025-11-25/schema#task
+          https://github.com/modelcontextprotocol/ext-tasks/blob/main/specification/2026-07-28/tasks.md
 
   With `--x402` on the session: the server's settlement receipt, when it sends
   one, is at `_meta["x402/payment-response"]`.
@@ -679,15 +686,22 @@ JSON output (--json):
 ```text
 Usage: mcpc @<session> tasks-list [options]
 
-List all MCP tasks.
+List MCP tasks (see below).
 
 Options:
   --json  Output in JSON format
 
+Notes:
+  MCP 2025-11-25 servers list all their tasks. The 2026-07-28 tasks extension
+  has no listing, so there this shows the tasks this session created.
+
 JSON output (--json):
-  `{ tasks: Task[] }`:
-  `{ tasks: [{ taskId, status, ttl, createdAt, lastUpdatedAt, statusMessage?, pollInterval? }] }`
+  `{ tasks: Task[] }`, each `Task` shaped:
+  on MCP 2025-11-25: `{ taskId, status, ttl, createdAt, lastUpdatedAt, statusMessage?, pollInterval? }`
+  on MCP 2026-07-28: `{ taskId, status, ttlMs, createdAt, lastUpdatedAt, statusMessage?, pollIntervalMs?,
+                      result? (completed), error? (failed), inputRequests? (input_required) }`
   Schema: https://modelcontextprotocol.io/specification/2025-11-25/schema#task
+          https://github.com/modelcontextprotocol/ext-tasks/blob/main/specification/2026-07-28/tasks.md
 ```
 
 ### `mcpc @<session> tasks-get`
@@ -700,10 +714,17 @@ Get MCP task status.
 Options:
   --json  Output in JSON format
 
+Notes:
+  On MCP 2026-07-28 a finished task carries its result or error (shown with
+  --json).
+
 JSON output (--json):
   `Task` object:
-  `{ taskId, status, ttl, createdAt, lastUpdatedAt, statusMessage?, pollInterval? }`
+  on MCP 2025-11-25: `{ taskId, status, ttl, createdAt, lastUpdatedAt, statusMessage?, pollInterval? }`
+  on MCP 2026-07-28: `{ taskId, status, ttlMs, createdAt, lastUpdatedAt, statusMessage?, pollIntervalMs?,
+                      result? (completed), error? (failed), inputRequests? (input_required) }`
   Schema: https://modelcontextprotocol.io/specification/2025-11-25/schema#task
+          https://github.com/modelcontextprotocol/ext-tasks/blob/main/specification/2026-07-28/tasks.md
 ```
 
 ### `mcpc @<session> tasks-result`
@@ -711,10 +732,14 @@ JSON output (--json):
 ```text
 Usage: mcpc @<session> tasks-result [options] <taskId>
 
-Get MCP task final result (blocks until the task finishes).
+Get a task's result (waits until it finishes).
 
 Options:
   --json  Output in JSON format
+
+Notes:
+  Polls tasks/get on MCP 2026-07-28. A task waiting for client input
+  (input_required) is reported as an error: mcpc never prompts.
 
 JSON output (--json):
   `CallToolResult` object:
@@ -732,10 +757,17 @@ Cancel an MCP task.
 Options:
   --json  Output in JSON format
 
+Notes:
+  On MCP 2026-07-28 cancellation is cooperative: the status shown right after
+  may still be working. Exit code 2 only if the task had already finished.
+
 JSON output (--json):
-  `Task` object:
-  `{ taskId, status, ttl, createdAt, lastUpdatedAt, statusMessage?, pollInterval? }`
+  `Task` object (its state after the request):
+  on MCP 2025-11-25: `{ taskId, status, ttl, createdAt, lastUpdatedAt, statusMessage?, pollInterval? }`
+  on MCP 2026-07-28: `{ taskId, status, ttlMs, createdAt, lastUpdatedAt, statusMessage?, pollIntervalMs?,
+                      result? (completed), error? (failed), inputRequests? (input_required) }`
   Schema: https://modelcontextprotocol.io/specification/2025-11-25/schema#task
+          https://github.com/modelcontextprotocol/ext-tasks/blob/main/specification/2026-07-28/tasks.md
 ```
 
 ### `mcpc @<session> prompts-list`
@@ -776,6 +808,46 @@ JSON output (--json):
   `GetPromptResult` object:
   `{ description?, messages: [{ role, content: { type, text?, ... } }] }`
   Schema: https://modelcontextprotocol.io/specification/2026-07-28/schema#getpromptresult
+```
+
+### `mcpc @<session> completion-complete`
+
+```text
+Usage: mcpc @<session> completion-complete [options] <type> <ref> [args...]
+
+Suggest values for a prompt or template argument.
+
+Options:
+  --json  Output in JSON format
+
+Arguments:
+  <type>     `prompt` or `resource` (the MCP ref/prompt or ref/resource reference)
+  <ref>      Prompt name, or resource URI template (`file:///{path}`)
+  [args...]  Prompt or template arguments, in one of the three forms below. The last
+             one is the argument to complete, with the text typed so far as its value
+             (`name:=` for none); the ones before it are sent as context.
+
+  key:=value pairs    mcpc @<session> completion-complete prompt code_review language:=py
+  Inline JSON         mcpc @<session> completion-complete prompt code_review '{"language":"py"}'
+  Stdin pipe          echo '{"language":"py"}' | mcpc @<session> completion-complete prompt code_review
+
+  Values are always sent as strings: `count:=10` sends "10", and a JSON object
+  or array is sent as its JSON text.
+
+Examples:
+  mcpc @<session> completion-complete prompt code_review language:=
+  mcpc @<session> completion-complete prompt code_review language:=python framework:=fla
+  mcpc @<session> completion-complete resource 'file:///{path}' path:=/ho
+
+Notes:
+  The server must declare the completions capability (shown by: mcpc @<session>).
+  Servers return at most 100 suggestions, ranked by relevance; `total` is the
+  number of matches when known, `hasMore` says if there are more than returned.
+
+JSON output (--json):
+  `CompleteResult` object:
+  `{ completion: { values: string[], total?: number, hasMore?: boolean }, _meta? }`
+  Schema: https://modelcontextprotocol.io/specification/2026-07-28/schema#completeresult
 ```
 
 ### `mcpc @<session> resources-list`
@@ -852,7 +924,7 @@ JSON output (--json):
 ```text
 Usage: mcpc @<session> resources-unsubscribe [options] <uri>
 
-Stop syncing a subscribed MCP resource (keeps the local file).
+Stop syncing a resource, keep the local file.
 
 Options:
   --json  Output in JSON format
@@ -921,7 +993,7 @@ Notes:
 JSON output (--json):
   Array of `Skill` entries:
   `[{ uri, frontmatter: { name, description, ... }, resources: [{ uri, digest, size }] | "dynamic" }, ...]`
-  Schema: https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/stable/skills.mdx
+  Schema: https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/beta/skills.mdx
 ```
 
 ### `mcpc @<session> skills-get`
@@ -952,7 +1024,7 @@ Examples:
 JSON output (--json):
   The skill entry plus the content that was read:
   `{ skill: { uri, frontmatter, resources }, contents: [{ uri, mimeType?, text? | blob? }] }`
-  Schema: https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/stable/skills.mdx
+  Schema: https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/beta/skills.mdx
 ```
 
 ### `mcpc @<session> logging-set-level`

@@ -21,22 +21,24 @@ describe('buildClientCapabilities', () => {
     expect(caps.roots).toBeUndefined();
   });
 
-  it('declares the auth extensions mcpc implements, on every connection', () => {
+  it('declares the auth and tasks extensions mcpc implements, on every connection', () => {
     // The map reports what this client can do, not what the connection happens to be
-    // doing: a server can only offer an extension to a client it knows supports it.
+    // doing: a server can only offer an extension to a client it knows supports it, and
+    // a 2026-07-28 server may only answer tools/call with a task when the request
+    // declared the tasks extension.
     const caps = buildClientCapabilities() as { extensions?: Record<string, unknown> };
     expect(caps.extensions).toEqual({
       [CLIENT_CREDENTIALS_EXTENSION_KEY]: {},
       [ENTERPRISE_MANAGED_AUTH_EXTENSION_KEY]: {},
+      [TASKS_EXTENSION_KEY]: {},
     });
   });
 
   it('does not declare extensions mcpc cannot back up', () => {
     const caps = buildClientCapabilities() as { extensions?: Record<string, unknown> };
-    // MCP Apps and the 2026-07-28 tasks extension are not implemented; skills is
-    // implemented but declared by servers only, so a client claim would be invented.
+    // MCP Apps is not implemented; skills is implemented but declared by servers only,
+    // so a client claim would be invented.
     expect(caps.extensions).not.toHaveProperty(APPS_EXTENSION_KEY);
-    expect(caps.extensions).not.toHaveProperty(TASKS_EXTENSION_KEY);
     expect(caps.extensions).not.toHaveProperty(SKILLS_EXTENSION_KEY);
   });
 });

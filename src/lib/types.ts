@@ -27,14 +27,13 @@ import type {
   ListPromptsResult,
   GetPromptRequest,
   GetPromptResult,
+  CompleteRequestParams,
+  CompleteResult,
   SubscribeRequest,
   UnsubscribeRequest,
   LoggingLevel,
   ListResourceTemplatesResult,
   Task,
-  GetTaskResult,
-  ListTasksResult,
-  CancelTaskResult,
 } from '@modelcontextprotocol/client';
 
 /**
@@ -67,13 +66,12 @@ export type {
   ListPromptsResult,
   GetPromptRequest,
   GetPromptResult,
+  CompleteRequestParams,
+  CompleteResult,
   SubscribeRequest,
   UnsubscribeRequest,
   LoggingLevel,
   Task,
-  GetTaskResult,
-  ListTasksResult,
-  CancelTaskResult,
 };
 
 /** Keepalive ping interval in milliseconds (30 seconds) */
@@ -356,6 +354,12 @@ export interface IdJagCredentials {
   mcpClientId: string;
   /** Secret for the MCP authorization server client (required by the SDK provider). */
   mcpClientSecret: string;
+  /**
+   * Authorization server of the MCP server, as discovered at login (RFC 9728). The SDK
+   * provider is bound to it (SEP-2352), so the MCP client secret is only ever sent
+   * there. Absent for profiles written before mcpc recorded it; re-login records it.
+   */
+  mcpAuthorizationServer?: string;
   /** Space-separated scopes requested for the MCP server. */
   scope?: string;
 }
@@ -406,6 +410,12 @@ export interface AuthCredentials {
   keyAlg?: string; // JWT signing algorithm for the private_key_jwt variant (e.g. RS256)
   scope?: string; // space-separated scopes requested by the client-credentials grant
   tokenEndpoint?: string; // explicit token endpoint (--token-endpoint); bypasses discovery
+  /**
+   * Authorization server the client-credentials material is bound to (SEP-2352), as
+   * recorded by `login` (`OAuthClientCredentialsInfo.issuer`). Absent for profiles
+   * written before mcpc recorded it.
+   */
+  clientCredentialsIssuer?: string;
   // Enterprise-managed authorization material (id_jag grant; sent via IPC, never CLI args)
   idJag?: IdJagCredentials;
   // HTTP headers (from --header flags, stored in keychain)
@@ -429,11 +439,93 @@ export interface X402WalletCredentials {
 }
 
 /**
+ * Lifecycle states of a task. Identical in the 2025-11-25 core protocol and the
+ * 2026-07-28 `io.modelcontextprotocol/tasks` extension.
+ */
+export type TaskStatus = Task['status'];
+
+/** The JSON-RPC error a `failed` task carries (2026-07-28 tasks extension). */
+export interface TaskError {
+  code: number;
+  message: string;
+  data?: unknown;
+}
+
+/**
+ * A task as the `io.modelcontextprotocol/tasks` extension (MCP 2026-07-28) shapes it: the
+ * flat `Task` fields plus the status-specific payload that `tasks/get` inlines — `result`
+ * once completed, `error` once failed, `inputRequests` while the server waits for input.
+ * `CreateTaskResult`, the `tasks/get` result and `notifications/tasks` all carry this
+ * shape (the wire `resultType` discriminator is stripped before it reaches mcpc).
+ *
+ * The 2025-11-25 core protocol's `Task` (imported from the SDK above) differs in field
+ * names (`ttl`/`pollInterval`) and never inlines the result — `tasks/result` fetches it.
+ *
+ * Spec: https://github.com/modelcontextprotocol/ext-tasks/blob/main/specification/2026-07-28/tasks.md
+ */
+export interface ExtensionTask {
+  taskId: string;
+  status: TaskStatus;
+  statusMessage?: string;
+  /** ISO 8601 */
+  createdAt: string;
+  /** ISO 8601 */
+  lastUpdatedAt: string;
+  /** Time-to-live from creation in milliseconds; `null` means unlimited. */
+  ttlMs: number | null;
+  /** Polling interval the server asks clients to honor, in milliseconds. */
+  pollIntervalMs?: number;
+  /** The original request's result (a `CallToolResult` for `tools/call`); status `completed` only. */
+  result?: Record<string, unknown>;
+  /** The JSON-RPC error that failed the task; status `failed` only. */
+  error?: TaskError;
+  /** Outstanding server-to-client requests, keyed by id; status `input_required` only. */
+  inputRequests?: Record<string, unknown>;
+  /** Anything else the server attached (for example `_meta`) passes through. */
+  [key: string]: unknown;
+}
+
+/**
+ * A task in whichever shape the connection's protocol era uses: the SDK's 2025-11-25
+ * `Task`, or the extension's {@link ExtensionTask}. Everything mcpc prints about a task —
+ * id, status, message, timestamps — is common to both.
+ */
+export type AnyTask = Task | ExtensionTask;
+
+/**
+ * Whether a task came from the 2026-07-28 extension. Every normalized {@link ExtensionTask}
+ * carries `ttlMs`, and the 2025 core `Task` never does (the SDK's schema strips unknown
+ * fields), so that field alone decides — whatever else a server attached, `ttl` included.
+ */
+export function isExtensionTask(task: AnyTask): task is ExtensionTask {
+  return 'ttlMs' in task;
+}
+
+/**
+ * One page of tasks: the server's `tasks/list` on 2025-11-25 connections, or — since the
+ * extension defines no listing — the tasks this session created on 2026-07-28 ones.
+ */
+export interface TasksPage {
+  tasks: AnyTask[];
+  nextCursor?: string | undefined;
+}
+
+/**
+ * What a detached tool call (`tools-call --detach`) produced. Exactly one field is set:
+ * the task the server created, or the tool result when a 2026-07-28 server — which
+ * decides per call whether to create a task — answered synchronously instead.
+ */
+export interface DetachedToolCall {
+  task?: AnyTask;
+  result?: CallToolResult;
+}
+
+/**
  * Task status update sent from bridge to CLI during task-augmented tool calls
  */
 export interface TaskUpdate {
   taskId: string;
-  status: 'working' | 'input_required' | 'completed' | 'failed' | 'cancelled';
+  status: TaskStatus;
   statusMessage?: string;
   progressMessage?: string; // Message from notifications/progress
   progress?: number; // Current progress value from notifications/progress
@@ -476,6 +568,8 @@ export interface Skill {
    * when the content is generated such that stable digests cannot be published.
    */
   resources: SkillResource[] | 'dynamic';
+  /** Keys defined by the extension use the `io.modelcontextprotocol.skills/` prefix. */
+  _meta?: Record<string, unknown>;
 }
 
 /** Result of `skills/list` (paginated; `ttlMs`/`cacheScope` are the caching hints). */
@@ -493,10 +587,12 @@ export interface GetSkillResult {
   cacheScope?: string;
 }
 
-/** Result of `resources/directory/read`: the direct children of a directory resource. */
+/** Result of `resources/directory/read` (paginated; `ttlMs`/`cacheScope` are the caching hints). */
 export interface ReadResourceDirectoryResult {
   resources: Resource[];
   nextCursor?: string;
+  ttlMs?: number;
+  cacheScope?: string;
 }
 
 /**
@@ -659,9 +755,18 @@ export interface IMcpClient {
   readResourceDirectory(uri: string, cursor?: string): Promise<ReadResourceDirectoryResult>;
   listPrompts(cursor?: string): Promise<ListPromptsResult>;
   getPrompt(name: string, args?: Record<string, string>): Promise<GetPromptResult>;
+  /**
+   * Ask the server to suggest values for a prompt argument or resource-template variable
+   * (`completion/complete`). Requires the server to declare the `completions` capability.
+   */
+  complete(params: CompleteRequestParams): Promise<CompleteResult>;
   setLoggingLevel(level: LoggingLevel): Promise<void>;
 
-  // Task operations (async tool execution)
+  /**
+   * Task operations (async tool execution). Era-aware: the 2025-11-25 core `tasks/*`
+   * requests on legacy connections, the `io.modelcontextprotocol/tasks` extension on
+   * 2026-07-28 ones — see McpClient for the differences.
+   */
   callToolWithTask(
     name: string,
     args?: Record<string, unknown>,
@@ -672,10 +777,10 @@ export interface IMcpClient {
     name: string,
     args?: Record<string, unknown>,
     meta?: Record<string, unknown>
-  ): Promise<TaskUpdate>;
+  ): Promise<DetachedToolCall>;
   pollTask(taskId: string, onUpdate?: (update: TaskUpdate) => void): Promise<CallToolResult>;
-  listTasks(cursor?: string): Promise<ListTasksResult>;
-  getTask(taskId: string): Promise<GetTaskResult>;
+  listTasks(cursor?: string): Promise<TasksPage>;
+  getTask(taskId: string): Promise<AnyTask>;
   getTaskResult(taskId: string): Promise<CallToolResult>;
-  cancelTask(taskId: string): Promise<CancelTaskResult>;
+  cancelTask(taskId: string): Promise<AnyTask>;
 }

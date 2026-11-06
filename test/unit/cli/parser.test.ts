@@ -4,6 +4,9 @@
 
 import {
   parseCommandArgs,
+  readCommandArgs,
+  stringifyArgValues,
+  KNOWN_SESSION_COMMANDS,
   getVerboseFromEnv,
   getJsonFromEnv,
   validateOptions,
@@ -37,9 +40,18 @@ describe('parseCommandArgs', () => {
       expect(result).toEqual({ query: 'hello', limit: 10 });
     });
 
-    it('should parse inline JSON array', () => {
-      const result = parseCommandArgs(['[1,2,3]']);
-      expect(result).toEqual([1, 2, 3]);
+    it('should reject an inline JSON array (MCP arguments must be an object)', () => {
+      expect(() => parseCommandArgs(['[1,2,3]'])).toThrow(ClientError);
+      expect(() => parseCommandArgs(['[1,2,3]'])).toThrow('Inline JSON must be an object');
+    });
+
+    it('should keep a "__proto__" key as an own property', () => {
+      const result = parseCommandArgs(['{"__proto__":{"x":1},"name":"hi"}']);
+      expect(JSON.stringify(result)).toBe('{"__proto__":{"x":1},"name":"hi"}');
+    });
+
+    it('should reject numbers out of the double range instead of sending null', () => {
+      expect(() => parseCommandArgs(['{"n":1e400}'])).toThrow('Invalid JSON: number out of range');
     });
 
     it('should parse nested JSON object', () => {
@@ -101,6 +113,19 @@ describe('parseCommandArgs', () => {
     it('should keep large negative integers as strings', () => {
       const result = parseCommandArgs(['id:=-12345678901234567890']);
       expect(result).toEqual({ id: '-12345678901234567890' });
+    });
+
+    it('should keep numbers out of the double range as strings (not Infinity → null)', () => {
+      expect(parseCommandArgs(['n:=1e400'])).toEqual({ n: '1e400' });
+      expect(parseCommandArgs(['n:=-1e400'])).toEqual({ n: '-1e400' });
+      expect(parseCommandArgs(['a:=[1,1e400]'])).toEqual({ a: '[1,1e400]' });
+      expect(parseCommandArgs(['n:=1e308'])).toEqual({ n: 1e308 });
+    });
+
+    it('should keep a "__proto__" key as an own property', () => {
+      const result = parseCommandArgs(['__proto__:={"x":1}', 'name:=hi']);
+      expect(JSON.stringify(result)).toBe('{"__proto__":{"x":1},"name":"hi"}');
+      expect(Object.getPrototypeOf(result)).toBe(Object.prototype);
     });
 
     it('should still parse safe 16+ digit-looking numbers within range', () => {
@@ -360,6 +385,8 @@ describe('optionTakesValue', () => {
     expect(optionTakesValue('--scope')).toBe(true);
     expect(optionTakesValue('--client-id')).toBe(true);
     expect(optionTakesValue('--client-secret')).toBe(true);
+    expect(optionTakesValue('--client-metadata-url')).toBe(true);
+    expect(optionTakesValue('--client-name')).toBe(true);
     expect(optionTakesValue('-o')).toBe(true);
     expect(optionTakesValue('--output')).toBe(true);
     expect(optionTakesValue('--amount')).toBe(true);
@@ -368,6 +395,7 @@ describe('optionTakesValue', () => {
 
   it('should return false for boolean flags', () => {
     expect(optionTakesValue('--verbose')).toBe(false);
+    expect(optionTakesValue('--no-client-metadata-url')).toBe(false);
     expect(optionTakesValue('--json')).toBe(false);
     expect(optionTakesValue('-j')).toBe(false);
     expect(optionTakesValue('-v')).toBe(false);
@@ -596,6 +624,44 @@ describe('suggestCommand', () => {
   });
 });
 
+describe('readCommandArgs', () => {
+  const originalIsTTY = process.stdin.isTTY;
+  afterEach(() => {
+    Object.defineProperty(process.stdin, 'isTTY', { value: originalIsTTY, configurable: true });
+  });
+
+  it('prefers positional arguments and never touches stdin', async () => {
+    Object.defineProperty(process.stdin, 'isTTY', { value: undefined, configurable: true });
+    await expect(readCommandArgs(['a:=1', 'b:=x'])).resolves.toEqual({ a: 1, b: 'x' });
+    await expect(readCommandArgs(['{"a":[1]}'])).resolves.toEqual({ a: [1] });
+  });
+
+  it('returns no arguments on a TTY with nothing positional', async () => {
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+    await expect(readCommandArgs(undefined)).resolves.toEqual({});
+    await expect(readCommandArgs([])).resolves.toEqual({});
+  });
+});
+
+describe('parseCommandArgs empty values', () => {
+  it('keeps name:= as an empty string (how completion-complete asks for every suggestion)', () => {
+    expect(parseCommandArgs(['name:='])).toEqual({ name: '' });
+  });
+});
+
+describe('stringifyArgValues', () => {
+  it('keeps strings and serializes everything else as JSON text', () => {
+    expect(
+      stringifyArgValues({ s: 'py', n: 10, b: true, o: { k: 'v' }, a: [1, 2], z: null })
+    ).toEqual({ s: 'py', n: '10', b: 'true', o: '{"k":"v"}', a: '[1,2]', z: 'null' });
+  });
+
+  it('keeps a "__proto__" key as an own property', () => {
+    const result = stringifyArgValues(parseCommandArgs(['__proto__:=x', 'name:=hi']));
+    expect(JSON.stringify(result)).toBe('{"__proto__":"x","name":"hi"}');
+  });
+});
+
 describe('normalizeSlashCommand', () => {
   it('returns the input unchanged when there is no slash', () => {
     expect(normalizeSlashCommand('tools-list')).toBe('tools-list');
@@ -608,6 +674,11 @@ describe('normalizeSlashCommand', () => {
     expect(normalizeSlashCommand('resources/read')).toBe('resources-read');
     expect(normalizeSlashCommand('prompts/get')).toBe('prompts-get');
     expect(normalizeSlashCommand('server/discover')).toBe('server-discover');
+  });
+
+  it('maps completion/complete to the known completion-complete command', () => {
+    expect(normalizeSlashCommand('completion/complete')).toBe('completion-complete');
+    expect(KNOWN_SESSION_COMMANDS).toContain('completion-complete');
   });
 
   it('converts multi-segment slash method names', () => {

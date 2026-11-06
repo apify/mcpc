@@ -3,6 +3,7 @@
  */
 
 import type { MockInstance } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import { extractAllTextContent } from '../../../src/cli/tool-result.js';
 
 // Mock chalk to return plain strings (required because Jest can't handle chalk's ESM imports)
@@ -40,6 +41,9 @@ import {
   formatTools,
   formatToolDetail,
   formatServerDetails,
+  formatTask,
+  formatTasks,
+  formatCompletionResult,
   formatDiscoverResult,
   formatResources,
   formatResourceDetail,
@@ -985,6 +989,98 @@ describe('formatToolCallExample', () => {
     const output = formatToolCallExample(tool, '@s');
     expect(output).toContain(`config:='{"key":"value"}'`);
   });
+
+  it('should use an array or object example for array and object params without defaults', () => {
+    const tool: Tool = {
+      name: 'crawl',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          urls: { type: 'array', items: { type: 'string' } },
+          ids: { type: 'array' },
+          options: { type: 'object' },
+        },
+        required: ['urls', 'ids', 'options'],
+      },
+    };
+
+    const output = formatToolCallExample(tool, '@s');
+    expect(output).toContain(`urls:='["something"]'`);
+    expect(output).toContain(`ids:='[]'`);
+    expect(output).toContain(`options:='{}'`);
+  });
+
+  it('should use an array or object example for nullable array and object params', () => {
+    const tool: Tool = {
+      name: 'crawl',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          ids: { type: ['array', 'null'], items: { type: 'integer' } },
+          options: { type: ['null', 'object'] },
+          tags: { anyOf: [{ type: 'array', items: { type: 'string' } }, { type: 'null' }] },
+        },
+        required: ['ids', 'options', 'tags'],
+      },
+    };
+
+    const output = formatToolCallExample(tool, '@s');
+    expect(output).toContain(`ids:='[1]'`);
+    expect(output).toContain(`options:='{}'`);
+    expect(output).toContain(`tags:='["something"]'`);
+  });
+
+  it('should resolve $ref, tuple and required object properties in examples', () => {
+    const tool: Tool = {
+      name: 'plot',
+      inputSchema: {
+        type: 'object',
+        $defs: {
+          Point: {
+            type: 'object',
+            properties: { x: { type: 'number' }, label: { type: 'string' } },
+            required: ['x'],
+          },
+        },
+        properties: {
+          points: { type: 'array', items: { $ref: '#/$defs/Point' } },
+          range: {
+            type: 'array',
+            prefixItems: [{ type: 'integer', minimum: 0 }, { type: 'number' }],
+          },
+          mode: { const: 'fast' },
+        },
+        required: ['points', 'range', 'mode'],
+      },
+    };
+
+    const output = formatToolCallExample(tool, '@s');
+    expect(output).toContain(`points:='[{"x":1}]'`);
+    expect(output).toContain(`range:='[0,1]'`);
+    expect(output).toContain(`mode:='"fast"'`);
+  });
+
+  it('should stop following a recursive $ref', () => {
+    const tool: Tool = {
+      name: 'tree',
+      inputSchema: {
+        type: 'object',
+        $defs: {
+          Node: {
+            type: 'object',
+            properties: { child: { $ref: '#/$defs/Node' } },
+            required: ['child'],
+          },
+        },
+        properties: { root: { $ref: '#/$defs/Node' }, bad: { $ref: '#/$defs/%zz' } },
+        required: ['root', 'bad'],
+      },
+    };
+
+    const output = formatToolCallExample(tool, '@s');
+    expect(output).toContain(`root:='{"child":{"child":{}}}'`);
+    expect(output).toContain(`bad:='"something"'`);
+  });
 });
 
 describe('formatToolHints', () => {
@@ -1059,6 +1155,7 @@ describe('formatServerDetails', () => {
     expect(output).toContain('mcpc @test resources-list');
     expect(output).toContain('mcpc @test resources-read');
     expect(output).toContain('mcpc @test prompts-list');
+    expect(output).toContain('mcpc @test completion-complete prompt|resource <ref> <arg1:=val1');
     expect(output).toContain('mcpc @test logging-set-level');
 
     // Should contain instructions in code block
@@ -1282,6 +1379,17 @@ describe('formatServerDetails', () => {
     expect(output).toContain('mcpc @res resources-list');
     expect(output).toContain('mcpc @res resources-read');
     expect(output).toContain('mcpc @res resources-subscribe <uri> <file>');
+  });
+
+  it('should not list completion-complete without the completions capability', () => {
+    const details: ServerDetails = {
+      protocolVersion: '2026-07-28',
+      capabilities: { prompts: {} },
+      serverInfo: { name: 'Test Server', version: '1.0.0' },
+    };
+    const output = formatServerDetails(details, '@test');
+    expect(output).toContain('mcpc @test prompts-get');
+    expect(output).not.toContain('completion-complete');
   });
 
   it('should not list resources-subscribe command without the subscribe capability', () => {
@@ -2515,6 +2623,42 @@ describe('quoteShellArg', () => {
     expect(quoteShellArg('a$(id)b')).toBe('"a\\$(id)b"');
     expect(quoteShellArg('a`id`b')).toBe('"a\\`id\\`b"');
   });
+
+  it('escapes backslashes so they cannot neutralize the escaping of `$` or the closing quote', () => {
+    // Unescaped, `\$(id)` would render as `"\\$(id)"`: a literal backslash followed by a live
+    // command substitution.
+    expect(quoteShellArg('\\$(id)', 'linux')).toBe('"\\\\\\$(id)"');
+    expect(quoteShellArg('a b\\', 'linux')).toBe('"a b\\\\"');
+    expect(quoteShellArg('\\`id`', 'linux')).toBe('"\\\\\\`id\\`"');
+    expect(quoteShellArg('x\\"; id; "', 'linux')).toBe('"x\\\\\\"; id; \\""');
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'round-trips hostile values through a real POSIX shell as one literal argument',
+    () => {
+      const hostile = [
+        '\\$(echo PWNED)',
+        '$(echo PWNED)',
+        '`echo PWNED`',
+        'a b\\',
+        'x\\"; echo PWNED; "',
+        '\\\\$(echo PWNED)',
+        'pdf; echo PWNED #',
+        'C:\\Program Files\\x $HOME',
+      ];
+      for (const value of hostile) {
+        const out = execFileSync('sh', ['-c', `printf %s ${quoteShellArg(value, 'linux')}`], {
+          encoding: 'utf8',
+          env: { PATH: process.env.PATH ?? '/usr/bin:/bin' },
+        });
+        expect(out).toBe(value);
+      }
+    }
+  );
+
+  it('leaves backslashes alone on Windows, where they separate path segments', () => {
+    expect(quoteShellArg('C:\\Program Files\\x', 'win32')).toBe('"C:\\Program Files\\x"');
+  });
 });
 
 describe('formatPath', () => {
@@ -2540,7 +2684,7 @@ describe('formatPath', () => {
   });
 
   it('quotes backslash paths on POSIX, where backslash is a shell escape character', () => {
-    expect(formatPath('/tmp/a\\b/mcp.json', 'linux')).toBe('"/tmp/a\\b/mcp.json"');
+    expect(formatPath('/tmp/a\\b/mcp.json', 'linux')).toBe('"/tmp/a\\\\b/mcp.json"');
   });
 
   it('escapes characters that stay special inside double quotes', () => {
@@ -2943,5 +3087,253 @@ describe('formatCallToolResultHuman', () => {
 
     // Correct ordering: Structured content → Metadata
     expect(output.indexOf('Structured content:')).toBeLessThan(output.indexOf('Metadata:'));
+  });
+});
+
+describe('formatServerDetails with the tasks extension', () => {
+  it('lists the extension and offers the task commands on a 2026-07-28 connection', () => {
+    const details: ServerDetails = {
+      protocolVersion: '2026-07-28',
+      capabilities: {
+        tools: { listChanged: false },
+        extensions: { 'io.modelcontextprotocol/tasks': {} },
+      },
+      serverInfo: { name: 'Modern Server', version: '1.0.0' },
+      connectionMode: 'stateless',
+    };
+
+    const output = formatServerDetails(details, '@modern');
+
+    expect(output).toContain('* tasks (extension)');
+    expect(output).not.toContain('not usable on MCP');
+    expect(output).toContain('mcpc @modern tasks-list');
+    expect(output).toContain('mcpc @modern tasks-result <taskId>');
+  });
+
+  it('flags the extension as out of era on a 2025-11-25 connection', () => {
+    const details: ServerDetails = {
+      protocolVersion: '2025-11-25',
+      capabilities: {
+        tools: { listChanged: false },
+        extensions: { 'io.modelcontextprotocol/tasks': {} },
+      },
+      serverInfo: { name: 'Legacy Server', version: '1.0.0' },
+    };
+
+    const output = formatServerDetails(details, '@legacy');
+
+    // The core `tasks` capability is what task commands need there, and it is absent
+    expect(output).toContain('tasks (extension, not usable on MCP 2025-11-25)');
+    expect(output).not.toContain('mcpc @legacy tasks-list');
+    // Rendered once, not again as a generic extension line
+    expect(output.match(/\* tasks/g)).toHaveLength(1);
+  });
+});
+
+describe('formatTask', () => {
+  const createdAt = '2026-09-23T10:00:00Z';
+
+  it('formats a 2025-11-25 task with its ttl and poll interval', () => {
+    const output = formatTask({
+      taskId: 't-1',
+      status: 'working',
+      statusMessage: 'Step 1/3',
+      createdAt,
+      lastUpdatedAt: createdAt,
+      ttl: 90_000,
+      pollInterval: 500,
+    });
+    expect(output).toContain('Task ID: `t-1`');
+    expect(output).toContain('working');
+    expect(output).toContain('Message: Step 1/3');
+    expect(output).toContain('TTL: 1.5 min');
+    expect(output).toContain('Poll interval: 500 ms');
+  });
+
+  it('formats a 2026-07-28 task, including an unlimited ttl', () => {
+    const output = formatTask({
+      taskId: 't-2',
+      status: 'working',
+      createdAt,
+      lastUpdatedAt: createdAt,
+      ttlMs: null,
+      pollIntervalMs: 5_000,
+    });
+    expect(output).toContain('TTL: unlimited');
+    expect(output).toContain('Poll interval: 5 s');
+  });
+
+  it('points at tasks-result once a 2026-07-28 task has completed', () => {
+    const output = formatTask(
+      {
+        taskId: 't-3',
+        status: 'completed',
+        createdAt,
+        lastUpdatedAt: createdAt,
+        ttlMs: 1000,
+        result: { content: [] },
+      },
+      { sessionName: '@s' }
+    );
+    expect(output).toContain('Result: ready');
+    expect(output).toContain('mcpc @s tasks-result t-3');
+  });
+
+  it('shows the error of a failed task and the requests an input_required task waits for', () => {
+    const failed = formatTask({
+      taskId: 't-4',
+      status: 'failed',
+      createdAt,
+      lastUpdatedAt: createdAt,
+      ttlMs: 1000,
+      error: { code: -32603, message: 'disk on fire' },
+    });
+    expect(failed).toContain('Error: disk on fire (code -32603)');
+
+    const waiting = formatTask({
+      taskId: 't-5',
+      status: 'input_required',
+      createdAt,
+      lastUpdatedAt: createdAt,
+      ttlMs: 1000,
+      inputRequests: { name: { method: 'elicitation/create', params: {} } },
+    });
+    expect(waiting).toContain('Waiting for: elicitation/create');
+    expect(waiting).toContain('mcpc cannot answer');
+  });
+});
+
+describe('formatTasks', () => {
+  it('titles the 2026-07-28 listing as the tasks this session created', () => {
+    const task = {
+      taskId: 't-1',
+      status: 'completed' as const,
+      createdAt: 'x',
+      lastUpdatedAt: 'x',
+      ttlMs: null,
+      result: {},
+    };
+    expect(formatTasks([task])).toContain('Tasks (1):');
+    expect(formatTasks([task], { tracked: true })).toContain(
+      'Tasks started from this session (1):'
+    );
+    expect(formatTasks([task], { tracked: true })).toContain('`t-1`');
+  });
+});
+
+describe('formatCompletionResult', () => {
+  const promptRef = {
+    ref: { type: 'ref/prompt' as const, name: 'code_review' },
+    argument: { name: 'language', value: 'py' },
+  };
+
+  it('lists one suggestion per line and hints at prompts-get with the first one', () => {
+    const output = formatCompletionResult(
+      { completion: { values: ['python', 'pytorch'] } },
+      promptRef,
+      '@test'
+    );
+    expect(output).toContain('python\npytorch');
+    expect(output).toContain('To use it, run: mcpc @test prompts-get code_review language:=python');
+    expect(output).not.toContain('Showing');
+  });
+
+  it('prints an empty state when nothing matches', () => {
+    const output = formatCompletionResult({ completion: { values: [] } }, promptRef, '@test');
+    expect(output).toContain('(no suggestions for language)');
+    expect(output).not.toContain('prompts-get');
+  });
+
+  it('adds a footer only when the list is partial', () => {
+    const complete = formatCompletionResult(
+      { completion: { values: ['a', 'b'], total: 2, hasMore: false } },
+      promptRef,
+      '@test'
+    );
+    expect(complete).not.toContain('Showing');
+    const partial = formatCompletionResult(
+      { completion: { values: ['a', 'b'], total: 10, hasMore: true } },
+      promptRef,
+      '@test'
+    );
+    expect(partial).toContain('Showing 2 of 10 suggestions, more available');
+    const untotaled = formatCompletionResult(
+      { completion: { values: ['a'], hasMore: true } },
+      promptRef,
+      '@test'
+    );
+    expect(untotaled).toContain('Showing 1 suggestions, more available');
+  });
+
+  it('quotes a suggestion that is not shell-safe', () => {
+    const output = formatCompletionResult(
+      { completion: { values: ['Sir Reginald'] } },
+      { ref: { type: 'ref/prompt', name: 'greeting' }, argument: { name: 'name', value: '' } },
+      '@test'
+    );
+    expect(output).toContain('prompts-get greeting name:="Sir Reginald"');
+  });
+
+  it('expands the template variable into a resources-read hint', () => {
+    const output = formatCompletionResult(
+      { completion: { values: ['docs/readme.md'] } },
+      {
+        ref: { type: 'ref/resource', uri: 'file:///{path}' },
+        argument: { name: 'path', value: 'do' },
+      },
+      '@test'
+    );
+    expect(output).toContain('To read it, run: mcpc @test resources-read file:///docs%2Freadme.md');
+  });
+
+  it('repeats the context arguments before the completed one in the prompts-get hint', () => {
+    const output = formatCompletionResult(
+      { completion: { values: ['Sir Reginald'] } },
+      {
+        ref: { type: 'ref/prompt', name: 'greeting' },
+        argument: { name: 'name', value: '' },
+        context: { arguments: { style: 'formal' } },
+      },
+      '@test'
+    );
+    expect(output).toContain('prompts-get greeting style:=formal name:="Sir Reginald"');
+  });
+
+  it('expands every supplied template variable in the resources-read hint', () => {
+    const output = formatCompletionResult(
+      { completion: { values: ['readme.md'] } },
+      {
+        ref: { type: 'ref/resource', uri: 'repo://{owner}/{file}' },
+        argument: { name: 'file', value: 'r' },
+        context: { arguments: { owner: 'apify' } },
+      },
+      '@test'
+    );
+    expect(output).toContain('To read it, run: mcpc @test resources-read repo://apify/readme.md');
+  });
+
+  it('points at the template list while variables remain unexpanded', () => {
+    const output = formatCompletionResult(
+      { completion: { values: ['apify'] } },
+      {
+        ref: { type: 'ref/resource', uri: 'repo://{owner}/{file}' },
+        argument: { name: 'owner', value: '' },
+      },
+      '@test'
+    );
+    expect(output).not.toContain('resources-read');
+    expect(output).toContain('To see the template, run: mcpc @test resources-templates-list');
+  });
+
+  it('falls back to resources-templates-list when the URI has no such variable', () => {
+    const output = formatCompletionResult(
+      { completion: { values: ['x'] } },
+      {
+        ref: { type: 'ref/resource', uri: 'file:///{other}' },
+        argument: { name: 'path', value: '' },
+      },
+      '@test'
+    );
+    expect(output).toContain('To see the template, run: mcpc @test resources-templates-list');
   });
 });

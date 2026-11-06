@@ -10,6 +10,20 @@ start_test_server
 # Generate unique session name for this test
 SESSION=$(session_name "notif")
 
+# Read the session's listChangedAt timestamp for one list type ("null" when absent).
+notification_timestamp() {
+  $MCPC --json 2>/dev/null |
+    jq -r ".sessions[] | select(.name == \"$SESSION\") | .notifications.$1.listChangedAt // \"null\""
+}
+
+# The bridge records the timestamp asynchronously: the notification arrives over the
+# server's SSE stream, the SDK re-fetches the list first for prompts and resources, and
+# the write then queues behind every other suite of a parallel run for the sessions.json
+# lock. Poll for it instead of sleeping a fixed second, which raced under CI load.
+wait_for_notification() {
+  wait_for "[[ \"\$(notification_timestamp $1)\" != null ]]" 15 || true
+}
+
 # Test: create session
 test_case "connect creates session"
 run_mcpc connect "$TEST_SERVER_URL" "$SESSION" --header "X-Test: true"
@@ -33,8 +47,7 @@ test_pass
 # Test: trigger tools/list_changed notification
 test_case "trigger tools/list_changed updates timestamp"
 server_notify_tools_changed
-# Give bridge time to receive and process notification
-sleep 1
+wait_for_notification tools
 run_mcpc --json
 assert_success
 session_json=$(echo "$STDOUT" | jq -r ".sessions[] | select(.name == \"$SESSION\")")
@@ -52,7 +65,7 @@ TOOLS_TIMESTAMP="$notif_tools"
 # Test: trigger prompts/list_changed notification
 test_case "trigger prompts/list_changed updates timestamp"
 server_notify_prompts_changed
-sleep 1
+wait_for_notification prompts
 run_mcpc --json
 assert_success
 session_json=$(echo "$STDOUT" | jq -r ".sessions[] | select(.name == \"$SESSION\")")
@@ -70,7 +83,7 @@ test_pass
 # Test: trigger resources/list_changed notification
 test_case "trigger resources/list_changed updates timestamp"
 server_notify_resources_changed
-sleep 1
+wait_for_notification resources
 run_mcpc --json
 assert_success
 session_json=$(echo "$STDOUT" | jq -r ".sessions[] | select(.name == \"$SESSION\")")

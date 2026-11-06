@@ -6,6 +6,10 @@ import { parseHeaderFlags } from '../../../src/cli/parser.js';
 import { ClientError } from '../../../src/lib/errors.js';
 
 describe('parseHeaderFlags', () => {
+  it('keeps a "__proto__" header as an own property', () => {
+    expect(Object.keys(parseHeaderFlags(['__proto__: x', 'A: 1']))).toEqual(['__proto__', 'A']);
+  });
+
   describe('valid inputs', () => {
     it('should return empty object for undefined input', () => {
       expect(parseHeaderFlags(undefined)).toEqual({});

@@ -63,8 +63,8 @@ pnpm link --global
 mcpc --help
 ```
 
-As a supply-chain hardening measure, `pnpm-workspace.yaml` sets `minimumReleaseAge: 4320`, so newly
-published third-party packages aren't installed until they're at least 3 days old. If a fresh
+As a supply-chain hardening measure, `pnpm-workspace.yaml` sets `minimumReleaseAge: 5760`, so newly
+published third-party packages aren't installed until they're at least 4 days old. If a fresh
 dependency bump seems "stuck," that's why — wait it out, or add a targeted exclusion in
 `minimumReleaseAgeExclude` if you have a justified reason.
 
@@ -130,7 +130,7 @@ provenance), and GitHub release creation.
 
 ## Architecture
 
-The codebase is a single TypeScript package with three internal modules:
+The codebase is a single TypeScript package with four internal modules:
 
 ```
 src/
@@ -146,7 +146,7 @@ in the OS keychain via [`@napi-rs/keyring`](https://www.npmjs.com/package/@napi-
 `0600` file fallback on headless systems.
 
 For a deeper walkthrough of the protocol implementation, session lifecycle, error recovery, and
-security model, see [`CLAUDE.md`](./CLAUDE.md) — it's the reference document maintained for AI
+security model, see [`AGENTS.md`](./AGENTS.md) — it's the reference document maintained for AI
 coding agents, but it's plain Markdown and useful to humans too.
 
 ## References

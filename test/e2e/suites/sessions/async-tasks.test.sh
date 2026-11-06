@@ -1,12 +1,15 @@
 #!/bin/bash
 # Test: Async task execution and detached mode
+#
+# Runs in both protocol eras: against the 2025-11-25 server the flags speak the core
+# tasks feature (tools/call with `task: {}`, tasks/result, tasks/list), against the
+# 2026-07-28 server the io.modelcontextprotocol/tasks extension (the server answers
+# slow-task with a task handle, tasks/get inlines the result). The command surface and
+# its output are the same either way — that is what this suite pins down. The
+# extension-specific behaviours have their own suite, sessions/tasks-extension.
 
 source "$(dirname "$0")/../../lib/framework.sh"
 test_init "sessions/async-tasks"
-
-# Tasks are a 2025-11-25 experimental feature; 2026-07-28 moved them to the
-# io.modelcontextprotocol/tasks extension, which the SDK does not support yet.
-require_server_protocol legacy
 
 # Start test server
 start_test_server
@@ -153,9 +156,11 @@ assert_json_valid "$STDOUT"
 assert_contains "$STDOUT" "Completed 3 steps in 1500ms"
 test_pass
 
-# ── Synchronous fallback (no --task) ─────────────────────────
+# ── Plain call (no --task) ───────────────────────────────────
+# On 2025-11-25 the tool runs synchronously; on 2026-07-28 the server still answers
+# with a task (its call), which mcpc follows to the result. Same output either way.
 
-test_case "tools-call without --task runs synchronously"
+test_case "tools-call without --task returns the tool result"
 run_xmcpc "$SESSION" tools-call slow-task ms:=200 steps:=1
 assert_success
 assert_contains "$STDOUT" "Completed 1 steps in 200ms"

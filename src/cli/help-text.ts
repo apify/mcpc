@@ -16,17 +16,26 @@ export const SCHEMA_BASE = 'https://modelcontextprotocol.io/specification/2026-0
  * `InitializeResult`, `CreateTaskResult`, and `Task` are 2025-11-25-only concepts: the
  * 2026-07-28 stateless era dropped the `initialize` handshake in favor of `server/discover`
  * (returning `DiscoverResult`, not `InitializeResult`), and moved tasks out to the
- * `io.modelcontextprotocol/tasks` extension, which no longer appears in the core schema.
- * Those anchors only resolve on the legacy schema page, so link there instead of SCHEMA_BASE.
+ * `io.modelcontextprotocol/tasks` extension, which no longer appears in the core schema
+ * (its own `Task` shape lives at TASKS_SPEC_URL). Those anchors only resolve on the legacy
+ * schema page, so link there instead of SCHEMA_BASE.
  */
 export const LEGACY_SCHEMA_BASE = 'https://modelcontextprotocol.io/specification/2025-11-25/schema';
+
+/**
+ * The tasks extension's spec page (MCP 2026-07-28). Its `Task` shape — `ttlMs`,
+ * `pollIntervalMs`, and the inlined `result`/`error`/`inputRequests` — is defined there
+ * rather than in the core schema, so the task commands link here next to the legacy page.
+ */
+export const TASKS_SPEC_URL =
+  'https://github.com/modelcontextprotocol/ext-tasks/blob/main/specification/2026-07-28/tasks.md';
 
 /**
  * The Skills extension's own spec page. Its `Skill` entry shape is defined there rather
  * than in the core MCP schema, so the skills commands link here instead of SCHEMA_BASE.
  */
 export const SKILLS_SPEC_URL =
-  'https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/stable/skills.mdx';
+  'https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/beta/skills.mdx';
 
 /**
  * The one JSON shape every server-details command returns: the server's handshake result

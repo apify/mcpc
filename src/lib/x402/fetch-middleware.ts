@@ -30,6 +30,7 @@ import {
   signPayment,
   parsePaymentRequired,
   selectAcceptEntry,
+  isSupportedNetwork,
   DEFAULT_PAYMENT_EXPIRY_SECONDS,
   type SignerWallet,
   type PaymentRequiredAccept,
@@ -37,6 +38,7 @@ import {
   type SchemePreference,
 } from './signer.js';
 import { createLogger } from '../logger.js';
+import type { DetachedToolCall } from '../types.js';
 
 const logger = createLogger('x402-middleware');
 
@@ -223,6 +225,28 @@ export function withSettlementReceipt<T>(result: T, cache: X402PaymentCache, too
     ...result,
     _meta: { ...meta, [MCP_PAYMENT_RESPONSE_META_KEY]: receipt },
   };
+}
+
+/**
+ * {@link withSettlementReceipt} for what a detached tool call (`tools-call --detach`)
+ * produced: the receipt goes on the tool result when the server answered with one, and
+ * otherwise on the task it created in its place — the paid request is the one that created
+ * the task. An absent outcome (the call failed) still consumes the receipt, so it cannot
+ * surface on the next call to the same tool.
+ */
+export function withSettlementReceiptOnDetachedCall(
+  outcome: DetachedToolCall | undefined,
+  cache: X402PaymentCache,
+  toolName: string
+): DetachedToolCall | undefined {
+  if (outcome?.result) {
+    return { ...outcome, result: withSettlementReceipt(outcome.result, cache, toolName) };
+  }
+  if (outcome?.task) {
+    return { ...outcome, task: withSettlementReceipt(outcome.task, cache, toolName) };
+  }
+  withSettlementReceipt(outcome, cache, toolName);
+  return outcome;
 }
 
 /**
@@ -497,7 +521,8 @@ function extractToolCallName(body: RequestInit['body'] | undefined): string | un
  * Pick an accept entry from a tool's `_meta.x402` block honoring `schemePreference`.
  *
  * Prefers the spec-shaped `accepts[]` array when present; falls back to the flat fields
- * only when the preference matches the flat scheme (or the preference is `auto`).
+ * only when the preference matches the flat scheme (or the preference is `auto`) and the
+ * flat network is one mcpc can sign for.
  * Returning undefined defers signing to the 402 fallback path, which re-runs the
  * selector against the authoritative PAYMENT-REQUIRED header.
  */
@@ -515,6 +540,9 @@ function selectAcceptFromToolMeta(
     return undefined;
   }
   if (preference !== 'auto' && preference !== x402.scheme) {
+    return undefined;
+  }
+  if (!isSupportedNetwork(x402.network)) {
     return undefined;
   }
 

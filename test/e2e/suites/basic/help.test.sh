@@ -249,7 +249,9 @@ MISSING=""
 for cmd in $SESSION_COMMANDS; do
   run_mcpc @test-session "$cmd" --help
   assert_success
-  if ! printf '%s\n' "$STDOUT" | grep -q "JSON output (--json):"; then
+  # A bash substring test, not `printf | grep -q`: grep -q exits on the first match,
+  # and under pipefail printf's resulting EPIPE turned a found section into "missing".
+  if [[ "$STDOUT" != *"JSON output (--json):"* ]]; then
     MISSING+=" $cmd"
   fi
 done

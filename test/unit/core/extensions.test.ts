@@ -14,6 +14,7 @@ import {
   SKILLS_EXTENSION_KEY,
   TASKS_EXTENSION_KEY,
   clientExtensionDeclarations,
+  declaredExtensionSettings,
   findMcpExtension,
 } from '../../../src/core/extensions.js';
 
@@ -65,14 +66,49 @@ describe('MCP extension registry', () => {
 
   it('finds extensions by identifier and ignores unknown ones', () => {
     expect(findMcpExtension(SKILLS_EXTENSION_KEY)?.support).toBe('full');
+    expect(findMcpExtension(TASKS_EXTENSION_KEY)?.support).toBe('full');
     expect(findMcpExtension(APPS_EXTENSION_KEY)?.support).toBe('none');
     expect(findMcpExtension('com.example/not-an-extension')).toBeUndefined();
   });
 
-  it('declares the two auth extensions, with no settings', () => {
+  it('declares the two auth extensions and tasks, with no settings', () => {
+    // A server may only hand a task to a client that declared the tasks extension on
+    // that request, so the declaration has to ride along everywhere.
     expect(clientExtensionDeclarations()).toEqual({
       [CLIENT_CREDENTIALS_EXTENSION_KEY]: {},
       [ENTERPRISE_MANAGED_AUTH_EXTENSION_KEY]: {},
+      [TASKS_EXTENSION_KEY]: {},
+    });
+  });
+
+  describe('declaredExtensionSettings', () => {
+    it('returns the settings of a declared extension', () => {
+      const capabilities = { extensions: { [SKILLS_EXTENSION_KEY]: { directoryRead: true } } };
+      expect(declaredExtensionSettings(capabilities, SKILLS_EXTENSION_KEY)).toEqual({
+        directoryRead: true,
+      });
+    });
+
+    it('tells an empty declaration apart from no declaration', () => {
+      expect(
+        declaredExtensionSettings(
+          { extensions: { [TASKS_EXTENSION_KEY]: {} } },
+          TASKS_EXTENSION_KEY
+        )
+      ).toEqual({});
+      expect(declaredExtensionSettings({ extensions: {} }, TASKS_EXTENSION_KEY)).toBeUndefined();
+      expect(declaredExtensionSettings({}, TASKS_EXTENSION_KEY)).toBeUndefined();
+      expect(declaredExtensionSettings(undefined, TASKS_EXTENSION_KEY)).toBeUndefined();
+    });
+
+    it('treats a non-object declaration as an empty one', () => {
+      // `extensions` values are objects per spec; a server sending `true` still declared it.
+      expect(
+        declaredExtensionSettings(
+          { extensions: { [TASKS_EXTENSION_KEY]: true } },
+          TASKS_EXTENSION_KEY
+        )
+      ).toEqual({});
     });
   });
 });

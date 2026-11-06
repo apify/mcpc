@@ -12,7 +12,7 @@ import { ClientError } from './errors.js';
 
 const logger = createLogger('file-lock');
 
-// Lock timeout in milliseconds (5 seconds as per CLAUDE.md)
+// Lock timeout in milliseconds (5 seconds as per AGENTS.md)
 const LOCK_TIMEOUT_MILLIS = 5000;
 
 /**

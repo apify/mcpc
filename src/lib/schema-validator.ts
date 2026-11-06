@@ -6,6 +6,7 @@
 import { readFile } from 'fs/promises';
 import { ClientError } from './errors.js';
 import { createLogger } from './logger.js';
+import { getOwnProperty } from './own-property.js';
 
 const logger = createLogger('schema-validator');
 
@@ -184,15 +185,17 @@ export function validateToolSchema(
       if (hasPassedArgs) {
         for (const argName of passedArgNames) {
           // Check if the argument still exists
-          if (!(argName in actualProps)) {
+          if (!Object.hasOwn(actualProps, argName)) {
             result.errors.push(`Argument "${argName}" no longer exists in schema`);
             result.valid = false;
             continue;
           }
 
           // Check type compatibility for passed arguments
-          const expectedProp = expectedProps[argName] as Record<string, unknown> | undefined;
-          const actualProp = actualProps[argName] as Record<string, unknown> | undefined;
+          const expectedProp = getOwnProperty(expectedProps, argName) as
+            Record<string, unknown> | undefined;
+          const actualProp = getOwnProperty(actualProps, argName) as
+            Record<string, unknown> | undefined;
 
           if (
             expectedProp &&
@@ -209,11 +212,12 @@ export function validateToolSchema(
       } else {
         // No passedArgs - validate all expected properties exist
         for (const [propName, expectedProp] of Object.entries(expectedProps)) {
-          if (!(propName in actualProps)) {
+          if (!Object.hasOwn(actualProps, propName)) {
             result.errors.push(`Property "${propName}" is missing from input schema`);
             result.valid = false;
           } else {
-            const actualProp = actualProps[propName] as Record<string, unknown> | undefined;
+            const actualProp = getOwnProperty(actualProps, propName) as
+              Record<string, unknown> | undefined;
             const expProp = expectedProp as Record<string, unknown>;
             if (actualProp && expProp.type && actualProp.type !== expProp.type) {
               result.errors.push(
@@ -235,7 +239,7 @@ export function validateToolSchema(
 
       // Info about new optional fields (not an error)
       for (const propName of Object.keys(actualProps)) {
-        if (!(propName in expectedProps) && !actualRequired.includes(propName)) {
+        if (!Object.hasOwn(expectedProps, propName) && !actualRequired.includes(propName)) {
           result.warnings.push(`New optional field "${propName}" added`);
         }
       }
@@ -256,12 +260,13 @@ export function validateToolSchema(
 
       // Check all expected properties still exist with compatible types
       for (const [propName, expectedProp] of Object.entries(expectedProps)) {
-        if (!(propName in actualProps)) {
+        if (!Object.hasOwn(actualProps, propName)) {
           // Field removed from output - caller expects this field
           result.errors.push(`Output field "${propName}" was removed (caller expects this field)`);
           result.valid = false;
         } else {
-          const actualProp = actualProps[propName] as Record<string, unknown> | undefined;
+          const actualProp = getOwnProperty(actualProps, propName) as
+            Record<string, unknown> | undefined;
           const expProp = expectedProp as Record<string, unknown>;
           if (actualProp && expProp.type && actualProp.type !== expProp.type) {
             result.errors.push(
@@ -274,21 +279,21 @@ export function validateToolSchema(
 
       // Check if expected required fields became optional (warning - field still exists)
       for (const field of expectedRequired) {
-        if (!actualRequired.includes(field) && field in actualProps) {
+        if (!actualRequired.includes(field) && Object.hasOwn(actualProps, field)) {
           result.warnings.push(`Output field "${field}" changed from required to optional`);
         }
       }
 
       // Info about new output fields (not an error - more data available)
       for (const propName of Object.keys(actualProps)) {
-        if (!(propName in expectedProps)) {
+        if (!Object.hasOwn(expectedProps, propName)) {
           result.warnings.push(`New output field "${propName}" added`);
         }
       }
 
       // Info about optional→required changes (not breaking - more guarantees)
       for (const field of actualRequired) {
-        if (!expectedRequired.includes(field) && field in expectedProps) {
+        if (!expectedRequired.includes(field) && Object.hasOwn(expectedProps, field)) {
           result.warnings.push(`Output field "${field}" changed from optional to required`);
         }
       }
