@@ -21,7 +21,7 @@ universal programming interface there is: the UNIX shell.
 - 🔄 **Persistent sessions** - Keep connections to multiple servers alive in parallel, whether the server protocol is stateful or stateless.
 - 🗺️ **Progressive tool discovery** - Find relevant MCP tools on the fly to save tokens and increase accuracy.
 - 🔌 **Code mode** - JSON output composes with `jq`, `xargs`, and shell pipelines for MCP workflows as shell scripts.
-- 🔒 **Secure** - Full OAuth 2.1 support with CIMD, DCR, and ID-JAG, uses OS keychain for credentials storage.
+- 🔒 **Secure** - Full OAuth 2.1 support with CIMD, DCR, client credentials, and enterprise-managed auth, uses OS keychain for credentials storage.
 - 🤖 **AI sandboxing** - Proxy MCP server connections to protect credentials from untrusted code.
 - 🪶 **Lightweight** - Minimal dependencies, works on Mac/Win/Linux, doesn't use LLMs on its own.
 - 💸 **Agentic payments** - Experimental support for the [x402](https://www.x402.org/) protocol on [Base](https://www.base.org/).
