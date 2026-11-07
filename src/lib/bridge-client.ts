@@ -17,7 +17,7 @@
 
 import { connect, type Socket } from 'net';
 import { EventEmitter } from 'events';
-import type { IpcMessage, TaskUpdate, X402WalletCredentials } from './types.js';
+import type { IpcMessage, TaskUpdate, X402WalletCredentials, ElicitationHandler } from './types.js';
 import { createLogger } from './logger.js';
 import { NetworkError, ClientError, ServerError, AuthError, IpcTimeoutError } from './errors.js';
 import { generateRequestId, sleep } from './utils.js';
@@ -251,6 +251,17 @@ export class BridgeClient extends EventEmitter {
       const update: TaskUpdate = message.taskUpdate;
       logger.debug(`Received task update for request ${message.id}:`, update.status);
       this.emit(`task-update:${message.id}`, update);
+    } else if (
+      message.type === 'elicitation-request' &&
+      message.id &&
+      message.elicitationId &&
+      message.elicitationRequest
+    ) {
+      if (this.pendingRequests.has(message.id)) {
+        this.emit(`elicitation:${message.id}`, message.elicitationId, message.elicitationRequest);
+      }
+    } else if (message.type === 'elicitation-cancel' && message.id && message.elicitationId) {
+      this.emit(`elicitation-cancel:${message.id}`, message.elicitationId);
     }
     // Ignore other message types (health-ok, etc.)
   }
@@ -264,7 +275,8 @@ export class BridgeClient extends EventEmitter {
     method: string,
     params?: unknown,
     timeoutSecs?: number,
-    requestId?: string
+    requestId?: string,
+    elicitationHandler?: ElicitationHandler
   ): Promise<unknown> {
     if (!this.socket) {
       throw new NetworkError('Not connected to bridge');
@@ -278,6 +290,7 @@ export class BridgeClient extends EventEmitter {
       method,
       params,
       ...(timeoutSecs !== undefined && { timeoutSecs }),
+      ...(elicitationHandler && { elicitation: true }),
     };
 
     logger.debug('Sending request:', { id, method });
@@ -300,6 +313,40 @@ export class BridgeClient extends EventEmitter {
       this.pendingRequests.set(id, { resolve, reject, timeoutId });
     });
 
+    if (elicitationHandler) {
+      const controllers = new Map<string, AbortController>();
+      this.on(`elicitation-cancel:${id}`, (elicitationId: string) => {
+        controllers.get(elicitationId)?.abort();
+      });
+      this.on(`elicitation:${id}`, async (elicitationId, request) => {
+        const controller = new AbortController();
+        controllers.set(elicitationId, controller);
+        let result;
+        try {
+          result = await elicitationHandler(request, controller.signal);
+        } catch {
+          result = { action: 'cancel' as const };
+        }
+        controllers.delete(elicitationId);
+        if (!controller.signal.aborted && this.pendingRequests.has(id) && this.socket) {
+          this.socket.write(
+            JSON.stringify({
+              type: 'elicitation-response',
+              id,
+              elicitationId,
+              elicitationResult: result,
+            }) + '\n'
+          );
+        }
+      });
+      void promise
+        .finally(() => {
+          for (const controller of controllers.values()) controller.abort();
+          this.removeAllListeners(`elicitation:${id}`);
+          this.removeAllListeners(`elicitation-cancel:${id}`);
+        })
+        .catch(() => {});
+    }
     // Send message
     const data = JSON.stringify(message) + '\n';
     this.socket.write(data);

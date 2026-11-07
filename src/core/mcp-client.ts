@@ -37,6 +37,7 @@ import {
   ListTasksResultSchema,
   GetTaskResultSchema,
   CancelTaskResultSchema,
+  ElicitResultSchema,
 } from '@modelcontextprotocol/core';
 import {
   ListSkillsResultSchema,
@@ -85,6 +86,7 @@ import type {
   ExtensionTask,
   TasksPage,
   DetachedToolCall,
+  ElicitationHandler,
 } from '../lib/types.js';
 import type { JSONRPCResponse, Task } from '@modelcontextprotocol/client';
 
@@ -316,6 +318,12 @@ class TasksAwareClient extends SDKClient {
  * Implements IMcpClient interface for compatibility with SessionClient
  */
 export class McpClient implements IMcpClient {
+  private backgroundRequestRunner = (request: () => Promise<void>): Promise<void> => request();
+
+  setBackgroundRequestRunner(runner: (request: () => Promise<void>) => Promise<void>): void {
+    this.backgroundRequestRunner = runner;
+  }
+  private elicitationHandler?: ElicitationHandler;
   private client: SDKClient;
   private logger: Logger;
   private negotiatedProtocolVersion?: string;
@@ -364,6 +372,24 @@ export class McpClient implements IMcpClient {
       ...resolveVersionOptions(options.protocolVersion, options.stdioTransport),
     });
 
+    this.client.setRequestHandler('elicitation/create', async (request) => {
+      if (request.params.mode === 'url' || !this.elicitationHandler) return { action: 'cancel' };
+      try {
+        const { mode, _meta, requestedSchema, ...params } = request.params;
+        const { required, ...schema } = requestedSchema;
+        const result = await this.elicitationHandler({
+          ...params,
+          requestedSchema: { ...schema, ...(required && { required }) },
+          ...(mode && { mode }),
+          ...(_meta && { _meta }),
+        });
+        const parsed = ElicitResultSchema.safeParse(result);
+        return parsed.success ? parsed.data : { action: 'cancel' };
+      } catch {
+        return { action: 'cancel' };
+      }
+    });
+
     // Set up error handling
     this.client.onerror = (error) => {
       // Ignore abort errors - these occur when connection is closed intentionally
@@ -374,6 +400,10 @@ export class McpClient implements IMcpClient {
       // Don't duplicate logging of errors on initial connection
       this.logger.log(this.hasConnected ? 'error' : 'debug', 'Client error:', error);
     };
+  }
+
+  setElicitationHandler(handler: ElicitationHandler): void {
+    this.elicitationHandler = handler;
   }
 
   /**
@@ -1004,7 +1034,9 @@ export class McpClient implements IMcpClient {
     while (!this.isClosing) {
       await new Promise((resolve) => setTimeout(resolve, delayMillis));
       try {
-        await reopen();
+        await this.backgroundRequestRunner(async () => {
+          if (!this.isClosing) await reopen();
+        });
         this.logger.debug(`${label} listen stream re-established`);
         return;
       } catch (error) {
@@ -1250,9 +1282,8 @@ export class McpClient implements IMcpClient {
   // (`tasks-result-shim.ts` explains how). Adopting the SDK's extension API once it ships
   // is a change to this section and that shim only.
   //
-  // mcpc never answers a task's `inputRequests` (`tasks/update`): it never prompts and
-  // has no LLM, the same reason elicitation and sampling are unsupported. A task that
-  // asks for input is reported as such and left on the server.
+  // mcpc does not answer a task's `inputRequests` (`tasks/update`). A task that asks
+  // for input is reported as such and left on the server.
   // -----------------------------------------------------------------------------------
 
   /**

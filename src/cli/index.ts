@@ -1181,6 +1181,7 @@ ${chalk.bold('JSON output (--json):')}
       'Use async task execution; Ctrl+C prints the task ID and exits (experimental)'
     )
     .option('--detach', 'Start task and return immediately with task ID (implies --task)')
+    .option('--elicitation', 'Allow interactive form requests (see below)')
     .option('--schema <file>', 'Validate tool schema against expected schema before calling')
     .option('--schema-mode <mode>', 'Schema validation mode: strict, compatible (default), ignore')
     .addHelpText(
@@ -1205,6 +1206,12 @@ ${chalk.bold('Async tasks (--task, --detach):')}
   A 2026-07-28 server decides per call: a plain call it turns into a task is
   waited for, and --detach prints the tool result if it ran synchronously.
 
+${chalk.bold('Form elicitation (--elicitation):')}
+  Allow this synchronous call to request input from the terminal. Review each
+  server request before accepting; decline or cancel instead if unsure.
+  Requires interactive stdin and stderr, and cannot be combined with --task or
+  --detach. Prompts go to stderr, including in --json mode.
+
 ${chalk.bold('Schema validation:')}
   --schema <file>       Validate tool schema before calling (save with tools-get --json)
   --schema-mode <mode>  strict | compatible (default) | ignore
@@ -1217,6 +1224,7 @@ ${toolsCallCombinedJsonHelp}`
         args,
         task: options.task,
         detach: options.detach,
+        elicitation: options.elicitation,
         ...getOptionsFromCommand(command),
       });
     });
@@ -1261,7 +1269,7 @@ ${jsonHelp('`Task` object', taskJsonShapes, taskSchemaUrls)}`
       `
 ${chalk.bold('Notes:')}
   Polls tasks/get on MCP 2026-07-28. A task waiting for client input
-  (input_required) is reported as an error: mcpc never prompts.
+  (input_required) is reported as an error: task input is unsupported.
 ${toolsCallJsonHelp}`
     )
     .action(async (taskId, _options, command) => {

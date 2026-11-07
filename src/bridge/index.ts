@@ -9,6 +9,7 @@ import { initProxy, proxyFetch } from '../lib/proxy.js';
 import { createServer, type Server as NetServer, type Socket } from 'net';
 import { unlink } from 'fs/promises';
 import { dirname } from 'path';
+import { randomUUID } from 'crypto';
 import {
   createMcpClient,
   CreateMcpClientOptions,
@@ -65,10 +66,17 @@ import {
 import { updateAuthProfileRefreshedAt } from '../lib/auth/profiles.js';
 import { createClientCredentialsProvider } from '../lib/auth/client-credentials.js';
 import { createIdJagProvider } from '../lib/auth/id-jag.js';
-import type { Tool, Resource, Prompt } from '@modelcontextprotocol/client';
+import type { Tool } from '@modelcontextprotocol/client';
 import { ResourceSyncManager } from './resource-sync.js';
 import { isModernProtocolVersion } from '../core/protocol.js';
-import type { AnyTask, DetachedToolCall, TaskUpdate, TasksPage } from '../lib/types.js';
+import type {
+  AnyTask,
+  DetachedToolCall,
+  TaskUpdate,
+  TasksPage,
+  ElicitationRequest,
+  ElicitationResult,
+} from '../lib/types.js';
 import { createRequire } from 'module';
 const { version: mcpcVersion } = createRequire(import.meta.url)('../../package.json') as {
   version: string;
@@ -113,6 +121,16 @@ interface BridgeOptions {
  * Manages MCP connection and Unix socket server for a single session
  */
 class BridgeProcess {
+  private deferredToolsRefresh = false;
+  private deferredResourceUpdates = new Set<string>();
+  private deferredListRefreshes = new Set<'resources' | 'prompts'>();
+  private activeRequests = 0;
+  private activeElicitationCall: { socket: Socket; id: string; expired?: boolean } | undefined;
+  private backgroundWaiters = new Set<() => void>();
+  private pendingElicitations = new Map<
+    string,
+    { socket: Socket; callId: string; resolve: (result: ElicitationResult) => void }
+  >();
   private client: McpClient | null = null;
   private server: NetServer | null = null;
   private proxyServer: ProxyServer | null = null;
@@ -758,11 +776,9 @@ class BridgeProcess {
           autoRefresh: false,
           onChanged: () => {
             logger.debug('Tools list changed notification received, refreshing all tools...');
-            if (this.client) {
-              this.client.listAllTools({ refreshCache: true }).catch((err) => {
-                logger.warn('Failed to refresh tools cache:', err);
-              });
-            }
+            this.client?.invalidateToolsCache();
+            if (this.activeElicitationCall) this.deferredToolsRefresh = true;
+            else this.refreshToolsCache();
             // Update session with notification timestamp
             this.updateNotificationTimestamp('tools').catch((err) => {
               logger.warn('Failed to update tools notification timestamp:', err);
@@ -770,9 +786,9 @@ class BridgeProcess {
           },
         },
         resources: {
-          autoRefresh: true,
-          onChanged: (error: Error | null, resources: Resource[] | null) => {
-            logger.debug('Resources list changed', { error, count: resources?.length });
+          autoRefresh: false,
+          onChanged: () => {
+            this.refreshChangedList('resources');
             // Update session with notification timestamp
             this.updateNotificationTimestamp('resources').catch((err) => {
               logger.warn('Failed to update resources notification timestamp:', err);
@@ -780,9 +796,9 @@ class BridgeProcess {
           },
         },
         prompts: {
-          autoRefresh: true,
-          onChanged: (error: Error | null, prompts: Prompt[] | null) => {
-            logger.debug('Prompts list changed', { error, count: prompts?.length });
+          autoRefresh: false,
+          onChanged: () => {
+            this.refreshChangedList('prompts');
             // Update session with notification timestamp
             this.updateNotificationTimestamp('prompts').catch((err) => {
               logger.warn('Failed to update prompts notification timestamp:', err);
@@ -804,6 +820,8 @@ class BridgeProcess {
     // Connect to MCP server - if session ID is rejected, this will throw
     // and the bridge will mark the session as expired (user must explicitly restart)
     this.client = await createMcpClient(clientConfig);
+    this.client.setElicitationHandler((request) => this.requestElicitation(request));
+    this.client.setBackgroundRequestRunner((request) => this.runBackgroundRequest(request));
 
     logger.info('Connected to MCP server');
     logger.debug('MCP client created successfully, authProvider was:', !!clientConfig.authProvider);
@@ -818,7 +836,16 @@ class BridgeProcess {
     // spec the updated notification carries only the URI — the client re-reads.
     const client = this.client;
     this.resourceSync = new ResourceSyncManager({
-      readResource: (uri) => client.readResource(uri),
+      readResource: async (uri) => {
+        if (this.activeElicitationCall)
+          throw new ClientError('Session is busy with an interactive tool call');
+        this.activeRequests++;
+        try {
+          return await client.readResource(uri);
+        } finally {
+          this.activeRequests--;
+        }
+      },
       persist: (entries) =>
         updateSession(this.options.sessionName, { resourceSubscriptions: entries }),
       logger: createLogger('resource-sync'),
@@ -829,7 +856,8 @@ class BridgeProcess {
       .getSDKClient()
       .setNotificationHandler('notifications/resources/updated', (notification) => {
         logger.debug(`Resource updated notification: ${notification.params.uri}`);
-        this.resourceSync?.handleUpdated(notification.params.uri);
+        if (this.activeElicitationCall) this.deferredResourceUpdates.add(notification.params.uri);
+        else this.resourceSync?.handleUpdated(notification.params.uri);
       });
 
     // Resuming a server-side session skips the initialize handshake, so remember the
@@ -994,16 +1022,21 @@ class BridgeProcess {
     if (entries.length === 0) return;
 
     logger.info(`Restoring ${entries.length} resource subscription(s)...`);
-    for (const entry of entries) {
-      try {
-        await client.subscribeResource(entry.uri);
-      } catch (error) {
-        const message = `Re-subscribe failed: ${(error as Error).message}`;
-        logger.warn(`${message} (${entry.uri})`);
-        await sync.recordError(entry.uri, message).catch(() => {});
-        continue;
+    this.activeRequests++;
+    try {
+      for (const entry of entries) {
+        try {
+          await client.subscribeResource(entry.uri);
+        } catch (error) {
+          const message = `Re-subscribe failed: ${(error as Error).message}`;
+          logger.warn(`${message} (${entry.uri})`);
+          await sync.recordError(entry.uri, message).catch(() => {});
+          continue;
+        }
+        await sync.resync(entry.uri);
       }
-      await sync.resync(entry.uri);
+    } finally {
+      this.activeRequests--;
     }
   }
 
@@ -1087,16 +1120,22 @@ class BridgeProcess {
    * Send a single keepalive ping to the MCP server
    */
   private async sendKeepalivePing(): Promise<void> {
-    if (!this.client || this.isShuttingDown) {
+    if (!this.client || this.isShuttingDown || this.activeElicitationCall) {
       return;
     }
 
     if (await this.exitIfSuperseded()) {
       return;
     }
+    if (this.activeElicitationCall) return;
 
     logger.debug('Sending keepalive ping');
-    await this.client.ping();
+    this.activeRequests++;
+    try {
+      await this.client.ping();
+    } finally {
+      this.activeRequests--;
+    }
     logger.debug('Keepalive ping successful');
 
     // Update lastSeenAt on successful ping
@@ -1330,11 +1369,18 @@ class BridgeProcess {
     });
 
     socket.on('end', () => {
+      this.cancelElicitations(socket);
       logger.debug('Client disconnected');
       this.connections.delete(socket);
     });
 
+    socket.on('close', () => {
+      this.cancelElicitations(socket);
+      this.connections.delete(socket);
+    });
+
     socket.on('error', (error) => {
+      this.cancelElicitations(socket);
       logger.error('Socket error:', error);
       this.connections.delete(socket);
     });
@@ -1355,8 +1401,72 @@ class BridgeProcess {
       // Handle different message types
       switch (message.type) {
         case 'request':
-          await this.handleMcpRequest(socket, message);
+          await this.mcpClientReady;
+          if (this.activeElicitationCall || (message.elicitation && this.activeRequests > 0)) {
+            throw new ClientError(
+              'Session is busy; interactive tool calls require exclusive access'
+            );
+          }
+          if (message.elicitation) {
+            const params = message.params as { useTask?: boolean; detach?: boolean } | undefined;
+            if (
+              message.method !== 'callTool' ||
+              !message.id ||
+              params?.useTask ||
+              params?.detach ||
+              this.proxyServer
+            ) {
+              throw new ClientError(
+                'Elicitation requires an exclusive synchronous tool call without a proxy'
+              );
+            }
+            this.activeElicitationCall = { socket, id: message.id };
+          }
+          this.activeRequests++;
+          try {
+            await this.handleMcpRequest(socket, message);
+          } finally {
+            this.activeRequests--;
+            if (
+              this.activeElicitationCall?.socket === socket &&
+              this.activeElicitationCall.id === message.id
+            ) {
+              this.cancelElicitations(socket);
+              this.activeElicitationCall = undefined;
+              this.flushDeferredUpdates();
+            }
+          }
           break;
+
+        case 'elicitation-response': {
+          const pending =
+            message.elicitationId && this.pendingElicitations.get(message.elicitationId);
+          if (
+            !message.elicitationId ||
+            !pending ||
+            pending.socket !== socket ||
+            pending.callId !== message.id
+          ) {
+            logger.debug('Ignoring unexpected elicitation response');
+            break;
+          }
+          const result = message.elicitationResult;
+          if (
+            !result ||
+            !['accept', 'decline', 'cancel'].includes(result.action) ||
+            (result.content !== undefined &&
+              (typeof result.content !== 'object' ||
+                result.content === null ||
+                Array.isArray(result.content)))
+          ) {
+            this.pendingElicitations.delete(message.elicitationId);
+            pending.resolve({ action: 'cancel' });
+            break;
+          }
+          this.pendingElicitations.delete(message.elicitationId);
+          pending.resolve(result);
+          break;
+        }
 
         case 'shutdown':
           logger.info('Received shutdown request');
@@ -1402,6 +1512,105 @@ class BridgeProcess {
     } catch (error) {
       logger.error('Failed to handle message:', error);
       this.sendError(socket, error as Error, messageId);
+    }
+  }
+
+  private cancelElicitations(socket: Socket): void {
+    for (const [id, pending] of this.pendingElicitations) {
+      if (pending.socket === socket) {
+        this.pendingElicitations.delete(id);
+        pending.resolve({ action: 'cancel' });
+      }
+    }
+  }
+
+  private async requestElicitation(request: ElicitationRequest): Promise<ElicitationResult> {
+    const call = this.activeElicitationCall;
+    if (!call || call.expired || call.socket.destroyed || this.pendingElicitations.size > 0)
+      return { action: 'cancel' };
+    const elicitationId = randomUUID();
+    return new Promise((resolve) => {
+      const timeoutId = setTimeout(() => {
+        this.pendingElicitations.delete(elicitationId);
+        call.expired = true;
+        if (!call.socket.destroyed) {
+          this.sendResponse(call.socket, {
+            type: 'elicitation-cancel',
+            id: call.id,
+            elicitationId,
+          });
+        }
+        resolve({ action: 'cancel' });
+      }, 120_000);
+      this.pendingElicitations.set(elicitationId, {
+        socket: call.socket,
+        callId: call.id,
+        resolve: (result) => {
+          clearTimeout(timeoutId);
+          resolve(result);
+        },
+      });
+      this.sendResponse(call.socket, {
+        type: 'elicitation-request',
+        id: call.id,
+        elicitationId,
+        elicitationRequest: request,
+      });
+    });
+  }
+
+  private refreshToolsCache(): void {
+    if (!this.client) return;
+    this.activeRequests++;
+    void this.client
+      .listAllTools({ refreshCache: true })
+      .catch((error) => {
+        logger.warn('Failed to refresh tools cache:', error);
+      })
+      .finally(() => {
+        this.activeRequests--;
+      });
+  }
+
+  private refreshChangedList(kind: 'resources' | 'prompts'): void {
+    if (this.activeElicitationCall) {
+      this.deferredListRefreshes.add(kind);
+      return;
+    }
+    if (!this.client) return;
+    this.activeRequests++;
+    const request = kind === 'resources' ? this.client.listResources() : this.client.listPrompts();
+    void request
+      .catch((error) => {
+        logger.warn(`Failed to refresh ${kind} list:`, error);
+      })
+      .finally(() => {
+        this.activeRequests--;
+      });
+  }
+
+  private flushDeferredUpdates(): void {
+    for (const resume of this.backgroundWaiters) resume();
+    this.backgroundWaiters.clear();
+    if (this.deferredToolsRefresh) {
+      this.deferredToolsRefresh = false;
+      this.refreshToolsCache();
+    }
+    for (const uri of this.deferredResourceUpdates) this.resourceSync?.handleUpdated(uri);
+    this.deferredResourceUpdates.clear();
+    for (const kind of this.deferredListRefreshes) this.refreshChangedList(kind);
+    this.deferredListRefreshes.clear();
+  }
+
+  private async runBackgroundRequest(request: () => Promise<void>): Promise<void> {
+    while (this.activeElicitationCall) {
+      await new Promise<void>((resolve) => this.backgroundWaiters.add(resolve));
+    }
+    this.activeRequests++;
+    try {
+      await request();
+    } finally {
+      this.activeRequests--;
     }
   }
 

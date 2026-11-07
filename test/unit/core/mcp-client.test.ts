@@ -84,6 +84,7 @@ function resetSdkStub(): void {
     discover: vi.fn().mockResolvedValue({}),
     listTools: vi.fn().mockResolvedValue({ tools: [] }),
     callTool: vi.fn().mockResolvedValue({ content: [] }),
+    setRequestHandler: vi.fn(),
     setLoggingLevel: vi.fn().mockResolvedValue(undefined),
     subscribeResource: vi.fn().mockResolvedValue(undefined),
     unsubscribeResource: vi.fn().mockResolvedValue(undefined),
@@ -135,6 +136,39 @@ describe('SDK client options', () => {
       expect.anything(),
       expect.objectContaining({ listMaxPages: 1000 })
     );
+  });
+});
+
+describe('elicitation handler', () => {
+  const form = {
+    method: 'elicitation/create',
+    params: { message: 'Allow?', requestedSchema: { type: 'object', properties: {} } },
+  };
+
+  it('registers before connection and cancels without an opted-in handler', async () => {
+    const client = new McpClient({ name: 'test', version: '0.0.0' });
+    const register = stubSdkClient.setRequestHandler as ReturnType<typeof vi.fn>;
+    expect(register).toHaveBeenCalledWith('elicitation/create', expect.any(Function));
+    expect(stubSdkClient.connect).not.toHaveBeenCalled();
+    const handler = register.mock.calls[0]![1];
+    await expect(handler(form)).resolves.toEqual({ action: 'cancel' });
+    client.setElicitationHandler(async () => ({ action: 'accept', content: { approved: true } }));
+    await expect(handler(form)).resolves.toEqual({ action: 'accept', content: { approved: true } });
+  });
+
+  it('cancels URL requests, handler failures and invalid results', async () => {
+    const client = new McpClient({ name: 'test', version: '0.0.0' });
+    const register = stubSdkClient.setRequestHandler as ReturnType<typeof vi.fn>;
+    const handler = register.mock.calls[0]![1];
+    const prompt = vi.fn().mockResolvedValue({ action: 'accept', content: { nested: {} } });
+    client.setElicitationHandler(prompt);
+    await expect(handler(form)).resolves.toEqual({ action: 'cancel' });
+    prompt.mockRejectedValue(new Error('closed'));
+    await expect(handler(form)).resolves.toEqual({ action: 'cancel' });
+    await expect(
+      handler({ method: 'elicitation/create', params: { mode: 'url' } })
+    ).resolves.toEqual({ action: 'cancel' });
+    expect(prompt).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -749,6 +783,33 @@ describe('resource subscriptions (modern era, subscriptions/listen)', () => {
 
       expect(listenCalls).toHaveLength(2);
       expect(listenCalls[1]).toEqual({ resourceSubscriptions: ['res://a'] });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('routes background re-listening through the exclusive request gate', async () => {
+    vi.useFakeTimers();
+    try {
+      const client = await connectClient({ era: 'modern' });
+      const subscription = makeSubscription(['res://a']);
+      listenQueue = [subscription];
+      await client.subscribeResource('res://a');
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      client.setBackgroundRequestRunner(async (request) => {
+        await gate;
+        await request();
+      });
+      listenQueue = [makeSubscription(['res://a'])];
+      subscription.drop('remote');
+      await vi.advanceTimersByTimeAsync(1_100);
+      expect(listenCalls).toHaveLength(1);
+      release();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(listenCalls).toHaveLength(2);
     } finally {
       vi.useRealTimers();
     }

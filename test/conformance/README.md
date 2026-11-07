@@ -43,6 +43,7 @@ newly added scenarios.
 | --- | --- |
 | `initialize` | Handshake, then the list-style commands against a minimal server |
 | `tools_call` | `tools-list`/`tools-get`/`tools-call` argument-parsing paths; `--task` is refused when the server has no `tasks` capability |
+| `elicitation-sep1034-client-defaults` | Form elicitation with the upstream fixture's fixed request and default values; the adapter accepts only after verifying its local URL, prompt, and schema |
 | `auth/client-credentials-basic` | `login --grant client-credentials` with `client_secret_basic`, incl. RFC 9728 discovery of an authorization server on another origin |
 | `auth/client-credentials-jwt` | The same via `private_key_jwt` (`--client-key`), signed with ES256 |
 | `dns-rebinding-protection` | Server scenario, run through `mcpc connect --proxy` by `server.mjs` (see below): the proxy rejects non-loopback `Host`/`Origin` headers and accepts loopback ones |
@@ -60,10 +61,6 @@ authorization-code grant, which opens a browser. Supporting them needs the
 adapter to intercept the browser launch and complete the redirect itself; the
 non-interactive client-credentials scenarios above were wired up first because
 they need no such scaffolding.
-
-`elicitation-sep1034-client-defaults` is intentionally out of scope: mcpc
-implements no elicitation (it never prompts for input, the same reason sampling
-is unsupported).
 
 Completions (`completion/complete`, the `completion-complete` command) have no
 client-side scenario upstream: the suite's `completion-complete` scenario

@@ -62,14 +62,20 @@ if (!serverUrl || !/^https?:\/\//i.test(serverUrl)) {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const mcpcBin = resolve(here, '..', '..', 'bin', 'mcpc');
+const elicitationPty = resolve(here, 'accept-elicitation.py');
 const homeDir = await mkdtemp(`${tmpdir()}/mcpc-conformance-`);
 const sessionName = `conformance-${process.pid}`;
 const sessionArg = `@${sessionName}`;
 const env = { ...process.env, MCPC_HOME_DIR: homeDir, MCPC_JSON: '1' };
 
-function runMcpc(args, { timeoutMs, allowTimeout = false, expectExitCode = 0 } = {}) {
+function runMcpc(
+    args,
+    { timeoutMs, allowTimeout = false, expectExitCode = 0, acceptConformanceElicitation = false } = {}
+) {
     return new Promise((res, rej) => {
-        const child = spawn(mcpcBin, args, { env, stdio: 'inherit' });
+        const child = acceptConformanceElicitation
+            ? spawn('python3', [elicitationPty, mcpcBin, ...args], { env, stdio: 'inherit' })
+            : spawn(mcpcBin, args, { env, stdio: 'inherit' });
         let timedOut = false;
         const timer = timeoutMs
             ? setTimeout(() => {
@@ -192,6 +198,21 @@ async function main() {
             // mcpc's encoding for these commands.
             await tryMcpc([sessionArg, 'resources-list']);
             await tryMcpc([sessionArg, 'prompts-list']);
+            return;
+
+        case 'elicitation-sep1034-client-defaults':
+            // This upstream test server asks for one fixed form. The PTY helper
+            // verifies the local server URL and the exact prompt/schema before
+            // sending the acceptance and fixture values; no other elicitation
+            // request can be auto-accepted by the adapter.
+            if (!/^http:\/\/(?:localhost|127\.0\.0\.1|\[::1\]):\d+(?:\/|$)/i.test(serverUrl)) {
+                throw new Error(`Refusing conformance elicitation for non-local server: ${serverUrl}`);
+            }
+            await runMcpc(['connect', serverUrl, sessionArg]);
+            await runMcpc(
+                [sessionArg, 'tools-call', 'test_client_elicitation_defaults', '--elicitation'],
+                { acceptConformanceElicitation: true }
+            );
             return;
 
         case 'sse-retry':

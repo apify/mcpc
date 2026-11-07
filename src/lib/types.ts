@@ -368,7 +368,32 @@ export interface IdJagCredentials {
  * IPC message types for CLI-bridge communication
  */
 export type IpcMessageType =
-  'request' | 'response' | 'shutdown' | 'task-update' | 'set-auth-credentials' | 'set-x402-wallet';
+  | 'request'
+  | 'response'
+  | 'shutdown'
+  | 'task-update'
+  | 'set-auth-credentials'
+  | 'set-x402-wallet'
+  | 'elicitation-request'
+  | 'elicitation-cancel'
+  | 'elicitation-response';
+
+export interface ElicitationRequest {
+  mode?: 'form';
+  message: string;
+  requestedSchema: { type: 'object'; properties: Record<string, unknown>; required?: string[] };
+  _meta?: Record<string, unknown>;
+}
+
+export interface ElicitationResult {
+  action: 'accept' | 'decline' | 'cancel';
+  content?: Record<string, unknown>;
+}
+
+export type ElicitationHandler = (
+  request: ElicitationRequest,
+  signal?: AbortSignal
+) => Promise<ElicitationResult>;
 
 /**
  * Auth credentials sent from CLI to bridge via IPC
@@ -604,6 +629,10 @@ export interface IpcMessage {
   method?: string; // MCP method name
   params?: unknown; // Method parameters
   timeoutSecs?: number; // Per-request timeout in seconds (overrides default)
+  elicitation?: boolean;
+  elicitationId?: string;
+  elicitationRequest?: ElicitationRequest;
+  elicitationResult?: ElicitationResult;
   result?: unknown; // Response result
   taskUpdate?: TaskUpdate; // Task progress update (for type='task-update')
   authCredentials?: AuthCredentials; // Auth credentials (for type='set-auth-credentials')
@@ -717,6 +746,7 @@ export interface ServerDetails {
  * McpClient wraps synchronous SDK calls in resolved Promises for consistency.
  */
 export interface IMcpClient {
+  setElicitationHandler?(handler: ElicitationHandler): void;
   // Connection management
   close(): Promise<void>;
 

@@ -32,6 +32,7 @@ vi.mock('@modelcontextprotocol/client', async (importOriginal) => {
         getNegotiatedProtocolVersion: vi.fn().mockReturnValue('2025-11-25'),
         getProtocolEra: vi.fn().mockReturnValue('legacy'),
         ping: vi.fn().mockResolvedValue(undefined),
+        setRequestHandler: vi.fn(),
         onerror: undefined,
       };
     }),

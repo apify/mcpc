@@ -274,8 +274,16 @@ export async function callTool(
     args?: string[];
     task?: boolean;
     detach?: boolean;
+    elicitation?: boolean;
   }
 ): Promise<void> {
+  if (options.elicitation && (options.task || options.detach)) {
+    throw new ClientError('--elicitation cannot be combined with --task or --detach');
+  }
+  if (options.elicitation && (!process.stdin.isTTY || !process.stderr.isTTY)) {
+    throw new ClientError('--elicitation requires interactive stdin and stderr');
+  }
+
   // Parse args from positional arguments (key:=value pairs or inline JSON) or piped stdin
   const parsedArgs = await readCommandArgs(options.args);
 
@@ -286,6 +294,15 @@ export async function callTool(
   }
 
   await withMcpClient(target, options, async (client, _context) => {
+    if (options.elicitation) {
+      if (!client.setElicitationHandler) {
+        throw new ClientError('Interactive elicitation is not available for this client');
+      }
+      const { promptElicitation } = await import('../elicitation.js');
+      client.setElicitationHandler((request, signal) =>
+        promptElicitation(request, undefined, signal)
+      );
+    }
     // Validate schema if provided (skip entirely in ignore mode)
     const schemaMode: SchemaMode = options.schemaMode || 'compatible';
     if (expectedSchema && schemaMode !== 'ignore') {
