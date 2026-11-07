@@ -177,25 +177,29 @@ test_pass
 # This proves --callback-port is honored end-to-end, not just parsed.
 # =============================================================================
 
-# Pick a likely-free high port outside mcpc's default list for the callback
-TEST_CALLBACK_PORT=47317
-
 test_case "login --callback-port binds the requested port on 127.0.0.1"
 
-# Start a hanging HTTP server on a random local port. mcpc will hit this while
+# Suites run in parallel, so fixed port numbers collide with other suites' servers
+# (and the OS's ephemeral range). Let the OS pick both ports instead.
+STALL_PORT_FILE="$TEST_TMP/stall-port"
+CALLBACK_PORT_FILE="$TEST_TMP/callback-port"
+
+# Start a hanging HTTP server on an OS-assigned local port. mcpc will hit this while
 # trying to discover OAuth metadata and block indefinitely, which is what we
 # want so we can observe the callback server.
-STALL_PORT=47318
-node -e "require('http').createServer(()=>{}).listen(${STALL_PORT}, '127.0.0.1')" &
+node -e "const s=require('http').createServer(()=>{}).listen(0,'127.0.0.1',()=>require('fs').writeFileSync(process.argv[1],String(s.address().port)))" "$STALL_PORT_FILE" &
 STALL_PID=$!
 
 # Wait for the stall server to be ready
-for _ in $(seq 1 20); do
-  if (echo >/dev/tcp/127.0.0.1/$STALL_PORT) >/dev/null 2>&1; then
-    break
-  fi
+for _ in $(seq 1 50); do
+  [[ -s "$STALL_PORT_FILE" ]] && break
   sleep 0.1
 done
+STALL_PORT=$(cat "$STALL_PORT_FILE" 2>/dev/null)
+
+# Ask the OS for a free port for the callback server, then release it for mcpc
+node -e "const s=require('net').createServer().listen(0,'127.0.0.1',()=>{require('fs').writeFileSync(process.argv[1],String(s.address().port));s.close()})" "$CALLBACK_PORT_FILE"
+TEST_CALLBACK_PORT=$(cat "$CALLBACK_PORT_FILE")
 
 # Start mcpc login in the background. --no-client-metadata-url skips CIMD
 # so mcpc goes straight to DCR against the stall server (which hangs).
