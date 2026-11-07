@@ -1508,17 +1508,18 @@ ${jsonHelp('`GetPromptResult` object', '`{ description?, messages: [{ role, cont
       'after',
       `
 ${chalk.bold('Arguments:')}
-  <type>              prompt or resource: what is being completed, a prompt (by name)
-                      or a resource template (by URI template), like the MCP
-                      ref/prompt and ref/resource reference types.
-  <ref>               The prompt name or the resource URI template.
-  [args...]           The arguments in the prompts-get syntax. The last one is the
-                      argument to complete, with the text typed so far as its value
-                      (name:= for none); the ones before it are sent as context.
+  <type>     \`prompt\` or \`resource\` (the MCP ref/prompt or ref/resource reference)
+  <ref>      Prompt name, or resource URI template (\`file:///{path}\`)
+  [args...]  Prompt or template arguments, in one of the three forms below. The last
+             one is the argument to complete, with the text typed so far as its value
+             (\`name:=\` for none); the ones before it are sent as context.
 
   key:=value pairs    mcpc ${session} completion-complete prompt code_review language:=py
   Inline JSON         mcpc ${session} completion-complete prompt code_review '{"language":"py"}'
   Stdin pipe          echo '{"language":"py"}' | mcpc ${session} completion-complete prompt code_review
+
+  Values are always sent as strings: \`count:=10\` sends "10", and a JSON object
+  or array is sent as its JSON text.
 
 ${chalk.bold('Examples:')}
   mcpc ${session} completion-complete prompt code_review language:=
@@ -1527,8 +1528,13 @@ ${chalk.bold('Examples:')}
 
 ${chalk.bold('Notes:')}
   The server must declare the completions capability (shown by: mcpc ${session}).
-  Servers return at most 100 suggestions, ranked by relevance; hasMore says if there are more.
-${jsonHelp('`CompleteResult` object', '`{ completion: { values: [...], total?, hasMore? } }`', `${SCHEMA_BASE}#completeresult`)}`
+  Servers return at most 100 suggestions, ranked by relevance; \`total\` is the
+  number of matches when known, \`hasMore\` says if there are more than returned.
+${jsonHelp(
+  '`CompleteResult` object',
+  '`{ completion: { values: string[], total?: number, hasMore?: boolean }, _meta? }`',
+  `${SCHEMA_BASE}#completeresult`
+)}`
     )
     .action(async (refType, ref, args, _options, command) => {
       await completion.complete(session, refType, ref, {
