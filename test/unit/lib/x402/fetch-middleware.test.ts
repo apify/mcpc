@@ -12,8 +12,10 @@ import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import {
   createX402FetchMiddleware,
   extractAcceptFromPaymentRequired,
+  runWithSettlementReceipt,
   withSettlementReceipt,
   type X402PaymentCache,
+  type X402SettlementScope,
   withSettlementReceiptOnDetachedCall,
 } from '../../../../src/lib/x402/fetch-middleware.js';
 import type { PaymentRequiredAccept, SignerWallet } from '../../../../src/lib/x402/signer.js';
@@ -379,6 +381,13 @@ describe('settlement receipts (PAYMENT-RESPONSE)', () => {
     });
   }
 
+  function callPaidTool(fetchFn: ReturnType<typeof createX402FetchMiddleware>) {
+    return fetchFn('https://example.test/mcp', {
+      method: 'POST',
+      body: toolsCallBody('paid-tool'),
+    });
+  }
+
   it('captures the receipt from the retry after a 402 and attaches it to the tool result', async () => {
     const cache: X402PaymentCache = { signature: null };
     const baseFetch = vi
@@ -393,9 +402,10 @@ describe('settlement receipts (PAYMENT-RESPONSE)', () => {
       paymentCache: cache,
     });
 
-    await fetchFn('https://example.test/mcp', { method: 'POST', body: toolsCallBody('paid-tool') });
-
-    const result = withSettlementReceipt({ content: [] }, cache, 'paid-tool');
+    const result = await runWithSettlementReceipt(async (scope) => {
+      await callPaidTool(fetchFn);
+      return withSettlementReceipt({ content: [] }, scope, 'paid-tool');
+    });
     expect(result).toEqual({
       content: [],
       _meta: { 'x402/payment-response': RECEIPT },
@@ -411,50 +421,97 @@ describe('settlement receipts (PAYMENT-RESPONSE)', () => {
       paymentCache: cache,
     });
 
-    await fetchFn('https://example.test/mcp', { method: 'POST', body: toolsCallBody('paid-tool') });
-
-    expect(cache.lastSettlement).toEqual({ toolName: 'paid-tool', receipt: RECEIPT });
+    await runWithSettlementReceipt(async (scope) => {
+      await callPaidTool(fetchFn);
+      expect(scope.lastSettlement).toEqual({ toolName: 'paid-tool', receipt: RECEIPT });
+    });
   });
 
+  it.each([false, true])(
+    'keeps overlapping same-tool receipts separate (second call has receipt: %s)',
+    async (hasReceipt) => {
+      const secondReceipt = { ...RECEIPT, transaction: '0xsecond' };
+      const baseFetch = vi
+        .fn()
+        .mockResolvedValueOnce(paidResponse(RECEIPT))
+        .mockResolvedValueOnce(hasReceipt ? paidResponse(secondReceipt) : new Response(''));
+      const fetchFn = createX402FetchMiddleware(baseFetch as never, {
+        wallet: WALLET,
+        getToolByName: () => makePaidTool({ accepts: [EXACT_ACCEPT] }),
+        paymentCache: { signature: null },
+      });
+
+      // First call has its headers, but its result is still being read when the second ends.
+      let headersReceived!: () => void;
+      const firstHeaders = new Promise<void>((resolve) => {
+        headersReceived = resolve;
+      });
+      let finishFirst!: () => void;
+      const finish = new Promise<void>((resolve) => {
+        finishFirst = resolve;
+      });
+      const first = runWithSettlementReceipt(async (scope) => {
+        await callPaidTool(fetchFn);
+        headersReceived();
+        await finish;
+        return withSettlementReceipt({ content: [] }, scope, 'paid-tool');
+      });
+
+      await Promise.race([firstHeaders, first]);
+      let second;
+      try {
+        second = await runWithSettlementReceipt(async (scope) => {
+          await callPaidTool(fetchFn);
+          return withSettlementReceipt({ content: [] }, scope, 'paid-tool');
+        });
+      } finally {
+        finishFirst();
+      }
+      expect(await first).toEqual({ content: [], _meta: { 'x402/payment-response': RECEIPT } });
+      expect(second).toEqual(
+        hasReceipt
+          ? { content: [], _meta: { 'x402/payment-response': secondReceipt } }
+          : { content: [] }
+      );
+    }
+  );
+
   it('consumes the receipt once, so a later unpaid call does not claim it', () => {
-    const cache: X402PaymentCache = {
-      signature: null,
+    const scope: X402SettlementScope = {
       lastSettlement: { toolName: 'paid-tool', receipt: RECEIPT },
     };
 
-    expect(withSettlementReceipt({ content: [] }, cache, 'paid-tool')).toHaveProperty('_meta', {
+    expect(withSettlementReceipt({ content: [] }, scope, 'paid-tool')).toHaveProperty('_meta', {
       'x402/payment-response': RECEIPT,
     });
-    expect(withSettlementReceipt({ content: [] }, cache, 'paid-tool')).toEqual({ content: [] });
+    expect(withSettlementReceipt({ content: [] }, scope, 'paid-tool')).toEqual({ content: [] });
   });
 
   it('keeps a receipt the server reported over the MCP channel', () => {
     const serverReceipt = { success: true, transaction: '0xserver', network: 'eip155:8453' };
-    const cache: X402PaymentCache = {
-      signature: null,
+    const scope: X402SettlementScope = {
       lastSettlement: { toolName: 'paid-tool', receipt: RECEIPT },
     };
 
     const result = withSettlementReceipt(
       { content: [], _meta: { 'x402/payment-response': serverReceipt } },
-      cache,
+      scope,
       'paid-tool'
     );
 
     expect(result._meta['x402/payment-response']).toBe(serverReceipt);
     // Still consumed, so it cannot resurface on the next call to the same tool
-    expect(cache.lastSettlement).toBeUndefined();
+    expect(scope.lastSettlement).toBeUndefined();
   });
 
   it('preserves other _meta keys on the tool result', () => {
-    const cache: X402PaymentCache = {
-      signature: null,
+    const scope: X402SettlementScope = {
       lastSettlement: { toolName: 'paid-tool', receipt: RECEIPT },
     };
 
     const result = withSettlementReceipt(
       { content: [], _meta: { trace: 'abc' } },
-      cache,
+      scope,
       'paid-tool'
     );
 
@@ -480,14 +537,12 @@ describe('settlement receipts (PAYMENT-RESPONSE)', () => {
         paymentCache: cache,
       });
 
-      const response = await fetchFn('https://example.test/mcp', {
-        method: 'POST',
-        body: toolsCallBody('paid-tool'),
+      await runWithSettlementReceipt(async (scope) => {
+        const response = await callPaidTool(fetchFn);
+        expect(response.status).toBe(200);
+        expect(scope.lastSettlement).toBeUndefined();
+        expect(withSettlementReceipt({ content: [] }, scope, 'paid-tool')).toEqual({ content: [] });
       });
-
-      expect(response.status).toBe(200);
-      expect(cache.lastSettlement).toBeUndefined();
-      expect(withSettlementReceipt({ content: [] }, cache, 'paid-tool')).toEqual({ content: [] });
     }
   );
 
@@ -500,9 +555,10 @@ describe('settlement receipts (PAYMENT-RESPONSE)', () => {
       paymentCache: cache,
     });
 
-    await fetchFn('https://example.test/mcp', { method: 'POST', body: toolsCallBody('paid-tool') });
-
-    expect(cache.lastSettlement).toBeUndefined();
+    await runWithSettlementReceipt(async (scope) => {
+      await callPaidTool(fetchFn);
+      expect(scope.lastSettlement).toBeUndefined();
+    });
   });
 
   it('drops an oversized receipt instead of attaching it to every tool result', async () => {
@@ -519,16 +575,16 @@ describe('settlement receipts (PAYMENT-RESPONSE)', () => {
       paymentCache: cache,
     });
 
-    await fetchFn('https://example.test/mcp', { method: 'POST', body: toolsCallBody('paid-tool') });
-
-    expect(cache.lastSettlement).toBeUndefined();
+    await runWithSettlementReceipt(async (scope) => {
+      await callPaidTool(fetchFn);
+      expect(scope.lastSettlement).toBeUndefined();
+    });
   });
 });
 
 describe('withSettlementReceiptOnDetachedCall', () => {
   const receipt = { success: true, transaction: '0xdetached', network: 'eip155:8453' };
-  const settled = (): X402PaymentCache => ({
-    signature: null,
+  const settled = (): X402SettlementScope => ({
     lastSettlement: { toolName: 'paid-tool', receipt },
   });
   const task = {

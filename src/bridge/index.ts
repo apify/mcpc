@@ -1613,35 +1613,32 @@ class BridgeProcess {
           const toolResultOf = (value: unknown): unknown =>
             detached ? (value as DetachedToolCall | undefined)?.result : value;
 
-          // Execute with automatic x402 payment retry on payment-required tool results
-          try {
+          if (!this.x402Wallet) {
             result = await executeToolCall();
+            break;
+          }
+
+          const {
+            runWithSettlementReceipt,
+            withSettlementReceipt,
+            withSettlementReceiptOnDetachedCall,
+          } = await import('../lib/x402/fetch-middleware.js');
+          result = await runWithSettlementReceipt(async (scope) => {
+            const firstResult = await executeToolCall();
             const retry = await this.handlePaymentRequiredRetry(
               params.name,
-              toolResultOf(result),
+              toolResultOf(firstResult),
               executeToolCall
             );
-            if (retry.handled) {
-              result = retry.result;
-            }
-          } finally {
-            // Hand the caller the x402 settlement receipt for this call. Runs on the error
-            // path too: the assignment is then discarded with the exception, but consuming
-            // the receipt is what keeps a call that failed after its payment settled from
-            // handing its receipt to the next call to the same tool. The slot stays empty
-            // without x402, so such a session never loads the (viem-backed) x402 module.
-            if (this.x402PaymentCache.lastSettlement) {
-              const { withSettlementReceipt, withSettlementReceiptOnDetachedCall } =
-                await import('../lib/x402/fetch-middleware.js');
-              result = detached
-                ? withSettlementReceiptOnDetachedCall(
-                    result as DetachedToolCall | undefined,
-                    this.x402PaymentCache,
-                    params.name
-                  )
-                : withSettlementReceipt(result, this.x402PaymentCache, params.name);
-            }
-          }
+            const outcome = retry.handled ? retry.result : firstResult;
+            return detached
+              ? withSettlementReceiptOnDetachedCall(
+                  outcome as DetachedToolCall | undefined,
+                  scope,
+                  params.name
+                )
+              : withSettlementReceipt(outcome, scope, params.name);
+          });
           break;
         }
 
