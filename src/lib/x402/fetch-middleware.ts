@@ -25,6 +25,7 @@
  * This middleware is injected into the transport via the SDK's `fetch` option.
  */
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type { FetchLike, Tool } from '@modelcontextprotocol/client';
 import {
   signPayment,
@@ -103,21 +104,22 @@ export interface X402PaymentCache {
    * free ones) for the retry after a challenge to carry payment.
    */
   paymentRequiredTools?: Set<string>;
+}
 
+export interface X402SettlementScope {
   /**
-   * The settlement receipt from the last paid response's `PAYMENT-RESPONSE` header, with
-   * the tool it paid for, until `withSettlementReceipt()` attaches it to that tool's
-   * result. Kept exactly as the server encoded it: mcpc does not validate or normalize
-   * the spec's `success`/`transaction`/`network` fields, so a caller reconciles against
-   * the server's receipt rather than our reading of it.
-   *
-   * One slot, and the tool name is what keeps a paid tool's receipt off a free tool's
-   * result. Concurrent paid calls are the one case it does not serve: the newer receipt
-   * wins and the older is logged and dropped. Holding both would not fix it — correlating
-   * a receipt to one of two in-flight calls to the *same* tool needs a per-call id on the
-   * wire, which is not worth sending to every server for this.
+   * Header receipt for this invocation, kept verbatim until it is attached to the
+   * tool result. Unlike payment signatures, receipts are not reusable across calls.
    */
   lastSettlement?: { toolName: string; receipt: Record<string, unknown> };
+}
+
+const settlementScope = new AsyncLocalStorage<X402SettlementScope>();
+
+/** Keep the transport and bridge on the same invocation without changing the wire. */
+export function runWithSettlementReceipt<T>(operation: (scope: X402SettlementScope) => T): T {
+  const scope: X402SettlementScope = {};
+  return settlementScope.run(scope, operation, scope);
 }
 
 /**
@@ -163,11 +165,10 @@ function decodeSettlementReceipt(encodedBase64: string): Record<string, unknown>
  * Called only for requests this middleware attached a payment to, so a receipt is never
  * recorded against a call that did not pay for anything.
  */
-function captureSettlementReceipt(
-  cache: X402PaymentCache,
-  init: RequestInit | undefined,
-  response: Response
-): void {
+function captureSettlementReceipt(init: RequestInit | undefined, response: Response): void {
+  const scope = settlementScope.getStore();
+  if (!scope) return;
+
   // Headers.get() is case-insensitive, so this matches any casing the server used
   const encoded = response.headers.get('PAYMENT-RESPONSE');
   if (!encoded) {
@@ -187,12 +188,12 @@ function captureSettlementReceipt(
     return;
   }
 
-  if (cache.lastSettlement) {
+  if (scope.lastSettlement) {
     logger.debug(
-      `Dropping an unclaimed settlement receipt for tool "${cache.lastSettlement.toolName}"`
+      `Dropping an unclaimed settlement receipt for tool "${scope.lastSettlement.toolName}"`
     );
   }
-  cache.lastSettlement = { toolName, receipt };
+  scope.lastSettlement = { toolName, receipt };
   logger.debug(`Captured x402 settlement receipt for tool "${toolName}"`);
 }
 
@@ -204,12 +205,16 @@ function captureSettlementReceipt(
  * through that channel wins — mcpc never overwrites what the server itself reported. The
  * receipt is consumed either way, so it cannot leak onto a later call to the same tool.
  */
-export function withSettlementReceipt<T>(result: T, cache: X402PaymentCache, toolName: string): T {
-  if (cache.lastSettlement?.toolName !== toolName) {
+export function withSettlementReceipt<T>(
+  result: T,
+  scope: X402SettlementScope,
+  toolName: string
+): T {
+  if (scope.lastSettlement?.toolName !== toolName) {
     return result;
   }
-  const { receipt } = cache.lastSettlement;
-  delete cache.lastSettlement;
+  const { receipt } = scope.lastSettlement;
+  delete scope.lastSettlement;
 
   if (!result || typeof result !== 'object') {
     return result;
@@ -236,16 +241,17 @@ export function withSettlementReceipt<T>(result: T, cache: X402PaymentCache, too
  */
 export function withSettlementReceiptOnDetachedCall(
   outcome: DetachedToolCall | undefined,
-  cache: X402PaymentCache,
+  scope: X402SettlementScope,
   toolName: string
 ): DetachedToolCall | undefined {
+  if (scope.lastSettlement?.toolName !== toolName) return outcome;
   if (outcome?.result) {
-    return { ...outcome, result: withSettlementReceipt(outcome.result, cache, toolName) };
+    return { ...outcome, result: withSettlementReceipt(outcome.result, scope, toolName) };
   }
   if (outcome?.task) {
-    return { ...outcome, task: withSettlementReceipt(outcome.task, cache, toolName) };
+    return { ...outcome, task: withSettlementReceipt(outcome.task, scope, toolName) };
   }
-  withSettlementReceipt(outcome, cache, toolName);
+  withSettlementReceipt(outcome, scope, toolName);
   return outcome;
 }
 
@@ -299,7 +305,7 @@ export function createX402FetchMiddleware(
 
       // If payment succeeded (not HTTP 402), return immediately
       if (response.status !== 402) {
-        captureSettlementReceipt(paymentCache, init, response);
+        captureSettlementReceipt(init, response);
         return response;
       }
 
@@ -475,7 +481,7 @@ async function handle402Fallback(
     // Retry with payment signature (once only)
     const retryInit = injectPayment(originalInit, result.paymentSignatureBase64);
     const retryResponse = await baseFetch(url, retryInit);
-    captureSettlementReceipt(paymentCache, originalInit, retryResponse);
+    captureSettlementReceipt(originalInit, retryResponse);
     return retryResponse;
   } catch (error) {
     logger.warn('402 fallback signing failed:', error);

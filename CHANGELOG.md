@@ -9,6 +9,12 @@ Each version opens with a one-line summary, which also opens its GitHub release.
 
 ## [Unreleased]
 
+x402 settlement receipts stay with the tool calls that produced them, even when calls overlap.
+
+### Fixed
+
+- Overlapping calls to the same paid tool no longer swap or drop each other's x402 settlement receipts. (#488)
+
 ## [0.8.0] - 2026-11-04
 
 Argument completions for prompts and resource templates, tasks on MCP 2026-07-28 servers, MCP TypeScript SDK 2.3.1, stdio server secrets kept out of plaintext files, logs and `ps`, and no more duplicate bridges on Windows.

@@ -828,9 +828,8 @@ mcpc --json @paid tools-call search query:="web crawler" | jq '._meta["x402/paym
 
 Servers are not required to send one, and a missing or malformed receipt never fails the call.
 
-**Run paid calls sequentially if you need every receipt.** `mcpc` holds one receipt at a time per
-session, so when paid calls overlap only the most recent receipt is attached — the others are
-dropped (and recorded in the bridge log).
+When paid calls overlap, each receipt stays with the call that received it. If the server
+sends both a header and a receipt on the tool result, the receipt on the result is preserved.
 
 ### Wallet setup
 

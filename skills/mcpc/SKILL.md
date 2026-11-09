@@ -278,8 +278,8 @@ your user's say-so.
 (`--no-profile`, `--stdio`, `--proxy`, and `-H` are options of `connect`, not global flags.)
 
 `mcpc` also has experimental `--x402` auto-payment for paid MCP tools — see `mcpc help x402`.
-A paid tool result carries the server's settlement receipt at `_meta["x402/payment-response"]`;
-one receipt is held at a time, so run paid calls sequentially if you need every one of them.
+When the server sends a settlement receipt, look for it at `_meta["x402/payment-response"]`
+on that call's result. A missing receipt does not establish that the call was unpaid.
 
 ## Debugging
 
