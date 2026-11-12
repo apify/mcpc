@@ -1,7 +1,8 @@
 /**
  * x402 payment signing logic
  * Reusable module for signing EIP-3009 TransferWithAuthorization (exact scheme)
- * and Permit2 permitWitnessTransferFrom (upto scheme) payments.
+ * and Permit2 permitWitnessTransferFrom (upto scheme) payments on Base, and Nano
+ * state send blocks (exact scheme on nano:mainnet, see nano.ts).
  * Used by both the CLI `x402 sign` command and the fetch middleware.
  */
 
@@ -18,6 +19,7 @@ import {
 } from './viem.js';
 import { ClientError } from '../errors.js';
 import { createLogger } from '../logger.js';
+import { NANO_NETWORK, createNanoSend, isNanoConfigured, readNanoConfig } from './nano.js';
 import type { X402SchemePreference } from '../types.js';
 
 const logger = createLogger('x402-signer');
@@ -127,13 +129,20 @@ const NETWORKS: Record<string, NetworkConfig> = {
   },
 };
 
+/** Every network mcpc can sign for, for error messages. */
+const SUPPORTED_NETWORKS = [...Object.keys(NETWORKS), NANO_NETWORK];
+
+function isEvmNetwork(network: string): boolean {
+  return Object.hasOwn(NETWORKS, network);
+}
+
 /**
  * Whether mcpc can sign payments on the given network (CAIP-2 id, e.g. `eip155:8453`).
  * Servers may offer the same price on several chains at once (Base, Solana, ...); only
- * the networks in `NETWORKS` are supported.
+ * the networks in `NETWORKS` are supported, plus `nano:mainnet` when a Nano key is configured.
  */
 export function isSupportedNetwork(network: string): boolean {
-  return Object.hasOwn(NETWORKS, network);
+  return isEvmNetwork(network) || (network === NANO_NETWORK && isNanoConfigured());
 }
 
 // ---------------------------------------------------------------------------
@@ -189,7 +198,7 @@ export interface SignPaymentResult {
   from: string;
   /** Recipient address */
   to: string;
-  /** Amount in USD */
+  /** Amount in USD (0 for Nano, which is not a USD asset) */
   amountUsd: number;
   /** Amount in atomic units */
   amountAtomicUnits: bigint;
@@ -229,6 +238,8 @@ function randomPermit2Nonce(): string {
 // Scheme selection
 // ---------------------------------------------------------------------------
 
+// Only accepts on a network the wallet can pay on are selectable, so a server that lists
+// several networks gets paid on one mcpc supports (Nano only when a Nano key is configured).
 function isValidExactAccept(a: PaymentRequiredAccept): boolean {
   return (
     a.scheme === 'exact' &&
@@ -242,7 +253,7 @@ function isValidUptoAccept(a: PaymentRequiredAccept): boolean {
     a.scheme === 'upto' &&
     Boolean(a.payTo && a.amount && a.network && a.asset) &&
     Boolean(a.extra?.facilitatorAddress) &&
-    isSupportedNetwork(a.network)
+    isEvmNetwork(a.network)
   );
 }
 
@@ -309,9 +320,13 @@ export function parsePaymentRequired(
   if (!accept) {
     const requested = schemePreference === 'auto' ? 'exact or upto' : schemePreference;
     const offered = header.accepts.map((a) => `${a.scheme} on ${a.network}`).join(', ');
+    const nanoHint =
+      header.accepts.some((a) => a.network === NANO_NETWORK) && !isNanoConfigured()
+        ? ` (set MCPC_X402_NANO_KEY to pay on ${NANO_NETWORK})`
+        : '';
     throw new ClientError(
       `No valid "${requested}" scheme on a supported network found in PAYMENT-REQUIRED accepts. ` +
-        `Offered: ${offered}. Supported networks: ${Object.keys(NETWORKS).join(', ')}`
+        `Offered: ${offered}. Supported networks: ${SUPPORTED_NETWORKS.join(', ')}${nanoHint}`
     );
   }
 
@@ -337,6 +352,12 @@ export async function signPayment(input: SignPaymentInput): Promise<SignPaymentR
   logger.debug(
     `Signing x402 payment: scheme=${accept.scheme} network=${accept.network} amount=${accept.amount} asset=${accept.asset} payTo=${accept.payTo} facilitator=${accept.extra?.facilitatorAddress ?? '<n/a>'}`
   );
+  if (accept.network === NANO_NETWORK) {
+    if (accept.scheme !== 'exact') {
+      throw new ClientError(`Unsupported x402 scheme on ${NANO_NETWORK}: ${accept.scheme}`);
+    }
+    return signNanoExactPayment(input);
+  }
   if (accept.scheme === 'upto') {
     return signUptoPayment(input);
   }
@@ -344,6 +365,69 @@ export async function signPayment(input: SignPaymentInput): Promise<SignPaymentR
     return signExactPayment(input);
   }
   throw new ClientError(`Unsupported x402 scheme: ${accept.scheme}`);
+}
+
+/**
+ * Sign an x402 `exact` scheme payment on Nano: a state send block, signed but not broadcast.
+ * Refuses unless the amount is within `MCPC_X402_NANO_MAX_RAW`.
+ */
+async function signNanoExactPayment(input: SignPaymentInput): Promise<SignPaymentResult> {
+  const { accept, resource } = input;
+  if (input.amountOverride !== undefined) {
+    throw new ClientError(
+      `--amount is in USD and does not apply to ${NANO_NETWORK}; the amount comes from the payment requirements.`
+    );
+  }
+  if (!/^\d+$/.test(accept.amount)) {
+    throw new ClientError(`Invalid Nano amount in payment requirements: ${accept.amount}`);
+  }
+  const amountAtomicUnits = BigInt(accept.amount);
+
+  const config = readNanoConfig();
+  if (amountAtomicUnits > config.maxAmountRaw) {
+    throw new ClientError(
+      `Refusing to sign a Nano payment of ${amountAtomicUnits} raw: it exceeds MCPC_X402_NANO_MAX_RAW (${config.maxAmountRaw} raw).`
+    );
+  }
+
+  const expirySeconds =
+    (input.expiryOverrideSecs ?? accept.maxTimeoutSeconds) || DEFAULT_PAYMENT_EXPIRY_SECONDS;
+
+  const { block, hash } = await createNanoSend({
+    privateKey: config.privateKey,
+    payTo: accept.payTo,
+    amountRaw: amountAtomicUnits,
+    rpcUrl: config.rpcUrl,
+  });
+
+  const paymentPayload = {
+    x402Version: X402_VERSION,
+    resource: resource ?? {
+      url: 'https://mcp.apify.com/mcp',
+      description: 'MCP Server',
+      mimeType: 'application/json',
+    },
+    payload: { hash, block },
+    accepted: {
+      scheme: 'exact',
+      network: NANO_NETWORK,
+      asset: accept.asset,
+      amount: amountAtomicUnits.toString(),
+      payTo: accept.payTo,
+      maxTimeoutSeconds: expirySeconds,
+    },
+  };
+
+  return {
+    paymentSignatureBase64: Buffer.from(JSON.stringify(paymentPayload)).toString('base64'),
+    from: block.account,
+    to: accept.payTo,
+    amountUsd: 0,
+    amountAtomicUnits,
+    networkLabel: 'Nano Mainnet',
+    // The block itself never expires; this is the window the server asked to settle in
+    expiresAt: new Date(Date.now() + expirySeconds * 1000),
+  };
 }
 
 /**
@@ -356,7 +440,7 @@ async function signExactPayment(input: SignPaymentInput): Promise<SignPaymentRes
   const networkConfig = NETWORKS[accept.network];
   if (!networkConfig) {
     throw new ClientError(
-      `Unknown network "${accept.network}" in payment requirements. Supported: ${Object.keys(NETWORKS).join(', ')}`
+      `Unknown network "${accept.network}" in payment requirements. Supported: ${SUPPORTED_NETWORKS.join(', ')}`
     );
   }
 
@@ -545,7 +629,7 @@ async function signUptoPayment(input: SignPaymentInput): Promise<SignPaymentResu
   const networkConfig = NETWORKS[accept.network];
   if (!networkConfig) {
     throw new ClientError(
-      `Unknown network "${accept.network}" in payment requirements. Supported: ${Object.keys(NETWORKS).join(', ')}`
+      `Unknown network "${accept.network}" in payment requirements. Supported: ${SUPPORTED_NETWORKS.join(', ')}`
     );
   }
 
