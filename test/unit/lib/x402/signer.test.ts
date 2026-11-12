@@ -103,6 +103,16 @@ const NANO_EXACT_ACCEPT: PaymentRequiredAccept = {
   maxTimeoutSeconds: 60,
 };
 
+// Apify's x402 endpoints offer the same price on Base and on Solana; mcpc signs EVM only.
+const SOLANA_EXACT_ACCEPT: PaymentRequiredAccept = {
+  scheme: 'exact',
+  network: 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp',
+  amount: '1000000',
+  asset: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+  payTo: 'ECUPkq6DP8VUSEueL4qNznyNDJLwu6PQhnMQ5cuZsTLH',
+  maxTimeoutSeconds: 60,
+};
+
 const MOCK_WALLET: SignerWallet = {
   privateKey: '0x1234567890abcdef',
   address: MOCK_ADDRESS,
@@ -175,6 +185,28 @@ describe('selectAcceptEntry', () => {
     const result = selectAcceptEntry([VALID_EXACT_ACCEPT, secondExact], 'auto');
     expect(result?.amount).toBe('1000000');
   });
+
+  it('exact: skips entries on unsupported networks', () => {
+    const result = selectAcceptEntry([SOLANA_EXACT_ACCEPT, VALID_EXACT_ACCEPT], 'exact');
+    expect(result?.network).toBe('eip155:84532');
+  });
+
+  it('upto: skips entries on unsupported networks', () => {
+    const solanaUpto = { ...VALID_UPTO_ACCEPT, network: SOLANA_EXACT_ACCEPT.network };
+    const result = selectAcceptEntry([solanaUpto, VALID_UPTO_ACCEPT], 'upto');
+    expect(result?.network).toBe('eip155:84532');
+  });
+
+  it('auto: prefers a supported exact over an upto on an unsupported network', () => {
+    const solanaUpto = { ...VALID_UPTO_ACCEPT, network: SOLANA_EXACT_ACCEPT.network };
+    const result = selectAcceptEntry([solanaUpto, VALID_EXACT_ACCEPT], 'auto');
+    expect(result?.scheme).toBe('exact');
+  });
+
+  it('returns undefined when every entry is on an unsupported network', () => {
+    const result = selectAcceptEntry([SOLANA_EXACT_ACCEPT], 'auto');
+    expect(result).toBeUndefined();
+  });
 });
 
 describe('selectAcceptEntry: networks', () => {
@@ -210,7 +242,7 @@ describe('selectAcceptEntry: networks', () => {
     vi.stubEnv('MCPC_X402_NANO_KEY', '');
     const b64 = buildPaymentRequired([NANO_EXACT_ACCEPT]);
     expect(() => parsePaymentRequired(b64, 'auto')).toThrow(
-      'Available: exact on nano:mainnet. Supported networks: eip155:8453, eip155:84532, nano:mainnet (set MCPC_X402_NANO_KEY to pay on nano:mainnet)'
+      'Offered: exact on nano:mainnet. Supported networks: eip155:8453, eip155:84532, nano:mainnet (set MCPC_X402_NANO_KEY to pay on nano:mainnet)'
     );
   });
 });
@@ -273,6 +305,21 @@ describe('parsePaymentRequired', () => {
     const b64 = buildPaymentRequired([VALID_EXACT_ACCEPT]);
     expect(() => parsePaymentRequired(b64, 'upto')).toThrow(ClientError);
     expect(() => parsePaymentRequired(b64, 'upto')).toThrow('upto');
+  });
+
+  it('picks the Base entry when a Solana entry is listed first', () => {
+    const b64 = buildPaymentRequired([SOLANA_EXACT_ACCEPT, VALID_EXACT_ACCEPT]);
+    const { accept } = parsePaymentRequired(b64, 'auto');
+    expect(accept.network).toBe('eip155:84532');
+  });
+
+  it('throws naming the offered and the supported networks when none is supported', () => {
+    const b64 = buildPaymentRequired([SOLANA_EXACT_ACCEPT]);
+    expect(() => parsePaymentRequired(b64, 'exact')).toThrow(ClientError);
+    expect(() => parsePaymentRequired(b64, 'exact')).toThrow(
+      'exact on solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp'
+    );
+    expect(() => parsePaymentRequired(b64, 'exact')).toThrow('Supported networks: eip155:8453');
   });
 });
 

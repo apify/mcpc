@@ -45,6 +45,7 @@ newly added scenarios.
 | `tools_call` | `tools-list`/`tools-get`/`tools-call` argument-parsing paths; `--task` is refused when the server has no `tasks` capability |
 | `auth/client-credentials-basic` | `login --grant client-credentials` with `client_secret_basic`, incl. RFC 9728 discovery of an authorization server on another origin |
 | `auth/client-credentials-jwt` | The same via `private_key_jwt` (`--client-key`), signed with ES256 |
+| `dns-rebinding-protection` | Server scenario, run through `mcpc connect --proxy` by `server.mjs` (see below): the proxy rejects non-loopback `Host`/`Origin` headers and accepts loopback ones |
 
 `sse-retry` is implemented but excluded from default runs: it surfaces a known
 mcpc SSE-reconnect timing issue. Run it explicitly with

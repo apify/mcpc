@@ -136,6 +136,15 @@ function isEvmNetwork(network: string): boolean {
   return Object.hasOwn(NETWORKS, network);
 }
 
+/**
+ * Whether mcpc can sign payments on the given network (CAIP-2 id, e.g. `eip155:8453`).
+ * Servers may offer the same price on several chains at once (Base, Solana, ...); only
+ * the networks in `NETWORKS` are supported, plus `nano:mainnet` when a Nano key is configured.
+ */
+export function isSupportedNetwork(network: string): boolean {
+  return isEvmNetwork(network) || (network === NANO_NETWORK && isNanoConfigured());
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -235,7 +244,7 @@ function isValidExactAccept(a: PaymentRequiredAccept): boolean {
   return (
     a.scheme === 'exact' &&
     Boolean(a.payTo && a.amount && a.network && a.asset) &&
-    (isEvmNetwork(a.network) || (a.network === NANO_NETWORK && isNanoConfigured()))
+    isSupportedNetwork(a.network)
   );
 }
 
@@ -254,6 +263,9 @@ function isValidUptoAccept(a: PaymentRequiredAccept): boolean {
  * - `auto`   → prefer valid `upto`, fallback to valid `exact`
  * - `upto`   → require valid `upto`; undefined if none
  * - `exact`  → require valid `exact`; undefined if none
+ *
+ * Entries on networks mcpc cannot sign for (see `isSupportedNetwork`) are skipped, so a
+ * server that lists a Solana option before the Base one still gets a Base payment.
  */
 export function selectAcceptEntry(
   accepts: PaymentRequiredAccept[],
@@ -307,13 +319,14 @@ export function parsePaymentRequired(
   const accept = selectAcceptEntry(header.accepts, schemePreference);
   if (!accept) {
     const requested = schemePreference === 'auto' ? 'exact or upto' : schemePreference;
-    const available = header.accepts.map((a) => `${a.scheme} on ${a.network}`).join(', ');
+    const offered = header.accepts.map((a) => `${a.scheme} on ${a.network}`).join(', ');
     const nanoHint =
       header.accepts.some((a) => a.network === NANO_NETWORK) && !isNanoConfigured()
         ? ` (set MCPC_X402_NANO_KEY to pay on ${NANO_NETWORK})`
         : '';
     throw new ClientError(
-      `No valid "${requested}" scheme found in PAYMENT-REQUIRED accepts. Available: ${available}. Supported networks: ${SUPPORTED_NETWORKS.join(', ')}${nanoHint}`
+      `No valid "${requested}" scheme on a supported network found in PAYMENT-REQUIRED accepts. ` +
+        `Offered: ${offered}. Supported networks: ${SUPPORTED_NETWORKS.join(', ')}${nanoHint}`
     );
   }
 

@@ -274,7 +274,7 @@ mcpc @fs tools-list
 mcpc @fs tools-call list_directory path:=/
 ```
 
-See [MCP feature support](#mcp-feature-support) for details about all supported MCP features and commands.
+See [MCP support](#mcp-support) for details about all supported MCP features and commands.
 
 #### Command arguments
 
@@ -599,7 +599,7 @@ is missing, expired, or invalid, `mcpc` fails with an error that includes the ri
 | `--x402 [scheme]`               | Skip OAuth auto-detection; use x402 payments instead. Optional scheme: `auto` (default), `upto`, `exact`. Combine with `--profile` to use both. |
 | _(none)_                        | Use `default` profile if it exists; otherwise connect anonymously.                                                                              |
 
-Config file headers (from `--config`) apply to servers loaded from that file.
+Headers set on a config file entry (`file:entry`) apply to the server that entry describes.
 
 ```bash
 # Default: 'default' profile if it exists, else anonymous
@@ -615,7 +615,7 @@ mcpc connect mcp.apify.com @apify --header "Authorization: Bearer ${APIFY_TOKEN}
 mcpc connect mcp.apify.com @apify-anon --no-profile
 
 # x402 micropayments instead of OAuth
-mcpc connect mcp.apify.com @apify --x402
+mcpc connect mcp.example.com @paid --x402
 ```
 
 ## MCP proxy
@@ -901,17 +901,17 @@ Pass the `--x402` flag when connecting to a session. It accepts an optional sche
 
 ```bash
 # Create a session with x402 payment support (auto picks the best advertised scheme)
-mcpc connect mcp.apify.com @apify --x402
+mcpc connect mcp.example.com @paid --x402
 
 # Pin a specific scheme — position doesn't matter, before or after positional args
-mcpc connect --x402 upto mcp.apify.com @apify
-mcpc connect mcp.apify.com @apify --x402 exact
+mcpc connect --x402 upto mcp.example.com @paid
+mcpc connect mcp.example.com @paid --x402 exact
 
 # The session now automatically handles 402 responses using your preference
-mcpc @apify tools-call expensive-tool query:="hello"
+mcpc @paid tools-call expensive-tool query:="hello"
 
 # Restart re-uses the saved scheme from sessions.json — no need to repeat the flag
-mcpc @apify restart
+mcpc @paid restart
 ```
 
 When `--x402` is active, a fetch middleware wraps all HTTP requests to the MCP server.
@@ -946,6 +946,45 @@ settle. Without `MCPC_X402_NANO_MAX_RAW`, or above it, `mcpc` refuses to sign. A
 offered one. Sessions read these variables when their bridge starts, so restart a session after
 changing them. Funds must already be received (pending receives are not handled).
 
+### Full x402 usage example
+
+This end-to-end example pays for the [Apify MCP server](https://mcp.apify.com) with no account or API key.
+[Apify](https://apify.com) is the largest and most trusted marketplace of tools for AI agents,
+with thousands of ready-made Actors for web scraping, data extraction, and automation.
+[Apify AGI](https://agi.apify.com) sells a prepaid, spend-capped API token for an x402 payment
+(`exact` scheme, USDC on Base mainnet), and `mcpc` uses that token as a Bearer credential.
+Each tool call is then billed against the token's prepaid balance.
+
+```bash
+# 1. Create a wallet (or import one) and send USDC on Base to the printed address or QR code.
+#    Signing is gasless, so the wallet needs no ETH.
+mcpc x402 init
+
+#    Once sent, check that the USDC balance has arrived.
+mcpc x402
+
+# 2. Fetch the payment challenge for a $1 token, the minimum (the PAYMENT-REQUIRED header).
+URL='https://agi.apify.com/protocols/x402/prepaid-tokens?amount=1&currency=usd'
+REQ=$(curl -s -D - -o /dev/null "$URL" | awk -F': ' 'tolower($1)=="payment-required"{print $2}' | tr -d '\r\n')
+
+# 3. Sign it with the wallet and resubmit; the server settles the payment and returns the token.
+SIG=$(mcpc x402 sign "$REQ" --scheme exact --json | jq -r .paymentSignature)
+TOKEN=$(curl -s -H "PAYMENT-SIGNATURE: $SIG" "$URL" | jq -r .token)
+
+# 4. Connect with the token and use the server as usual.
+mcpc connect mcp.apify.com @apify --header "Authorization: Bearer $TOKEN"
+mcpc @apify tools-list
+mcpc @apify tools-call search-actors keywords:="Google Maps"
+
+# 5. Check how much of the prepaid balance is left.
+curl -s -H "Authorization: Bearer $TOKEN" https://agi.apify.com/prepaid-tokens/balance
+```
+
+![mcpc paying for a prepaid token with x402 and using it with an MCP server](https://raw.githubusercontent.com/apify/mcpc/main/docs/vhs/x402.gif?v=1)
+
+`mcpc` keeps the token only for the `@apify` session, so save `$TOKEN` if you want to reuse it elsewhere.
+See [agi.apify.com/AGENTS.md](https://agi.apify.com/AGENTS.md) for current prices, limits, and terms.
+
 ## MCP support
 
 `mcpc` aims to be the most complete MCP client on the command line. It's built on the official
@@ -953,8 +992,6 @@ changing them. Funds must already be received (pending receives are not handled)
 major client-facing features of the [MCP specification](https://modelcontextprotocol.io/specification/latest),
 from tools, resources, and prompts to the newest additions like async tasks and skills. Each is exposed as
 a first-class command with consistent human-readable and `--json` output.
-
-### MCP feature support
 
 Where `mcpc` stands on each part of the MCP specification:
 
@@ -984,7 +1021,7 @@ Beyond the interactive browser login, the **Authorization** row also covers the 
 [MCP authorization extensions](#mcp-authorization-extensions): OAuth client credentials and
 enterprise-managed authorization.
 
-#### MCP extensions
+### MCP extensions
 
 Extensions are the optional, modular parts of MCP, negotiated through the `extensions` field of
 client and server capabilities. Where `mcpc` stands on the
@@ -1004,7 +1041,7 @@ issued, and can answer a tool call with a task handle. Skills is declared by ser
 client issues `skills/list` and `skills/get` once it sees that declaration. `mcpc @session` lists
 what a server declares in return, and says which of those `mcpc` can use.
 
-#### Server instructions
+### Server instructions
 
 MCP servers can provide instructions describing their capabilities and usage. These are displayed when you connect to a server or show its session overview:
 
@@ -1058,7 +1095,7 @@ on `2025-11-25` connections.
 }
 ```
 
-#### Tools
+### Tools
 
 Tools are the heart of MCP, and `mcpc` gives you the whole toolbox to discover, inspect, validate, and call them:
 
@@ -1105,7 +1142,7 @@ server's current tools.
 - **Schema validation**: pin a tool's schema with `--schema` to catch breaking changes in CI and
   scripts before they bite (see [Schema validation](#schema-validation)).
 
-#### Prompts
+### Prompts
 
 List and retrieve server-defined prompt templates:
 
@@ -1119,7 +1156,7 @@ mcpc @apify prompts-get analyze-website url:=https://example.com
 
 <!-- TODO: Add example of prompt templates -->
 
-#### Resources
+### Resources
 
 Access server-provided data sources by URI:
 
@@ -1157,7 +1194,7 @@ mcpc @apify resources-subscribe "file:///config.json" ./config.json
 mcpc @apify resources-unsubscribe "file:///config.json"
 ```
 
-#### Completion
+### Completion
 
 Servers that declare the `completions` capability can suggest values for prompt arguments and
 resource template variables
@@ -1180,7 +1217,7 @@ mcpc @apify completion-complete resource 'file:///{path}' path:=/ho
 Servers return at most 100 suggestions ranked by relevance; `hasMore` in the `--json` output says
 whether there were more. Completion works the same on `2025-11-25` and `2026-07-28` servers.
 
-#### Skills
+### Skills
 
 Implements the [MCP Skills extension](https://github.com/modelcontextprotocol/ext-skills)
 (`io.modelcontextprotocol/skills`), which requires MCP `2026-07-28` or later.
@@ -1226,7 +1263,7 @@ Skills appear under capabilities in `mcpc @session` output when a server declare
 input — `mcpc` only reads and prints it; it never executes hooks, scripts, or other frontmatter-declared
 behavior, and `allowed-tools` grants nothing.
 
-#### List change notifications
+### List change notifications
 
 When connected via a [session](#sessions), `mcpc` automatically handles `list_changed`
 notifications for tools, resources, and prompts. On `2025-11-25` servers these arrive as
@@ -1240,7 +1277,7 @@ The bridge process tracks when each notification type was last received.
 The timestamps are available in the JSON output of `mcpc @session --json` under the `_mcpc.notifications`
 field - see [Server instructions](#server-instructions).
 
-#### Server logs
+### Server logs
 
 `mcpc` supports server logging settings (`logging/setLevel`) and log messages (`notifications/message`).
 Log messages are printed to bridge log or stderr, subject to [verbosity level](#verbose-mode).
@@ -1263,14 +1300,14 @@ The actual log output depends on the server's implementation.
 > only on servers using protocol `2025-11-25` or older and will be removed in a future mcpc
 > release. Server log messages (`notifications/message`) are still recorded in the bridge log.
 
-#### Pagination
+### Pagination
 
 MCP servers may return paginated results for list operations
 (`tools-list`, `resources-list`, `prompts-list`, `resources-templates-list`).
 `mcpc` handles this automatically and always fetches all available pages using the `nextCursor`
 token - you always get the complete list without manual iteration. Keep it simple.
 
-#### Ping
+### Ping
 
 Sessions automatically send periodic pings to keep the [connection alive](#session-lifecycle) and detect failures early.
 Send a ping to check if a server connection is alive:
@@ -1286,7 +1323,7 @@ sends a `server/discover` probe instead — same round trip, same liveness signa
 command works identically on both protocol versions. The human-readable output says so,
 so a `server/discover` entry in the server's access log is not a surprise.
 
-#### Server discovery
+### Server discovery
 
 On `2026-07-28` connections you can also send that request yourself and see what the server
 answers right now — every protocol version it supports, its capabilities, its instructions,
@@ -1302,7 +1339,7 @@ when it was created, this is a live request. Protocol `2026-07-28` introduced
 `server/discover`, so the command fails on `2025-11-25` (and older) connections, where the
 `initialize` handshake carries the same information — run `mcpc @apify` there instead.
 
-#### Async tasks
+### Async tasks
 
 MCP servers can execute tools as [async tasks](https://modelcontextprotocol.io/specification/latest/basic/utilities/tasks)
 that run in the background and report progress. `mcpc` supports the full task lifecycle:
@@ -1326,6 +1363,8 @@ mcpc @apify tasks-result <taskId>
 # Cancel a running task
 mcpc @apify tasks-cancel <taskId>
 ```
+
+![mcpc tools-call --task, --detach and tasks-result demo](https://raw.githubusercontent.com/apify/mcpc/main/docs/vhs/tasks.gif?v=1)
 
 With `--task`, the CLI shows a progress spinner with elapsed time, server status messages,
 and progress notifications. Press **ESC** during execution to detach and get the task ID
@@ -1360,7 +1399,7 @@ You can configure `mcpc` using a config file, environment variables, or command-
 
 **Precedence** (highest to lowest):
 
-1. Command-line flags (including `--config` option)
+1. Command-line flags and config file entries (`file:entry`)
 2. Environment variables
 3. Built-in defaults
 
@@ -1580,27 +1619,29 @@ See [CONTRIBUTING](./CONTRIBUTING.md) for development setup, architecture overvi
 
 ### MCP CLI clients
 
-<!-- Stars, contributors, commits, and activity as of 2026-10-20. -->
+<!-- Stars, contributors, commits, and activity as of 2026-11-05. -->
 
 | Tool                                                                                                                | MCP        | Active | Lang   | Stars | Commits | Contrib | Tools | Resources | Prompts | Tasks | Skills | Code mode | Sessions | OAuth | Client creds | Enterprise auth | Stdio | HTTP | Tool search | x402 | LLM |
 | ------------------------------------------------------------------------------------------------------------------- | ---------- | ------ | ------ | ----: | ------: | ------: | ----- | --------- | ------- | ----- | ------ | --------- | -------- | ----- | ------------ | --------------- | ----- | ---- | ----------- | ---- | --- |
-| **[apify/mcpc](https://github.com/apify/mcpc)**                                                                     | 2026-07-28 | ✅     | TS     |  1.1k |     805 |      18 | ✅    | ✅        | ✅      | ✅    | ✅     | ✅        | ✅       | ✅    | ✅           | ✅              | ✅    | ✅   | ✅          | ✅   | —   |
-| [modelcontextprotocol/inspector (mcpdo)](https://github.com/modelcontextprotocol/inspector/tree/main/clients/mcpdo) | 2026-07-28 | ✅     | TS     | 11.1k |    4604 |     141 | ✅    | ✅        | ✅      | ✅    | ✅     | —         | ✅       | ✅    | —            | ✅              | ✅    | ✅   | —           | —    | —   |
-| [openclaw/mcporter](https://github.com/openclaw/mcporter)                                                           | 2026-07-28 | ✅     | TS     |  5.1k |    1000 |      55 | ✅    | ✅        | —       | —     | —      | ✅        | ✅       | ✅    | —            | —               | ✅    | ✅   | —           | —    | —   |
-| [knowsuchagency/mcp2cli](https://github.com/knowsuchagency/mcp2cli)                                                 | 2025-11-25 | ✅     | Python |  2.4k |     183 |      23 | ✅    | ✅        | ✅      | —     | —      | ✅        | ✅       | ✅    | ✅           | —               | ✅    | ✅   | ✅          | —    | —   |
-| [IBM/mcp-cli](https://github.com/IBM/mcp-cli)                                                                       | 2025-06-18 | ✅     | Python |  2.0k |     800 |      22 | ✅    | ✅        | ✅      | —     | —      | ✅        | ✅       | ✅    | —            | —               | ✅    | ✅   | —           | —    | ✅  |
-| [f/mcptools](https://github.com/f/mcptools)                                                                         | 2024-11-05 | ⚠️     | Go     |  1.6k |     174 |      16 | ✅    | ✅        | ✅      | —     | —      | ✅        | —        | —     | —            | —               | ✅    | ✅   | —           | —    | —   |
-| [philschmid/mcp-cli](https://github.com/philschmid/mcp-cli)                                                         | 2025-11-25 | ⚠️     | TS     |  1.3k |      30 |       2 | ✅    | —         | —       | —     | —      | ✅        | ✅       | —     | —            | —               | ✅    | ✅   | ✅          | —    | —   |
-| [adhikasp/mcp-client-cli](https://github.com/adhikasp/mcp-client-cli)                                               | 2025-06-18 | ⚠️     | Python |   675 |     113 |       5 | ✅    | —         | —       | —     | —      | —         | —        | —     | —            | —               | ✅    | —    | —           | —    | ✅  |
-| [thellimist/clihub](https://github.com/thellimist/clihub)                                                           | 2025-11-25 | ⚠️     | Go     |   666 |      60 |       1 | ✅    | —         | —       | —     | —      | —         | —        | ✅    | ✅           | —               | ✅    | ✅   | ✅          | —    | —   |
-| [wong2/mcp-cli](https://github.com/wong2/mcp-cli)                                                                   | 2025-11-25 | ⚠️     | JS     |   446 |      67 |       7 | ✅    | ✅        | ✅      | —     | —      | —         | —        | ✅    | —            | —               | ✅    | ✅   | —           | —    | —   |
-| [activeing123/mcptoon](https://github.com/activeing123/mcptoon)                                                     | 2026-07-28 | ✅     | Python |   356 |     481 |       4 | ✅    | —         | —       | —     | —      | ✅        | —        | —     | —            | —               | ✅    | ✅   | —           | —    | —   |
+| **[apify/mcpc](https://github.com/apify/mcpc)**                                                                     | 2026-07-28 | ✅     | TS     |  1.1k |     823 |      22 | ✅    | ✅        | ✅      | ✅    | ✅     | ✅        | ✅       | ✅    | ✅           | ✅              | ✅    | ✅   | ✅          | ✅   | —   |
+| [modelcontextprotocol/inspector (mcpdo)](https://github.com/modelcontextprotocol/inspector/tree/main/clients/mcpdo) | 2026-07-28 | ✅     | TS     | 11.2k |    4815 |     140 | ✅    | ✅        | ✅      | ✅    | ✅     | —         | ✅       | ✅    | —            | ✅              | ✅    | ✅   | —           | —    | —   |
+| [openclaw/mcporter](https://github.com/openclaw/mcporter)                                                           | 2026-07-28 | ✅     | TS     |  5.1k |    1021 |      62 | ✅    | ✅        | —       | —     | —      | ✅        | ✅       | ✅    | —            | —               | ✅    | ✅   | —           | —    | —   |
+| [knowsuchagency/mcp2cli](https://github.com/knowsuchagency/mcp2cli)                                                 | 2025-11-25 | ✅     | Python |  2.4k |     195 |      26 | ✅    | ✅        | ✅      | —     | —      | ✅        | ✅       | ✅    | ✅           | —               | ✅    | ✅   | ✅          | —    | —   |
+| [IBM/mcp-cli](https://github.com/IBM/mcp-cli)                                                                       | 2025-06-18 | ⚠️    | Python |  2.0k |     800 |      22 | ✅    | ✅        | ✅      | —     | —      | ✅        | ✅       | ✅    | —            | —               | ✅    | ✅   | —           | —    | ✅  |
+| [f/mcptools](https://github.com/f/mcptools)                                                                         | 2024-11-05 | ⚠️    | Go     |  1.6k |     174 |      16 | ✅    | ✅        | ✅      | —     | —      | ✅        | —        | —     | —            | —               | ✅    | ✅   | —           | —    | —   |
+| [philschmid/mcp-cli](https://github.com/philschmid/mcp-cli)                                                         | 2025-11-25 | ⚠️    | TS     |  1.3k |      30 |       2 | ✅    | —         | —       | —     | —      | ✅        | ✅       | —     | —            | —               | ✅    | ✅   | ✅          | —    | —   |
+| [adhikasp/mcp-client-cli](https://github.com/adhikasp/mcp-client-cli)                                               | 2025-06-18 | ⚠️    | Python |   675 |     113 |       5 | ✅    | —         | —       | —     | —      | —         | —        | —     | —            | —               | ✅    | —    | —           | —    | ✅  |
+| [thellimist/clihub](https://github.com/thellimist/clihub)                                                           | 2025-11-25 | ⚠️    | Go     |   668 |      60 |       1 | ✅    | —         | —       | —     | —      | —         | —        | ✅    | ✅           | —               | ✅    | ✅   | ✅          | —    | —   |
+| [wong2/mcp-cli](https://github.com/wong2/mcp-cli)                                                                   | 2025-11-25 | ⚠️    | JS     |   447 |      67 |       7 | ✅    | ✅        | ✅      | —     | —      | —         | —        | ✅    | —            | —               | ✅    | ✅   | —           | —    | —   |
+| [activeing123/mcptoon](https://github.com/activeing123/mcptoon)                                                     | 2026-07-28 | ✅     | Python |   422 |     535 |       5 | ✅    | —         | —       | —     | —      | ✅        | —        | —     | —            | —               | ✅    | ✅   | —           | —    | —   |
+| [avelino/mcp](https://github.com/avelino/mcp)                                                                       | 2026-07-28 | ✅     | Rust   |    75 |     156 |       9 | ✅    | ✅        | ✅      | —     | —      | —         | —        | ✅    | —            | —               | ✅    | ✅   | —           | —    | —   |
 | [mcpshim/mcpshim](https://github.com/mcpshim/mcpshim)                                                               | 2025-11-25 | ✅     | Go     |    66 |      17 |       1 | ✅    | —         | —       | —     | —      | ✅        | ✅       | ✅    | —            | —               | —     | ✅   | ✅          | —    | —   |
-| [lydakis/mcpx](https://github.com/lydakis/mcpx)                                                                     | 2026-07-28 | ✅     | Go     |    54 |     122 |       3 | ✅    | —         | —       | —     | —      | ✅        | ✅       | ✅    | —            | —               | ✅    | ✅   | —           | —    | —   |
+| [lydakis/mcpx](https://github.com/lydakis/mcpx)                                                                     | 2026-07-28 | ✅     | Go     |    55 |     122 |       3 | ✅    | —         | —       | —     | —      | ✅        | ✅       | ✅    | —            | —               | ✅    | ✅   | —           | —    | —   |
 | [arcadeai-labs/mcpx](https://github.com/arcadeai-labs/mcpx)                                                         | 2026-07-28 | ✅     | TS     |    37 |     124 |       3 | ✅    | ✅        | ✅      | ✅    | —      | ✅        | —        | ✅    | —            | —               | ✅    | ✅   | ✅          | —    | —   |
-| [EstebanForge/mcp-cli-ent](https://github.com/EstebanForge/mcp-cli-ent)                                             | 2026-07-28 | ✅     | Go     |    15 |      65 |       2 | ✅    | —         | —       | —     | —      | ✅        | ✅       | —     | —            | —               | ✅    | ✅   | ✅          | —    | —   |
+| [EstebanForge/mcp-cli-ent](https://github.com/EstebanForge/mcp-cli-ent)                                             | 2026-07-28 | ✅     | Go     |    15 |      66 |       2 | ✅    | —         | —       | —     | —      | ✅        | ✅       | —     | —            | —               | ✅    | ✅   | ✅          | —    | —   |
 | [mcp2cli/source-code](https://github.com/mcp2cli/source-code)                                                       | 2026-07-28 | ✅     | Rust   |    12 |      93 |       3 | ✅    | ✅        | ✅      | ✅    | —      | ✅        | ✅       | ✅    | —            | —               | ✅    | ✅   | —           | —    | —   |
-| [domdomegg/call-mcp](https://github.com/domdomegg/call-mcp)                                                         | 2025-11-25 | ✅     | TS     |     3 |      46 |       3 | ✅    | —         | —       | —     | —      | ✅        | —        | ✅    | —            | —               | ✅    | ✅   | —           | —    | —   |
+| [domdomegg/call-mcp](https://github.com/domdomegg/call-mcp)                                                         | 2025-11-25 | ✅     | TS     |     4 |      55 |       3 | ✅    | —         | —       | —     | —      | ✅        | —        | ✅    | —            | —               | ✅    | ✅   | —           | —    | —   |
+| [ConsulTent/mcpcli](https://github.com/ConsulTent/mcpcli)                                                           | 2026-07-28 | ✅     | Go     |     0 |      95 |       3 | ✅    | ✅        | ✅      | —     | —      | —         | —        | ✅    | ✅           | —               | ✅    | ✅   | —           | —    | —   |
 
 **Legend:** ✅ = supported, ⚠️ = stale (no commits in 3+ months), **MCP** = latest [MCP protocol version](https://modelcontextprotocol.io/specification/latest/basic/index#protocol-version) the client supports, per its pinned SDK/own implementation, **Commits** = total commits, **Contrib** = contributors, **Tasks** = [async tasks](https://modelcontextprotocol.io/specification/latest/basic/utilities/tasks), **Skills** = [skills extension](https://modelcontextprotocol.io/extensions/skills/overview), **Client creds** = [OAuth client credentials](https://modelcontextprotocol.io/extensions/auth/oauth-client-credentials) extension (machine-to-machine login, no browser), **Enterprise auth** = [enterprise-managed authorization](https://modelcontextprotocol.io/extensions/auth/enterprise-managed-authorization) extension (ID-JAG issued by a corporate IdP), **x402** = [x402 payment protocol](https://www.x402.org/) support, **LLM** = requires/uses an LLM.
 
@@ -1612,6 +1653,8 @@ See [CONTRIBUTING](./CONTRIBUTING.md) for development setup, architecture overvi
 - [activeing123/mcptoon](https://github.com/activeing123/mcptoon) is tools-only and focuses on token efficiency: tool listings, schemas, and results are encoded as [TOON](https://github.com/toon-format/toon) or its own compact formats instead of JSON.
 - [IBM/mcp-cli](https://github.com/IBM/mcp-cli) and [mcp-client-cli](https://github.com/adhikasp/mcp-client-cli) integrate an LLM (Ollama, OpenAI, etc.) for chat-style interaction, while the other tools are pure CLI clients.
 - [domdomegg/call-mcp](https://github.com/domdomegg/call-mcp) can also call connectors configured in claude.ai by reusing the Claude Code OAuth token, with no separate login.
+- [avelino/mcp](https://github.com/avelino/mcp) is a Rust CLI that turns configured MCP servers into terminal commands (`mcp <server> <tool>`), with a server registry and a proxy mode; it holds no persistent sessions.
+- [ConsulTent/mcpcli](https://github.com/ConsulTent/mcpcli) is a Go client and inspector (`mcp`) with a REPL and a protocol-version compatibility probe.
 - [lydakis/mcpx](https://github.com/lydakis/mcpx) is a Unix-composable client (`mcpx <server> <tool>`), not [arcadeai-labs/mcpx](https://github.com/arcadeai-labs/mcpx).
 - [f/mcptools](https://github.com/f/mcptools) depends on a Go MCP library capable of `2025-03-26`, but its own client code hardcodes `2024-11-05` (its README notes HTTP/SSE support is limited to that version).
 - MCP versions for [knowsuchagency/mcp2cli](https://github.com/knowsuchagency/mcp2cli) and [adhikasp/mcp-client-cli](https://github.com/adhikasp/mcp-client-cli) reflect their locked/tested SDK version; both allow a looser dependency range that could resolve to a newer SDK on a fresh install.

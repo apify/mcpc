@@ -9,6 +9,8 @@ Each version opens with a one-line summary, which also opens its GitHub release.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-04
+
 Argument completions for prompts and resource templates, tasks on MCP 2026-07-28 servers, MCP TypeScript SDK 2.3.1, stdio server secrets kept out of plaintext files, logs and `ps`, and no more duplicate bridges on Windows.
 
 ### Added
@@ -26,6 +28,7 @@ Argument completions for prompts and resource templates, tasks on MCP 2026-07-28
 
 ### Security
 
+- `mcpc login` now verifies the OAuth `state` parameter: a callback on the local redirect port that does not echo the value this login sent is ignored, so another page open in the browser can neither abort the login nor slip its own authorization code into the profile. A pasted callback URL is checked the same way. The existing client registration is also kept until the new login has succeeded, so cancelling a `login` no longer breaks token refresh for the profile it was replacing.
 - The copy-paste `run: mcpc ...` hints no longer let a server-chosen name or URI run a command when pasted. Values containing a backslash followed by `$`, a backtick or `"` (for example `\$(id)`) were double-quoted without escaping the backslash, so a POSIX shell still expanded them. Backslashes are now escaped like the other characters that stay special inside double quotes. (GHSA-wmqm-r8wm-9f34)
 - `login --grant client-credentials` and `login --grant id-jag` now bind the stored client secret or key to the authorization server they were validated against, so a server that later points at a different authorization server is refused instead of receiving the credentials. Profiles created earlier keep working; log in again to bind them.
 - The `env` of a stdio config entry, where API tokens such as `GITHUB_PERSONAL_ACCESS_TOKEN` usually live, is now stored in the OS keychain and delivered to the bridge over IPC like session headers, instead of being written in plaintext to `sessions.json`, printed by `mcpc --json` and `mcpc @session`, and passed on the bridge's command line where `ps` showed it to every local user. Verbose output and the bridge log no longer record header values, env values, or tool-call arguments either, and bridge log files are created owner-only. (#341)
@@ -37,6 +40,7 @@ Argument completions for prompts and resource templates, tasks on MCP 2026-07-28
 
 ### Fixed
 
+- x402 payments no longer fail with "Unknown network" when a server lists a payment option on a chain mcpc cannot sign for (e.g. Solana) before the Base one: `x402 sign` and `--x402` sessions now pick the first option on a supported network. When there is none, the error lists what the server offered and which networks are supported.
 - `tools-call`, `prompts-get` and `completion-complete` no longer send arguments other than what you typed: a JSON array passed inline or on stdin is now rejected (MCP arguments must be an object), a `__proto__:=...` argument is no longer dropped, and a number too large to represent (e.g. `n:=1e400`) is kept as a string instead of being sent as `null`. (#448)
 - Bridge log rotation no longer races the file it rotates: under load the rename could run before the log file was opened or flushed, so the rotation was silently skipped and the first lines of the new file were lost.
 - Windows sessions no longer pile up duplicate bridge processes when `tasklist` is slow or unavailable. A liveness check that could not run used to report every bridge dead, so each command spawned a replacement without stopping the healthy original; the check now falls back to a signal probe, the old bridge is always asked to shut down, and a bridge that finds another one registered for its session exits on its own. (#427)
@@ -483,7 +487,8 @@ MCP Skills extension, directory resources, OAuth sessions that survive token exp
 - Interactive shell mode
 - JSON output mode for scripting
 
-[Unreleased]: https://github.com/apify/mcpc/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/apify/mcpc/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/apify/mcpc/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/apify/mcpc/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/apify/mcpc/compare/v0.5.0...v0.6.0
 [0.5.1]: https://github.com/apify/mcpc/compare/v0.5.0...v0.5.1

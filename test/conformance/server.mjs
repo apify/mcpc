@@ -46,8 +46,8 @@ function launch(command, args, options = {}) {
   return child;
 }
 
-async function run(command, args, timeoutMillis = 180000) {
-  const child = launch(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+async function run(command, args, { timeoutMillis = 180000, ...spawnOptions } = {}) {
+  const child = launch(command, args, { stdio: ['ignore', 'pipe', 'pipe'], ...spawnOptions });
   let output = '';
   for (const stream of [child.stdout, child.stderr]) {
     stream.on('data', (data) => {
@@ -78,7 +78,8 @@ async function run(command, args, timeoutMillis = 180000) {
   }
 }
 
-const mcpc = (args) => run(process.execPath, [join(root, 'bin/mcpc'), ...args], 30000);
+const mcpc = (args) =>
+  run(process.execPath, [join(root, 'bin/mcpc'), ...args], { timeoutMillis: 30000 });
 
 // Same reserve-then-release pattern used by test/e2e/lib/framework.sh.
 async function availablePort() {
@@ -154,16 +155,22 @@ try {
         throw new Error('CONFORMANCE_PACKAGE_VERSION must be a version number');
       }
       const pkg = '@modelcontextprotocol/conformance' + (version ? `@${version}` : '');
-      await run(process.platform === 'win32' ? 'npx.cmd' : 'npx', [
-        '-y',
-        pkg,
-        'server',
-        '--url',
-        `http://127.0.0.1:${proxyPort}/mcp`,
-        '--scenario',
-        'dns-rebinding-protection',
-        ...process.argv.slice(2),
-      ]);
+      // On Windows `npx` is a .cmd shim, which Node refuses to spawn without a
+      // shell (EINVAL). Every argument is local, so the shell adds no risk.
+      await run(
+        'npx',
+        [
+          '-y',
+          pkg,
+          'server',
+          '--url',
+          `http://127.0.0.1:${proxyPort}/mcp`,
+          '--scenario',
+          'dns-rebinding-protection',
+          ...process.argv.slice(2),
+        ],
+        { shell: process.platform === 'win32' }
+      );
       break;
     } catch (error) {
       if (
