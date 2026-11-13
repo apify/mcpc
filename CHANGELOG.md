@@ -9,6 +9,12 @@ Each version opens with a one-line summary, which also opens its GitHub release.
 
 ## [Unreleased]
 
+Repeated `connect -H` headers are all sent again.
+
+### Fixed
+
+- `connect` with several `-H`/`--header` options now stores and sends every header, not just the last one. (#490)
+
 ## [0.8.0] - 2026-11-04
 
 Argument completions for prompts and resource templates, tasks on MCP 2026-07-28 servers, MCP TypeScript SDK 2.3.1, stdio server secrets kept out of plaintext files, logs and `ps`, and no more duplicate bridges on Windows.
