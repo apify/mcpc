@@ -486,7 +486,11 @@ Full docs: ${docsUrl}`
     .command('connect [server] [@session]')
     .usage('[<server>] [@session] [options]')
     .description('Connect to an MCP server and start a new named @session') // keep this short
-    .option('-H, --header <header>', 'HTTP header (can be repeated)')
+    .option(
+      '-H, --header <header>',
+      'HTTP header (can be repeated)',
+      (value: string, previous: string[] | undefined) => [...(previous ?? []), value]
+    )
     .option('--profile <name>', 'OAuth profile to use ("default" if skipped)')
     .option('--no-profile', 'Skip OAuth profile (connect anonymously)')
     .option('--proxy <[host:]port>', 'Start proxy MCP server for session')
@@ -537,11 +541,8 @@ ${outputHelp([
       const globalOpts = getOptionsFromCommand(command);
 
       // Extract --header from connect-specific opts
-      const headers: string[] | undefined = opts.header
-        ? Array.isArray(opts.header)
-          ? (opts.header as string[])
-          : [opts.header as string]
-        : undefined;
+      // The collector above accumulates every -H into an array (#490)
+      const headers = opts.header as string[] | undefined;
 
       // No server argument — discover standard MCP config files and connect all
       if (!server) {
