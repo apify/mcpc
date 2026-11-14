@@ -88,6 +88,77 @@ export const theme = {
   magenta: chalk.hex(themeHex(282)), // violet (rainbow end)
 };
 
+/** Use the same token palette for real JSON and lexical help examples. */
+function colorJsonToken(text: string, kind: 'key' | 'string' | 'literal' | 'number'): string {
+  switch (kind) {
+    case 'key':
+      return theme.cyan(text);
+    case 'string':
+      return theme.green(text);
+    case 'literal':
+      return theme.magenta(text);
+    case 'number':
+      return theme.yellow(text);
+  }
+}
+
+/** Color JSON and abbreviated help shapes without parsing or changing any characters. */
+function colorJsonExample(text: string): string {
+  const stack: { object: boolean; key: boolean }[] = [];
+  return text.replace(
+    /"(?:\\.|[^"\\])*"|\.\.\.|[A-Za-z_$][\w$.-]*\??|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|[{}[\]:,]|\s+|./g,
+    (token) => {
+      const parent = stack.at(-1);
+      if (token === '{' || token === '[') {
+        stack.push({ object: token === '{', key: token === '{' });
+      } else if (token === '}' || token === ']') {
+        stack.pop();
+      } else if (token === ':' && parent?.object) {
+        parent.key = false;
+      } else if (token === ',' && parent?.object) {
+        parent.key = true;
+      } else if (token.startsWith('"')) {
+        return colorJsonToken(token, parent?.object && parent.key ? 'key' : 'string');
+      } else if (/^(true|false|null)$/.test(token)) {
+        return colorJsonToken(token, 'literal');
+      } else if (/^-?\d/.test(token)) {
+        return colorJsonToken(token, 'number');
+      } else if (parent?.object && parent.key && /^[A-Za-z_$]/.test(token)) {
+        parent.key = false;
+        return colorJsonToken(token, 'key');
+      }
+      return token;
+    }
+  );
+}
+
+/** Mark an authored example command; shell-quoted JSON keeps the JSON token palette. */
+export function commandExample(text: string): string {
+  const parts: string[] = [];
+  let offset = 0;
+  for (const match of text.matchAll(/'([[{][^'\n]*[\]}])'/g)) {
+    parts.push(theme.cyan(text.slice(offset, match.index)));
+    parts.push("'" + colorJsonExample(match[1] ?? '') + "'");
+    offset = match.index + match[0].length;
+  }
+  parts.push(theme.cyan(text.slice(offset)));
+  return parts.join('');
+}
+
+/** The dim variant of authored example commands for human next-step hints. */
+export function commandHint(text: string): string {
+  return chalk.dim(commandExample(text));
+}
+
+/** Style only paired, single-line, previously unstyled inline code. */
+export function styleInlineCode(text: string): string {
+  return text.replace(/`([^`\n\r]+)`/g, (span, content: string) => {
+    if (/[\n\r]/.test(content) || content.includes('\x1b')) return span;
+    const colored = /^[[{]/.test(content) ? colorJsonExample(content) : theme.cyan(content);
+    return grayBacktick() + colored + grayBacktick();
+  });
+}
+
 /**
  * Apply the soft rainbow gradient across each character of a string.
  */
@@ -170,19 +241,19 @@ function highlightJson(json: string): string {
     ) => {
       if (key) {
         // Object key (includes the quotes and colon)
-        return theme.cyan(key) + ':';
+        return colorJsonToken(key, 'key') + ':';
       }
       if (str) {
         // String value
-        return theme.green(str);
+        return colorJsonToken(str, 'string');
       }
       if (bool) {
         // Boolean or null
-        return theme.magenta(bool);
+        return colorJsonToken(bool, 'literal');
       }
       if (num) {
         // Number
-        return theme.yellow(num);
+        return colorJsonToken(num, 'number');
       }
       return match;
     }
@@ -562,9 +633,13 @@ function formatToolsCompact(tools: Tool[], options?: FormatOptions): string {
   const session = options?.sessionName ? `${options.sessionName} ` : '';
   lines.push('');
   lines.push(
-    `Before calling a tool, get its full details and schema by running: \`mcpc ${session}tools-get <name>\``
+    styleInlineCode(
+      `Before calling a tool, get its full details and schema by running: \`mcpc ${session}tools-get <name>\``
+    )
   );
-  lines.push(`To get full details for all tools, run: \`mcpc ${session}tools-list --full\``);
+  lines.push(
+    styleInlineCode(`To get full details for all tools, run: \`mcpc ${session}tools-list --full\``)
+  );
 
   return lines.join('\n');
 }
@@ -769,7 +844,7 @@ export function formatToolCallExample(tool: Tool, sessionName?: string): string 
   if (!properties || Object.keys(properties).length === 0) {
     // Tool takes no arguments — still show the simple call
     const cmd = `mcpc ${session} tools-call ${tool.name}${taskFlag}`;
-    return `${chalk.bold('Call example:')}\n${bullet} ${grayBacktick()}${theme.cyan(cmd)}${grayBacktick()}`;
+    return `${chalk.bold('Call example:')}\n${bullet} ${grayBacktick()}${commandExample(cmd)}${grayBacktick()}`;
   }
 
   const requiredNames = (schema?.required as string[]) || [];
@@ -791,7 +866,7 @@ export function formatToolCallExample(tool: Tool, sessionName?: string): string 
   });
 
   const cmd = `mcpc ${session} tools-call ${tool.name} ${argParts.join(' ')}${taskFlag}`;
-  return `${chalk.bold('Call example:')}\n${bullet} ${grayBacktick()}${theme.cyan(cmd)}${grayBacktick()}`;
+  return `${chalk.bold('Call example:')}\n${bullet} ${grayBacktick()}${commandExample(cmd)}${grayBacktick()}`;
 }
 
 /**
@@ -975,7 +1050,7 @@ export function formatResourceContents(
       lines.push(chalk.gray('(binary content not shown)'));
       lines.push(
         chalk.dim(
-          `↳ save to a file: mcpc ${target} resources-read ${quoteShellArg(item.uri || requestedUri)} -o <file>`
+          `↳ save to a file: ${commandHint(`mcpc ${target} resources-read ${quoteShellArg(item.uri || requestedUri)} -o <file>`)}`
         )
       );
     } else {
@@ -1027,7 +1102,7 @@ export function formatSkills(
     if (sessionName) {
       lines.push(
         chalk.dim(
-          `↳ a listing may be empty or partial — a skill you know the URI of is still readable: mcpc ${sessionName} skills-get skill://<name>/SKILL.md`
+          `↳ a listing may be empty or partial — a skill you know the URI of is still readable: ${commandHint(`mcpc ${sessionName} skills-get skill://<name>/SKILL.md`)}`
         )
       );
     }
@@ -1049,7 +1124,9 @@ export function formatSkills(
   if (sessionName) {
     lines.push('');
     lines.push(
-      `For a skill's instructions, run \`mcpc ${sessionName} skills-get <name>\` (use --raw for the markdown only).`
+      styleInlineCode(
+        `For a skill's instructions, run \`mcpc ${sessionName} skills-get <name>\` (use --raw for the markdown only).`
+      )
     );
   }
 
@@ -1099,7 +1176,7 @@ export function formatSkillDetail(
     if (options?.sessionName) {
       lines.push(
         chalk.dim(
-          `↳ save to a file: mcpc ${options.sessionName} resources-read ${quoteShellArg(uri)} -o <file>`
+          `↳ save to a file: ${commandHint(`mcpc ${options.sessionName} resources-read ${quoteShellArg(uri)} -o <file>`)}`
         )
       );
     }
@@ -1132,7 +1209,7 @@ export function formatSkillDetail(
         lines.push('');
         lines.push(
           chalk.dim(
-            `To read one, run: mcpc ${options.sessionName} skills-get ${quoteShellArg(skill.frontmatter.name)} ${quoteShellArg(name)}`
+            `To read one, run: ${commandHint(`mcpc ${options.sessionName} skills-get ${quoteShellArg(skill.frontmatter.name)} ${quoteShellArg(name)}`)}`
           )
         );
       }
@@ -1186,8 +1263,8 @@ export function formatDirectoryChildren(
     lines.push('');
     lines.push(
       directory
-        ? `To descend, run: mcpc ${sessionName} resources-directory-read ${quoteShellArg(directory.uri)}`
-        : `To read a file, run: mcpc ${sessionName} resources-read <uri>`
+        ? `To descend, run: ${commandHint(`mcpc ${sessionName} resources-directory-read ${quoteShellArg(directory.uri)}`)}`
+        : `To read a file, run: ${commandHint(`mcpc ${sessionName} resources-read <uri>`)}`
     );
   }
 
@@ -1346,7 +1423,7 @@ export function formatCompletionResult(
         .join(' ');
       lines.push(
         chalk.dim(
-          `To use it, run: mcpc ${target} prompts-get ${quoteShellArg(request.ref.name)} ${pairs}`
+          `To use it, run: ${commandHint(`mcpc ${target} prompts-get ${quoteShellArg(request.ref.name)} ${pairs}`)}`
         )
       );
     } else {
@@ -1357,10 +1434,16 @@ export function formatCompletionResult(
       // Only a fully expanded template is readable; otherwise point at the template list
       if (expanded !== request.ref.uri && !/\{[^}]*\}/.test(expanded)) {
         lines.push(
-          chalk.dim(`To read it, run: mcpc ${target} resources-read ${quoteShellArg(expanded)}`)
+          chalk.dim(
+            `To read it, run: ${commandHint(`mcpc ${target} resources-read ${quoteShellArg(expanded)}`)}`
+          )
         );
       } else {
-        lines.push(chalk.dim(`To see the template, run: mcpc ${target} resources-templates-list`));
+        lines.push(
+          chalk.dim(
+            `To see the template, run: ${commandHint(`mcpc ${target} resources-templates-list`)}`
+          )
+        );
       }
     }
   }
@@ -1512,7 +1595,7 @@ export function formatTask(task: AnyTask, options: { sessionName?: string } = {}
       lines.push(
         `${chalk.bold('Result:')} ready ` +
           chalk.dim(
-            `(run: mcpc ${session} tasks-result ${task.taskId}, or add --json to see it here)`
+            `(run: ${commandHint(`mcpc ${session} tasks-result ${task.taskId}`)}, or add --json to see it here)`
           )
       );
     }
@@ -1822,13 +1905,13 @@ export function formatTaskCommandsHint(
   const id = taskId ?? '<taskId>';
   const lines = [
     '\nAvailable commands:',
-    `  mcpc ${target} tasks-get ${id}`,
-    `  mcpc ${target} tasks-result ${id}`,
+    `  ${commandHint(`mcpc ${target} tasks-get ${id}`)}`,
+    `  ${commandHint(`mcpc ${target} tasks-result ${id}`)}`,
   ];
   // Only suggest cancel while the task is still active (or when status is unknown,
   // e.g. the generic list hint where individual task statuses vary).
   if (status === undefined || status === 'working' || status === 'input_required') {
-    lines.push(`  mcpc ${target} tasks-cancel ${id}`);
+    lines.push(`  ${commandHint(`mcpc ${target} tasks-cancel ${id}`)}`);
   }
   return lines.join('\n');
 }
@@ -2140,7 +2223,9 @@ export function formatDiscoverResult(
 
   // Plain footer rather than an indented "↳" hint: this block ends with the server's
   // instructions, which can run for pages, so an indented arrow reads as part of them.
-  lines.push(chalk.dim(`For session info and available commands, run: mcpc ${target}`));
+  lines.push(
+    chalk.dim(`For session info and available commands, run: ${commandHint(`mcpc ${target}`)}`)
+  );
 
   return lines.join('\n');
 }
@@ -2226,42 +2311,50 @@ export function formatServerDetails(
   const commands: string[] = [];
 
   if (capabilities?.tools) {
-    commands.push(`${bullet} ${bt}mcpc ${target} tools-list [--full]${bt}`);
-    commands.push(`${bullet} ${bt}mcpc ${target} tools-get <name>${bt}`);
+    commands.push(`${bullet} ${bt}${commandExample(`mcpc ${target} tools-list [--full]`)}${bt}`);
+    commands.push(`${bullet} ${bt}${commandExample(`mcpc ${target} tools-get <name>`)}${bt}`);
     commands.push(
-      `${bullet} ${bt}mcpc ${target} tools-call <name> [arg1:=val1 ... | <args-json> | <stdin]${bt}`
+      `${bullet} ${bt}${commandExample(`mcpc ${target} tools-call <name> [arg1:=val1 ... | <args-json> | <stdin]`)}${bt}`
     );
   }
 
   if (capabilities?.resources) {
-    commands.push(`${bullet} ${bt}mcpc ${target} resources-list${bt}`);
-    commands.push(`${bullet} ${bt}mcpc ${target} resources-read <uri> [-o <file>]${bt}`);
+    commands.push(`${bullet} ${bt}${commandExample(`mcpc ${target} resources-list`)}${bt}`);
+    commands.push(
+      `${bullet} ${bt}${commandExample(`mcpc ${target} resources-read <uri> [-o <file>]`)}${bt}`
+    );
     if (capabilities.resources.subscribe) {
-      commands.push(`${bullet} ${bt}mcpc ${target} resources-subscribe <uri> <file>${bt}`);
+      commands.push(
+        `${bullet} ${bt}${commandExample(`mcpc ${target} resources-subscribe <uri> <file>`)}${bt}`
+      );
     }
   }
 
   // Skills commands need the server's declaration and a connection that can carry the
   // extension; directory reads need the optional setting on top of that.
   if (skills && isModern) {
-    commands.push(`${bullet} ${bt}mcpc ${target} skills-list${bt}`);
-    commands.push(`${bullet} ${bt}mcpc ${target} skills-get <name> [file] [--raw]${bt}`);
+    commands.push(`${bullet} ${bt}${commandExample(`mcpc ${target} skills-list`)}${bt}`);
+    commands.push(
+      `${bullet} ${bt}${commandExample(`mcpc ${target} skills-get <name> [file] [--raw]`)}${bt}`
+    );
     if (skills.directoryRead === true) {
-      commands.push(`${bullet} ${bt}mcpc ${target} resources-directory-read <uri>${bt}`);
+      commands.push(
+        `${bullet} ${bt}${commandExample(`mcpc ${target} resources-directory-read <uri>`)}${bt}`
+      );
     }
   }
 
   if (capabilities?.prompts) {
-    commands.push(`${bullet} ${bt}mcpc ${target} prompts-list${bt}`);
+    commands.push(`${bullet} ${bt}${commandExample(`mcpc ${target} prompts-list`)}${bt}`);
     commands.push(
-      `${bullet} ${bt}mcpc ${target} prompts-get <name> [arg1:=val1 ... | <args-json> | <stdin]${bt}`
+      `${bullet} ${bt}${commandExample(`mcpc ${target} prompts-get <name> [arg1:=val1 ... | <args-json> | <stdin]`)}${bt}`
     );
   }
 
   // Completions work the same in every era; only the server's declaration gates them
   if (capabilities?.completions) {
     commands.push(
-      `${bullet} ${bt}mcpc ${target} completion-complete prompt|resource <ref> <arg1:=val1 ... | <args-json> | <stdin>${bt}`
+      `${bullet} ${bt}${commandExample(`mcpc ${target} completion-complete prompt|resource <ref> <arg1:=val1 ... | <args-json> | <stdin>`)}${bt}`
     );
   }
 
@@ -2269,18 +2362,20 @@ export function formatServerDetails(
   // the 2026-07-28 tasks extension. Logging commands are 2025-era only.
   const tasksExtension = declaredExtensionSettings(capabilities, TASKS_EXTENSION_KEY);
   if ((capabilities?.tasks && !isModern) || (tasksExtension && isModern)) {
-    commands.push(`${bullet} ${bt}mcpc ${target} tasks-list${bt}`);
-    commands.push(`${bullet} ${bt}mcpc ${target} tasks-get <taskId>${bt}`);
-    commands.push(`${bullet} ${bt}mcpc ${target} tasks-result <taskId>${bt}`);
-    commands.push(`${bullet} ${bt}mcpc ${target} tasks-cancel <taskId>${bt}`);
+    commands.push(`${bullet} ${bt}${commandExample(`mcpc ${target} tasks-list`)}${bt}`);
+    commands.push(`${bullet} ${bt}${commandExample(`mcpc ${target} tasks-get <taskId>`)}${bt}`);
+    commands.push(`${bullet} ${bt}${commandExample(`mcpc ${target} tasks-result <taskId>`)}${bt}`);
+    commands.push(`${bullet} ${bt}${commandExample(`mcpc ${target} tasks-cancel <taskId>`)}${bt}`);
   }
 
   if (capabilities?.logging && !isModern) {
-    commands.push(`${bullet} ${bt}mcpc ${target} logging-set-level <lvl>${bt}`);
+    commands.push(
+      `${bullet} ${bt}${commandExample(`mcpc ${target} logging-set-level <lvl>`)}${bt}`
+    );
   }
 
   if (target.startsWith('@')) {
-    commands.push(`${bullet} ${bt}mcpc ${target} logs${bt}`);
+    commands.push(`${bullet} ${bt}${commandExample(`mcpc ${target} logs`)}${bt}`);
   }
 
   if (commands.length > 0) {
@@ -2291,7 +2386,7 @@ export function formatServerDetails(
 
   // Debugging hint: how to view logs (only shown for sessions, i.e. @name targets)
   if (target.startsWith('@')) {
-    lines.push(chalk.dim(`For session logs, run: mcpc ${target} logs`));
+    lines.push(chalk.dim(`For session logs, run: ${commandHint(`mcpc ${target} logs`)}`));
     lines.push(chalk.dim(`Log file: ${getBridgeLogPath(target)}`));
     lines.push('');
   }
