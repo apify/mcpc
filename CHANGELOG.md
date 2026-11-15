@@ -14,6 +14,7 @@ Repeated `connect -H` headers are all sent again.
 ### Fixed
 
 - `connect` with several `-H`/`--header` options now stores and sends every header, not just the last one. (#490)
+- After a crashed bridge resumes its MCP session, `tools-list`, `prompts-list`, `resources-list` and `resources-templates-list` list the server's items again instead of returning an empty list, `tools-get` finds the tool, and tool results are checked against their output schema again. The SDK client learns no server capabilities when it skips the handshake on resumption, so mcpc now gives it the ones saved at connect. (#484)
 
 ## [0.8.0] - 2026-11-04
 

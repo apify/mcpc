@@ -845,6 +845,9 @@ class BridgeProcess {
         }),
         ...(sessionData._meta && { _meta: sessionData._meta }),
       };
+      // The SDK client gates list requests (and more, see restoreServerCapabilities) on
+      // these capabilities; without them every list comes back empty (#484).
+      this.client.restoreServerCapabilities(sessionData.capabilities);
     }
 
     // Update session with protocol version, MCP session ID, and lastSeenAt
