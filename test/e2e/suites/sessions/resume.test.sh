@@ -114,6 +114,28 @@ assert_json "$STDOUT" '.sessions[0].instructions | type == "string"' \
   "grep should still match the server instructions after resume"
 test_pass
 
+# Test: list commands still reach the server after resume. The SDK client gates
+# them on capabilities it only learns from the handshake, so without the persisted
+# ones they all return an empty list without sending a request (#484).
+test_case "list commands return the server's items after resume"
+run_mcpc "$SESSION" tools-list --json
+assert_success
+assert_json "$STDOUT" 'map(.name) | index("echo") != null' "tools-list should include echo"
+run_mcpc "$SESSION" prompts-list --json
+assert_success
+assert_json "$STDOUT" 'map(.name) | index("greeting") != null' "prompts-list should include greeting"
+run_mcpc "$SESSION" resources-list --json
+assert_success
+assert_json "$STDOUT" 'map(.uri) | index("test://dynamic/counter") != null' \
+  "resources-list should include the counter resource"
+run_mcpc "$SESSION" resources-templates-list --json
+assert_success
+assert_json "$STDOUT" 'map(.uriTemplate) | index("test://file/{path}") != null' \
+  "resources-templates-list should include the file template"
+run_mcpc "$SESSION" tools-get echo
+assert_success
+test_pass
+
 # Test: the resources.subscribe capability check accepts a resumed session
 test_case "resources-subscribe works after resume"
 subscribe_uri="test://dynamic/counter"

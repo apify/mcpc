@@ -29,6 +29,7 @@ import type {
   CompleteRequestParams,
   CompleteResult,
   LoggingLevel,
+  ServerCapabilities,
   Tool,
 } from '@modelcontextprotocol/client';
 import {
@@ -311,6 +312,16 @@ class TasksAwareClient extends SDKClient {
 }
 
 /**
+ * The SDK client state its handshake fills in, which a resumed connection never gets
+ * (see McpClient.restoreServerCapabilities).
+ */
+interface SdkClientHandshakeState {
+  _serverCapabilities: ServerCapabilities | undefined;
+  _listChangedConfig: ClientOptions['listChanged'];
+  _setupListChangedHandlers(config: NonNullable<ClientOptions['listChanged']>): void;
+}
+
+/**
  * MCP Client wrapper class
  * Provides a convenient interface to the MCP SDK Client with error handling and logging
  * Implements IMcpClient interface for compatibility with SessionClient
@@ -571,6 +582,33 @@ export class McpClient implements IMcpClient {
     if (transport) details.transport = transport;
 
     return Promise.resolve(details);
+  }
+
+  /**
+   * Give the SDK client the server capabilities of a resumed server-side session.
+   *
+   * Resuming by MCP session ID skips the handshake, so the SDK client never learns the
+   * server's capabilities. Its list methods then return an empty list without sending a
+   * request, it registers no list-changed handlers, and tool output schemas go
+   * unchecked because no `tools/list` result is ever cached (#484). The bridge passes
+   * the capabilities persisted by the connect that ran the handshake. Over Streamable
+   * HTTP the list-changed handlers still receive nothing, because resumption also skips
+   * the `notifications/initialized` that makes the SDK transport open its standalone
+   * SSE stream.
+   *
+   * The SDK has no public way to resume with known capabilities, so this sets the field
+   * the handshake would have set and registers the handlers it would have registered.
+   * Both are internals of the pinned SDK version; `test/unit/core/resume-capabilities.test.ts`
+   * runs against the real SDK client and fails if they change.
+   */
+  restoreServerCapabilities(capabilities: ServerCapabilities | undefined): void {
+    if (!capabilities || this.client.getServerCapabilities() !== undefined) return;
+    const sdkClient = this.client as unknown as SdkClientHandshakeState;
+    sdkClient._serverCapabilities = capabilities;
+    if (sdkClient._listChangedConfig) {
+      sdkClient._setupListChangedHandlers(sdkClient._listChangedConfig);
+    }
+    this.logger.debug('Restored server capabilities of the resumed session:', capabilities);
   }
 
   /**
