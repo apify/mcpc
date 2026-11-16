@@ -51,6 +51,12 @@ importers:
       '@modelcontextprotocol/server-filesystem':
         specifier: 2026.8.31
         version: 2026.8.31(zod@4.6.7)
+      '@noble/curves':
+        specifier: 1.9.1
+        version: 1.9.1
+      '@noble/hashes':
+        specifier: 1.8.0
+        version: 1.8.0
       '@types/node':
         specifier: ^26.6.5
         version: 26.6.5

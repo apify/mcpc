@@ -278,6 +278,8 @@ your user's say-so.
 (`--no-profile`, `--stdio`, `--proxy`, and `-H` are options of `connect`, not global flags.)
 
 `mcpc` also has experimental `--x402` auto-payment for paid MCP tools — see `mcpc help x402`.
+Besides USDC on Base, it can pay `exact` on `nano:mainnet` when `MCPC_X402_NANO_KEY`,
+`MCPC_X402_NANO_RPC` and the per-payment cap `MCPC_X402_NANO_MAX_RAW` (raw) are set.
 A paid tool result carries the server's settlement receipt at `_meta["x402/payment-response"]`;
 one receipt is held at a time, so run paid calls sequentially if you need every one of them.
 

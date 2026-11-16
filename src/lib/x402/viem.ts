@@ -1,5 +1,6 @@
 /**
- * viem boundary module — the ONLY file in src/ allowed to import from viem.
+ * viem boundary module — the ONLY file in src/ allowed to import from viem
+ * (or from @noble/hashes and @noble/curves, the crypto libraries viem itself uses).
  *
  * At build time, `scripts/bundle-viem.mjs` overwrites the tsc-compiled
  * dist/lib/x402/viem.js with a self-contained, tree-shaken esbuild bundle, so
@@ -26,6 +27,11 @@ export {
 } from 'viem';
 export { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 export { base, baseSepolia } from 'viem/chains';
+// Nano (nano.ts): blake2b and ed25519 with blake2b-512 in place of sha512. Same versions viem
+// depends on, so the bundle carries a single copy.
+export { blake2b } from '@noble/hashes/blake2b';
+export { ed25519 } from '@noble/curves/ed25519';
+export { twistedEdwards } from '@noble/curves/abstract/edwards';
 
 /** Self-contained Hex type (identical to viem's) so published .d.ts files never reference viem. */
 export type Hex = `0x${string}`;
