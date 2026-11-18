@@ -3,7 +3,8 @@
 This directory contains the test suite for mcpc.
 There are two kinds of tests: unit and end-to-end (e2e).
 Unit tests are self-contained and don't need any configurations.
-However, **e2e tests need a local setup** - see [E2E Setup](#e2e-setup) for details.
+E2E tests use local fixtures. Only the optional remote OAuth smoke test needs
+account setup - see [E2E Setup](#e2e-setup) for details.
 
 ## Quick start
 
@@ -82,7 +83,42 @@ session management, bridge processes, and various transports.
 
 ### E2E setup
 
-In order to test OAuth with real-world, remote MCP server, you need to run the following commands 
+`auth/oauth-local.test.sh` requires no accounts or external services. It runs the
+real CLI and bridges against two strict local client-credentials identities, with
+profile isolation, bearer rejection, bounded token reacquisition, restart/logout,
+interruption during a held token response, and cleanup after a failure between
+credential storage and metadata persistence.
+It uses unique profiles and sessions, registers their exact credential identities
+before login, and verifies deletion through mcpc's credential abstraction. An
+isolated `MCPC_HOME_DIR` alone does not isolate the OS keychain. The suite reports
+whether it exercised the OS keychain or the file fallback; both are useful lanes.
+Cleanup refuses a changed backend and retains its private registry if deletion
+cannot be verified. The suite bypasses proxies for loopback auth requests.
+This covers the machine-to-machine grant, not browser authorization-code/PKCE or
+refresh-token flows.
+
+`auth/oauth-code.test.sh` covers the authorization-code flow with a local
+authorization server and a private `open`/`xdg-open` launcher on Linux and macOS.
+It follows actual HTTP authorization and callback redirects through the real
+CLI and SDK, including dynamic registration, S256 PKCE, callback Host/issuer
+checks, two profiles, rotating refresh tokens, persisted refresh after restart,
+refused refresh, logout, and cleanup when registration or token storage succeeds
+but login fails. State is sent and echoed; mcpc's existing CSRF policy relies on
+PKCE rather than comparing callback state. Windows reports an explicit skip
+until it has an equivalent launcher driver. No production browser or auth checks
+are bypassed, and the optional remote test remains separate.
+
+```bash
+./test/e2e/run.sh --no-build auth/oauth-local.test.sh
+./test/e2e/run.sh --no-build --server-protocol modern auth/oauth-local.test.sh
+./test/e2e/run.sh --no-build --runtime bun auth/oauth-local.test.sh
+./test/e2e/run.sh --no-build auth/oauth-code.test.sh
+./test/e2e/run.sh --no-build --server-protocol modern auth/oauth-code.test.sh
+./test/e2e/run.sh --no-build --runtime bun auth/oauth-code.test.sh
+```
+
+The existing `auth/oauth-remote.test.sh` remains an optional integration smoke
+test. To test OAuth with a real-world, remote MCP server, run the following commands
 locally:
 
 - `mcpc mcp.apify.com login --profile e2e-test1`

@@ -49,6 +49,7 @@ import {
 } from '@modelcontextprotocol/server';
 import { toNodeHandler } from '@modelcontextprotocol/node';
 import http from 'http';
+import { createLocalOAuthFixture } from './oauth-local.js';
 import { randomUUID } from 'crypto';
 import {
   TOOLS,
@@ -86,6 +87,7 @@ const WITH_OAUTH = process.env.WITH_OAUTH === 'true';
 const OAUTH_CLIENT_ID = process.env.OAUTH_CLIENT_ID || 'test-client';
 const OAUTH_CLIENT_SECRET = process.env.OAUTH_CLIENT_SECRET || 's3cr3t';
 const OAUTH_NO_METADATA = process.env.OAUTH_NO_METADATA === 'true';
+const localOAuth = createLocalOAuthFixture(process.env.OAUTH_IDENTITIES_FILE, PORT);
 const LEGACY_MODE = process.env.LEGACY_MODE === 'stateless' ? 'stateless' : 'reject';
 
 // Control state (manipulated via /control/* endpoints). Module-level so it is
@@ -661,6 +663,8 @@ async function main() {
   const httpServer = http.createServer(async (req, res) => {
     const url = new URL(req.url || '/', `http://localhost:${PORT}`);
 
+    if (localOAuth && (await localOAuth(req, res, url))) return;
+
     // Health check
     if (url.pathname === '/health' && req.method === 'GET') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -814,7 +818,7 @@ async function main() {
     res.end('Not found');
   });
 
-  httpServer.listen(PORT, () => {
+  httpServer.listen(PORT, localOAuth ? '127.0.0.1' : undefined, () => {
     console.log(`E2E test server (2026-07-28) running on http://localhost:${PORT}`);
     console.log(
       `  Pagination: ${PAGINATION_SIZE > 0 ? `${PAGINATION_SIZE} items/page` : 'disabled'}`
