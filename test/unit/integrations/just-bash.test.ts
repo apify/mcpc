@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import { mkdtemp, rm, writeFile } from 'fs/promises';
+import { mkdtemp, realpath, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { PassThrough, Writable } from 'stream';
@@ -85,7 +85,7 @@ function command(overrides: Partial<McpcJustBashOptions> = {}) {
 }
 
 beforeEach(async () => {
-  homeDir = await mkdtemp(join(tmpdir(), 'mcpc-just-bash-unit-'));
+  homeDir = await realpath(await mkdtemp(join(tmpdir(), 'mcpc-just-bash-unit-')));
   await writeFile(
     join(homeDir, 'sessions.json'),
     JSON.stringify({ sessions: { '@test': { name: '@test' } } })
