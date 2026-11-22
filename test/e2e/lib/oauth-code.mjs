@@ -170,7 +170,7 @@ export async function runAuthorizationCode(manifest, serverUrl, harness) {
     let after = await stats();
     assert.equal(after.invalidPkce, before.invalidPkce + 1);
     assert.equal(after.identities.alpha.codeExchanges, before.identities.alpha.codeExchanges);
-    assert.ok(await client(profiles['bad-pkce']), 'Failed exchange must follow actual DCR');
+    assert.ok(!(await client(profiles['bad-pkce'])), 'Failed exchange stored its registration');
     assert.ok(!(await tokens(profiles['bad-pkce'])), 'Failed PKCE exchange stored tokens');
 
     before = await stats();
@@ -178,23 +178,20 @@ export async function runAuthorizationCode(manifest, serverUrl, harness) {
     after = await stats();
     assert.equal(after.authorizations, before.authorizations + 1);
     assert.equal(after.tokenRequests, before.tokenRequests, 'Wrong issuer reached token exchange');
+    assert.ok(!(await client(profiles['bad-issuer'])), 'Wrong issuer stored its registration');
     assert.ok(!(await tokens(profiles['bad-issuer'])));
 
     before = await stats();
     assert.notEqual((await login(profiles.denied, 'deny')).code, 0);
     assert.equal((await stats()).tokenRequests, before.tokenRequests);
-    assert.ok(
-      await client(profiles.denied),
-      'Denied authorization must leave its registered client'
-    );
-    assert.ok(!(await tokens(profiles.denied)));
-    // Logout has no metadata to find. Independently detect and remove only the
-    // registered keys, proving a failed login cannot escape test teardown.
-    await assert.rejects(() => assertAbsent(profiles.denied), /credential remains/);
-    await removeProfiles([profiles['bad-pkce'], profiles['bad-issuer'], profiles.denied]);
+    // A login writes its client registration only once tokens arrive, so a
+    // failed or denied login leaves nothing behind for teardown to find.
+    for (const profile of [profiles['bad-pkce'], profiles['bad-issuer'], profiles.denied]) {
+      await assertAbsent(profile);
+    }
     await sentinelSurvives();
     console.log(
-      '# Passed: real PKCE and issuer rejection, DCR cancellation and exact orphan cleanup'
+      '# Passed: real PKCE and issuer rejection, DCR cancellation and no credential leftovers'
     );
 
     for (const identity of ['alpha', 'beta']) {

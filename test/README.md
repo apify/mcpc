@@ -102,9 +102,9 @@ authorization server and a private `open`/`xdg-open` launcher on Linux and macOS
 It follows actual HTTP authorization and callback redirects through the real
 CLI and SDK, including dynamic registration, S256 PKCE, callback Host/issuer
 checks, two profiles, rotating refresh tokens, persisted refresh after restart,
-refused refresh, logout, and cleanup when registration or token storage succeeds
-but login fails. State is sent and echoed; mcpc's existing CSRF policy relies on
-PKCE rather than comparing callback state. Windows reports an explicit skip
+refused refresh, logout, no stored registration after a rejected or denied
+login, and cleanup when token storage succeeds but login fails. State is sent,
+echoed and checked by mcpc's callback server. Windows reports an explicit skip
 until it has an equivalent launcher driver. No production browser or auth checks
 are bypassed, and the optional remote test remains separate.
 
