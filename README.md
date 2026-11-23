@@ -17,7 +17,7 @@ universal programming interface there is: the UNIX shell.
 
 **Key features:**
 
-- 🔧 [**Full MCP support**](#mcp-support) - Tools, resources, prompts, tasks, skills, completions, notifications, over both stdio and Streamable HTTP.
+- 🔧 [**Full MCP support**](#mcp-support) - Tools, Resources, Prompts, Tasks, Skills, Completions, Notifications, over both stdio and Streamable HTTP.
 - 🔄 **Persistent sessions** - Keep connections to multiple servers alive in parallel, whether the server protocol is stateful or stateless.
 - 🗺️ **Progressive tool discovery** - Find relevant MCP tools on the fly to save tokens and increase accuracy.
 - 🔌 **Code mode** - JSON output composes with `jq`, `xargs`, and shell pipelines for MCP workflows as shell scripts.
@@ -26,12 +26,12 @@ universal programming interface there is: the UNIX shell.
 - 🪶 **Lightweight** - Minimal dependencies, works on Mac/Win/Linux, doesn't use LLMs on its own.
 - 💸 **Agentic payments** - Experimental support for the [x402](https://www.x402.org/) protocol on [Base](https://www.base.org/).
 
-`mcpc` is the most [MCP specification](https://modelcontextprotocol.io/specification/latest)-compliant CLI client available:
-the only one that covers tools, resources, prompts, async tasks, and skills, plus the OAuth client-credentials and
-enterprise-managed authorization extensions, on the latest protocol version. Here's how it compares to other MCP CLI
-clients (see [Related work](#related-work) for the full table, legend, and notes):
+`mcpc` is the most [MCP specification](https://modelcontextprotocol.io/specification/latest)-compliant CLI client available.
+Here's how it compares to other MCP CLI clients (see [Related work](#related-work) for the full table, legend, and notes):
 
 [![Comparison of MCP CLI clients](https://raw.githubusercontent.com/apify/mcpc/main/docs/images/related-work.svg)](#related-work)
+
+**Demo:**
 
 ![mcpc screenshot](https://raw.githubusercontent.com/apify/mcpc/main/docs/images/mcpc-demo.gif?v=3)
 
