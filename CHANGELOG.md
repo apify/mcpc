@@ -9,12 +9,16 @@ Each version opens with a one-line summary, which also opens its GitHub release.
 
 ## [Unreleased]
 
-Step-up authorization for OAuth scope challenges: a 403 insufficient_scope now names the missing scope and the login that adds it.
+Step-up authorization for OAuth scope challenges, and repeated `connect -H` headers are all sent again.
 
 ### Added
 
 - Step-up authorization ([MCP spec](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization#step-up-authorization-flow)): a command the server answers with `403 insufficient_scope` now fails with exit code 4, names the missing scope and prints the exact `mcpc login <server> --scope "<current scopes plus the missing one>"` to run, instead of a generic "Insufficient scope" server error. The session stays usable for everything else.
 - `login` without `--scope` now asks the server which scopes it wants (the `scope` of its 401 `WWW-Authenticate` challenge, which the spec puts ahead of `scopes_supported`) and adds the scopes the profile already holds, so a re-login never drops a permission. `--scope` still requests exactly what you pass.
+
+### Fixed
+
+- `connect` with several `-H`/`--header` options now stores and sends every header, not just the last one. (#490)
 
 ## [0.8.0] - 2026-11-04
 

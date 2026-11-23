@@ -141,6 +141,11 @@ if echo "$sessions_content" | grep -q "$ANOTHER_SECRET"; then
   test_fail "Second secret found in sessions.json"
 fi
 
+# Every repeated --header must be stored, not just the last one (#490)
+run_mcpc --json
+stored_keys=$(echo "$STDOUT" | jq -r ".sessions[] | select(.name == \"$SESSION2\") | .server.headers | keys | sort | join(\",\")")
+assert_eq "$stored_keys" "X-Api-Key,X-Public,X-Secret-Token,X-Test" "all repeated headers should be stored"
+
 # But headers should still work for requests
 run_mcpc "$SESSION2" ping
 assert_success
