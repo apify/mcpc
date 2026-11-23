@@ -9,7 +9,11 @@ Each version opens with a one-line summary, which also opens its GitHub release.
 
 ## [Unreleased]
 
-Repeated `connect -H` headers are all sent again.
+MCP result objects for JSON lists, and repeated `connect -H` headers are all sent again.
+
+### Changed
+
+- **Breaking JSON change:** `tools-list`, `prompts-list`, and `resources-list` now return MCP result objects (`{ tools: [...] }`, `{ prompts: [...] }`, `{ resources: [...] }`) instead of bare arrays; update `jq '.[]'` filters to `.tools[]`, `.prompts[]`, or `.resources[]` (`tasks-list` keeps `{ tasks: [...] }`). These four lists combine all pages without `nextCursor`, retaining other top-level fields and `_meta` keys in page order (later values win); human-readable output is unchanged. (#183)
 
 ### Fixed
 

@@ -49,20 +49,22 @@ assert_success
 assert_contains "$STDOUT" "static test resource"
 test_pass
 
-test_case "resources-list --json returns valid array"
+test_case "resources-list --json returns ListResourcesResult"
 run_mcpc --json "$SESSION" resources-list
 assert_success
 assert_json_valid "$STDOUT"
-assert_json "$STDOUT" '. | type == "array"'
-assert_json "$STDOUT" '. | length == 5'
+assert_json "$STDOUT" '. | type == "object"'
+assert_json "$STDOUT" '.resources | type == "array"'
+assert_json "$STDOUT" '.resources | length == 5'
+assert_json "$STDOUT" 'has("nextCursor") | not'
 test_pass
 
 test_case "resources-list --json contains expected fields"
 run_mcpc --json "$SESSION" resources-list
 assert_success
 # Check first resource has required fields
-assert_json "$STDOUT" '.[0].uri'
-assert_json "$STDOUT" '.[0].name'
+assert_json "$STDOUT" '.resources[0].uri'
+assert_json "$STDOUT" '.resources[0].name'
 test_pass
 
 # =============================================================================

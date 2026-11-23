@@ -11,7 +11,7 @@ import {
   formatDirectoryChildren,
 } from '../output.js';
 import { withMcpClient } from '../helpers.js';
-import { resolvePath, fetchAllPages } from '../../lib/utils.js';
+import { resolvePath, fetchAllPages, fetchAllPagesResult } from '../../lib/utils.js';
 import { selectResourceContent, writeResourceFile } from '../../lib/resource-content.js';
 import { ClientError } from '../../lib/errors.js';
 import type { CommandOptions } from '../../lib/types.js';
@@ -23,13 +23,10 @@ import type { CommandOptions } from '../../lib/types.js';
 export async function listResources(target: string, options: CommandOptions): Promise<void> {
   await withMcpClient(target, options, async (client, _context) => {
     // Fetch all resources across all pages
-    const allResources = await fetchAllPages(
-      (cursor) => client.listResources(cursor),
-      (page) => page.resources
-    );
+    const result = await fetchAllPagesResult((cursor) => client.listResources(cursor), 'resources');
 
     console.log(
-      formatOutput(allResources, options.outputMode, {
+      formatOutput(options.outputMode === 'json' ? result : result.resources, options.outputMode, {
         ...(options.maxChars && { maxChars: options.maxChars }),
       })
     );

@@ -508,6 +508,8 @@ export function isExtensionTask(task: AnyTask): task is ExtensionTask {
 export interface TasksPage {
   tasks: AnyTask[];
   nextCursor?: string | undefined;
+  _meta?: Record<string, unknown> | undefined;
+  [key: string]: unknown;
 }
 
 /**
