@@ -10,6 +10,7 @@ However, **e2e tests need a local setup** - see [E2E Setup](#e2e-setup) for deta
 ```bash
 npm test                    # Run all tests (unit + e2e)
 npm run test:unit           # Run unit tests only
+pnpm run test:just-bash     # Packed-package integration
 npm run test:e2e            # Run e2e tests only
 npm run test:coverage       # Run all tests with coverage and merge reports
 npm run test:coverage:unit  # Run unit tests with coverage
@@ -76,6 +77,18 @@ test/unit/
 ```
 
 ## E2E tests
+
+### Installed just-bash adapter
+
+Run `pnpm run build` followed by `pnpm run test:just-bash`. This separate Node.js
+integration test packs the package and installs temporary consumers with and
+without the optional just-bash peer, using the repository's dependency-age and
+build-script policies. It checks consumer TypeScript imports and runs real local
+MCP sessions through `Bash.exec`, including binary redirection, stdin, command
+grants, recovery, cancellation, saved credentials/proxy settings, and a locally
+verified zero-value x402 signature. It uses an ephemeral unfunded wallet, performs
+no settlement, and tears down only its own sessions and processes. An already
+populated package-manager cache permits `MCPC_JUST_BASH_OFFLINE=1`.
 
 End-to-end tests verify mcpc behavior from the command line, testing real MCP connections with
 session management, bridge processes, and various transports.

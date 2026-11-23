@@ -49,6 +49,10 @@ describe('published package contents', () => {
     const paths = packedPaths();
     expect(paths).toContain('skills/mcpc/SKILL.md');
     expect(paths).toContain('bin/mcpc');
+    expect(paths).toContain('dist/index.js');
+    expect(paths).toContain('dist/index.d.ts');
+    expect(paths).toContain('dist/integrations/just-bash.js');
+    expect(paths).toContain('dist/integrations/just-bash.d.ts');
     expect(paths).toContain('dist/cli/commands/help.js');
     // The bundled viem boundary must ship — x402 resolves viem from it at runtime.
     expect(paths).toContain('dist/lib/x402/viem.js');
@@ -67,5 +71,18 @@ describe('published package contents', () => {
       dependencies: Record<string, string>;
     };
     expect(pkg.dependencies['viem']).toBeUndefined();
+  });
+
+  it('keeps just-bash optional for ordinary CLI installations', () => {
+    const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as {
+      dependencies: Record<string, string>;
+      peerDependenciesMeta: Record<string, { optional: boolean }>;
+      main: string;
+      types: string;
+    };
+    expect(pkg.dependencies['just-bash']).toBeUndefined();
+    expect(pkg.peerDependenciesMeta['just-bash']?.optional).toBe(true);
+    expect(pkg.main).toBe('./dist/index.js');
+    expect(pkg.types).toBe('./dist/index.d.ts');
   });
 });

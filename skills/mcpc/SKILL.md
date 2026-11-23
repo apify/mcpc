@@ -39,6 +39,14 @@ mcpc @apify tools-call foo --help # that tool's details + schema
 
 ## First steps
 
+Inside a host's **just-bash integration**, `mcpc` exposes only explicitly granted
+sessions and commands. Bare `mcpc` shows adapter help, not the host session list;
+ask the host to provision access. Use `tools-get` for schemas and shell pipes or
+redirection for virtual files. `connect`, authentication, global search, host
+file/config flags, and nested `--help` are unavailable there. A granted session
+still includes its saved credentials, payment settings, and bridge recovery;
+the host owns persistent bridges and teardown after cancellation.
+
 ```bash
 mcpc                                   # list sessions + auth profiles (start here)
 mcpc connect mcp.apify.com @apify      # connect, create the @apify session

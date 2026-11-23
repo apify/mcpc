@@ -26,6 +26,10 @@ jobs:
       - name: Build
         run: pnpm run build
 
+      - name: Installed just-bash integration
+        timeout-minutes: 5
+        run: pnpm run test:just-bash
+
       - name: E2E tests
         # Run without gnome-keyring: @napi-rs/keyring fails fast when no D-Bus secret
         # service is available, and keychain.ts automatically falls back to encrypted
