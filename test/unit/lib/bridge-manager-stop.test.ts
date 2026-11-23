@@ -81,13 +81,28 @@ describe('stopBridge on Windows', () => {
   });
 
   it('force-kills a live bridge that did not take the IPC shutdown', async () => {
-    vi.mocked(isProcessAlive).mockReturnValue(true);
+    vi.mocked(isProcessAlive).mockReturnValueOnce(true).mockReturnValue(false);
     ipc.connect.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
 
     await stopBridge(SESSION_NAME, { graceful: true });
 
     expect(ipc.send).not.toHaveBeenCalled();
     expect(killSpy).toHaveBeenCalledWith(BRIDGE_PID, 'SIGKILL');
+  });
+
+  it('does not report successful shutdown while the process remains alive', async () => {
+    vi.useFakeTimers();
+    vi.mocked(isProcessAlive).mockReturnValue(true);
+    ipc.connect.mockRejectedValue(new Error('unreachable'));
+    try {
+      const stopped = expect(stopBridge(SESSION_NAME, { graceful: true })).rejects.toThrow(
+        'has not exited'
+      );
+      await vi.runAllTimersAsync();
+      await stopped;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('does nothing when the session has no bridge PID', async () => {

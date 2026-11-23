@@ -17,7 +17,6 @@ import {
 } from '../../lib/index.js';
 import { formatOutput, formatSuccess, formatWarning } from '../output.js';
 import { loadSessions, deleteSession, consolidateSessions } from '../../lib/sessions.js';
-import { stopBridge } from '../../lib/bridge-manager.js';
 import { createLogger } from '../../lib/logger.js';
 import { deleteAuthProfiles } from '../../lib/auth/profiles.js';
 
@@ -79,15 +78,8 @@ async function cleanSessions(): Promise<number> {
 
   for (const name of sessionNames) {
     try {
-      // Stop the bridge if running
-      try {
-        await stopBridge(name);
-      } catch {
-        // Bridge may already be stopped
-      }
-
-      // Delete session data
-      await deleteSession(name);
+      // Reserve before shutdown, preserving both ownership and cleanup receipts.
+      await deleteSession(name, sessionsStorage.sessions[name], { shutdownBridge: true });
 
       count++;
       logger.debug(`Cleaned session: ${name}`);

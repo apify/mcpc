@@ -26,9 +26,8 @@ import {
 import { withMcpClient, resolveAuthProfile } from '../helpers.js';
 import { listAuthProfiles } from '../../lib/auth/profiles.js';
 import {
-  sessionExists,
+  assertSessionNotDeleting,
   deleteSession,
-  updateSession,
   consolidateSessions,
   getSession,
 } from '../../lib/sessions.js';
@@ -41,6 +40,7 @@ import {
 } from '../../lib/bridge-manager.js';
 import chalk from 'chalk';
 import { createLogger } from '../../lib/logger.js';
+import { updateOwnedSession, updateSessionForIdentity } from '../../lib/proxy-listeners.js';
 import { getBridgeLogPath } from '../../lib/log-reader.js';
 
 const logger = createLogger('sessions');
@@ -249,16 +249,14 @@ export async function closeSession(
   // rendering — printing here too would show every failure twice.
 
   // Check if session exists
-  if (!(await sessionExists(name))) {
+  const session = await getSession(name);
+  if (!session) {
     throw new ClientError(`Session not found: ${name}`);
   }
 
-  // Stop the bridge process (graceful: send IPC shutdown on Windows so
-  // the bridge can send HTTP DELETE to the server before exiting)
-  await stopBridge(name, { graceful: true });
-
-  // Delete session record from storage
-  await deleteSession(name);
+  // Reserve the close before shutdown so another command cannot auto-restart
+  // this lifetime between stopping its bridge and removing its credentials.
+  await deleteSession(name, session, { shutdownBridge: true });
 
   // Success!
   if (options.outputMode === 'human') {
@@ -380,6 +378,14 @@ export async function restartSession(
   if (!session) {
     throw new ClientError(`Session not found: ${name}`);
   }
+  assertSessionNotDeleting(session);
+
+  // Other commands may consolidate the shared home during shutdown. Advertise
+  // explicit restart intent before the old PID exits, as automatic recovery does.
+  await updateSessionForIdentity(name, session, {
+    status: 'reconnecting',
+    lastConnectionAttemptAt: new Date().toISOString(),
+  });
 
   if (options.outputMode === 'human') {
     console.log(theme.yellow(`Restarting session ${name}...`));
@@ -391,7 +397,7 @@ export async function restartSession(
   // rather than orphaned. On Windows SIGTERM is an immediate kill, so graceful mode sends
   // an IPC shutdown first; on Unix SIGTERM already triggers graceful shutdown.
   try {
-    await stopBridge(name, { graceful: true });
+    await stopBridge(name, { graceful: true, expected: session });
   } catch {
     // Bridge may already be stopped
   }
@@ -418,7 +424,7 @@ export async function restartSession(
     });
     if (profileName) {
       logger.debug(`Discovered auth profile "${profileName}" for session ${name}`);
-      await updateSession(name, { profileName });
+      await updateSessionForIdentity(name, session, { profileName });
     }
   }
 
@@ -440,10 +446,11 @@ export async function restartSession(
     ...(session.insecure && { insecure: session.insecure }),
   };
 
-  const { pid } = await startBridge(bridgeOptions);
+  const owner = await startBridge(bridgeOptions);
+  const { pid } = owner;
 
   // Update session with new bridge PID and clear any expired/crashed status
-  await updateSession(name, { pid, status: 'active' });
+  await updateOwnedSession(name, owner, { status: 'active' });
   logger.debug(`Session ${name} restarted with bridge PID: ${pid}`);
 
   // Success message

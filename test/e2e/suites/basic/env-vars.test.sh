@@ -12,7 +12,7 @@ test_case "MCPC_HOME_DIR changes home directory"
 # Create a custom home directory in /tmp to keep socket paths short
 # (Unix sockets are limited to ~104 characters)
 CUSTOM_HOME="$_TMPDIR/mcpc-e2e-custom-$_TEST_SHORT_ID"
-mkdir -p "$CUSTOM_HOME"
+mkdir -p -m 700 "$CUSTOM_HOME"
 
 # Copy the auth profile to custom home (needed for HTTP server auth)
 cp "$MCPC_HOME_DIR/profiles.json" "$CUSTOM_HOME/profiles.json"

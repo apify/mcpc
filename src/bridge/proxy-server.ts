@@ -366,6 +366,8 @@ export class ProxyServer {
           logger.debug('HTTP server closed');
           resolve();
         });
+        // Stop also owns open HTTP requests, including clients that never finish a body.
+        this.httpServer!.closeAllConnections();
       });
       this.httpServer = null;
     }

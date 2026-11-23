@@ -13,6 +13,7 @@
  */
 
 import { spawn, type ChildProcess } from 'child_process';
+import { randomUUID } from 'crypto';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import type {
@@ -21,6 +22,8 @@ import type {
   ProxyConfig,
   X402WalletCredentials,
   X402SchemePreference,
+  BridgeOwner,
+  SessionData,
 } from './types.js';
 import {
   getSocketPath,
@@ -31,7 +34,15 @@ import {
   enrichErrorMessage,
   REDACTED_HEADER_VALUE,
 } from './utils.js';
-import { updateSession, getSession } from './sessions.js';
+import { assertSessionNotDeleting, getSession } from './sessions.js';
+import { claimBridgeOwner } from './bridge-ownership.js';
+import {
+  assertSessionIdentity,
+  updateOwnedSession,
+  updateSessionForIdentity,
+  type SessionIdentity,
+} from './proxy-listeners.js';
+import { verifyBridgeEndpoint, verifyProxyHome } from './bridge-trust.js';
 import { createLogger } from './logger.js';
 import {
   ClientError,
@@ -48,6 +59,7 @@ import {
   readKeychainSessionHeaders,
   readKeychainSessionEnv,
   readKeychainProxyBearerToken,
+  readKeychainProxyListenerToken,
 } from './auth/keychain.js';
 import { getAuthProfile } from './auth/profiles.js';
 import { getWallet } from './wallets.js';
@@ -61,13 +73,13 @@ const logger = createLogger('bridge-manager');
  */
 async function classifyAndThrowSessionError(
   sessionName: string,
-  session: { server: ServerConfig; mcpSessionId?: string | undefined },
+  session: SessionData,
   errorMessage: string,
   originalError?: Error
 ): Promise<void> {
   const hadActiveSession = !!session.mcpSessionId;
   if (isSessionExpiredError(errorMessage, { hadActiveSession })) {
-    await updateSession(sessionName, { status: 'expired' }).catch((e) =>
+    await updateSessionForIdentity(sessionName, session, { status: 'expired' }).catch((e) =>
       logger.warn(`Failed to mark session ${sessionName} as expired:`, e)
     );
     throw new ClientError(
@@ -77,7 +89,7 @@ async function classifyAndThrowSessionError(
     );
   }
   if (isAuthenticationError(errorMessage)) {
-    await updateSession(sessionName, { status: 'unauthorized' }).catch((e) =>
+    await updateSessionForIdentity(sessionName, session, { status: 'unauthorized' }).catch((e) =>
       logger.warn(`Failed to mark session ${sessionName} as unauthorized:`, e)
     );
     const target = session.server.url || session.server.command || sessionName;
@@ -126,9 +138,7 @@ export interface StartBridgeOptions {
   insecure?: boolean; // Skip TLS certificate verification
 }
 
-export interface StartBridgeResult {
-  pid: number;
-}
+export type StartBridgeResult = BridgeOwner;
 
 /**
  * Start a bridge process for a session
@@ -139,9 +149,8 @@ export interface StartBridgeResult {
  * 2. They are sent to the bridge via IPC after startup
  * 3. Never exposed in process listings (the bridge's argv carries neither)
  *
- * NOTE: This function does NOT manage session storage. The caller is responsible for:
- * - Creating the session record before calling startBridge()
- * - Updating the session with pid after startBridge() returns
+ * The caller creates the session first. This function claims the spawned bridge's
+ * owner before credentials are sent; callers must not write a stale PID afterward.
  *
  * @returns Bridge process PID
  */
@@ -153,7 +162,6 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
     profileName,
     headers,
     env,
-    proxyConfig,
     mcpSessionId,
     protocolVersion,
     x402,
@@ -161,6 +169,21 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
   } = options;
 
   logger.debug(`Launching bridge for session: ${sessionName}`);
+
+  const previous = await getSession(sessionName);
+  if (!previous) throw new ClientError(`Session not found: ${sessionName}`);
+  assertSessionNotDeleting(previous);
+  if (previous.pid && isProcessAlive(previous.pid)) {
+    throw new ClientError(
+      `Session ${sessionName} already has a live bridge. Use restart explicitly.`
+    );
+  }
+  if (process.platform !== 'win32') await verifyProxyHome();
+  const bridgeOwner = randomUUID();
+  // A caller may have read an older snapshot before stopping/loading credentials.
+  const proxyConfig = previous.proxy;
+
+  const proxyListenerTokens = await loadProxyListenerTokens(previous);
 
   // Read all keychain values BEFORE spawning the bridge.
   // The bridge starts a 5s timer for IPC credentials as soon as it boots, and on
@@ -174,8 +197,9 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
     ? ((await readKeychainProxyBearerToken(sessionName)) ?? undefined)
     : undefined;
 
+  const needsListenerCredentials = Object.keys(proxyListenerTokens).length > 0;
   const authCredentials =
-    profileName || headers || env || proxyBearerToken
+    profileName || headers || env || proxyBearerToken || needsListenerCredentials
       ? await loadAuthCredentials(
           serverConfig.url || serverConfig.command || '',
           profileName,
@@ -184,6 +208,8 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
           env
         )
       : null;
+  if (authCredentials && needsListenerCredentials)
+    authCredentials.proxyListenerTokens = proxyListenerTokens;
   const x402Credentials = x402 ? await loadX402WalletCredentials() : null;
 
   // Create a sanitized transport config without headers or stdio env: both go to the
@@ -196,7 +222,14 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
   // Prepare bridge arguments (with sanitized config - no headers, no env)
   const bridgeExecutable = getBridgeExecutable();
   const targetJson = JSON.stringify(sanitizedTarget);
-  const args = [sessionName, targetJson];
+  const args = [
+    sessionName,
+    targetJson,
+    '--bridge-owner',
+    bridgeOwner,
+    '--session-created-at',
+    previous.createdAt,
+  ];
 
   if (verbose) {
     args.push('--verbose');
@@ -211,7 +244,8 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
   } else if (
     (headers && Object.keys(headers).length > 0) ||
     (env && Object.keys(env).length > 0) ||
-    proxyBearerToken
+    proxyBearerToken ||
+    needsListenerCredentials
   ) {
     args.push('--profile', 'dummy');
   }
@@ -294,6 +328,14 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
 
   const pid = bridgeProcess.pid;
 
+  let owner: BridgeOwner;
+  try {
+    owner = await claimBridgeOwner(sessionName, previous, bridgeOwner, pid);
+  } catch (error) {
+    bridgeProcess.kill('SIGTERM');
+    throw error;
+  }
+
   // Each bridge gets a unique socket path based on its PID, so overlapping
   // bridges (e.g. background reconnect racing with explicit restart) never
   // conflict. The bridge process computes the same path via process.pid.
@@ -344,20 +386,44 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
     );
   }
 
-  // Send auth credentials to bridge via IPC (secure, not via command line)
-  // Credentials were loaded from the keychain before spawn() — see comment above.
-  if (authCredentials) {
-    await sendAuthCredentialsToBridge(socketPath, authCredentials);
-  }
+  try {
+    // A trusted directory, actual socket and still-current owner are all required.
+    // The UUID fences generations; it does not authenticate an arbitrary socket.
+    if (process.platform !== 'win32') await verifyBridgeEndpoint(socketPath);
+    await updateOwnedSession(sessionName, owner, {});
 
-  // Send x402 wallet credentials to bridge via IPC
-  if (x402Credentials) {
-    await sendX402WalletToBridge(socketPath, x402Credentials);
+    // Credentials were loaded in the foreground before spawn().
+    if (authCredentials) await sendAuthCredentialsToBridge(socketPath, authCredentials);
+    if (x402Credentials) await sendX402WalletToBridge(socketPath, x402Credentials);
+  } catch (error) {
+    // Only terminate the child this invocation spawned, never a newer owner.
+    bridgeProcess.kill('SIGTERM');
+    throw error;
   }
 
   logger.debug(`Bridge started successfully for session: ${sessionName}`);
 
-  return { pid };
+  return owner;
+}
+
+/** Read optional named credentials in the foreground; one failure cannot disable the upstream. */
+export async function loadProxyListenerTokens(
+  session: SessionData
+): Promise<Record<string, string>> {
+  const tokens: Record<string, string> = {};
+  if (process.platform === 'win32') return tokens;
+  for (const listener of session.proxyListeners ?? []) {
+    if (listener.legacy || listener.state !== 'active' || listener.authentication !== 'bearer')
+      continue;
+    try {
+      const token = await readKeychainProxyListenerToken(listener.id);
+      if (token) tokens[listener.id] = token;
+    } catch {
+      // The required-auth marker remains; restoration records a failed listener.
+      logger.warn(`Could not read the bearer credential for proxy ${listener.name}.`);
+    }
+  }
+  return tokens;
 }
 
 /**
@@ -371,7 +437,7 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
  */
 export async function stopBridge(
   sessionName: string,
-  options?: { graceful?: boolean }
+  options?: { graceful?: boolean; expected?: SessionIdentity }
 ): Promise<void> {
   logger.debug(`Stopping bridge for: ${sessionName}`);
 
@@ -380,6 +446,7 @@ export async function stopBridge(
   if (!session) {
     throw new ClientError(`Session not found: ${sessionName}`);
   }
+  if (options?.expected) assertSessionIdentity(session, options.expected);
 
   // Kill the bridge process if it's still running
   if (session.pid) {
@@ -418,9 +485,16 @@ export async function stopBridge(
         } catch {
           // Ignore - process may have exited between check and kill
         }
+        // SIGKILL delivery is asynchronous. A caller must not delete credentials
+        // or claim a replacement while the old process can still own listeners.
+        await waitForProcessExit(pid, 2000);
       }
     } catch (error) {
       logger.warn('Error stopping bridge process:', error);
+    }
+
+    if (isProcessAlive(pid)) {
+      throw new ClientError(`Bridge for ${sessionName} has not exited. Retry the command.`);
     }
 
     logger.debug(`Bridge stopped for ${sessionName}`);
@@ -488,7 +562,7 @@ export async function restartBridge(sessionName: string): Promise<StartBridgeRes
 
   // Stop the old bridge (cleanup)
   try {
-    await stopBridge(sessionName);
+    await stopBridge(sessionName, { expected: session });
   } catch {
     // Ignore errors, we're restarting anyway
   }
@@ -551,14 +625,12 @@ export async function restartBridge(sessionName: string): Promise<StartBridgeRes
     logger.debug('Using saved insecure flag');
   }
 
-  const { pid } = await startBridge(bridgeOptions);
-
-  // Update session with new PID
-  await updateSession(sessionName, { pid });
+  const owner = await startBridge(bridgeOptions);
+  const { pid } = owner;
 
   logger.debug(`Bridge restarted for ${sessionName} with PID: ${pid}`);
 
-  return { pid };
+  return owner;
 }
 
 /**
@@ -745,6 +817,7 @@ async function sendAuthCredentialsToBridge(
   try {
     // connect() retries while the freshly-spawned bridge finishes (re)creating its socket.
     await client.connect();
+    if (process.platform !== 'win32') await verifyBridgeEndpoint(socketPath);
     client.sendAuthCredentials(credentials);
     logger.debug('Auth credentials sent to bridge successfully');
   } finally {
@@ -781,6 +854,7 @@ async function sendX402WalletToBridge(
   const client = new BridgeClient(socketPath);
   try {
     await client.connect();
+    if (process.platform !== 'win32') await verifyBridgeEndpoint(socketPath);
     client.sendX402Wallet(credentials);
     logger.debug('x402 wallet sent to bridge successfully');
   } finally {
@@ -852,6 +926,7 @@ export async function ensureBridgeReady(
   if (!session) {
     throw new ClientError(`Session not found: ${sessionName}`);
   }
+  assertSessionNotDeleting(session);
 
   if (session.status === 'unauthorized') {
     const target = session.server.url || session.server.command || sessionName;
@@ -902,25 +977,26 @@ export async function ensureBridgeReady(
   // Set lastConnectionAttemptAt to prevent parallel CLI processes from
   // also triggering a restart via consolidateSessions/reconnectCrashedSessions.
   const restartStatus = session.lastSeenAt ? 'reconnecting' : 'connecting';
-  await updateSession(sessionName, {
+  await updateSessionForIdentity(sessionName, session, {
     status: restartStatus,
     lastConnectionAttemptAt: new Date().toISOString(),
   });
-  const { pid: newPid } = await restartBridge(sessionName);
+  const owner = await restartBridge(sessionName);
+  const newPid = owner.pid;
 
   const newSocketPath = getSocketPath(sessionName, newPid);
 
   // Try getServerDetails on restarted bridge (blocks until MCP connected)
   const result = await checkBridgeHealth(newSocketPath, timeoutSecs);
   if (result.healthy) {
-    await updateSession(sessionName, { status: 'active' });
+    await updateOwnedSession(sessionName, owner, { status: 'active' });
     logger.debug(`Bridge for ${sessionName} passed health check`);
     return newSocketPath;
   }
 
   // Not healthy after restart - classify the error
   const errorMsg = result.error?.message || 'unknown error';
-  await classifyAndThrowSessionError(sessionName, session, errorMsg, result.error);
+  await classifyAndThrowSessionError(sessionName, { ...session, ...owner }, errorMsg, result.error);
 
   // Other errors - provide enriched error with hint to view logs
   const serverUrl = session.server.url;
@@ -949,8 +1025,12 @@ export function reconnectCrashedSessions(sessionNames: string[]): void {
       // Revert to 'crashed' only if the bridge hasn't already set a terminal status
       try {
         const session = await getSession(name);
-        if (session?.status === 'reconnecting' || session?.status === 'connecting') {
-          await updateSession(name, { status: 'crashed' });
+        if (
+          session &&
+          (session.status === 'reconnecting' || session.status === 'connecting') &&
+          (!session.pid || !isProcessAlive(session.pid))
+        ) {
+          await updateSessionForIdentity(name, session, { status: 'crashed' });
         }
       } catch {
         // Ignore - session may have been deleted

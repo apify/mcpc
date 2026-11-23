@@ -81,6 +81,10 @@ import type { X402PaymentCache } from '../lib/x402/fetch-middleware.js';
 import type { SignerWallet } from '../lib/x402/signer.js';
 import type { FetchLike } from '@modelcontextprotocol/client';
 import { IpcLineBuffer } from '../lib/ipc-line-buffer.js';
+import { ProxyListenerManager } from './proxy-listener-manager.js';
+import { assertBridgeOwner, updateOwnedSession } from '../lib/proxy-listeners.js';
+import { verifyBridgeNamespace } from '../lib/bridge-trust.js';
+import type { BridgeOwner, ProxyListener } from '../lib/types.js';
 
 // HTTP proxy and TLS settings are configured in main() after parsing --insecure flag
 
@@ -106,6 +110,8 @@ interface BridgeOptions {
   /** x402 scheme preference; presence enables x402 auto-payment, absence disables. */
   x402?: X402SchemePreference;
   insecure?: boolean; // Skip TLS certificate verification
+  bridgeOwner?: string;
+  sessionCreatedAt?: string;
 }
 
 /**
@@ -116,6 +122,9 @@ class BridgeProcess {
   private client: McpClient | null = null;
   private server: NetServer | null = null;
   private proxyServer: ProxyServer | null = null;
+  private proxyListeners: ProxyListenerManager | null = null;
+  private proxyListenerTokens: Record<string, string> = {};
+  private upstreamReady = false;
   private connections: Set<Socket> = new Set();
   private options: BridgeOptions;
   private socketPath: string;
@@ -200,11 +209,47 @@ class BridgeProcess {
     }
   }
 
+  private get owner(): BridgeOwner | undefined {
+    if (!this.options.bridgeOwner || !this.options.sessionCreatedAt) return undefined;
+    return {
+      createdAt: this.options.sessionCreatedAt,
+      bridgeOwner: this.options.bridgeOwner,
+      pid: process.pid,
+    };
+  }
+
+  private async updateSession(updates: Parameters<typeof updateSession>[1]): Promise<void> {
+    if (this.owner) await updateOwnedSession(this.options.sessionName, this.owner, updates);
+    else await updateSession(this.options.sessionName, updates);
+  }
+
+  private async initializeProxyControl(): Promise<void> {
+    const owner = this.owner;
+    if (!owner) return; // An old launcher cannot opt into the new management capability.
+    const deadlineMillis = Date.now() + 5_000;
+    for (;;) {
+      const current = await getSession(this.options.sessionName);
+      if (!current || current.createdAt !== owner.createdAt)
+        throw new ClientError('Session was replaced during startup.');
+      if (current.bridgeOwner === owner.bridgeOwner && current.pid === owner.pid) break;
+      if (Date.now() >= deadlineMillis) throw new ClientError('Bridge owner was not registered.');
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    this.proxyListeners = new ProxyListenerManager({
+      sessionName: this.options.sessionName,
+      socketPath: this.socketPath,
+      owner,
+      ready: () => this.upstreamReady && !this.isShuttingDown,
+      create: (listener, token) => this.createProxyListener(listener, token),
+    });
+  }
+
   /**
    * Set auth credentials received from CLI via IPC
    * Handles both OAuth (with refresh token) and HTTP headers
    */
   setAuthCredentials(credentials: AuthCredentials): void {
+    if (credentials.proxyListenerTokens) this.proxyListenerTokens = credentials.proxyListenerTokens;
     logger.info(`Received auth credentials for profile: ${credentials.profileName}`);
     logger.debug(`  serverUrl: ${credentials.serverUrl}`);
     logger.debug(`  refreshToken: ${credentials.refreshToken ? 'present' : 'MISSING'}`);
@@ -494,6 +539,7 @@ class BridgeProcess {
     this.runOrphanedLogCleanup();
 
     try {
+      await this.initializeProxyControl();
       // 3. Create Unix socket server FIRST (so CLI can send auth credentials)
       await this.createSocketServer();
 
@@ -529,9 +575,16 @@ class BridgeProcess {
       // 5. Connect to MCP server (now with auth credentials if provided)
       try {
         await this.connectToMcp();
+        this.upstreamReady = true;
 
         // 5b. Start proxy server if configured (BEFORE signaling ready)
-        if (this.options.proxyConfig && this.client) {
+        if (this.proxyListeners) {
+          await this.proxyListeners.restore(
+            this.proxyListenerTokens,
+            this.proxyBearerToken ?? undefined
+          );
+          this.proxyListenerTokens = {};
+        } else if (this.options.proxyConfig && this.client) {
           await this.startProxyServer();
         }
 
@@ -585,14 +638,14 @@ class BridgeProcess {
         ) {
           logger.warn('Session rejected by server (expired session ID), marking as expired');
           try {
-            await updateSession(this.options.sessionName, { status: 'expired' });
+            await this.updateSession({ status: 'expired' });
           } catch (updateError) {
             logger.error('Failed to mark session as expired:', updateError);
           }
         } else if (isAuthenticationError(errorMsg)) {
           logger.warn('Server requires authentication, marking as unauthorized');
           try {
-            await updateSession(this.options.sessionName, { status: 'unauthorized' });
+            await this.updateSession({ status: 'unauthorized' });
           } catch (updateError) {
             logger.error('Failed to mark session as unauthorized:', updateError);
           }
@@ -643,7 +696,7 @@ class BridgeProcess {
     type: 'tools' | 'prompts' | 'resources'
   ): Promise<void> {
     const now = new Date().toISOString();
-    await updateSession(this.options.sessionName, {
+    await this.updateSession({
       notifications: {
         [type]: { listChangedAt: now },
       },
@@ -819,8 +872,7 @@ class BridgeProcess {
     const client = this.client;
     this.resourceSync = new ResourceSyncManager({
       readResource: (uri) => client.readResource(uri),
-      persist: (entries) =>
-        updateSession(this.options.sessionName, { resourceSubscriptions: entries }),
+      persist: (entries) => this.updateSession({ resourceSubscriptions: entries }),
       logger: createLogger('resource-sync'),
     });
     const sessionData = await getSession(this.options.sessionName);
@@ -927,7 +979,7 @@ class BridgeProcess {
       sessionUpdate.mcpSessionId = undefined;
       logger.info('Cleared the stored MCP-Session-Id (this connection has none)');
     }
-    await updateSession(this.options.sessionName, sessionUpdate);
+    await this.updateSession(sessionUpdate);
 
     // Note: Token refresh is handled automatically by the SDK transport. It calls
     // authProvider.token() before each request, which triggers
@@ -1055,6 +1107,32 @@ class BridgeProcess {
     logger.info(`Proxy server started at ${this.proxyServer.getAddress()}`);
   }
 
+  private async createProxyListener(
+    listener: ProxyListener,
+    bearerToken?: string
+  ): Promise<ProxyServer> {
+    if (!this.client || !this.upstreamReady)
+      throw new ClientError('Upstream session is not ready.');
+    const details = await this.getServerDetails();
+    const proxy = new ProxyServer({
+      host: listener.host,
+      port: listener.port,
+      client: this.client,
+      sessionName: this.options.sessionName,
+      version: mcpcVersion,
+      ...(bearerToken && { bearerToken }),
+      ...(details.instructions && { instructions: details.instructions }),
+      ...(details.capabilities && { capabilities: details.capabilities }),
+    });
+    try {
+      await proxy.start();
+      return proxy;
+    } catch (error) {
+      await proxy.stop();
+      throw error;
+    }
+  }
+
   /**
    * Start periodic keepalive ping to maintain connection
    */
@@ -1161,7 +1239,7 @@ class BridgeProcess {
    */
   private async updateLastSeenAt(): Promise<void> {
     try {
-      await updateSession(this.options.sessionName, {
+      await this.updateSession({
         lastSeenAt: new Date().toISOString(),
       });
     } catch (error) {
@@ -1224,7 +1302,7 @@ class BridgeProcess {
     if (status) {
       // Update session status synchronously so it's visible to CLI immediately
       try {
-        await updateSession(this.options.sessionName, { status });
+        await this.updateSession({ status });
         logger.info(`Session ${this.options.sessionName} marked as ${status}`);
       } catch (e) {
         logger.error('Failed to update session status:', e);
@@ -1246,7 +1324,7 @@ class BridgeProcess {
     }
 
     try {
-      await updateSession(this.options.sessionName, { status });
+      await this.updateSession({ status });
       logger.info(`Session ${this.options.sessionName} marked as ${status}`);
     } catch (error) {
       logger.error('Failed to update session status:', error);
@@ -1265,6 +1343,7 @@ class BridgeProcess {
     // relocate over-long paths to a short dir under the temp dir — create whichever
     // one applies.
     if (process.platform !== 'win32') {
+      await verifyBridgeNamespace(this.socketPath, true);
       const socketDir = dirname(this.socketPath);
       if (socketDir === getShortSocketDir()) {
         // The temp-dir fallback lives in a world-writable location with a
@@ -1355,7 +1434,18 @@ class BridgeProcess {
       // Handle different message types
       switch (message.type) {
         case 'request':
-          await this.handleMcpRequest(socket, message);
+          if (message.method?.startsWith('proxy/')) {
+            if (!this.proxyListeners)
+              throw new ClientError('Proxy management requires a session restart.');
+            const result = await this.proxyListeners.control(message.method, message.params);
+            this.sendResponse(socket, {
+              type: 'response',
+              ...(message.id && { id: message.id }),
+              result,
+            });
+          } else {
+            await this.handleMcpRequest(socket, message);
+          }
           break;
 
         case 'shutdown':
@@ -1913,12 +2003,15 @@ class BridgeProcess {
    */
   private async persistActiveTask(taskId: string, toolName: string): Promise<void> {
     try {
-      await modifySession(this.options.sessionName, (session) => ({
-        activeTasks: {
-          ...session.activeTasks,
-          [taskId]: { taskId, toolName, createdAt: new Date().toISOString() },
-        },
-      }));
+      await modifySession(this.options.sessionName, (session) => {
+        if (this.owner) assertBridgeOwner(session, this.owner);
+        return {
+          activeTasks: {
+            ...session.activeTasks,
+            [taskId]: { taskId, toolName, createdAt: new Date().toISOString() },
+          },
+        };
+      });
     } catch (error) {
       logger.warn(`Failed to persist active task ${taskId}:`, error);
     }
@@ -1931,6 +2024,7 @@ class BridgeProcess {
   private async removePersistedTask(taskId: string): Promise<void> {
     try {
       await modifySession(this.options.sessionName, (session) => {
+        if (this.owner) assertBridgeOwner(session, this.owner);
         if (!session.activeTasks?.[taskId]) return undefined;
         const { [taskId]: _removed, ...activeTasks } = session.activeTasks;
         return { activeTasks };
@@ -2031,6 +2125,12 @@ class BridgeProcess {
    * Clean up resources
    */
   private async cleanup(options?: { terminateMcpSession?: boolean }): Promise<void> {
+    this.upstreamReady = false;
+    try {
+      await this.proxyListeners?.close();
+    } catch (error) {
+      logger.warn('Failed to stop proxy listeners:', error);
+    }
     // Stop keepalive ping
     if (this.keepaliveInterval) {
       clearInterval(this.keepaliveInterval);
@@ -2177,6 +2277,17 @@ async function main(): Promise<void> {
       serverConfig: JSON.parse(transportConfigJson) as ServerConfig,
       verbose,
     };
+    const ownerIndex = args.indexOf('--bridge-owner');
+    const createdIndex = args.indexOf('--session-created-at');
+    if (
+      ownerIndex !== -1 &&
+      createdIndex !== -1 &&
+      args[ownerIndex + 1] &&
+      args[createdIndex + 1]
+    ) {
+      bridgeOptions.bridgeOwner = args[ownerIndex + 1] as string;
+      bridgeOptions.sessionCreatedAt = args[createdIndex + 1] as string;
+    }
     if (profileName) {
       bridgeOptions.profileName = profileName;
     }
