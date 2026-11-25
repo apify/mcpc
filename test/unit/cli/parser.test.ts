@@ -18,6 +18,7 @@ import {
   normalizeSlashCommandArgs,
   preProcessSkillArgv,
   preProcessX402Argv,
+  parseProxyArg,
 } from '../../../src/cli/parser.js';
 import { ClientError } from '../../../src/lib/errors.js';
 
@@ -646,6 +647,27 @@ describe('readCommandArgs', () => {
 describe('parseCommandArgs empty values', () => {
   it('keeps name:= as an empty string (how completion-complete asks for every suggestion)', () => {
     expect(parseCommandArgs(['name:='])).toEqual({ name: '' });
+  });
+});
+
+describe('parseProxyArg', () => {
+  it.each([
+    ['[::1]:8080', { host: '::1', port: 8080 }],
+    ['[2001:db8::1]:8443', { host: '2001:db8::1', port: 8443 }],
+  ])('parses bracketed IPv6 address %s', (value, expected) => {
+    expect(parseProxyArg(value)).toEqual(expected);
+  });
+
+  it.each([
+    '[::1]',
+    '[]:8080',
+    '[::1]8080',
+    '[::1:8080',
+    '[::1]:8080x',
+    '[127.0.0.1]:8080',
+    '[::1]:0',
+  ])('rejects malformed bracketed address %s', (value) => {
+    expect(() => parseProxyArg(value)).toThrow(ClientError);
   });
 });
 
