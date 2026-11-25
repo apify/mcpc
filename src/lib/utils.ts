@@ -281,12 +281,14 @@ export function normalizeServerUrl(str: string): string {
 
   // Add scheme if not present
   if (!str.includes('://')) {
-    // Extract hostname (before any port or path); a bracketed IPv6 host keeps its brackets
-    const hostPart = (
-      str.startsWith('[') ? str.slice(0, str.indexOf(']') + 1) : str.split(/[:/]/)[0] || ''
-    ).toLowerCase();
-    const isLocalhost =
-      hostPart === 'localhost' || hostPart === '127.0.0.1' || hostPart === '[::1]';
+    let isLocalhost = false;
+    try {
+      // Use the parsed hostname so local-looking userinfo cannot select plain HTTP.
+      const hostname = new URL(`http://${str}`).hostname;
+      isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]';
+    } catch {
+      // Invalid targets fail the existing validation below.
+    }
     // Default to http:// for localhost, https:// for everything else
     urlString = isLocalhost ? `http://${str}` : `https://${str}`;
   }

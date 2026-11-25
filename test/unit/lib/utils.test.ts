@@ -274,6 +274,14 @@ describe('normalizeServerUrl', () => {
     expect(normalizeServerUrl('[::1]/mcp')).toBe('http://[::1]/mcp');
   });
 
+  it('should not default to http:// when only the userinfo looks local', () => {
+    expect(normalizeServerUrl('[::1]@evil.com')).toBe('https://evil.com');
+    expect(normalizeServerUrl('[::1]:8080@evil.com/mcp')).toBe('https://evil.com/mcp');
+    expect(normalizeServerUrl('localhost:x@evil.com')).toBe('https://evil.com');
+    expect(normalizeServerUrl('127.0.0.1:1@evil.com')).toBe('https://evil.com');
+    expect(() => normalizeServerUrl('[::1')).toThrow('Invalid MCP server URL: [::1');
+  });
+
   it('should default other IPv6 addresses to https://', () => {
     expect(normalizeServerUrl('[2001:db8::1]:8443')).toBe('https://[2001:db8::1]:8443');
   });
