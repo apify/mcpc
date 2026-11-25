@@ -173,6 +173,42 @@ describe('resolveSince', () => {
     expect(resolveSince('not a date')).toBeNull();
     expect(resolveSince('')).toBeNull();
   });
+
+  it.each([
+    '5',
+    '0',
+    '12',
+    '1.5',
+    'Nov 25',
+    '2026',
+    '100',
+    '2026-11-25 10:00:00 PST',
+    '2026-11-25 10:00:00 GMT',
+    '2026-11-25 1:00 PM',
+    '2026-11-25, 10:00:00',
+    '2026-11-25/10:00:00',
+    '2026-11-25 10:00:00 (comment)',
+  ])('rejects non-ISO date-like input %j', (input) => {
+    expect(resolveSince(input)).toBeNull();
+  });
+
+  it('accepts ISO 8601 calendar date forms', () => {
+    expect({
+      offset: resolveSince('2026-11-25T10:00:00+02:00')?.toISOString(),
+      spaceOffset: resolveSince('2026-11-25 10:00:00+02:00')?.toISOString(),
+      fractional: resolveSince('2026-11-25T10:00:00.500Z')?.toISOString(),
+      compactOffset: resolveSince('2026-11-25T10:00:00+0200')?.toISOString(),
+      date: resolveSince('2026-11-25')?.toISOString(),
+      month: resolveSince('2026-11')?.toISOString(),
+    }).toEqual({
+      offset: '2026-11-25T08:00:00.000Z',
+      spaceOffset: '2026-11-25T08:00:00.000Z',
+      fractional: '2026-11-25T10:00:00.500Z',
+      compactOffset: '2026-11-25T08:00:00.000Z',
+      date: '2026-11-25T00:00:00.000Z',
+      month: '2026-11-01T00:00:00.000Z',
+    });
+  });
 });
 
 describe('getBridgeLogPath', () => {
