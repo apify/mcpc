@@ -361,6 +361,36 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
 }
 
 /**
+ * How long stopBridge() lets a bridge finish its own shutdown before SIGKILL. The bridge
+ * needs up to 2 s for the HTTP DELETE that ends the server-side MCP session, then up to
+ * 6 s for the SDK to close a stdio server (see McpClient.close()); killing it earlier
+ * orphans that child. The wait polls, so a bridge that exits promptly costs nothing extra.
+ */
+const BRIDGE_SHUTDOWN_GRACE_MILLIS = 10_000;
+
+/**
+ * Whether a bridge is listening on the given IPC socket.
+ *
+ * This is the identity check to pass before signalling a PID taken from sessions.json.
+ * PIDs are recycled: after a reboot the recorded number may belong to any other process
+ * of the user. The socket path is derived from the session name and the PID, in a
+ * directory only this user can reach, so a listener there can only be the bridge spawned
+ * with that PID. A stale socket file refuses the connection, and a Windows named pipe
+ * disappears with its process.
+ */
+async function isBridgeListening(socketPath: string): Promise<boolean> {
+  const client = new BridgeClient(socketPath);
+  try {
+    await client.connect({ retryTimeoutMillis: 0 });
+    return true;
+  } catch {
+    return false;
+  } finally {
+    await client.close();
+  }
+}
+
+/**
  * Stop a bridge process (does NOT delete session or headers)
  * Use closeSession() for full session cleanup
  *
@@ -384,30 +414,29 @@ export async function stopBridge(
   // Kill the bridge process if it's still running
   if (session.pid) {
     const pid = session.pid;
+    const socketPath = getSocketPath(sessionName, pid);
+
+    // Never signal the recorded PID unless its bridge answers (see isBridgeListening).
+    // The check does not depend on isProcessAlive(), which can be wrong on Windows (a
+    // timed-out `tasklist` used to report every PID dead, #427).
+    if (!(await isBridgeListening(socketPath))) {
+      logger.debug(`No bridge listening for ${sessionName} (PID ${pid}), nothing to stop`);
+      return;
+    }
+
     try {
       if (process.platform === 'win32') {
         // On Windows, SIGTERM calls TerminateProcess (immediate kill, no cleanup).
         // For graceful shutdown (closeSession / explicit restart), send an IPC message
         // first so the bridge can send HTTP DELETE to terminate its MCP session before
         // exiting. Without it the server-side session (and its subscriptions) is orphaned.
-        //
-        // The IPC shutdown is attempted whenever a PID is recorded, not only when
-        // isProcessAlive() says the bridge is running: that check can be wrong (a timed-out
-        // `tasklist` used to report every PID dead, #427), and connecting to a dead pipe
-        // fails in milliseconds and does no harm.
-        if (options?.graceful) {
-          const socketPath = getSocketPath(sessionName, pid);
-          const shutdownOk = await sendBridgeShutdown(socketPath);
-          if (shutdownOk) {
-            await waitForProcessExit(pid, 2000);
-          }
+        if (options?.graceful && (await sendBridgeShutdown(socketPath))) {
+          await waitForProcessExit(pid, BRIDGE_SHUTDOWN_GRACE_MILLIS);
         }
-      } else if (isProcessAlive(pid)) {
+      } else {
         logger.debug(`Sending SIGTERM to bridge process: ${pid}`);
         process.kill(pid, 'SIGTERM');
-
-        // Wait for graceful shutdown (gives time for HTTP DELETE to be sent)
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+        await waitForProcessExit(pid, BRIDGE_SHUTDOWN_GRACE_MILLIS);
       }
 
       // Force kill if still alive
@@ -461,12 +490,12 @@ async function sendBridgeShutdown(socketPath: string): Promise<boolean> {
  */
 async function waitForProcessExit(pid: number, timeoutMillis: number): Promise<void> {
   const start = Date.now();
-  const interval = 500;
+  const pollIntervalMillis = 100;
   while (Date.now() - start < timeoutMillis) {
     if (!isProcessAlive(pid)) {
       return;
     }
-    await new Promise((resolve) => setTimeout(resolve, interval));
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMillis));
   }
 }
 
