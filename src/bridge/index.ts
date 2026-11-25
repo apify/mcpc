@@ -31,7 +31,13 @@ import {
   TRIMMED_INSTRUCTIONS_NOTICE,
   X402_SCHEME_PREFERENCES,
 } from '../lib/types.js';
-import { createLogger, setVerbose, initFileLogger, closeFileLogger } from '../lib/index.js';
+import {
+  createLogger,
+  setVerbose,
+  initFileLogger,
+  closeFileLogger,
+  formatHostPort,
+} from '../lib/index.js';
 import {
   fileExists,
   getSocketPath,
@@ -1045,7 +1051,7 @@ class BridgeProcess {
     // path only (see #55).
     const bearerToken = this.proxyBearerToken;
 
-    logger.info(`Starting proxy server on ${host}:${port}`);
+    logger.info(`Starting proxy server on ${formatHostPort(host, port)}`);
     if (bearerToken) {
       logger.debug('Proxy server will require bearer token authentication');
     }

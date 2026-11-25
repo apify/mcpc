@@ -52,7 +52,7 @@ mcpc @apify tools-call <tool> q:="hi"  # call a tool
 Server formats accepted by `connect`:
 
 - `mcp.example.com` — remote HTTP server (`https://` is added automatically)
-- `localhost:8080` or `127.0.0.1:8080` — local HTTP server (`http://` is the default for `localhost` and `127.0.0.1`)
+- `localhost:8080` or `127.0.0.1:8080` — local HTTP server (`http://` is the default for `localhost`, `127.0.0.1` and `[::1]`)
 - `~/.vscode/mcp.json:filesystem` — a single entry from a config file (`file:entry`)
 - `~/.vscode/mcp.json` — connect **every** entry in a config file
 - _(no server)_ — auto-discover standard configs and connect all of them

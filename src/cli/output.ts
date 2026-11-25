@@ -37,6 +37,7 @@ import { getSession } from '../lib/sessions.js';
 import { quoteShellArg } from '../lib/utils.js';
 export { quoteShellArg };
 import { getBridgeLogPath } from '../lib/log-reader.js';
+import { formatHostPort } from '../lib/utils.js';
 import { isModernProtocolVersion, SERVER_INFO_META_KEY } from '../core/protocol.js';
 import {
   findMcpExtension,
@@ -1869,7 +1870,7 @@ export function formatSessionLine(session: SessionData): string {
     proxyStr =
       ' ' +
       theme.green('[proxy: ') +
-      chalk.greenBright(`${session.proxy.host}:${session.proxy.port}`) +
+      chalk.greenBright(formatHostPort(session.proxy.host, session.proxy.port)) +
       theme.green(']');
   }
 

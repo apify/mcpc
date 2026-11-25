@@ -6,6 +6,7 @@ import { homedir, tmpdir } from 'os';
 import { join, isAbsolute } from 'path';
 import {
   expandHome,
+  formatHostPort,
   resolvePath,
   getMcpcHome,
   getSessionsFilePath,
@@ -267,6 +268,22 @@ describe('normalizeServerUrl', () => {
     expect(normalizeServerUrl('127.0.0.1')).toBe('http://127.0.0.1');
     expect(normalizeServerUrl('127.0.0.1:8080')).toBe('http://127.0.0.1:8080');
     expect(normalizeServerUrl('127.0.0.1/mcp')).toBe('http://127.0.0.1/mcp');
+    // and so does the IPv6 loopback in brackets
+    expect(normalizeServerUrl('[::1]')).toBe('http://[::1]');
+    expect(normalizeServerUrl('[::1]:8080')).toBe('http://[::1]:8080');
+    expect(normalizeServerUrl('[::1]/mcp')).toBe('http://[::1]/mcp');
+  });
+
+  it('should not default to http:// when only the userinfo looks local', () => {
+    expect(normalizeServerUrl('[::1]@evil.com')).toBe('https://evil.com');
+    expect(normalizeServerUrl('[::1]:8080@evil.com/mcp')).toBe('https://evil.com/mcp');
+    expect(normalizeServerUrl('localhost:x@evil.com')).toBe('https://evil.com');
+    expect(normalizeServerUrl('127.0.0.1:1@evil.com')).toBe('https://evil.com');
+    expect(() => normalizeServerUrl('[::1')).toThrow('Invalid MCP server URL: [::1');
+  });
+
+  it('should default other IPv6 addresses to https://', () => {
+    expect(normalizeServerUrl('[2001:db8::1]:8443')).toBe('https://[2001:db8::1]:8443');
   });
 
   it('should respect explicit scheme for localhost URLs', () => {
@@ -760,5 +777,14 @@ describe('redactServerConfig', () => {
     const redacted = redactServerConfig({ url: 'https://x.example' });
     expect(redacted).not.toHaveProperty('headers');
     expect(redacted).not.toHaveProperty('env');
+  });
+});
+
+describe('formatHostPort', () => {
+  it('brackets IPv6 hosts only', () => {
+    expect(formatHostPort('127.0.0.1', 8080)).toBe('127.0.0.1:8080');
+    expect(formatHostPort('localhost', 3000)).toBe('localhost:3000');
+    expect(formatHostPort('::1', 8080)).toBe('[::1]:8080');
+    expect(formatHostPort('2001:db8::1', 8443)).toBe('[2001:db8::1]:8443');
   });
 });

@@ -14,6 +14,7 @@ import {
   isValidSessionName,
   generateSessionName,
   normalizeServerUrl,
+  formatHostPort,
   validateProfileName,
   redactHeaders,
   redactServerConfig,
@@ -75,23 +76,25 @@ const logger = createLogger('connect');
 /**
  * Check if a port is available for binding
  */
-async function checkPortAvailable(host: string, port: number): Promise<boolean> {
-  return new Promise((resolve) => {
+async function checkProxyBindable(host: string, port: number): Promise<void> {
+  const error = await new Promise<NodeJS.ErrnoException | null>((resolve) => {
     const server = createServer();
-
-    server.once('error', () => {
-      // EADDRINUSE, permission denied, etc. — treat as unavailable
-      resolve(false);
-    });
-
-    server.once('listening', () => {
-      server.close(() => {
-        resolve(true);
-      });
-    });
-
+    server.once('error', (err: NodeJS.ErrnoException) => resolve(err));
+    server.once('listening', () => server.close(() => resolve(null)));
     server.listen(port, host);
   });
+  if (!error) return;
+
+  const address = formatHostPort(host, port);
+  if (error.code === 'EADDRINUSE') {
+    throw new ClientError(
+      `Port ${port} is already in use on ${host}. Choose a different port with --proxy [host:]port`
+    );
+  }
+  throw new ClientError(
+    `Cannot start proxy on ${address}: ${error.code ?? error.message}. ` +
+      `Check the host is a local address (IPv6 in brackets, e.g. [::1]:8080)`
+  );
 }
 
 // =============================================================================
@@ -273,16 +276,10 @@ export async function connectSession(
   let proxyConfig: ProxyConfig | undefined;
   if (options.proxy) {
     proxyConfig = parseProxyArg(options.proxy);
-    logger.debug(`Proxy config: ${proxyConfig.host}:${proxyConfig.port}`);
+    logger.debug(`Proxy config: ${formatHostPort(proxyConfig.host, proxyConfig.port)}`);
 
-    // Validate port is available before starting bridge
-    const portAvailable = await checkPortAvailable(proxyConfig.host, proxyConfig.port);
-    if (!portAvailable) {
-      throw new ClientError(
-        `Port ${proxyConfig.port} is already in use on ${proxyConfig.host}. ` +
-          `Choose a different port with --proxy [host:]port`
-      );
-    }
+    // Validate the proxy can bind before starting the bridge
+    await checkProxyBindable(proxyConfig.host, proxyConfig.port);
   }
 
   // Validate proxy-bearer-token is only used with --proxy
