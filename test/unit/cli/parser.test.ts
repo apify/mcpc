@@ -652,6 +652,35 @@ describe('parseCommandArgs empty values', () => {
 
 describe('parseProxyArg', () => {
   it.each([
+    ['8080', { host: '127.0.0.1', port: 8080 }],
+    ['0.0.0.0:8080', { host: '0.0.0.0', port: 8080 }],
+    ['localhost:3000', { host: 'localhost', port: 3000 }],
+    ['65535', { host: '127.0.0.1', port: 65535 }],
+    ['1', { host: '127.0.0.1', port: 1 }],
+  ])('parses proxy address %s', (value, expected) => {
+    expect(parseProxyArg(value)).toEqual(expected);
+  });
+
+  it.each([
+    '8080x',
+    '1e3',
+    '80.5',
+    '+8080',
+    ' 8080',
+    '0x50',
+    '0',
+    '65536',
+    'localhost:8080x',
+    'localhost:1e3',
+    'localhost:80.5',
+    'localhost:',
+    '127.0.0.1:+80',
+  ])('rejects invalid proxy port %s', (value) => {
+    expect(() => parseProxyArg(value)).toThrow(ClientError);
+    expect(() => parseProxyArg(value)).toThrow('Invalid --proxy port');
+  });
+
+  it.each([
     ['[::1]:8080', { host: '::1', port: 8080 }],
     ['[2001:db8::1]:8443', { host: '2001:db8::1', port: 8443 }],
   ])('parses bracketed IPv6 address %s', (value, expected) => {
