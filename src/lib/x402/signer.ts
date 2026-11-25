@@ -18,6 +18,7 @@ import {
 } from './viem.js';
 import { ClientError } from '../errors.js';
 import { createLogger } from '../logger.js';
+import { PaymentRefusedError, atomicUnitsToUsd, formatUsd, parseAtomicAmount } from './limits.js';
 import type { X402SchemePreference } from '../types.js';
 
 const logger = createLogger('x402-signer');
@@ -27,10 +28,16 @@ const logger = createLogger('x402-signer');
 // ---------------------------------------------------------------------------
 
 export const X402_VERSION = 2;
-const USDC_DECIMALS = 6;
 
 /** Fallback expiry when neither the caller nor the `accept` advertise one. */
 export const DEFAULT_PAYMENT_EXPIRY_SECONDS = 3600;
+
+/**
+ * Longest validity mcpc gives a payment on a server's say-so. `maxTimeoutSeconds` is
+ * server-controlled, and a signed authorization can be redeemed until it expires, so an
+ * unclamped value would let a server hold a live claim on the wallet for years.
+ */
+export const MAX_PAYMENT_EXPIRY_SECONDS = 3600;
 
 /** Canonical Permit2 contract address (CREATE2, same on all EVM chains). */
 const PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
@@ -41,7 +48,7 @@ const X402_UPTO_PERMIT2_PROXY = '0x4020A4f3b7b90ccA423B9fabCc0CE57C6C240002';
 /** Clock-skew grace period for validAfter (seconds). */
 const VALID_AFTER_CLOCK_SKEW_SECONDS = 600;
 
-/** Maximum uint256 — used for unlimited Permit2 allowance approval. */
+/** Maximum uint256 — the standard "unlimited" Permit2 allowance. */
 const MAX_UINT256 = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff');
 
 /** Minimal ERC-20 ABI fragments for allowance / approve. */
@@ -110,6 +117,14 @@ interface NetworkConfig {
   networkId: string;
   rpcUrl: string;
   label: string;
+  /** Short name accepted by `mcpc x402 approve --network`. */
+  alias: string;
+  /**
+   * Circle's USDC contract on this chain — the only token mcpc signs payments in. The
+   * `asset` of a payment requirement is server-controlled; signing for whatever it names
+   * would let a server draw on any ERC-20 the wallet happens to hold.
+   */
+  usdcAddress: string;
 }
 
 const NETWORKS: Record<string, NetworkConfig> = {
@@ -118,12 +133,16 @@ const NETWORKS: Record<string, NetworkConfig> = {
     networkId: `eip155:${base.id}`,
     rpcUrl: 'https://mainnet.base.org',
     label: 'Base Mainnet',
+    alias: 'base',
+    usdcAddress: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
   },
   [`eip155:${baseSepolia.id}`]: {
     chain: baseSepolia,
     networkId: `eip155:${baseSepolia.id}`,
     rpcUrl: 'https://sepolia.base.org',
     label: 'Base Sepolia (testnet)',
+    alias: 'base-sepolia',
+    usdcAddress: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
   },
 };
 
@@ -134,6 +153,29 @@ const NETWORKS: Record<string, NetworkConfig> = {
  */
 export function isSupportedNetwork(network: string): boolean {
   return Object.hasOwn(NETWORKS, network);
+}
+
+/** Whether `asset` is the USDC contract of the given (supported) network. */
+export function isSupportedAsset(network: string, asset: unknown): boolean {
+  return (
+    isSupportedNetwork(network) &&
+    typeof asset === 'string' &&
+    asset.toLowerCase() === NETWORKS[network]?.usdcAddress.toLowerCase()
+  );
+}
+
+/** The names `mcpc x402 approve --network` accepts, mainnet first. */
+export const NETWORK_ALIASES: string[] = Object.values(NETWORKS).map((n) => n.alias);
+
+/**
+ * Identifies the terms a payment was signed for. A signature is only ever reused for a
+ * request with the same key, so one signed for a cheap tool is never offered for a dear
+ * one, nor to a different payee.
+ */
+export function paymentTermsKey(accept: PaymentRequiredAccept): string {
+  return [accept.scheme, accept.network, accept.asset, accept.payTo, accept.amount]
+    .map((part) => String(part).toLowerCase())
+    .join('|');
 }
 
 // ---------------------------------------------------------------------------
@@ -170,16 +212,18 @@ export interface SignPaymentInput {
   resource?: PaymentRequiredHeader['resource'];
   /** Override amount in atomic units (default: from accept.amount) */
   amountOverride?: bigint;
-  /** Override expiry in seconds (default: `accept.maxTimeoutSeconds` or `DEFAULT_PAYMENT_EXPIRY_SECONDS`) */
+  /**
+   * Override expiry in seconds. Without it the server's `accept.maxTimeoutSeconds` applies,
+   * clamped to `MAX_PAYMENT_EXPIRY_SECONDS`; the caller's own override is taken as given.
+   */
   expiryOverrideSecs?: number;
   /**
-   * For the upto scheme: skip the on-chain Permit2 allowance check & auto-approval.
-   * Default false — the signer will check `USDC.allowance(wallet, PERMIT2)` and submit a
-   * one-time `USDC.approve(PERMIT2, MAX_UINT256)` transaction if the allowance is short of
-   * the amount being authorized. Pass `true` if you've already approved or want to manage
-   * approvals yourself.
+   * For the upto scheme: skip the read-only check that the wallet has approved Permit2 to
+   * spend the amount being authorized. Without that approval the signature is valid but
+   * can never settle, so by default signing is refused with a pointer to
+   * `mcpc x402 approve`. Signing itself never sends a transaction.
    */
-  skipPermit2Approval?: boolean;
+  skipPermit2Check?: boolean;
 }
 
 export interface SignPaymentResult {
@@ -197,6 +241,18 @@ export interface SignPaymentResult {
   networkLabel: string;
   /** Expiry timestamp */
   expiresAt: Date;
+}
+
+/** Outcome of `approvePermit2()`. Allowances are USDC atomic units. */
+export interface Permit2ApprovalResult {
+  network: string;
+  networkLabel: string;
+  token: string;
+  spender: string;
+  previousAllowance: bigint;
+  allowance: bigint;
+  /** Hash of the `approve` transaction; absent when the allowance already matched. */
+  transaction?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -233,7 +289,7 @@ function isValidExactAccept(a: PaymentRequiredAccept): boolean {
   return (
     a.scheme === 'exact' &&
     Boolean(a.payTo && a.amount && a.network && a.asset) &&
-    isSupportedNetwork(a.network)
+    isSupportedAsset(a.network, a.asset)
   );
 }
 
@@ -242,7 +298,7 @@ function isValidUptoAccept(a: PaymentRequiredAccept): boolean {
     a.scheme === 'upto' &&
     Boolean(a.payTo && a.amount && a.network && a.asset) &&
     Boolean(a.extra?.facilitatorAddress) &&
-    isSupportedNetwork(a.network)
+    isSupportedAsset(a.network, a.asset)
   );
 }
 
@@ -253,8 +309,9 @@ function isValidUptoAccept(a: PaymentRequiredAccept): boolean {
  * - `upto`   → require valid `upto`; undefined if none
  * - `exact`  → require valid `exact`; undefined if none
  *
- * Entries on networks mcpc cannot sign for (see `isSupportedNetwork`) are skipped, so a
- * server that lists a Solana option before the Base one still gets a Base payment.
+ * Entries mcpc will not sign for — a network it does not support, or a token other than
+ * that network's USDC (see `isSupportedAsset`) — are skipped, so a server that lists a
+ * Solana option before the Base one still gets a Base payment.
  */
 export function selectAcceptEntry(
   accepts: PaymentRequiredAccept[],
@@ -308,10 +365,13 @@ export function parsePaymentRequired(
   const accept = selectAcceptEntry(header.accepts, schemePreference);
   if (!accept) {
     const requested = schemePreference === 'auto' ? 'exact or upto' : schemePreference;
-    const offered = header.accepts.map((a) => `${a.scheme} on ${a.network}`).join(', ');
+    const offered = header.accepts
+      .map((a) => `${a.scheme} on ${a.network} (asset ${a.asset})`)
+      .join(', ');
     throw new ClientError(
       `No valid "${requested}" scheme on a supported network found in PAYMENT-REQUIRED accepts. ` +
-        `Offered: ${offered}. Supported networks: ${Object.keys(NETWORKS).join(', ')}`
+        `Offered: ${offered}. Supported networks: ${Object.keys(NETWORKS).join(', ')}, ` +
+        `paid in USDC only`
     );
   }
 
@@ -337,13 +397,33 @@ export async function signPayment(input: SignPaymentInput): Promise<SignPaymentR
   logger.debug(
     `Signing x402 payment: scheme=${accept.scheme} network=${accept.network} amount=${accept.amount} asset=${accept.asset} payTo=${accept.payTo} facilitator=${accept.extra?.facilitatorAddress ?? '<n/a>'}`
   );
-  if (accept.scheme === 'upto') {
-    return signUptoPayment(input);
+  if (accept.scheme !== 'upto' && accept.scheme !== 'exact') {
+    throw new ClientError(`Unsupported x402 scheme: ${accept.scheme}`);
   }
-  if (accept.scheme === 'exact') {
-    return signExactPayment(input);
+  const networkConfig = NETWORKS[accept.network];
+  if (networkConfig && !isSupportedAsset(accept.network, accept.asset)) {
+    throw new PaymentRefusedError(
+      `x402 payment refused: the server asks to be paid in token ${accept.asset}, but mcpc only ` +
+        `pays in USDC (${networkConfig.usdcAddress} on ${networkConfig.label}).`
+    );
   }
-  throw new ClientError(`Unsupported x402 scheme: ${accept.scheme}`);
+  return accept.scheme === 'upto' ? signUptoPayment(input) : signExactPayment(input);
+}
+
+/**
+ * How long a payment stays valid. The caller's override is taken as given; the server's
+ * `maxTimeoutSeconds` is clamped, and anything that is not a positive number of seconds
+ * gets the default.
+ */
+function resolveExpirySeconds(input: SignPaymentInput): number {
+  if (input.expiryOverrideSecs) {
+    return input.expiryOverrideSecs;
+  }
+  const requested = input.accept.maxTimeoutSeconds;
+  if (typeof requested !== 'number' || !Number.isFinite(requested) || requested <= 0) {
+    return DEFAULT_PAYMENT_EXPIRY_SECONDS;
+  }
+  return Math.min(Math.floor(requested) || 1, MAX_PAYMENT_EXPIRY_SECONDS);
 }
 
 /**
@@ -361,12 +441,11 @@ async function signExactPayment(input: SignPaymentInput): Promise<SignPaymentRes
   }
 
   // Resolve amount
-  const amountAtomicUnits = input.amountOverride ?? BigInt(accept.amount);
-  const amountUsd = Number(amountAtomicUnits) / 10 ** USDC_DECIMALS;
+  const amountAtomicUnits = input.amountOverride ?? parseAtomicAmount(accept.amount);
+  const amountUsd = atomicUnitsToUsd(amountAtomicUnits);
 
   // Resolve expiry
-  const expirySeconds =
-    (input.expiryOverrideSecs ?? accept.maxTimeoutSeconds) || DEFAULT_PAYMENT_EXPIRY_SECONDS;
+  const expirySeconds = resolveExpirySeconds(input);
 
   // EIP-3009 domain
   const eip3009Name = accept.extra?.name ?? 'USDC';
@@ -380,8 +459,12 @@ async function signExactPayment(input: SignPaymentInput): Promise<SignPaymentRes
     transport: http(networkConfig.rpcUrl),
   });
 
+  // Like the upto scheme below, the window opens slightly in the past (clock skew) rather
+  // than at 0, so the authorization is bounded on both sides.
   const nonce = randomBytes32();
-  const validBefore = BigInt(Math.floor(Date.now() / 1000) + expirySeconds);
+  const now = Math.floor(Date.now() / 1000);
+  const validAfter = BigInt(now - VALID_AFTER_CLOCK_SKEW_SECONDS);
+  const validBefore = BigInt(now + expirySeconds);
 
   const signature = await walletClient.signTypedData({
     domain: {
@@ -396,7 +479,7 @@ async function signExactPayment(input: SignPaymentInput): Promise<SignPaymentRes
       from: account.address,
       to: accept.payTo as Hex,
       value: amountAtomicUnits,
-      validAfter: 0n,
+      validAfter,
       validBefore,
       nonce,
     },
@@ -416,7 +499,7 @@ async function signExactPayment(input: SignPaymentInput): Promise<SignPaymentRes
         from: account.address,
         to: accept.payTo,
         value: amountAtomicUnits.toString(),
-        validAfter: '0',
+        validAfter: validAfter.toString(),
         validBefore: validBefore.toString(),
         nonce,
       },
@@ -445,48 +528,79 @@ async function signExactPayment(input: SignPaymentInput): Promise<SignPaymentRes
   };
 }
 
-/**
- * Ensures the wallet has approved Permit2 to spend at least `requiredAmount` of `tokenAddress`.
- * If the existing allowance is short, sends a one-time `approve(PERMIT2, MAX_UINT256)` transaction
- * and waits for confirmation. Logs each step. Idempotent — if allowance is already sufficient,
- * does nothing.
- *
- * Required because the upto scheme uses Permit2 (`permitWitnessTransferFrom`), which can only
- * pull tokens that the wallet has previously approved Permit2 to spend.
- * Spec: https://github.com/coinbase/x402/blob/main/specs/schemes/upto/scheme_upto_evm.md#phase-1-one-time-gas-approval
- */
-async function ensurePermit2Allowance(params: {
-  wallet: SignerWallet;
-  tokenAddress: Hex;
-  requiredAmount: bigint;
-  networkConfig: NetworkConfig;
-}): Promise<{ approveTxHash?: Hex; previousAllowance: bigint; newAllowance: bigint }> {
-  const { wallet, tokenAddress, requiredAmount, networkConfig } = params;
-  const walletAddress = getAddress(wallet.address) as Hex;
-  const permit2 = getAddress(PERMIT2_ADDRESS) as Hex;
-
+/** Read `USDC.allowance(wallet, PERMIT2)` on the given network. No transaction, no gas. */
+async function readPermit2Allowance(
+  wallet: SignerWallet,
+  networkConfig: NetworkConfig
+): Promise<bigint> {
   const publicClient = createPublicClient({
     chain: networkConfig.chain,
     transport: http(networkConfig.rpcUrl),
   });
-
-  const currentAllowance = (await publicClient.readContract({
-    address: tokenAddress,
+  return (await publicClient.readContract({
+    address: getAddress(networkConfig.usdcAddress) as Hex,
     abi: ERC20_ALLOWANCE_ABI,
     functionName: 'allowance',
-    args: [walletAddress, permit2],
+    args: [getAddress(wallet.address) as Hex, getAddress(PERMIT2_ADDRESS) as Hex],
   })) as bigint;
+}
 
-  if (currentAllowance >= requiredAmount) {
-    logger.debug(
-      `Permit2 allowance sufficient (${currentAllowance.toString()} >= ${requiredAmount.toString()})`
+/**
+ * Resolve a network given as `base` / `base-sepolia` or as a CAIP-2 id.
+ */
+function resolveNetwork(network: string): NetworkConfig {
+  const config =
+    NETWORKS[network] ?? Object.values(NETWORKS).find((n) => n.alias === network.toLowerCase());
+  if (!config) {
+    throw new ClientError(
+      `Unknown network "${network}". Supported: ${Object.values(NETWORKS)
+        .map((n) => n.alias)
+        .join(', ')}`
     );
-    return { previousAllowance: currentAllowance, newAllowance: currentAllowance };
   }
+  return config;
+}
 
-  logger.info(
-    `Permit2 allowance is ${currentAllowance.toString()} < ${requiredAmount.toString()} required. Submitting one-time approve(MAX_UINT256) transaction…`
-  );
+/**
+ * Set the wallet's Permit2 allowance for USDC: the one-time on-chain step the upto scheme
+ * needs, since Permit2 (`permitWitnessTransferFrom`) can only pull tokens the wallet has
+ * approved it to spend. Sends an `approve` transaction (costs gas) unless the allowance is
+ * already what was asked for, and waits for it to confirm.
+ *
+ * This is only ever run by `mcpc x402 approve`, never as a side effect of signing a
+ * payment, and only for the network's USDC contract — a server cannot trigger it or choose
+ * the token.
+ * Spec: https://github.com/coinbase/x402/blob/main/specs/schemes/upto/scheme_upto_evm.md#phase-1-one-time-gas-approval
+ *
+ * @param allowance - Allowance to set in USDC atomic units; default unlimited, `0n` revokes
+ */
+export async function approvePermit2(params: {
+  wallet: SignerWallet;
+  network: string;
+  allowance?: bigint;
+}): Promise<Permit2ApprovalResult> {
+  const { wallet } = params;
+  const networkConfig = resolveNetwork(params.network);
+  const token = getAddress(networkConfig.usdcAddress) as Hex;
+  const permit2 = getAddress(PERMIT2_ADDRESS) as Hex;
+  const target = params.allowance ?? MAX_UINT256;
+
+  const result = {
+    network: networkConfig.networkId,
+    networkLabel: networkConfig.label,
+    token,
+    spender: permit2,
+  };
+
+  const previousAllowance = await readPermit2Allowance(wallet, networkConfig);
+  // An unlimited request is satisfied by any allowance that is already effectively
+  // unlimited (USDC does not decrement a max allowance, other amounts must match).
+  const alreadySet =
+    previousAllowance === target || (target === MAX_UINT256 && previousAllowance >= MAX_UINT256);
+  if (alreadySet) {
+    logger.debug(`Permit2 allowance already ${previousAllowance.toString()}, nothing to send`);
+    return { ...result, previousAllowance, allowance: previousAllowance };
+  }
 
   const account = privateKeyToAccount(wallet.privateKey as Hex);
   const walletClient = createWalletClient({
@@ -494,49 +608,41 @@ async function ensurePermit2Allowance(params: {
     chain: networkConfig.chain,
     transport: http(networkConfig.rpcUrl),
   });
-
-  const approveData = encodeFunctionData({
-    abi: ERC20_APPROVE_ABI,
-    functionName: 'approve',
-    args: [permit2, MAX_UINT256],
+  const publicClient = createPublicClient({
+    chain: networkConfig.chain,
+    transport: http(networkConfig.rpcUrl),
   });
 
-  const approveTxHash = await walletClient.sendTransaction({
-    to: tokenAddress,
-    data: approveData,
+  const transaction = await walletClient.sendTransaction({
+    to: token,
+    data: encodeFunctionData({
+      abi: ERC20_APPROVE_ABI,
+      functionName: 'approve',
+      args: [permit2, target],
+    }),
   });
+  logger.info(`Permit2 approve tx submitted: ${transaction}. Waiting for confirmation…`);
 
-  logger.info(`Permit2 approve tx submitted: ${approveTxHash}. Waiting for confirmation…`);
-
-  const receipt = await publicClient.waitForTransactionReceipt({ hash: approveTxHash });
+  const receipt = await publicClient.waitForTransactionReceipt({ hash: transaction });
   if (receipt.status !== 'success') {
     throw new ClientError(
-      `Permit2 approve transaction reverted on-chain: ${approveTxHash}. Inspect at ${networkConfig.label} explorer.`
+      `Permit2 approve transaction reverted on-chain: ${transaction}. Inspect at ${networkConfig.label} explorer.`
     );
   }
 
-  // Re-read to confirm.
-  const newAllowance = (await publicClient.readContract({
-    address: tokenAddress,
-    abi: ERC20_ALLOWANCE_ABI,
-    functionName: 'allowance',
-    args: [walletAddress, permit2],
-  })) as bigint;
-
-  logger.info(
-    `Permit2 approve confirmed in block ${receipt.blockNumber}. New allowance: ${newAllowance.toString()}`
-  );
-
-  return { approveTxHash, previousAllowance: currentAllowance, newAllowance };
+  const allowance = await readPermit2Allowance(wallet, networkConfig);
+  logger.info(`Permit2 approve confirmed in block ${receipt.blockNumber}`);
+  return { ...result, previousAllowance, allowance, transaction };
 }
 
 /**
  * Sign an x402 `upto` scheme payment using Permit2 permitWitnessTransferFrom.
  * The payer authorizes a maximum amount; the facilitator settles the actual usage later.
  *
- * Before signing, this checks `USDC.allowance(wallet, PERMIT2)` and, if insufficient, submits
- * a one-time `USDC.approve(PERMIT2, MAX_UINT256)` transaction so the upto scheme can actually
- * settle on-chain. Pass `skipPermit2Approval: true` to bypass the check.
+ * Before signing, this reads `USDC.allowance(wallet, PERMIT2)` and refuses when it is short
+ * of the amount: such a payment could never settle. Granting the allowance is the user's
+ * explicit `mcpc x402 approve`; signing sends no transaction. Pass `skipPermit2Check: true`
+ * to sign without the read.
  */
 async function signUptoPayment(input: SignPaymentInput): Promise<SignPaymentResult> {
   const { wallet, accept, resource } = input;
@@ -550,12 +656,11 @@ async function signUptoPayment(input: SignPaymentInput): Promise<SignPaymentResu
   }
 
   // Resolve amount (max authorization cap)
-  const amountAtomicUnits = input.amountOverride ?? BigInt(accept.amount);
-  const amountUsd = Number(amountAtomicUnits) / 10 ** USDC_DECIMALS;
+  const amountAtomicUnits = input.amountOverride ?? parseAtomicAmount(accept.amount);
+  const amountUsd = atomicUnitsToUsd(amountAtomicUnits);
 
   // Resolve expiry
-  const expirySeconds =
-    (input.expiryOverrideSecs ?? accept.maxTimeoutSeconds) || DEFAULT_PAYMENT_EXPIRY_SECONDS;
+  const expirySeconds = resolveExpirySeconds(input);
 
   // Validate facilitator address (required by upto scheme for witness binding)
   const facilitatorAddress = accept.extra?.facilitatorAddress;
@@ -570,15 +675,19 @@ async function signUptoPayment(input: SignPaymentInput): Promise<SignPaymentResu
   const tokenName = accept.extra?.name ?? 'USDC';
   const tokenVersion = accept.extra?.version ?? '2';
 
-  // Ensure Permit2 has sufficient ERC-20 allowance from the payer's wallet.
-  // Without this, the on-chain settle will revert. One-time setup per (wallet, token).
-  if (!input.skipPermit2Approval) {
-    await ensurePermit2Allowance({
-      wallet,
-      tokenAddress: getAddress(accept.asset) as Hex,
-      requiredAmount: amountAtomicUnits,
-      networkConfig,
-    });
+  // Permit2 must hold enough ERC-20 allowance from the payer's wallet, or the on-chain
+  // settle reverts. One-time setup per (wallet, network), done with `mcpc x402 approve`.
+  if (!input.skipPermit2Check) {
+    const allowance = await readPermit2Allowance(wallet, networkConfig);
+    if (allowance < amountAtomicUnits) {
+      throw new PaymentRefusedError(
+        `x402 payment refused: the "upto" scheme needs a one-time on-chain approval that lets ` +
+          `Permit2 spend this wallet's USDC on ${networkConfig.label} ` +
+          `(${formatUsd(amountAtomicUnits)} needed, ${formatUsd(allowance)} approved).\n` +
+          `To approve, run: mcpc x402 approve --network ${networkConfig.alias}\n` +
+          `To pay without it, use the "exact" scheme: --x402 exact`
+      );
+    }
   }
 
   // Sign with Permit2 domain (NOT the token contract domain)

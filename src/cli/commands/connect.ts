@@ -27,6 +27,7 @@ import type {
   ServerConfig,
   ProxyConfig,
   ServerDetails,
+  X402Limits,
   X402SchemePreference,
 } from '../../lib/types.js';
 import {
@@ -38,6 +39,7 @@ import {
   theme,
 } from '../output.js';
 import { withMcpClient, resolveTarget, resolveAuthProfile } from '../helpers.js';
+import { resolveX402Limits } from '../../lib/x402/limits.js';
 // Imported directly (not via the core barrel) so the CLI doesn't eagerly load the MCP SDK
 import { isSupportedProtocolVersion, SUPPORTED_PROTOCOL_VERSIONS } from '../../core/protocol.js';
 import {
@@ -154,6 +156,7 @@ type ConnectSessionOptions = {
   proxyBearerToken?: string;
   protocolVersion?: string;
   x402?: X402SchemePreference;
+  x402Limits?: Partial<X402Limits>;
   insecure?: boolean;
   skipDetails?: boolean;
   quiet?: boolean;
@@ -292,10 +295,26 @@ export async function connectSession(
 
   // Check if session already exists
   const existingSession = await getSession(name);
+
+  // x402 limits for the session: the flags given now, over what the session already has,
+  // over the defaults. Unlike other options, these are applied to a live session too — a
+  // lower limit that was silently ignored would leave the wallet less protected than the
+  // user was just told.
+  const x402Limits = options.x402
+    ? resolveX402Limits({ ...existingSession?.x402Limits, ...options.x402Limits })
+    : undefined;
+  const storedLimits = resolveX402Limits(existingSession?.x402Limits);
+  const x402Changed =
+    !!existingSession &&
+    !!x402Limits &&
+    (existingSession.x402 !== options.x402 ||
+      storedLimits.maxPaymentUsd !== x402Limits.maxPaymentUsd ||
+      storedLimits.budgetUsd !== x402Limits.budgetUsd);
+
   if (existingSession) {
     const bridgeStatus = getBridgeStatus(existingSession);
 
-    if (bridgeStatus === 'live') {
+    if (bridgeStatus === 'live' && !x402Changed) {
       // Session exists and bridge is running - just show server info
       if (options.outputMode === 'human' && !options.quiet) {
         console.log(formatSuccess(`Session ${name} is already active`));
@@ -306,10 +325,14 @@ export async function connectSession(
       return;
     }
 
-    // Bridge has crashed or expired - reconnect with warning
+    // Bridge has crashed or expired, or must pick up new x402 settings - reconnect with warning
     if (options.outputMode === 'human' && !options.quiet) {
       console.log(
-        theme.yellow(`Session ${name} exists but bridge is ${bridgeStatus}, reconnecting...`)
+        theme.yellow(
+          bridgeStatus === 'live'
+            ? `Session ${name} is active, restarting it to apply the new x402 settings...`
+            : `Session ${name} exists but bridge is ${bridgeStatus}, reconnecting...`
+        )
       );
     }
 
@@ -412,7 +435,9 @@ export async function connectSession(
     server: sessionTransportConfig,
     ...(profileName && { profileName }),
     ...(proxyConfig && { proxy: proxyConfig }),
-    ...(options.x402 && { x402: options.x402 }),
+    // Limits are stored resolved, so the record states what is enforced. The running total
+    // is for the session's whole life: reconnecting keeps it, only a new session starts at 0.
+    ...(options.x402 && x402Limits && { x402: options.x402, x402Limits }),
     ...(options.insecure && { insecure: true }),
     // Clear any previous error status (unauthorized, expired) when reconnecting
     ...(isReconnect && { status: 'active' }),
@@ -657,6 +682,7 @@ type BulkConnectOptions = {
   stdio?: boolean;
   protocolVersion?: string;
   x402?: X402SchemePreference;
+  x402Limits?: Partial<X402Limits>;
   insecure?: boolean;
 };
 
@@ -1189,6 +1215,18 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
         `Pass it when connecting one server or one config file you chose:\n` +
         `  mcpc connect mcp.example.com @myserver -H "Authorization: Bearer ..."\n` +
         `  mcpc connect ./mcp.json -H "X-Custom: value"`
+    );
+  }
+
+  // Same reasoning for payments: --x402 would let every discovered server, including one
+  // a checked-in project config names, draw on the wallet.
+  if (options.x402) {
+    throw new ClientError(
+      `--x402 cannot be combined with config auto-discovery: every discovered server could ` +
+        `charge the wallet.\n` +
+        `Enable payments for one server or one config file you chose:\n` +
+        `  mcpc connect mcp.example.com @myserver --x402\n` +
+        `  mcpc connect ./mcp.json --x402`
     );
   }
 

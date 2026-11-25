@@ -18,6 +18,7 @@ New to mcpc? Start with the [README](../README.md), or run `mcpc help --skill` f
 - [`mcpc x402`](#mcpc-x402)
   - [`mcpc x402 init`](#mcpc-x402-init)
   - [`mcpc x402 import`](#mcpc-x402-import)
+  - [`mcpc x402 approve`](#mcpc-x402-approve)
   - [`mcpc x402 remove`](#mcpc-x402-remove)
   - [`mcpc x402 sign`](#mcpc-x402-sign)
 - [`mcpc help`](#mcpc-help)
@@ -124,6 +125,8 @@ Options:
   --stdio                       Launch all local stdio servers from selected config files
   --protocol-version <version>  Pin the MCP protocol version (see below)
   --x402 [scheme]               Enable x402 auto-payment (see below)
+  --x402-max-payment <usd>      Largest single x402 payment (see below)
+  --x402-budget <usd>           Total the session may pay with x402 (see below)
   --json                        Output in JSON format
 
 Server formats:
@@ -156,6 +159,12 @@ Protocol version:
 x402 payments (experimental):
   --x402 pays for paid tool calls from the wallet set up with: mcpc x402
   Schemes: auto (default, prefers upto), upto, exact.
+  The server sets the price, so the session enforces its own limits: a payment
+  above --x402-max-payment (default $1), or one that would take the session's
+  total past --x402-budget (default $10), is refused. Both are in USD, kept
+  across restarts, and count what the wallet signed (the most the server can
+  collect). Only USDC on Base is paid, and --x402 is refused with
+  auto-discovery.
   For more info, run: mcpc help x402
 
 Output:
@@ -377,16 +386,22 @@ Options:
 
 Commands:
   init                               Create a new x402 wallet (generates a random private key)
-  import <private-key>               Import an existing wallet from a private key
+  import [private-key]               Import a wallet from a private key read from stdin
+  approve [options]                  Let Permit2 spend the wallet USDC (for the upto scheme)
   remove                             Remove the wallet
   sign [options] <payment-required>  Sign a payment from a base64 PAYMENT-REQUIRED header
   help [command]                     Display help for command
 
 sign options:
-  --amount <usd>         Override amount in USD (for upto: max authorization cap)
-  --expiry <seconds>     Override expiry in seconds
-  --scheme <preference>  Payment scheme: auto (default), upto, or exact
-  --no-approve           Skip the upto Permit2 allowance check & auto-approval
+  --amount <usd>          Override amount in USD (for upto: max authorization cap)
+  --expiry <seconds>      Override expiry in seconds
+  --scheme <preference>   Payment scheme: auto (default), upto, or exact
+  --skip-allowance-check  Sign upto without checking the Permit2 allowance
+
+Paying from a session:
+  mcpc connect <server> @name --x402 pays for paid tool calls automatically,
+  in USDC on Base only, within the session's limits (see: mcpc connect --help).
+  The "upto" scheme needs a one-time on-chain approval: mcpc x402 approve
 
 JSON output (--json):
   `{ address, createdAt, balances: { eth, usdc } | null }` (null if no wallet)
@@ -409,15 +424,50 @@ JSON output (--json):
 ### `mcpc x402 import`
 
 ```text
-Usage: mcpc x402 import [options] <private-key>
+Usage: mcpc x402 import [options] [private-key]
 
-Import an existing wallet from a private key
+Import a wallet from a private key read from stdin
 
 Options:
   -h, --help  Display help
 
+Examples:
+  mcpc x402 import < key.txt
+  pass show wallet/key | mcpc x402 import
+
+Notes:
+  The key is a 64-character hex string, with or without the 0x prefix.
+  Passing it as an argument also works, but leaves it in shell history
+  and visible in the process list.
+
 JSON output (--json):
   `{ address }`
+```
+
+### `mcpc x402 approve`
+
+```text
+Usage: mcpc x402 approve [options]
+
+Let Permit2 spend the wallet USDC (for the upto scheme)
+
+Options:
+  --network <base|base-sepolia>  Network to approve on (default: "base")
+  --amount <usd>                 Allowance in USD instead of unlimited; 0 revokes
+  -h, --help                     Display help
+
+The "upto" payment scheme settles through the Permit2 contract, which can only
+move USDC the wallet has approved it to spend. This sends that one-time approval
+as an on-chain transaction, so the wallet needs a little ETH on the network for
+gas. Payments are never approved automatically: until you run this, upto payments
+are refused and the "exact" scheme (no approval, no gas) keeps working.
+
+The approval is for the network's USDC contract only. It does not move any
+funds by itself — every payment still needs its own signature from this wallet.
+
+JSON output (--json):
+  `{ network, token, spender, allowance, transaction }` (allowance in USDC atomic units,
+  transaction null when nothing had to be sent)
 ```
 
 ### `mcpc x402 remove`
@@ -445,12 +495,17 @@ Options:
   --amount <usd>              Override amount in USD (for upto: max authorization cap)
   --expiry <seconds>          Override expiry in seconds
   --scheme <auto|upto|exact>  Payment scheme preference (default: "auto")
-  --no-approve                Skip the upto Permit2 allowance check & auto-approval
+  --skip-allowance-check      Sign upto without checking the Permit2 allowance
   -h, --help                  Display help
 
-Signs the given base64-encoded PAYMENT-REQUIRED header offline using the configured
+Signs the given base64-encoded PAYMENT-REQUIRED header using the configured
 wallet and prints the resulting PAYMENT-SIGNATURE header (plus an MCP config snippet)
 to stdout. Useful for pre-signing payments or integrating with other MCP clients.
+
+Only USDC on Base is signed for, whatever token the header names. The amount is
+yours to judge here: no spending limit applies to a payment you sign by hand.
+Without --expiry the payment is valid for as long as the server asks, at most an
+hour. The upto scheme needs the approval from: mcpc x402 approve
 
 JSON output (--json):
   `{ paymentSignature, from, to, amount, amountAtomicUnits, network, expiresAt }`

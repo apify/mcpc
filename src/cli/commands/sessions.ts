@@ -20,6 +20,7 @@ import {
   formatSuccess,
   formatSessionLine,
   formatServerDetails,
+  getX402SessionStatus,
   formatTimeAgo,
   theme,
 } from '../output.js';
@@ -310,6 +311,7 @@ export async function showServerDetails(
     // in sessions.json — read from disk, no server round-trip needed
     const sessionData = target.startsWith('@') ? await getSession(target) : undefined;
     const resourceSubscriptions = Object.values(sessionData?.resourceSubscriptions ?? {});
+    const x402 = getX402SessionStatus(sessionData);
 
     if (options.outputMode === 'human') {
       console.log(
@@ -318,7 +320,8 @@ export async function showServerDetails(
           target,
           tools,
           resourceSubscriptions,
-          context.serverConfig?.protocolVersion
+          context.serverConfig?.protocolVersion,
+          x402
         )
       );
     } else {
@@ -351,6 +354,7 @@ export async function showServerDetails(
               ...statelessField(connectionMode),
               ...(logPath && { logPath }),
               ...(resourceSubscriptions.length > 0 && { resourceSubscriptions }),
+              ...(x402 && { x402 }),
             },
             protocolVersion,
             ...(supportedVersions && { supportedVersions }),

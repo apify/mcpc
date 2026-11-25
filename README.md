@@ -598,6 +598,8 @@ is missing, expired, or invalid, `mcpc` fails with an error that includes the ri
 | `--profile <name>`              | Require the named profile to exist.                                                                                                             |
 | `--no-profile`                  | Connect anonymously even if a `default` profile exists.                                                                                         |
 | `--x402 [scheme]`               | Skip OAuth auto-detection; use x402 payments instead. Optional scheme: `auto` (default), `upto`, `exact`. Combine with `--profile` to use both. |
+| `--x402-max-payment <usd>`      | Largest single x402 payment the session signs (default: `1`).                                                                                   |
+| `--x402-budget <usd>`           | Total the session signs with x402 before it stops paying (default: `10`).                                                                       |
 | _(none)_                        | Use `default` profile if it exists; otherwise connect anonymously.                                                                              |
 
 Headers set on a config file entry (`file:entry`) apply to the server that entry describes.
@@ -814,9 +816,45 @@ This is entirely **opt-in**: existing functionality is unaffected unless you exp
 Two schemes are supported, both signed by your local wallet:
 
 - **`exact`** — EIP-3009 `TransferWithAuthorization`. Settles on-chain at call-time.
-- **`upto`** — Permit2 `PermitWitnessTransferFrom`. You sign a max cap; the facilitator settles accumulated usage later. First use auto-grants a one-time `USDC.approve(PERMIT2, MAX_UINT256)` (needs a tiny native ETH float for gas).
+- **`upto`** — Permit2 `PermitWitnessTransferFrom`. You sign a max cap; the facilitator settles accumulated usage later. Needs a one-time on-chain approval that you grant yourself with `mcpc x402 approve` (a transaction, so the wallet needs a tiny native ETH float for gas). `mcpc` never sends it on its own.
 
 Flow: server returns HTTP 402 with a `PAYMENT-REQUIRED` header → `mcpc` picks the best scheme per your preference, signs, and retries with `PAYMENT-SIGNATURE` → server verifies and fulfills. Tools that advertise pricing in `_meta.x402` are signed proactively, skipping the 402 round-trip.
+
+### Spending limits
+
+The server names the price, the payee and the token, so a session that pays automatically
+enforces its own bounds on what it signs:
+
+- **Per-payment limit** — a payment above `--x402-max-payment` (default **$1**) is refused.
+- **Session budget** — a payment that would take the session's total past `--x402-budget`
+  (default **$10**) is refused. The total counts what the wallet _signed_ — the most the server
+  can collect, whatever it settles — and lasts for the session's whole life: `restart` and
+  crash recovery keep it, closing the session and connecting again starts over.
+- **USDC on Base only** — a payment in any other token is never signed.
+- **Short-lived** — a payment is valid for as long as the server asks, at most one hour.
+
+A refused payment fails the tool call with an error that says which limit was hit and the
+command that raises it. Limits can be changed on a live session by running `connect` again:
+
+```bash
+mcpc connect mcp.example.com @paid --x402 --x402-max-payment 0.10 --x402-budget 2
+
+# Later: raise the budget (restarts the session, keeps the running total)
+mcpc connect mcp.example.com @paid --x402 --x402-budget 5
+
+# What the session may pay, and how much it has authorized so far
+mcpc @paid
+mcpc --json @paid | jq '._mcpc.x402'
+# { "scheme": "auto", "maxPaymentUsd": 0.1, "budgetUsd": 5, "spentUsd": 0.3 }
+```
+
+Every payment `mcpc` signs is reported on the result of the tool call it paid for, at
+`_meta["com.apify.mcpc/x402-payment"]` (`scheme`, `network`, `asset`, `payTo`, `amount`,
+`amountUsd`, `expiresAt`), and written to the session log (`mcpc @paid logs`). A call that
+reuses an earlier signature carries no such record: nothing new was authorized.
+
+`--x402` cannot be combined with config auto-discovery (`mcpc connect` without a server), which
+would let every discovered server charge the wallet.
 
 ### Settlement receipts
 
@@ -838,22 +876,29 @@ dropped (and recorded in the bridge log).
 
 ### Wallet setup
 
-`mcpc` stores a single wallet in `~/.mcpc/wallets.json` (file permissions `0600`).
+`mcpc` stores a single wallet in the OS keychain (fallback: `~/.mcpc/wallets.json`, file permissions `0600`).
 You need to create or import a wallet before using x402 payments.
 
 ```bash
 # Create a new wallet (generates a random private key)
 mcpc x402 init
 
-# Or import an existing wallet from a private key
-mcpc x402 import <private-key>
+# Or import an existing wallet: the private key is read from stdin,
+# so it stays out of shell history and the process list
+mcpc x402 import < key.txt
 
 # Show wallet address, balances, and a funding QR code
 mcpc x402
 
+# Only for the upto scheme: let Permit2 spend the wallet's USDC (one on-chain transaction)
+mcpc x402 approve                 # --network base-sepolia, --amount <usd>, --amount 0 to revoke
+
 # Remove the wallet
 mcpc x402 remove
 ```
+
+Use a dedicated wallet holding only what you are prepared to spend: the spending limits bound
+what a session signs, the wallet's balance bounds everything.
 
 After creating a wallet, **fund it with USDC on Base** (mainnet or Sepolia testnet) to enable payments.
 
@@ -878,15 +923,19 @@ mcpc x402 sign <base64-payment-required> --amount 1.00 --expiry 3600 --json
 
 **Options:**
 
-| Option               | Description                                                             |
-| -------------------- | ----------------------------------------------------------------------- |
-| `--amount <usd>`     | Override the payment amount in USD (e.g. `0.50` for $0.50)              |
-| `--expiry <seconds>` | Override the payment expiry in seconds from now (e.g. `3600`)           |
-| `--scheme <val>`     | Scheme preference: `auto` (default, upto > exact), `upto`, or `exact`   |
-| `--no-approve`       | For `upto`, skip checking and auto-approving on-chain Permit2 allowance |
+| Option                   | Description                                                           |
+| ------------------------ | --------------------------------------------------------------------- |
+| `--amount <usd>`         | Override the payment amount in USD (e.g. `0.50` for $0.50)            |
+| `--expiry <seconds>`     | Override the payment expiry in seconds from now (e.g. `3600`)         |
+| `--scheme <val>`         | Scheme preference: `auto` (default, upto > exact), `upto`, or `exact` |
+| `--skip-allowance-check` | For `upto`, sign without checking the on-chain Permit2 allowance      |
 
 The command outputs the signed `PAYMENT-SIGNATURE` header value and an MCP config snippet
 that can be used directly with other MCP clients.
+
+Session spending limits do not apply to a payment you sign by hand: check the amount, or cap it
+with `--amount`. Only USDC on Base is signed for, and without `--expiry` the payment is valid for
+as long as the server asks, at most one hour.
 
 `x402 sign` also works for plain HTTP (non-MCP) x402 v2 endpoints. Read the challenge from the
 `PAYMENT-REQUIRED` response header, sign it, then send the request again with the signature:
@@ -914,12 +963,15 @@ mcpc connect mcp.example.com @paid --x402 exact
 # The session now automatically handles 402 responses using your preference
 mcpc @paid tools-call expensive-tool query:="hello"
 
-# Restart re-uses the saved scheme from sessions.json — no need to repeat the flag
+# Restart re-uses the saved scheme and limits from sessions.json — no need to repeat the flags
 mcpc @paid restart
 ```
 
 When `--x402` is active, a fetch middleware wraps all HTTP requests to the MCP server.
-If any request returns HTTP 402, the middleware transparently signs and retries. Your scheme preference is persisted in `sessions.json` and reused on every reconnect or restart.
+If any request returns HTTP 402, the middleware signs and retries, within the session's
+[spending limits](#spending-limits). Your scheme preference and limits are persisted in `sessions.json` and reused on every reconnect or restart.
+A signature is reused for later calls that ask for the same payment terms (servers such as the
+Apify MCP server treat it as a prepaid token), never for a different price or payee.
 
 ### Supported networks
 

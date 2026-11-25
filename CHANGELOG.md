@@ -9,7 +9,18 @@ Each version opens with a one-line summary, which also opens its GitHub release.
 
 ## [Unreleased]
 
-`close` and `restart` can no longer kill an unrelated process that reused a bridge's PID; repeated `connect -H` headers are all sent again, `connect` and `--proxy` handle `[::1]`, `--proxy` rejects malformed ports, user info no longer selects `http://`, and `logs --since` rejects values that are not a duration or ISO timestamp.
+x402 sessions now pay within spending limits and in USDC only; `close` and `restart` can no longer kill an unrelated process that reused a bridge's PID, plus fixes for `connect -H`, `[::1]`, `--proxy` ports and `logs --since`.
+
+### Security
+
+- `--x402` sessions no longer sign whatever a server asks for. A payment above `--x402-max-payment` (default $1), or one that would take the session's total past `--x402-budget` (default $10), is refused with an error naming the limit; only USDC on Base is paid, and a payment is valid for at most one hour. `mcpc @session` shows the limits and the total authorized so far.
+- The on-chain Permit2 approval that the x402 `upto` scheme needs is no longer sent automatically the first time a server asks for it. Run the new `mcpc x402 approve` once; until then `upto` payments are refused and `exact` keeps working.
+- Every x402 payment mcpc signs is now reported on the tool result it paid for, at `_meta["com.apify.mcpc/x402-payment"]`, and in the session log. A signature is reused only for calls asking for the same price and payee.
+- `mcpc x402 import` reads the private key from stdin (`mcpc x402 import < key.txt`), keeping it out of shell history and the process list. `--x402` is refused with config auto-discovery, where it would have let every discovered server charge the wallet.
+
+### Changed
+
+- `x402 sign --no-approve` is now `--skip-allowance-check`: signing checks the Permit2 allowance for `upto` but never sends the approval itself. The old flag still works.
 
 ### Fixed
 
