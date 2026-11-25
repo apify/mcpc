@@ -787,7 +787,7 @@ export function parseProxyArg(value: string): { host: string; port: number } {
   if (lastColonIndex === -1) {
     // No colon - just port
     const port = parseInt(value, 10);
-    if (isNaN(port) || port <= 0 || port > 65535) {
+    if (!/^\d+$/.test(value) || port <= 0 || port > 65535) {
       throw new ClientError(
         `Invalid --proxy port: "${value}". Must be a number between 1 and 65535.`
       );
@@ -804,7 +804,7 @@ export function parseProxyArg(value: string): { host: string; port: number } {
     throw new ClientError(`Invalid --proxy format: "${value}". Host cannot be empty.`);
   }
 
-  if (isNaN(port) || port <= 0 || port > 65535) {
+  if (!/^\d+$/.test(portStr) || port <= 0 || port > 65535) {
     throw new ClientError(
       `Invalid --proxy port: "${portStr}". Must be a number between 1 and 65535.`
     );
