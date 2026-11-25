@@ -9,7 +9,7 @@ Each version opens with a one-line summary, which also opens its GitHub release.
 
 ## [Unreleased]
 
-`close` and `restart` can no longer kill an unrelated process that reused a bridge's PID; repeated `connect -H` headers are all sent again, `connect` and `--proxy` handle `[::1]`, `--proxy` rejects malformed ports, user info no longer selects `http://`, and `logs --since` rejects values that are not a duration or ISO timestamp.
+`close` and `restart` can no longer kill an unrelated process that reused a bridge's PID; repeated `connect -H` headers are all sent again, `connect` and `--proxy` handle `[::1]`, `--proxy` rejects malformed ports, user info no longer selects `http://`, `logs --since` rejects values that are not a duration or ISO timestamp, and `skills-get` reads YAML block scalars correctly.
 
 ### Fixed
 
@@ -21,6 +21,7 @@ Each version opens with a one-line summary, which also opens its GitHub release.
 - A server target without a scheme whose user info looks local, like `localhost:x@example.com`, now defaults to `https://` instead of `http://`. (#500)
 - `connect --proxy 8080x` and other ports with extra characters (`1e3`, `80.5`) are now rejected instead of silently binding the leading digits. (#503)
 - `logs --since 5` and other values that are neither a duration nor an ISO 8601 timestamp are now rejected instead of being read as a date in 2001. (#506)
+- `skills-get` no longer rejects a skill whose frontmatter has a `|` or `>` block with blank lines, `#` lines, extra indentation or tabs: block scalars, also as list items and with indentation indicators, now read as YAML defines them. (#508)
 
 ## [0.8.0] - 2026-11-04
 

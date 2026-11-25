@@ -129,6 +129,184 @@ folded: >-
     ).toEqual({ literal: 'line one\nline two\n', folded: 'wrapped text' });
   });
 
+  it('keeps blank lines in literal block scalars', () => {
+    expect(
+      parse(`description: |
+  first paragraph
+
+  second paragraph`)
+    ).toEqual({
+      description: 'first paragraph\n\nsecond paragraph\n',
+    });
+  });
+
+  it('keeps content lines that start with # in literal block scalars', () => {
+    expect(
+      parse(`description: |
+  # Heading
+  Body`)
+    ).toEqual({ description: '# Heading\nBody\n' });
+  });
+
+  it('keeps relative indentation in literal block scalars', () => {
+    expect(
+      parse(`description: |
+  first
+    nested
+  last`)
+    ).toEqual({ description: 'first\n  nested\nlast\n' });
+  });
+
+  it('keeps trailing spaces in literal block scalars', () => {
+    expect(parse('description: |\n  first  \n  last ')).toEqual({
+      description: 'first  \nlast \n',
+    });
+  });
+
+  it('applies keep chomping to trailing blank lines', () => {
+    expect(parse('description: |+\n  first\n\n\nname: example')).toEqual({
+      description: 'first\n\n\n',
+      name: 'example',
+    });
+  });
+
+  it('applies strip chomping to trailing blank lines', () => {
+    expect(parse('description: |-\n  first\n\n\nname: example')).toEqual({
+      description: 'first',
+      name: 'example',
+    });
+  });
+
+  it('folds a paragraph break to a newline', () => {
+    expect(
+      parse(`description: >
+  first paragraph
+
+  second paragraph`)
+    ).toEqual({
+      description: 'first paragraph\nsecond paragraph\n',
+    });
+  });
+
+  it('does not fold around a more-indented line', () => {
+    expect(
+      parse(`description: >
+  first
+    nested
+  last`)
+    ).toEqual({ description: 'first\n  nested\nlast\n' });
+  });
+
+  it.each([
+    ['k: >\n  a\n    b\n\n  c', { k: 'a\n  b\n\nc\n' }],
+    ['k: >\n  a\n\n    b\n  c', { k: 'a\n\n  b\nc\n' }],
+    ['k: >\n  a\n\n    b\n\n  c', { k: 'a\n\n  b\n\nc\n' }],
+  ])('keeps folded breaks around more-indented lines', (yaml, expected) => {
+    expect(parse(yaml)).toEqual(expected);
+  });
+
+  it.each([
+    ['k: |\n  a\n  \tb', { k: 'a\n\tb\n' }],
+    ['k: |\n  \t\n  a', { k: '\t\na\n' }],
+    ['k: >\n  \t\n  a', { k: '\t\na\n' }],
+    ['k: |\n  a\n\t\nn: 1', { k: 'a\n', n: 1 }],
+    ['k: |\n\t', { k: '' }],
+    ['k: |\n \t\n  a', { k: '\t\n a\n' }],
+    ['k: |\n  a\n  ---', { k: 'a\n---\n' }],
+    ['k: |\n  ---\n  ...\n  x', { k: '---\n...\nx\n' }],
+  ])('keeps structure-like lines inside block scalars', (yaml, expected) => {
+    expect(parse(yaml)).toEqual(expected);
+  });
+
+  it.each([
+    ['s:\n  - |\n    text\n    more', { s: ['text\nmore\n'] }],
+    ['s:\n  - >\n    text\n    more', { s: ['text more\n'] }],
+    ['s:\n  - |', { s: [''] }],
+  ])('parses block scalars as sequence items', (yaml, expected) => {
+    expect(parse(yaml)).toEqual(expected);
+  });
+
+  it.each([
+    ['literal clip mapping at EOF', 'k: |\n  ', { k: '' }],
+    ['literal keep mapping at EOF', 'k: |+\n      ', { k: '\n' }],
+    ['folded clip mapping before a key', 'k: >\n\n  \nn: 1', { k: '', n: 1 }],
+    ['folded keep direct list item at EOF', 's:\n  - >+\n    ', { s: ['\n'] }],
+    ['literal strip nested list mapping at EOF', 's:\n  - k: |-\n      ', { s: [{ k: '' }] }],
+    ['folded strip mapping at EOF', 'k: >-\n \n      ', { k: '' }],
+    [
+      'literal clip direct list item before a key',
+      's:\n  - |\n \nnext: ok',
+      {
+        s: [''],
+        next: 'ok',
+      },
+    ],
+    [
+      'literal keep nested list mapping before a key',
+      's:\n  - k: |+\n  \n     \nnext: ok',
+      {
+        s: [{ k: '\n\n' }],
+        next: 'ok',
+      },
+    ],
+    ['explicit indentation keeps excess spaces', 'k: |2\n     ', { k: '   \n' }],
+  ])('normalizes whitespace-only block scalar bodies: %s', (_name, yaml, expected) => {
+    expect(parse(yaml)).toEqual(expected);
+  });
+
+  it.each([
+    ['k: |\n      \n    a'],
+    ['k: >\n      \n    a'],
+    ['s:\n  - |\n      \n    a'],
+    ['s:\n  - k: |\n          \n      a'],
+  ])('rejects over-indented leading empty lines in auto-indented block scalars', (yaml) => {
+    expect(() => parse(yaml)).toThrow(/indented more than/);
+  });
+
+  it.each([
+    ['k: |2\n    a', { k: '  a\n' }],
+    ['k: |2\n     \n    a', { k: '   \n  a\n' }],
+    ['k: >1\n  a\n  b', { k: ' a\n b\n' }],
+    ['k: |2-\n    a', { k: '  a' }],
+    ['k: |-2\n    a', { k: '  a' }],
+    ['outer:\n  k: >+3\n       a\n       b', { outer: { k: '  a\n  b\n' } }],
+  ])('honors explicit block scalar indentation indicators', (yaml, expected) => {
+    expect(parse(yaml)).toEqual(expected);
+  });
+
+  it('stops a block scalar before a column-zero comment and the next key', () => {
+    expect(
+      parse(`description: |
+  first
+# outside the scalar
+name: example`)
+    ).toEqual({ description: 'first\n', name: 'example' });
+  });
+
+  it('keeps blank lines in a block scalar inside a sequence mapping', () => {
+    expect(
+      parse(`items:
+  - description: |
+      first
+
+      second
+    name: one`)
+    ).toEqual({
+      items: [{ description: 'first\n\nsecond\n', name: 'one' }],
+    });
+  });
+
+  it('keeps blank lines in literal block scalars with CRLF input', () => {
+    expect(
+      parseSkillDocument(
+        '---\r\nname: example\r\ndescription: |\r\n  first\r\n\r\n  second\r\n---\r\nbody'
+      )
+    ).toEqual({
+      frontmatter: { name: 'example', description: 'first\n\nsecond\n' },
+      body: 'body',
+    });
+  });
+
   it('strips comments but keeps # inside values', () => {
     expect(parse('name: a # trailing\nurl: "https://x/y#frag"')).toEqual({
       name: 'a',
@@ -168,6 +346,29 @@ folded: >-
 
   it('rejects tab indentation', () => {
     expect(() => parse('metadata:\n\tversion: 1')).toThrow(/tabs/);
+  });
+
+  it('rejects tabs before block scalar indentation', () => {
+    expect(() => parse('k: |\n\t a')).toThrow(/tabs for indentation/);
+  });
+
+  it('rejects a more-indented line after a tab-only line ends a block scalar', () => {
+    expect(() => parse('k: |\n  a\n\t\n  b')).toThrow(/unexpected indentation/);
+  });
+
+  it.each([
+    ['  a: 1\n\tb: 2', /tabs for indentation/],
+    ['s:\n  - a\n  \t- b', /tabs for indentation/],
+    ['s:\n  - a\n  ---', /multiple YAML documents/],
+    ['a: 1\n  ---', /multiple YAML documents/],
+  ])('reports the intended error for malformed structural lines', (yaml, error) => {
+    expect(() => parse(yaml)).toThrow(error);
+  });
+
+  it('rejects an indented document marker outside a block scalar', () => {
+    expect(() => parse('metadata:\n  ---')).toThrow(
+      'line 2: multiple YAML documents are not supported in frontmatter'
+    );
   });
 });
 
