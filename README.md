@@ -636,7 +636,7 @@ mcpc connect mcp.apify.com @open-relay --proxy 8080
 
 # Now any MCP client can connect to proxy like to a regular MCP server
 # The client has NO access to the original OAuth tokens or HTTP headers
-# Note: localhost/127.0.0.1 URLs default to http:// (no scheme needed)
+# Note: localhost/127.0.0.1/[::1] URLs default to http:// (no scheme needed)
 mcpc connect localhost:8080 @sandboxed
 mcpc @sandboxed tools-call search-actors keywords:="web scraper"
 
