@@ -9,12 +9,18 @@ Each version opens with a one-line summary, which also opens its GitHub release.
 
 ## [Unreleased]
 
-Safer bridge shutdown: a PID the OS recycled is never signalled, and a stopping bridge gets its full teardown time.
+`close` and `restart` can no longer kill an unrelated process that reused a bridge's PID; repeated `connect -H` headers are all sent again, `connect` and `--proxy` handle `[::1]`, `--proxy` rejects malformed ports, user info no longer selects `http://`, and `logs --since` rejects values that are not a duration or ISO timestamp.
 
 ### Fixed
 
 - A restart or `close` no longer kills an unrelated process that was given a dead bridge's PID (after a reboot, for example). The PID recorded for a session is signalled only once mcpc has confirmed it still belongs to the bridge; a recycled one is treated like a crashed bridge and the session reconnects.
 - `close`, `restart` and crash recovery now give the old bridge up to 10 seconds to finish its own shutdown before force-killing it, instead of one second, so a stdio server that is slow to exit is no longer orphaned and the request that ends the server-side session is no longer cut short.
+- `connect` with several `-H`/`--header` options now stores and sends every header, not just the last one. (#490)
+- `connect --proxy [::1]:8080` now binds the proxy to the IPv6 address in brackets instead of failing with a misleading "port already in use" error. (#497)
+- `connect [::1]:8080` without a scheme now defaults to `http://` like `localhost`, the session list shows IPv6 proxy addresses in brackets, and `--proxy` reports why it cannot bind instead of always saying the port is in use. (#497)
+- A server target without a scheme whose user info looks local, like `localhost:x@example.com`, now defaults to `https://` instead of `http://`. (#500)
+- `connect --proxy 8080x` and other ports with extra characters (`1e3`, `80.5`) are now rejected instead of silently binding the leading digits. (#503)
+- `logs --since 5` and other values that are neither a duration nor an ISO 8601 timestamp are now rejected instead of being read as a date in 2001. (#506)
 
 ## [0.8.0] - 2026-11-04
 

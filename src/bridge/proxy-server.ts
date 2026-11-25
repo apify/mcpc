@@ -31,6 +31,7 @@ import {
 import type { McpClient } from '../core/mcp-client.js';
 import type { ServerCapabilities } from '../lib/types.js';
 import { createLogger } from '../lib/logger.js';
+import { formatHostPort } from '../lib/utils.js';
 
 const logger = createLogger('proxy-server');
 
@@ -70,7 +71,9 @@ export class ProxyServer {
   async start(): Promise<void> {
     const { host, port, sessionName, bearerToken } = this.options;
 
-    logger.info(`Starting proxy server on ${host}:${port} for session ${sessionName}`);
+    logger.info(
+      `Starting proxy server on ${formatHostPort(host, port)} for session ${sessionName}`
+    );
 
     // Create HTTP server
     this.httpServer = createServer((req, res) => {
@@ -86,7 +89,7 @@ export class ProxyServer {
     // Start listening
     await new Promise<void>((resolve, reject) => {
       this.httpServer!.listen(port, host, () => {
-        logger.info(`Proxy server listening on http://${host}:${port}`);
+        logger.info(`Proxy server listening on http://${formatHostPort(host, port)}`);
         resolve();
       });
 
@@ -377,6 +380,6 @@ export class ProxyServer {
    * Get the proxy server address
    */
   getAddress(): string {
-    return `http://${this.options.host}:${this.options.port}`;
+    return `http://${formatHostPort(this.options.host, this.options.port)}`;
   }
 }
