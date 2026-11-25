@@ -671,6 +671,9 @@ mcpc connect mcp.apify.com @relay --proxy 0.0.0.0:8080
 
 # Bind to specific interface
 mcpc connect mcp.apify.com @relay --proxy 192.168.1.100:8080
+
+# IPv6 loopback (brackets around the address)
+mcpc connect mcp.apify.com @relay --proxy '[::1]:8080'
 ```
 
 When listing sessions, proxy info is displayed prominently:
