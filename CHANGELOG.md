@@ -9,7 +9,7 @@ Each version opens with a one-line summary, which also opens its GitHub release.
 
 ## [Unreleased]
 
-Step-up authorization for OAuth scope challenges, and repeated `connect -H` headers are all sent again.
+Step-up authorization for OAuth scope challenges, repeated `connect -H` headers are all sent again, and `connect --proxy` accepts bracketed IPv6 addresses.
 
 ### Added
 
@@ -19,6 +19,7 @@ Step-up authorization for OAuth scope challenges, and repeated `connect -H` head
 ### Fixed
 
 - `connect` with several `-H`/`--header` options now stores and sends every header, not just the last one. (#490)
+- `connect --proxy [::1]:8080` now binds the proxy to the IPv6 address in brackets instead of failing with a misleading "port already in use" error. (#497)
 
 ## [0.8.0] - 2026-11-04
 
