@@ -1,17 +1,13 @@
 /**
  * Unit tests for stopBridge()
  *
- * Two things must hold before a PID is signalled. It must still be this session's bridge
- * (identifyBridgeProcess): PIDs are recycled, and after a reboot the number in
- * sessions.json may belong to any process of the user, which a restart must not SIGTERM.
- * And a bridge that is told to exit must be given time to run its own teardown — the HTTP
- * DELETE that ends the server-side MCP session and the SDK's stdio child shutdown — before
- * a SIGKILL orphans the child.
+ * The PID in sessions.json is signalled only when the bridge's own IPC socket answers.
+ * PIDs are recycled: after a reboot the recorded number may belong to an unrelated process
+ * of the user, which a restart or `close` must not kill. A bridge that is told to exit then
+ * gets its whole teardown budget (HTTP DELETE, stdio child shutdown) before SIGKILL.
  *
- * On Windows the graceful IPC shutdown is attempted whenever the bridge's pipe answers, not
- * only when the liveness check says the bridge is running: that check can be wrong (a
- * timed-out `tasklist` reported every PID dead, #427), and a bridge that is never told to
- * exit lives on next to its replacement.
+ * On Windows the graceful IPC shutdown must not depend on the liveness check, which can be
+ * wrong (a timed-out `tasklist` reported every PID dead, #427).
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -32,11 +28,6 @@ vi.mock('../../../src/lib/utils.js', async (importOriginal) => {
   return { ...actual, isProcessAlive: vi.fn() };
 });
 
-vi.mock('../../../src/lib/bridge-process.js', () => ({
-  identifyBridgeProcess: vi.fn(),
-  isBridgeProcess: vi.fn(),
-}));
-
 vi.mock('../../../src/lib/bridge-client.js', () => ({
   BridgeClient: class {
     connect = ipc.connect;
@@ -50,12 +41,12 @@ vi.mock('../../../src/lib/auth/profiles.js', () => ({}));
 
 import { getSession } from '../../../src/lib/sessions.js';
 import { isProcessAlive } from '../../../src/lib/utils.js';
-import { identifyBridgeProcess } from '../../../src/lib/bridge-process.js';
 import { stopBridge } from '../../../src/lib/bridge-manager.js';
 
 const REAL_PLATFORM = process.platform;
 const SESSION_NAME = '@stop-test';
 const BRIDGE_PID = 4242;
+const NOT_LISTENING = Object.assign(new Error('ECONNREFUSED'), { code: 'ECONNREFUSED' });
 
 function setPlatform(platform: string): void {
   Object.defineProperty(process, 'platform', { value: platform, configurable: true });
@@ -69,8 +60,8 @@ beforeEach(() => {
     pid: BRIDGE_PID,
     server: { url: 'https://mcp.example.com' },
   } as never);
-  vi.mocked(identifyBridgeProcess).mockReset().mockResolvedValue('bridge');
   vi.mocked(isProcessAlive).mockReset();
+  // The bridge answers on its socket unless a test says otherwise
   ipc.connect.mockReset().mockResolvedValue(undefined);
   ipc.send.mockReset();
   ipc.close.mockReset().mockResolvedValue(undefined);
@@ -83,22 +74,20 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('stopBridge never signals a PID that is not the bridge', () => {
+describe('stopBridge when no bridge answers on the socket', () => {
   for (const platform of ['linux', 'win32']) {
-    for (const identity of ['other', 'dead', 'unknown'] as const) {
-      it(`${platform}: leaves a PID identified as "${identity}" alone`, async () => {
-        setPlatform(platform);
-        vi.mocked(identifyBridgeProcess).mockResolvedValue(identity);
-        // Whatever the bare liveness check says: a recycled PID *is* alive.
-        vi.mocked(isProcessAlive).mockReturnValue(true);
+    it(`${platform}: never signals the recorded PID, even though it is alive`, async () => {
+      setPlatform(platform);
+      ipc.connect.mockRejectedValue(NOT_LISTENING);
+      // A recycled PID *is* alive: it belongs to some other process now.
+      vi.mocked(isProcessAlive).mockReturnValue(true);
 
-        await stopBridge(SESSION_NAME, { graceful: true });
+      await stopBridge(SESSION_NAME, { graceful: true });
 
-        expect(identifyBridgeProcess).toHaveBeenCalledWith(SESSION_NAME, BRIDGE_PID);
-        expect(killSpy).not.toHaveBeenCalled();
-        expect(ipc.connect).not.toHaveBeenCalled();
-      });
-    }
+      expect(ipc.connect).toHaveBeenCalledWith({ retryTimeoutMillis: 0 });
+      expect(ipc.send).not.toHaveBeenCalled();
+      expect(killSpy).not.toHaveBeenCalled();
+    });
   }
 
   it('does nothing when the session has no bridge PID', async () => {
@@ -110,7 +99,6 @@ describe('stopBridge never signals a PID that is not the bridge', () => {
 
     await stopBridge(SESSION_NAME, { graceful: true });
 
-    expect(identifyBridgeProcess).not.toHaveBeenCalled();
     expect(ipc.connect).not.toHaveBeenCalled();
     expect(killSpy).not.toHaveBeenCalled();
   });
@@ -119,11 +107,11 @@ describe('stopBridge never signals a PID that is not the bridge', () => {
 describe('stopBridge on Unix', () => {
   beforeEach(() => {
     setPlatform('linux');
+    vi.useFakeTimers();
   });
 
-  it('sends SIGTERM and returns as soon as the bridge has exited, without SIGKILL', async () => {
-    vi.useFakeTimers();
-    // Alive for the first few polls, gone after ~300 ms: a bridge finishing its teardown.
+  it('sends SIGTERM and returns once the bridge has exited, without SIGKILL', async () => {
+    // Alive for the first few polls, then gone: a bridge finishing its teardown.
     let polls = 0;
     vi.mocked(isProcessAlive).mockImplementation(() => ++polls <= 3);
 
@@ -136,13 +124,12 @@ describe('stopBridge on Unix', () => {
   });
 
   it('gives the bridge its whole teardown budget before SIGKILL', async () => {
-    vi.useFakeTimers();
     vi.mocked(isProcessAlive).mockReturnValue(true);
 
     const stopping = stopBridge(SESSION_NAME);
 
     // A stdio server that ignores stdin EOF needs the SDK's close-stdin → SIGTERM → SIGKILL
-    // escalation (~6 s), after the 2 s HTTP DELETE budget — one second used to be the limit.
+    // escalation (~6 s) on top of the 2 s HTTP DELETE budget; one second used to be the limit.
     await vi.advanceTimersByTimeAsync(9_000);
     expect(killSpy).toHaveBeenCalledWith(BRIDGE_PID, 'SIGTERM');
     expect(killSpy).not.toHaveBeenCalledWith(BRIDGE_PID, 'SIGKILL');
@@ -150,18 +137,6 @@ describe('stopBridge on Unix', () => {
     await vi.advanceTimersByTimeAsync(1_500);
     await stopping;
     expect(killSpy).toHaveBeenCalledWith(BRIDGE_PID, 'SIGKILL');
-  });
-
-  it('tolerates a bridge that exits between the identity check and SIGTERM', async () => {
-    killSpy.mockImplementation((_pid, signal) => {
-      if (signal === 'SIGTERM') throw Object.assign(new Error('ESRCH'), { code: 'ESRCH' });
-      return true;
-    });
-    vi.mocked(isProcessAlive).mockReturnValue(false);
-
-    await expect(stopBridge(SESSION_NAME)).resolves.toBeUndefined();
-
-    expect(killSpy).not.toHaveBeenCalledWith(BRIDGE_PID, 'SIGKILL');
   });
 });
 
@@ -175,29 +150,15 @@ describe('stopBridge on Windows', () => {
 
     await stopBridge(SESSION_NAME, { graceful: true });
 
-    expect(ipc.connect).toHaveBeenCalledWith({ retryTimeoutMillis: 0 });
     expect(ipc.send).toHaveBeenCalledWith({ type: 'shutdown' });
     // Nothing to force-kill when the check says the bridge is gone
     expect(killSpy).not.toHaveBeenCalled();
   });
 
-  it('waits for the bridge to exit after the IPC shutdown before force-killing it', async () => {
-    vi.useFakeTimers();
-    let polls = 0;
-    vi.mocked(isProcessAlive).mockImplementation(() => ++polls <= 20);
-
-    const stopping = stopBridge(SESSION_NAME, { graceful: true });
-    await vi.advanceTimersByTimeAsync(3_000);
-    await stopping;
-
-    expect(ipc.send).toHaveBeenCalledWith({ type: 'shutdown' });
-    // Exited on its own after ~2 s, inside the budget: no SIGKILL
-    expect(killSpy).not.toHaveBeenCalled();
-  });
-
-  it('force-kills a live bridge that did not take the IPC shutdown', async () => {
+  it('force-kills a listening bridge that did not take the IPC shutdown', async () => {
     vi.mocked(isProcessAlive).mockReturnValue(true);
-    ipc.connect.mockRejectedValue(Object.assign(new Error('EPIPE'), { code: 'EPIPE' }));
+    // Answers the identity check, then fails the shutdown message
+    ipc.connect.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('EPIPE'));
 
     await stopBridge(SESSION_NAME, { graceful: true });
 

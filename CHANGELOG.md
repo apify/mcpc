@@ -13,7 +13,7 @@ Each version opens with a one-line summary, which also opens its GitHub release.
 
 ### Fixed
 
-- A restart or `close` no longer kills an unrelated process that was given a dead bridge's PID (after a reboot, for example). The PID recorded for a session is signalled only once mcpc has confirmed it still belongs to the bridge; a recycled one is treated like a crashed bridge and the session reconnects.
+- A restart or `close` no longer kills an unrelated process that was given a dead bridge's PID (after a reboot, for example). The recorded PID is signalled only when the bridge itself still answers; otherwise the session simply gets a new bridge.
 - `close`, `restart` and crash recovery now give the old bridge up to 10 seconds to finish its own shutdown before force-killing it, instead of one second, so a stdio server that is slow to exit is no longer orphaned and the request that ends the server-side session is no longer cut short.
 - `connect` with several `-H`/`--header` options now stores and sends every header, not just the last one. (#490)
 - `connect --proxy [::1]:8080` now binds the proxy to the IPv6 address in brackets instead of failing with a misleading "port already in use" error. (#497)

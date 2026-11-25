@@ -32,7 +32,6 @@ import {
   REDACTED_HEADER_VALUE,
 } from './utils.js';
 import { updateSession, getSession } from './sessions.js';
-import { identifyBridgeProcess, isBridgeProcess } from './bridge-process.js';
 import { createLogger } from './logger.js';
 import {
   ClientError,
@@ -362,27 +361,38 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
 }
 
 /**
- * How long stopBridge() lets a bridge wind down on its own — after SIGTERM on Unix, or
- * the IPC shutdown message on Windows — before it is SIGKILLed. The bridge's teardown
+ * How long stopBridge() lets a bridge finish its own shutdown before SIGKILL. The bridge
  * needs up to 2 s for the HTTP DELETE that ends the server-side MCP session, then up to
- * 6 s for the SDK to close a stdio server (close stdin, wait, SIGTERM, wait, SIGKILL; see
- * McpClient.close()). Killing earlier orphans the stdio child and cuts the DELETE short.
- * The wait polls, so a bridge that exits promptly costs nothing extra.
+ * 6 s for the SDK to close a stdio server (see McpClient.close()); killing it earlier
+ * orphans that child. The wait polls, so a bridge that exits promptly costs nothing extra.
  */
 const BRIDGE_SHUTDOWN_GRACE_MILLIS = 10_000;
 
-/** Poll interval while waiting for a bridge process to exit. */
-const PROCESS_EXIT_POLL_MILLIS = 100;
+/**
+ * Whether a bridge is listening on the given IPC socket.
+ *
+ * This is the identity check to pass before signalling a PID taken from sessions.json.
+ * PIDs are recycled: after a reboot the recorded number may belong to any other process
+ * of the user. The socket path is derived from the session name and the PID, in a
+ * directory only this user can reach, so a listener there can only be the bridge spawned
+ * with that PID. A stale socket file refuses the connection, and a Windows named pipe
+ * disappears with its process.
+ */
+async function isBridgeListening(socketPath: string): Promise<boolean> {
+  const client = new BridgeClient(socketPath);
+  try {
+    await client.connect({ retryTimeoutMillis: 0 });
+    return true;
+  } catch {
+    return false;
+  } finally {
+    await client.close();
+  }
+}
 
 /**
  * Stop a bridge process (does NOT delete session or headers)
  * Use closeSession() for full session cleanup
- *
- * The recorded PID is signalled only once identifyBridgeProcess() has confirmed that it
- * is still this session's bridge. PIDs are recycled: after a reboot the number in
- * sessions.json may belong to an unrelated process of the user, which must not be
- * SIGTERMed on the way to a restart. A recycled or dead PID is left alone and the
- * caller goes on to start a fresh bridge, which registers its own PID.
  *
  * @param graceful - If true, attempt graceful shutdown via IPC so the bridge
  *   can send HTTP DELETE to the server. Only needed for closeSession().
@@ -404,13 +414,13 @@ export async function stopBridge(
   // Kill the bridge process if it's still running
   if (session.pid) {
     const pid = session.pid;
+    const socketPath = getSocketPath(sessionName, pid);
 
-    // The check connects to the bridge's socket before it consults the PID, so a bridge
-    // whose socket answers is stopped even when the liveness check cannot see it (a
+    // Never signal the recorded PID unless its bridge answers (see isBridgeListening).
+    // The check does not depend on isProcessAlive(), which can be wrong on Windows (a
     // timed-out `tasklist` used to report every PID dead, #427).
-    const identity = await identifyBridgeProcess(sessionName, pid);
-    if (identity !== 'bridge') {
-      logger.debug(`Not signalling PID ${pid} recorded for ${sessionName}: ${identity}`);
+    if (!(await isBridgeListening(socketPath))) {
+      logger.debug(`No bridge listening for ${sessionName} (PID ${pid}), nothing to stop`);
       return;
     }
 
@@ -420,22 +430,12 @@ export async function stopBridge(
         // For graceful shutdown (closeSession / explicit restart), send an IPC message
         // first so the bridge can send HTTP DELETE to terminate its MCP session before
         // exiting. Without it the server-side session (and its subscriptions) is orphaned.
-        if (options?.graceful) {
-          const socketPath = getSocketPath(sessionName, pid);
-          const shutdownOk = await sendBridgeShutdown(socketPath);
-          if (shutdownOk) {
-            await waitForProcessExit(pid, BRIDGE_SHUTDOWN_GRACE_MILLIS);
-          }
+        if (options?.graceful && (await sendBridgeShutdown(socketPath))) {
+          await waitForProcessExit(pid, BRIDGE_SHUTDOWN_GRACE_MILLIS);
         }
       } else {
         logger.debug(`Sending SIGTERM to bridge process: ${pid}`);
-        try {
-          process.kill(pid, 'SIGTERM');
-        } catch {
-          // Exited between the identity check and the signal
-        }
-
-        // Let the bridge run its own teardown (HTTP DELETE, stdio child shutdown)
+        process.kill(pid, 'SIGTERM');
         await waitForProcessExit(pid, BRIDGE_SHUTDOWN_GRACE_MILLIS);
       }
 
@@ -490,11 +490,12 @@ async function sendBridgeShutdown(socketPath: string): Promise<boolean> {
  */
 async function waitForProcessExit(pid: number, timeoutMillis: number): Promise<void> {
   const start = Date.now();
+  const pollIntervalMillis = 100;
   while (Date.now() - start < timeoutMillis) {
     if (!isProcessAlive(pid)) {
       return;
     }
-    await new Promise((resolve) => setTimeout(resolve, PROCESS_EXIT_POLL_MILLIS));
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMillis));
   }
 }
 
@@ -898,10 +899,8 @@ export async function ensureBridgeReady(
   // Socket path is PID-based: each bridge instance gets its own unique path
   const socketPath = session.pid ? getSocketPath(sessionName, session.pid) : null;
 
-  // Quick check: is the recorded PID still this session's bridge? A PID the OS has
-  // recycled since the bridge died is not, and goes straight to the restart below
-  // instead of a health check that would wait for a socket nobody listens on.
-  const processAlive = session.pid ? await isBridgeProcess(sessionName, session.pid) : false;
+  // Quick check: is the process alive?
+  const processAlive = session.pid ? isProcessAlive(session.pid) : false;
 
   if (processAlive && socketPath) {
     // Process alive, try getServerDetails (blocks until MCP connected)
