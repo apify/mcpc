@@ -147,6 +147,8 @@ Session name:
   Omit @session to auto-generate from the server (mcp.apify.com → @apify)
   or config entry. Matching sessions (same server, profile, header keys)
   are reused. Bulk connects don't accept @session.
+  A name stays bound to its server: to connect another server under an
+  existing name, close that session first (mcpc @session close).
 
 Protocol version:
   mcpc negotiates the newest MCP version both sides support, from

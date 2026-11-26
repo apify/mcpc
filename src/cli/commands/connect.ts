@@ -49,9 +49,17 @@ import {
   getSession,
   loadSessions,
 } from '../../lib/sessions.js';
-import { startBridge, StartBridgeOptions, stopBridge } from '../../lib/bridge-manager.js';
+import {
+  startBridge,
+  StartBridgeOptions,
+  stopBridge,
+  resolveSessionCwd,
+} from '../../lib/bridge-manager.js';
 import {
   storeKeychainSessionHeaders,
+  removeKeychainSessionHeaders,
+  removeKeychainSessionEnv,
+  removeKeychainProxyBearerToken,
   storeKeychainSessionEnv,
   storeKeychainProxyBearerToken,
 } from '../../lib/auth/keychain.js';
@@ -254,9 +262,38 @@ function assertSupportedProtocolVersion(version: string | undefined): void {
   }
 }
 
+/** How a session's server is named in messages: its URL, or its command line. */
+function describeServer(server: ServerConfig): string {
+  if (server.url) return server.url;
+  return [server.command ?? 'unknown', ...(server.args ?? [])].join(' ');
+}
+
+/**
+ * Whether two transport configs name the same MCP server: the same URL, or the same stdio
+ * command line. Headers, env and other per-connection settings are not part of the identity.
+ */
+export function isSameServer(a: ServerConfig, b: ServerConfig): boolean {
+  if (a.url !== undefined || b.url !== undefined) {
+    if (a.url === undefined || b.url === undefined) return false;
+    if (a.command !== undefined || b.command !== undefined) return false;
+    try {
+      return normalizeServerUrl(a.url) === normalizeServerUrl(b.url);
+    } catch {
+      return a.url === b.url;
+    }
+  }
+  return (
+    a.command !== undefined &&
+    a.command === b.command &&
+    JSON.stringify(a.args ?? []) === JSON.stringify(b.args ?? [])
+  );
+}
+
 /**
  * Creates a new session, starts a bridge process, and instructs it to connect an MCP server.
- * If session already exists with crashed bridge, reconnects it automatically
+ * If the session already exists for the same server with a crashed bridge, reconnects it.
+ * A session name stays bound to its server: connecting a different one under an existing
+ * name is refused (close the session first).
  */
 export async function connectSession(
   target: string,
@@ -294,9 +331,26 @@ export async function connectSession(
   // Validate --protocol-version (if provided)
   assertSupportedProtocolVersion(options.protocolVersion);
 
+  // Resolve target to transport config
+  const serverConfig = await resolveTarget(target, options);
+
+  // Re-check the effective pin, which may come from a config entry's `protocolVersion`
+  assertSupportedProtocolVersion(serverConfig.protocolVersion);
+
   // Check if session already exists
   const existingSession = await getSession(name);
   if (existingSession) {
+    // A session carries state that belongs to its server: stored headers, payment and TLS
+    // settings, the server's session id, resource subscriptions that write local files.
+    // Re-pointing the name at another server would hand all of that over, and bulk connects
+    // take the name from a config entry, so a config file could pick which session to take.
+    if (!isSameServer(existingSession.server, serverConfig)) {
+      throw new ClientError(
+        `Session ${name} already exists for a different server (${describeServer(existingSession.server)}). ` +
+          `To connect another one, use a different session name or first run: mcpc ${name} close`
+      );
+    }
+
     const bridgeStatus = getBridgeStatus(existingSession);
 
     if (bridgeStatus === 'live') {
@@ -310,10 +364,22 @@ export async function connectSession(
       return;
     }
 
+    // A stdio session is revived where it has always run, not in the current directory
+    // (fails here, before the old bridge is touched, if that directory is gone).
+    if (existingSession.cwd) {
+      resolveSessionCwd(name, existingSession);
+    }
+
     // Bridge has crashed or expired - reconnect with warning
     if (options.outputMode === 'human' && !options.quiet) {
+      const elsewhere =
+        existingSession.cwd && existingSession.cwd !== process.cwd()
+          ? ` in ${existingSession.cwd}`
+          : '';
       console.log(
-        theme.yellow(`Session ${name} exists but bridge is ${bridgeStatus}, reconnecting...`)
+        theme.yellow(
+          `Session ${name} exists but bridge is ${bridgeStatus}, reconnecting${elsewhere}...`
+        )
       );
     }
 
@@ -324,12 +390,6 @@ export async function connectSession(
       // Bridge may already be stopped
     }
   }
-
-  // Resolve target to transport config
-  const serverConfig = await resolveTarget(target, options);
-
-  // Re-check the effective pin, which may come from a config entry's `protocolVersion`
-  assertSupportedProtocolVersion(serverConfig.protocolVersion);
 
   // Detect conflicting auth flags: --profile and --header "Authorization: ..." are mutually exclusive
   const hasExplicitAuthHeader = hasHeader(serverConfig.headers, 'Authorization');
@@ -368,12 +428,26 @@ export async function connectSession(
     }
   }
 
+  // Validate x402 wallet (if provided). Done before anything is written to the keychain, so
+  // a refused connect leaves the stored credentials of an existing session untouched.
+  if (options.x402) {
+    const wallet = await getWallet();
+    if (!wallet) {
+      throw new ClientError('x402 wallet not found. Create one with: mcpc x402 init');
+    }
+    logger.debug(`Using x402 wallet: ${wallet.address}`);
+  }
+
   // Store headers in OS keychain (secure storage) before starting bridge
   let headers: Record<string, string> | undefined;
   if (serverConfig.headers && Object.keys(serverConfig.headers).length > 0) {
     headers = { ...serverConfig.headers };
     logger.debug(`Storing ${Object.keys(headers).length} headers for session ${name} in keychain`);
     await storeKeychainSessionHeaders(name, headers);
+  } else if (existingSession) {
+    // This connect sends no headers, so the ones an earlier connect stored must not come
+    // back on a later restart.
+    await removeKeychainSessionHeaders(name);
   }
 
   // Store the stdio server's env in the OS keychain too: it is where config entries put
@@ -385,21 +459,16 @@ export async function connectSession(
       `Storing ${Object.keys(env).length} stdio env variable(s) for session ${name} in keychain`
     );
     await storeKeychainSessionEnv(name, env);
+  } else if (existingSession) {
+    await removeKeychainSessionEnv(name);
   }
 
   // Store proxy bearer token in keychain (if provided)
   if (options.proxyBearerToken) {
     logger.debug(`Storing proxy bearer token for session ${name} in keychain`);
     await storeKeychainProxyBearerToken(name, options.proxyBearerToken);
-  }
-
-  // Validate x402 wallet (if provided)
-  if (options.x402) {
-    const wallet = await getWallet();
-    if (!wallet) {
-      throw new ClientError('x402 wallet not found. Create one with: mcpc x402 init');
-    }
-    logger.debug(`Using x402 wallet: ${wallet.address}`);
+  } else if (existingSession) {
+    await removeKeychainProxyBearerToken(name);
   }
 
   // Create or update session record (without pid - that comes from startBridge)
@@ -412,18 +481,23 @@ export async function connectSession(
     ...(env && { env: redactHeaders(env) }),
   };
 
-  // A stdio server runs in the directory this `connect` was issued from, and is restarted
-  // there for the life of the session, whichever directory later commands run in. Cleared
-  // explicitly when an existing stdio session is reconnected to an HTTP target.
-  const cwd = serverConfig.command !== undefined ? process.cwd() : undefined;
+  // A stdio server runs in the directory the `connect` that created the session was issued
+  // from, and is restarted there for the life of the session, whichever directory later
+  // commands (including a reconnect) run in. A session from before mcpc recorded the
+  // directory adopts the current one.
+  const cwd =
+    serverConfig.command !== undefined ? (existingSession?.cwd ?? process.cwd()) : undefined;
 
+  // Every connection setting is written, present or not: on a reconnect the record must
+  // describe the bridge started below, not keep --x402, --insecure, --proxy or a profile
+  // from an earlier connect that this one did not ask for.
   const sessionUpdate: Parameters<typeof updateSession>[1] = {
     server: sessionTransportConfig,
     cwd,
-    ...(profileName && { profileName }),
-    ...(proxyConfig && { proxy: proxyConfig }),
-    ...(options.x402 && { x402: options.x402 }),
-    ...(options.insecure && { insecure: true }),
+    profileName,
+    proxy: proxyConfig,
+    x402: options.x402,
+    insecure: options.insecure ? true : undefined,
     // Clear any previous error status (unauthorized, expired) when reconnecting
     ...(isReconnect && { status: 'active' }),
   };

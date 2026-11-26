@@ -66,6 +66,8 @@ mcpc connect                             # discover standard configs + connect e
 
 - `@session` is optional — omit it to auto-generate a name from the server
   (`mcp.apify.com` → `@apify`). A matching session (same server + auth) is reused.
+- A session name stays bound to its server: `connect` with an existing name and a different
+  server is refused. Pick another name, or `mcpc @name close` first if the user wants it replaced.
 - **Stdio (command-based) entries launch a local process on connect** — only connect
   to configs you trust. Bulk connects skip stdio entries unless you pass `--stdio`.
 - **A bare `mcpc connect` treats config files in the current directory as untrusted** — a
