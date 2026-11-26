@@ -12,6 +12,8 @@
 #  7. JSON output produces structured data
 #  8. Project-scope entries that read ${VAR} are skipped (untrusted), global ones expand it,
 #     `-H` is refused, and naming the file connects the skipped entry
+#  9. A file whose "mcpServers" is malformed is invalid as a whole: its "servers" object is
+#     not used instead, and nothing from the file is connected or spawned
 
 source "$(dirname "$0")/../../lib/framework.sh"
 test_init "basic/connect-discover" --isolated
@@ -407,7 +409,7 @@ assert_contains "$STDOUT" "Found 3 MCP config files"
 normalized_stdout="${STDOUT//\\//}"
 assert_contains "$normalized_stdout" "mcp.json (invalid)"
 assert_contains "$normalized_stdout" "mcp_config.json (invalid)"
-assert_contains "$STDOUT" "No \"mcpServers\" or \"servers\" property."
+assert_contains "$STDOUT" "No \"mcpServers\" or \"servers\" object."
 # The malformed file's content must not be echoed back (layout + prompt-injection safety).
 assert_not_contains "$STDOUT" "INJECTED_CONTENT"
 test_pass
@@ -548,6 +550,41 @@ assert_failure "connect should fail when nothing could be connected"
 assert_contains "$STDERR" "No servers connected from discovered config files"
 assert_contains "$STDERR" "mcpc connect ./.mcp.json"
 assert_not_contains "$STDERR" "All servers in discovered config files use stdio transport"
+test_pass
+
+# =============================================================================
+# Test: Discovery and connect must read the same entries out of a file. A file
+#       whose "mcpServers" is an array, next to a "servers" object, used to have
+#       its checks run on "servers" while the array element was what got
+#       connected — here a stdio command, without --stdio.
+# =============================================================================
+
+test_case "array mcpServers next to a servers object is invalid — nothing is spawned"
+rm -f "$FAKE_CWD/.mcp.json" "$FAKE_HOME/.cursor/mcp.json"
+MARKER_SCRIPT="$TEST_TMP/discover-marker.cjs"
+MARKER_FILE="$TEST_TMP/discover-marker.txt"
+echo "require('fs').writeFileSync(process.argv[2], 'spawned');" > "$MARKER_SCRIPT"
+MARKER_SCRIPT_JSON=$(node -e 'console.log(JSON.stringify(process.argv[1]))' "$MARKER_SCRIPT")
+MARKER_FILE_JSON=$(node -e 'console.log(JSON.stringify(process.argv[1]))' "$MARKER_FILE")
+cat > "$FAKE_CWD/.mcp.json" <<EOF
+{
+  "mcpServers": [
+    { "command": "node", "args": [$MARKER_SCRIPT_JSON, $MARKER_FILE_JSON] }
+  ],
+  "servers": {
+    "0": { "url": "$TEST_SERVER_URL" }
+  }
+}
+EOF
+
+run_mcpc_discover connect
+assert_failure "a config with a malformed mcpServers must not be connected"
+assert_contains "$STDERR" ".mcp.json"
+run_mcpc --json
+assert_not_contains "$STDOUT" '"@0"'
+if [[ -e "$MARKER_FILE" ]]; then
+  test_fail "the stdio command in the array entry was executed"
+fi
 test_pass
 
 test_done
