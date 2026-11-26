@@ -118,6 +118,18 @@ tags:
     });
   });
 
+  it.each([
+    ['explicit block indentation', 's:\n  -   k: |1\n       x', { s: [{ k: 'x\n' }] }],
+    [
+      'auto-detected block indentation with a sibling',
+      's:\n  -  k: |\n      x\n     n: 1',
+      { s: [{ k: 'x\n', n: 1 }] },
+    ],
+    ['plain value with a sibling', 's:\n  -   k: v\n      n: 1', { s: [{ k: 'v', n: 1 }] }],
+  ])('parses multi-space sequence mappings: %s', (_name, yaml, expected) => {
+    expect(parse(yaml)).toEqual(expected);
+  });
+
   it('parses literal and folded block scalars', () => {
     expect(
       parse(`literal: |

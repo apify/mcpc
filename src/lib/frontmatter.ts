@@ -277,7 +277,7 @@ function parseSequence(
 
     // `- key: value` starts a mapping whose keys line up after the dash.
     if (isMappingEntry(rest)) {
-      const dashOffset = line.text.indexOf('- ') + 2;
+      const dashOffset = line.text.length - line.text.slice(1).trimStart().length;
       const nested: Line[] = [
         { indent: indent + dashOffset, text: rest, number: line.number, error: undefined },
       ];
