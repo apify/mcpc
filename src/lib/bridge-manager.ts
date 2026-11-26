@@ -30,6 +30,8 @@ import {
   isSessionExpiredError,
   enrichErrorMessage,
   REDACTED_HEADER_VALUE,
+  isValidMcpSessionId,
+  MCP_SESSION_ID_ARG_PREFIX,
 } from './utils.js';
 import { updateSession, getSession } from './sessions.js';
 import { createLogger } from './logger.js';
@@ -226,8 +228,14 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
   // negotiated by the original session — the SDK skips the handshake on resumption, so
   // the bridge must seed the transport with the version to keep the required
   // MCP-Protocol-Version header on all requests
-  if (mcpSessionId) {
-    args.push('--mcp-session-id', mcpSessionId);
+  //
+  // The ID is chosen by the server, so it travels as a single `--mcp-session-id=<id>`
+  // token: passed as a separate argument, an ID such as `--insecure` would be read
+  // by the bridge as a flag of its own.
+  if (mcpSessionId && !isValidMcpSessionId(mcpSessionId)) {
+    logger.warn('Stored MCP session ID is malformed, starting a new session instead of resuming');
+  } else if (mcpSessionId) {
+    args.push(`${MCP_SESSION_ID_ARG_PREFIX}${mcpSessionId}`);
     logger.debug(`Passing MCP session ID for resumption: ${mcpSessionId}`);
     if (protocolVersion) {
       args.push('--protocol-version', protocolVersion);

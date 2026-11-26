@@ -28,6 +28,8 @@ import {
   truncate,
   isProcessAlive,
   generateRequestId,
+  hasHeader,
+  isValidMcpSessionId,
   fetchAllPages,
   isProtocolMismatchError,
   redactHeaders,
@@ -786,5 +788,34 @@ describe('formatHostPort', () => {
     expect(formatHostPort('localhost', 3000)).toBe('localhost:3000');
     expect(formatHostPort('::1', 8080)).toBe('[::1]:8080');
     expect(formatHostPort('2001:db8::1', 8443)).toBe('[2001:db8::1]:8443');
+  });
+});
+
+describe('hasHeader', () => {
+  it('matches header names case-insensitively', () => {
+    expect(hasHeader({ authorization: 'Bearer x' }, 'Authorization')).toBe(true);
+    expect(hasHeader({ AUTHORIZATION: 'Bearer x' }, 'Authorization')).toBe(true);
+    expect(hasHeader({ Authorization: 'Bearer x' }, 'authorization')).toBe(true);
+  });
+
+  it('is false for other headers and for no headers', () => {
+    expect(hasHeader({ 'X-Authorization': 'x' }, 'Authorization')).toBe(false);
+    expect(hasHeader({}, 'Authorization')).toBe(false);
+    expect(hasHeader(undefined, 'Authorization')).toBe(false);
+  });
+});
+
+describe('isValidMcpSessionId', () => {
+  it('accepts visible ASCII, including a leading dash', () => {
+    expect(isValidMcpSessionId('3f2c9a1e-7b1d-4c58-9f0e-1a2b3c4d5e6f')).toBe(true);
+    expect(isValidMcpSessionId('-base64url_id~')).toBe(true);
+  });
+
+  it('rejects empty, whitespace, control and non-ASCII characters', () => {
+    expect(isValidMcpSessionId('')).toBe(false);
+    expect(isValidMcpSessionId('a b')).toBe(false);
+    expect(isValidMcpSessionId('a\nb')).toBe(false);
+    expect(isValidMcpSessionId('a\x1b[2Jb')).toBe(false);
+    expect(isValidMcpSessionId('sessión')).toBe(false);
   });
 });

@@ -21,7 +21,7 @@ import type { IpcMessage, TaskUpdate, X402WalletCredentials } from './types.js';
 import { createLogger } from './logger.js';
 import { NetworkError, ClientError, ServerError, AuthError, IpcTimeoutError } from './errors.js';
 import { generateRequestId, sleep } from './utils.js';
-import { IpcLineBuffer } from './ipc-line-buffer.js';
+import { IpcLineBuffer, MAX_IPC_MESSAGE_CHARS, ipcMessageTooLargeText } from './ipc-line-buffer.js';
 
 const logger = createLogger('bridge-client');
 
@@ -58,9 +58,6 @@ const DEFAULT_CONNECT_RETRY_MILLIS = 5_000;
  */
 const CONNECT_RETRY_BASE_MILLIS = 50;
 const CONNECT_RETRY_JITTER_MILLIS = 50;
-
-// Maximum IPC buffer size (10 MB) — destroy socket if exceeded
-const MAX_BUFFER_SIZE = 10 * 1024 * 1024;
 
 export class BridgeClient extends EventEmitter {
   private socket: Socket | null = null;
@@ -178,13 +175,6 @@ export class BridgeClient extends EventEmitter {
     this.socket.on('data', (data) => {
       this.buffer.append(data);
 
-      if (this.buffer.length > MAX_BUFFER_SIZE) {
-        logger.error(`IPC buffer exceeded ${MAX_BUFFER_SIZE} bytes, destroying socket`);
-        this.socket?.destroy();
-        this.cleanup();
-        return;
-      }
-
       // Process complete JSON messages (newline-delimited)
       for (const line of this.buffer.drainLines()) {
         if (line.trim()) {
@@ -195,6 +185,17 @@ export class BridgeClient extends EventEmitter {
             logger.error('Failed to parse message:', error);
           }
         }
+      }
+
+      // Memory backstop. The bridge never sends a frame this large (it answers with
+      // an error instead), so this is not a crash: fail the pending requests with a
+      // non-network error, which callers must not answer by restarting the bridge.
+      if (this.buffer.overflowed) {
+        logger.error(`IPC message exceeded ${MAX_IPC_MESSAGE_CHARS} chars, destroying socket`);
+        this.socket?.destroy();
+        this.cleanup(
+          new ServerError(ipcMessageTooLargeText('Response from the bridge', MAX_IPC_MESSAGE_CHARS))
+        );
       }
     });
 
@@ -290,6 +291,13 @@ export class BridgeClient extends EventEmitter {
         ? timeoutSecs * 1000 + IPC_TIMEOUT_MARGIN_MILLIS
         : REQUEST_TIMEOUT_MILLIS;
 
+    // The bridge drops a connection that sends an oversized frame, which would look
+    // like a bridge crash. Refuse it here, before anything is sent.
+    const data = JSON.stringify(message) + '\n';
+    if (data.length > MAX_IPC_MESSAGE_CHARS) {
+      throw new ClientError(ipcMessageTooLargeText('Request', data.length));
+    }
+
     // Create promise for response
     const promise = new Promise<unknown>((resolve, reject) => {
       const timeoutId = setTimeout(() => {
@@ -301,7 +309,6 @@ export class BridgeClient extends EventEmitter {
     });
 
     // Send message
-    const data = JSON.stringify(message) + '\n';
     this.socket.write(data);
 
     return promise;
@@ -358,11 +365,11 @@ export class BridgeClient extends EventEmitter {
   /**
    * Clean up resources
    */
-  private cleanup(): void {
+  private cleanup(reason: Error = new NetworkError('Connection closed')): void {
     // Reject all pending requests
     for (const [id, pending] of this.pendingRequests.entries()) {
       clearTimeout(pending.timeoutId);
-      pending.reject(new NetworkError('Connection closed'));
+      pending.reject(reason);
       this.pendingRequests.delete(id);
     }
 
