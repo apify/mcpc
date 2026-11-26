@@ -124,6 +124,7 @@ mcpc/
 - Separate process (`dist/bridge/index.js`, spawned by the CLI with the same Node.js binary) that maintains persistent MCP connections
 - Session persistence via `~/.mcpc/sessions.json` with file locking (`proper-lockfile` package)
 - Process lifecycle management for local package servers (stdio transport)
+- A stdio session records the working directory of the `mcpc connect` that created it (`cwd` in `sessions.json`), and every later bridge start for it runs there (`resolveSessionCwd()` in `src/lib/bridge-manager.ts`). The bridge is restarted by whichever `mcpc` command notices it is gone, so inheriting that command's directory would let any directory decide what `node server.js` or `npx <pkg>` runs. A session without a recorded directory (created by an older mcpc) is never restarted automatically; an explicit `mcpc @session restart` records the current one
 - Unix domain socket server for CLI-to-bridge IPC (named pipes on Windows)
 - Socket location: `~/.mcpc/bridges/<session-name>.<pid>.sock` (falls back to a short hashed path under the system temp dir when the path would exceed the OS socket limit)
 - Keepalive ping every 30 seconds, `lastSeenAt` recorded in `sessions.json`
@@ -310,6 +311,7 @@ When making changes, follow these rules to maintain the security posture:
 - Escape any user-controlled or server-controlled data before embedding in HTML responses
 - Send sensitive data (headers, tokens) via IPC socket, never via CLI arguments or environment variables
 - Read all keychain values needed to start a bridge in the CLI **before** `spawn()`. After spawn the bridge arms a short IPC-credential timeout; on macOS a Keychain password dialog can block longer than that timeout, so a post-spawn keychain read races the bridge timer and causes ENOENT (#55). The CLI is the only process attached to a TTY and can show the dialog without the user wondering why a background process is asking. Bridge-side keychain access is permitted only on the OAuth token refresh paths (the `oauth-token-manager` callbacks and the id-jag provider callbacks in `src/bridge/index.ts`), where it is needed to persist rotated refresh tokens for long-running sessions
+- Start a stdio session's bridge only with the `cwd` from `resolveSessionCwd()` (or, in `connect`, the current directory that is being recorded) — never let it inherit the directory of the command that happens to trigger a restart
 - Validate and sanitize all external input (URLs, session names, profile names) before use
 - Default to HTTPS; only allow HTTP for localhost/127.0.0.1
 - When adding HTTP servers (even localhost-only), validate the Host header against expected values

@@ -2,6 +2,7 @@
  * Unit tests for the auth credentials the CLI hands to a bridge over IPC
  */
 
+import { join } from 'path';
 import { vi } from 'vitest';
 
 vi.mock('../../../src/lib/auth/profiles.js', () => ({
@@ -24,7 +25,11 @@ import {
   readKeychainOAuthTokenInfo,
   readKeychainSessionEnv,
 } from '../../../src/lib/auth/keychain.js';
-import { loadAuthCredentials, loadSessionEnv } from '../../../src/lib/bridge-manager.js';
+import {
+  loadAuthCredentials,
+  loadSessionEnv,
+  resolveSessionCwd,
+} from '../../../src/lib/bridge-manager.js';
 import { REDACTED_HEADER_VALUE } from '../../../src/lib/utils.js';
 import { ClientError } from '../../../src/lib/errors.js';
 
@@ -150,5 +155,41 @@ describe('stdio env delivered over IPC instead of argv', () => {
     await expect(loadSessionEnv('@s', { TOKEN: REDACTED_HEADER_VALUE })).rejects.toThrow(
       ClientError
     );
+  });
+});
+
+describe('resolveSessionCwd', () => {
+  const existingDir = process.cwd();
+
+  it('does not care about the directory of an HTTP session', () => {
+    expect(resolveSessionCwd('@http', { server: { url: SERVER_URL } })).toBeUndefined();
+  });
+
+  it('returns the directory recorded when a stdio session was connected', () => {
+    const session = { server: { command: 'node', args: ['server.js'] }, cwd: existingDir };
+
+    expect(resolveSessionCwd('@stdio', session)).toBe(existingDir);
+  });
+
+  // Falling back to the current directory would let whichever directory a later command runs
+  // in decide what `node server.js` (or `npx <pkg>`) executes.
+  it('refuses a stdio session with no recorded directory instead of using the current one', () => {
+    const session = { server: { command: 'node', args: ['server.js'] } };
+
+    expect(() => resolveSessionCwd('@legacy', session)).toThrow(ClientError);
+    expect(() => resolveSessionCwd('@legacy', session)).toThrow('mcpc @legacy restart');
+  });
+
+  it('refuses a recorded directory that no longer exists', () => {
+    const session = { server: { command: 'node' }, cwd: join(existingDir, 'no-such-directory') };
+
+    expect(() => resolveSessionCwd('@gone', session)).toThrow('no longer exists');
+    expect(() => resolveSessionCwd('@gone', session)).toThrow('mcpc @gone close');
+  });
+
+  it('refuses a recorded path that is a file, not a directory', () => {
+    const session = { server: { command: 'node' }, cwd: join(existingDir, 'package.json') };
+
+    expect(() => resolveSessionCwd('@file', session)).toThrow('no longer exists');
   });
 });
