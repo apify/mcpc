@@ -11,7 +11,7 @@
 #  6. `@session` argument is rejected
 #  7. JSON output produces structured data
 #  8. Project-scope entries that read ${VAR} are skipped (untrusted), global ones expand it,
-#     `-H` is refused, and naming the file connects the skipped entry
+#     `-H` and `--x402` are refused, and naming the file connects the skipped entry
 
 source "$(dirname "$0")/../../lib/framework.sh"
 test_init "basic/connect-discover" --isolated
@@ -503,6 +503,17 @@ run_mcpc_discover connect -H "Authorization: Bearer leaked"
 assert_failure "connect -H with auto-discovery should fail"
 assert_contains "$STDERR" "cannot be combined with config auto-discovery"
 assert_contains "$STDERR" "every discovered server"
+test_pass
+
+# =============================================================================
+# Test: --x402 is refused with auto-discovery (every server could charge the wallet)
+# =============================================================================
+
+test_case "--x402 is refused with auto-discovery"
+run_mcpc_discover connect --x402
+assert_failure "connect --x402 with auto-discovery should fail"
+assert_contains "$STDERR" "--x402 cannot be combined with config auto-discovery"
+assert_contains "$STDERR" "charge the wallet"
 test_pass
 
 # =============================================================================

@@ -225,7 +225,8 @@ SESSION_COMMANDS=$(printf '%s\n' "$STDOUT" | awk '
 test_case "no help screen wraps an option or command description"
 WRAPPED=""
 for screen in "--help" "help connect" "help login" "help logout" "help clean" "help grep" \
-  "help close" "help restart" "help x402" "x402 sign --help" "@test-session --help"; do
+  "help close" "help restart" "help x402" "x402 sign --help" "x402 approve --help" \
+  "x402 import --help" "@test-session --help"; do
   # shellcheck disable=SC2086
   run_mcpc $screen
   found=$(printf '%s\n' "$STDOUT" | _wrapped_help_lines)

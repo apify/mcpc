@@ -2,7 +2,7 @@
  * x402 wallet management and payment signing commands
  */
 
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 import chalk from 'chalk';
 import qrcode from 'qrcode-terminal';
 import {
@@ -29,7 +29,13 @@ import { getWallet, saveWallet, removeWallet } from '../../lib/wallets.js';
 import { ClientError, isMcpError } from '../../lib/errors.js';
 import { getJsonFromEnv } from '../parser.js';
 import type { OutputMode } from '../../lib/types.js';
-import { signPayment, parsePaymentRequired } from '../../lib/x402/signer.js';
+import {
+  approvePermit2,
+  signPayment,
+  parsePaymentRequired,
+  NETWORK_ALIASES,
+} from '../../lib/x402/signer.js';
+import { formatUsd, parseUsdOption, usdToAtomicUnits } from '../../lib/x402/limits.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -116,7 +122,7 @@ async function initWallet(options: { outputMode: OutputMode }): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function importWallet(options: {
-  privateKey: string;
+  privateKey: string | undefined;
   outputMode: OutputMode;
 }): Promise<void> {
   const existing = await getWallet();
@@ -126,7 +132,30 @@ async function importWallet(options: {
     );
   }
 
-  let key = options.privateKey.trim();
+  // The key is read from stdin so that it never appears in shell history or `ps`. It is
+  // still accepted as an argument, where both can see it.
+  let key: string;
+  if (options.privateKey !== undefined) {
+    key = options.privateKey.trim();
+    if (options.outputMode !== 'json') {
+      console.error(
+        formatWarning(
+          'A private key passed as an argument is visible in shell history and to other local users. Pipe it on stdin instead: mcpc x402 import < key.txt'
+        )
+      );
+    }
+  } else if (!process.stdin.isTTY) {
+    process.stdin.setEncoding('utf-8');
+    key = '';
+    for await (const chunk of process.stdin) {
+      key += chunk as string;
+    }
+    key = key.trim();
+  } else {
+    throw new ClientError(
+      'No private key given. Pipe it on stdin, for example: mcpc x402 import < key.txt'
+    );
+  }
   if (!key.startsWith('0x')) key = `0x${key}`;
 
   let account;
@@ -259,6 +288,64 @@ async function removeWalletCmd(options: { outputMode: OutputMode }): Promise<voi
 }
 
 // ---------------------------------------------------------------------------
+// Command: approve
+// ---------------------------------------------------------------------------
+
+async function approveCommand(options: {
+  network: string;
+  amount: string | undefined;
+  outputMode: OutputMode;
+}): Promise<void> {
+  const wallet = await getWallet();
+  if (!wallet) {
+    throw new ClientError('No wallet configured. Create one with: mcpc x402 init');
+  }
+
+  // "0" revokes, so it is the one non-positive amount accepted here
+  const allowance =
+    options.amount === undefined
+      ? undefined
+      : /^0+(\.0+)?$/.test(options.amount)
+        ? 0n
+        : usdToAtomicUnits(parseUsdOption(options.amount, '--amount'));
+
+  const result = await approvePermit2({
+    wallet: { privateKey: wallet.privateKey, address: wallet.address },
+    network: options.network,
+    ...(allowance !== undefined && { allowance }),
+  });
+
+  // The largest uint256 is the conventional "unlimited"; USDC never decrements it
+  const describe = (atomicUnits: bigint): string =>
+    atomicUnits >= 2n ** 255n ? 'unlimited' : formatUsd(atomicUnits);
+
+  if (options.outputMode === 'json') {
+    console.log(
+      formatJson({
+        network: result.network,
+        token: result.token,
+        spender: result.spender,
+        allowance: result.allowance.toString(),
+        transaction: result.transaction ?? null,
+      })
+    );
+    return;
+  }
+
+  console.log(
+    formatSuccess(
+      result.transaction
+        ? `Permit2 allowance for USDC on ${result.networkLabel} set to ${describe(result.allowance)}`
+        : `Permit2 allowance for USDC on ${result.networkLabel} is already ${describe(result.allowance)}`
+    )
+  );
+  if (result.transaction) {
+    console.log(formatInfo(`Transaction: ${result.transaction}`));
+  }
+  console.log(chalk.dim('To revoke it, run: mcpc x402 approve --amount 0'));
+}
+
+// ---------------------------------------------------------------------------
 // Command: sign
 // ---------------------------------------------------------------------------
 
@@ -267,7 +354,7 @@ interface SignOptions {
   amount: string | undefined;
   expiry: string | undefined;
   scheme: string | undefined;
-  noApprove: boolean | undefined;
+  skipAllowanceCheck: boolean | undefined;
   outputMode: OutputMode;
 }
 
@@ -310,7 +397,7 @@ async function signPaymentCommand(options: SignOptions): Promise<void> {
     resource: header.resource,
     ...(amountOverride !== undefined && { amountOverride }),
     ...(expiryOverrideSecs !== undefined && { expiryOverrideSecs }),
-    ...(options.noApprove === true && { skipPermit2Approval: true }),
+    ...(options.skipAllowanceCheck === true && { skipPermit2Check: true }),
   });
 
   if (options.outputMode === 'json') {
@@ -398,10 +485,15 @@ export async function handleX402Command(args: string[]): Promise<void> {
       'after',
       `
 ${chalk.bold('sign options:')}
-  --amount <usd>         Override amount in USD (for upto: max authorization cap)
-  --expiry <seconds>     Override expiry in seconds
-  --scheme <preference>  Payment scheme: auto (default), upto, or exact
-  --no-approve           Skip the upto Permit2 allowance check & auto-approval
+  --amount <usd>          Override amount in USD (for upto: max authorization cap)
+  --expiry <seconds>      Override expiry in seconds
+  --scheme <preference>   Payment scheme: auto (default), upto, or exact
+  --skip-allowance-check  Sign upto without checking the Permit2 allowance
+
+${chalk.bold('Paying from a session:')}
+  mcpc connect <server> @name --x402 pays for paid tool calls automatically,
+  in USDC on Base only, within the session's limits (see: mcpc connect --help).
+  The "upto" scheme needs a one-time on-chain approval: mcpc x402 approve
 ${jsonHelp('`{ address, createdAt, balances: { eth, usdc } | null }` (null if no wallet)')}`
     );
 
@@ -425,11 +517,49 @@ ${jsonHelp('`{ address, createdAt, balances: { eth, usdc } | null }` (null if no
     });
 
   program
-    .command('import <private-key>')
-    .description('Import an existing wallet from a private key')
-    .addHelpText('after', jsonHelp('`{ address }`'))
-    .action(async (privateKey, _opts, cmd) => {
+    .command('import [private-key]')
+    .description('Import a wallet from a private key read from stdin')
+    .addHelpText(
+      'after',
+      `
+${chalk.bold('Examples:')}
+  mcpc x402 import < key.txt
+  pass show wallet/key | mcpc x402 import
+
+${chalk.bold('Notes:')}
+  The key is a 64-character hex string, with or without the 0x prefix.
+  Passing it as an argument also works, but leaves it in shell history
+  and visible in the process list.
+${jsonHelp('`{ address }`')}`
+    )
+    .action(async (privateKey: string | undefined, _opts, cmd) => {
       await importWallet({ privateKey, outputMode: resolveOutputMode(cmd) });
+    });
+
+  program
+    .command('approve')
+    .description('Let Permit2 spend the wallet USDC (for the upto scheme)')
+    .option(`--network <${NETWORK_ALIASES.join('|')}>`, 'Network to approve on', 'base')
+    .option('--amount <usd>', 'Allowance in USD instead of unlimited; 0 revokes')
+    .addHelpText(
+      'after',
+      `
+The "upto" payment scheme settles through the Permit2 contract, which can only
+move USDC the wallet has approved it to spend. This sends that one-time approval
+as an on-chain transaction, so the wallet needs a little ETH on the network for
+gas. Payments are never approved automatically: until you run this, upto payments
+are refused and the "exact" scheme (no approval, no gas) keeps working.
+
+The approval is for the network's USDC contract only. It does not move any
+funds by itself — every payment still needs its own signature from this wallet.
+${jsonHelp('`{ network, token, spender, allowance, transaction }` (allowance in USDC atomic units,\n  transaction null when nothing had to be sent)')}`
+    )
+    .action(async (opts: { network: string; amount?: string }, cmd) => {
+      await approveCommand({
+        network: opts.network,
+        amount: opts.amount,
+        outputMode: resolveOutputMode(cmd),
+      });
     });
 
   // Deprecated: "mcpc x402 info" is superseded by bare "mcpc x402".
@@ -469,19 +599,32 @@ ${jsonHelp('`{ address, createdAt, balances: { eth, usdc } | null }` (null if no
     .option('--expiry <seconds>', 'Override expiry in seconds')
     // No "(default: auto)" in the text — Commander appends the default value itself
     .option('--scheme <auto|upto|exact>', 'Payment scheme preference', 'auto')
-    .option('--no-approve', 'Skip the upto Permit2 allowance check & auto-approval')
+    .option('--skip-allowance-check', 'Sign upto without checking the Permit2 allowance')
+    // Former name of --skip-allowance-check, from when signing also sent the approval
+    .addOption(new Option('--no-approve').hideHelp())
     .addHelpText(
       'after',
       `
-Signs the given base64-encoded PAYMENT-REQUIRED header offline using the configured
+Signs the given base64-encoded PAYMENT-REQUIRED header using the configured
 wallet and prints the resulting PAYMENT-SIGNATURE header (plus an MCP config snippet)
 to stdout. Useful for pre-signing payments or integrating with other MCP clients.
+
+Only USDC on Base is signed for, whatever token the header names. The amount is
+yours to judge here: no spending limit applies to a payment you sign by hand.
+Without --expiry the payment is valid for as long as the server asks, at most an
+hour. The upto scheme needs the approval from: mcpc x402 approve
 ${jsonHelp('`{ paymentSignature, from, to, amount, amountAtomicUnits, network, expiresAt }`')}`
     )
     .action(
       async (
         paymentRequired,
-        opts: { amount?: string; expiry?: string; scheme?: string; approve?: boolean },
+        opts: {
+          amount?: string;
+          expiry?: string;
+          scheme?: string;
+          approve?: boolean;
+          skipAllowanceCheck?: boolean;
+        },
         cmd
       ) => {
         // Commander turns --no-approve into opts.approve = false
@@ -490,7 +633,7 @@ ${jsonHelp('`{ paymentSignature, from, to, amount, amountAtomicUnits, network, e
           amount: opts.amount,
           expiry: opts.expiry,
           scheme: opts.scheme,
-          noApprove: opts.approve === false,
+          skipAllowanceCheck: opts.skipAllowanceCheck === true || opts.approve === false,
           outputMode: resolveOutputMode(cmd),
         });
       }

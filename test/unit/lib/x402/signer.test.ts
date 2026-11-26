@@ -3,7 +3,10 @@
  */
 
 import { ClientError } from '../../../../src/lib/errors.js';
+import { PaymentRefusedError } from '../../../../src/lib/x402/limits.js';
 import {
+  approvePermit2,
+  MAX_PAYMENT_EXPIRY_SECONDS,
   parsePaymentRequired,
   selectAcceptEntry,
   signPayment,
@@ -388,11 +391,102 @@ describe('signPayment', () => {
   });
 
   // -------------------------------------------------------------------------
-  // upto scheme — Permit2 allowance auto-approval
+  // Server-controlled terms: token, amount, expiry
   // -------------------------------------------------------------------------
 
-  describe('upto: Permit2 allowance auto-approval', () => {
-    it('skips approval when existing allowance >= required amount', async () => {
+  describe('server-controlled terms', () => {
+    const OTHER_TOKEN = '0x4200000000000000000000000000000000000006'; // WETH on Base
+
+    it.each(['exact', 'upto'])('%s: refuses a token other than USDC', async (scheme) => {
+      const accept = scheme === 'exact' ? VALID_EXACT_ACCEPT : VALID_UPTO_ACCEPT;
+      await expect(
+        signPayment({ wallet: MOCK_WALLET, accept: { ...accept, asset: OTHER_TOKEN } })
+      ).rejects.toThrow(PaymentRefusedError);
+      expect(mockSignTypedData).not.toHaveBeenCalled();
+      expect(mockReadContract).not.toHaveBeenCalled();
+      expect(mockSendTransaction).not.toHaveBeenCalled();
+    });
+
+    it('refuses the USDC address of another network', async () => {
+      const mainnetUsdc = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+      await expect(
+        signPayment({ wallet: MOCK_WALLET, accept: { ...VALID_EXACT_ACCEPT, asset: mainnetUsdc } })
+      ).rejects.toThrow(/only pays in USDC/);
+    });
+
+    it('selectAcceptEntry skips entries in another token', () => {
+      const other = { ...VALID_EXACT_ACCEPT, asset: OTHER_TOKEN };
+      expect(selectAcceptEntry([other, VALID_EXACT_ACCEPT], 'exact')).toBe(VALID_EXACT_ACCEPT);
+      expect(selectAcceptEntry([other], 'auto')).toBeUndefined();
+    });
+
+    it.each(['1.5', '-1', '0x10', '', 'abc'])('refuses the amount %j', async (amount) => {
+      await expect(
+        signPayment({ wallet: MOCK_WALLET, accept: { ...VALID_EXACT_ACCEPT, amount } })
+      ).rejects.toThrow(/invalid amount|Unsupported|missing/);
+      expect(mockSignTypedData).not.toHaveBeenCalled();
+    });
+
+    it.each(['exact', 'upto'])(
+      '%s: clamps a server-chosen validity to one hour',
+      async (scheme) => {
+        const accept = scheme === 'exact' ? VALID_EXACT_ACCEPT : VALID_UPTO_ACCEPT;
+        const tenYearsSecs = 10 * 365 * 24 * 3600;
+        const before = Date.now();
+        const result = await signPayment({
+          wallet: MOCK_WALLET,
+          accept: { ...accept, maxTimeoutSeconds: tenYearsSecs },
+        });
+
+        expect(result.expiresAt.getTime()).toBeLessThanOrEqual(
+          Date.now() + MAX_PAYMENT_EXPIRY_SECONDS * 1000
+        );
+        expect(result.expiresAt.getTime()).toBeGreaterThan(before + 3590 * 1000);
+        const payload = JSON.parse(Buffer.from(result.paymentSignatureBase64, 'base64').toString());
+        expect(payload.accepted.maxTimeoutSeconds).toBe(MAX_PAYMENT_EXPIRY_SECONDS);
+      }
+    );
+
+    it.each([Number.NaN, -5, 0, '600' as unknown as number, undefined as unknown as number])(
+      'falls back to the default validity for maxTimeoutSeconds=%j',
+      async (maxTimeoutSeconds) => {
+        const result = await signPayment({
+          wallet: MOCK_WALLET,
+          accept: { ...VALID_EXACT_ACCEPT, maxTimeoutSeconds },
+        });
+        const secs = (result.expiresAt.getTime() - Date.now()) / 1000;
+        expect(secs).toBeGreaterThan(3590);
+        expect(secs).toBeLessThanOrEqual(3600);
+      }
+    );
+
+    it("keeps the caller's own expiry override, even past the clamp", async () => {
+      const result = await signPayment({
+        wallet: MOCK_WALLET,
+        accept: VALID_EXACT_ACCEPT,
+        expiryOverrideSecs: 7200,
+      });
+      expect(result.expiresAt.getTime()).toBeGreaterThan(Date.now() + 7190 * 1000);
+    });
+
+    it('exact scheme: the authorization is not valid from the beginning of time', async () => {
+      const result = await signPayment({ wallet: MOCK_WALLET, accept: VALID_EXACT_ACCEPT });
+      const payload = JSON.parse(Buffer.from(result.paymentSignatureBase64, 'base64').toString());
+      const validAfter = Number(payload.payload.authorization.validAfter);
+      const nowSecs = Date.now() / 1000;
+      expect(validAfter).toBeGreaterThan(nowSecs - 700);
+      expect(validAfter).toBeLessThan(nowSecs);
+      const message = mockSignTypedData.mock.calls[0]?.[0]?.message as { validAfter: bigint };
+      expect(message.validAfter).toBe(BigInt(validAfter));
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // upto scheme — Permit2 allowance is checked, never granted, when signing
+  // -------------------------------------------------------------------------
+
+  describe('upto: Permit2 allowance', () => {
+    it('signs when the existing allowance covers the amount', async () => {
       // VALID_UPTO_ACCEPT.amount is "5000000" — return exactly that.
       mockReadContract.mockResolvedValueOnce(BigInt('5000000'));
 
@@ -403,45 +497,24 @@ describe('signPayment', () => {
       expect(mockWaitForTransactionReceipt).not.toHaveBeenCalled();
     });
 
-    it('sends approve(MAX_UINT256) when allowance is short, then signs', async () => {
-      // First read: insufficient. Second read after approve: max.
-      mockReadContract
-        .mockResolvedValueOnce(0n)
-        .mockResolvedValueOnce(BigInt('1000000000000000000000000'));
-
-      const result = await signPayment({ wallet: MOCK_WALLET, accept: VALID_UPTO_ACCEPT });
-
-      expect(mockSendTransaction).toHaveBeenCalledTimes(1);
-      const sendArgs = mockSendTransaction.mock.calls[0]?.[0] as {
-        to: string;
-        data: string;
-      };
-      expect(sendArgs.to).toBe(VALID_UPTO_ACCEPT.asset.toLowerCase());
-      expect(sendArgs.data).toBe('0xencodedapprovedata');
-      expect(mockWaitForTransactionReceipt).toHaveBeenCalledWith({ hash: MOCK_APPROVE_TX_HASH });
-      expect(mockReadContract).toHaveBeenCalledTimes(2); // before + after
-      expect(result.paymentSignatureBase64).toBeDefined();
-    });
-
-    it('throws when approve transaction reverts on-chain', async () => {
+    it('refuses, without sending any transaction, when the allowance is short', async () => {
       mockReadContract.mockResolvedValueOnce(0n);
-      mockWaitForTransactionReceipt.mockResolvedValueOnce({
-        status: 'reverted',
-        blockNumber: 1n,
-      });
 
-      await expect(signPayment({ wallet: MOCK_WALLET, accept: VALID_UPTO_ACCEPT })).rejects.toThrow(
-        'reverted on-chain'
-      );
+      const signing = signPayment({ wallet: MOCK_WALLET, accept: VALID_UPTO_ACCEPT });
+
+      await expect(signing).rejects.toThrow(PaymentRefusedError);
+      await expect(signing).rejects.toThrow('mcpc x402 approve --network base-sepolia');
+      expect(mockSendTransaction).not.toHaveBeenCalled();
+      expect(mockSignTypedData).not.toHaveBeenCalled();
     });
 
-    it('skipPermit2Approval bypasses the allowance check entirely', async () => {
-      mockReadContract.mockResolvedValueOnce(0n); // would normally trigger approve
+    it('skipPermit2Check bypasses the allowance read entirely', async () => {
+      mockReadContract.mockResolvedValueOnce(0n);
 
       await signPayment({
         wallet: MOCK_WALLET,
         accept: VALID_UPTO_ACCEPT,
-        skipPermit2Approval: true,
+        skipPermit2Check: true,
       });
 
       expect(mockReadContract).not.toHaveBeenCalled();
@@ -454,5 +527,80 @@ describe('signPayment', () => {
       expect(mockReadContract).not.toHaveBeenCalled();
       expect(mockSendTransaction).not.toHaveBeenCalled();
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// approvePermit2 — the explicit `mcpc x402 approve` step
+// ---------------------------------------------------------------------------
+
+describe('approvePermit2', () => {
+  const SEPOLIA_USDC = '0x036cbd53842c5426634e7929541ec2318f3dcf7e';
+  const MAX_UINT256 = 2n ** 256n - 1n;
+
+  it('approves Permit2 for the network USDC and reports the transaction', async () => {
+    mockReadContract.mockResolvedValueOnce(0n).mockResolvedValueOnce(MAX_UINT256);
+
+    const result = await approvePermit2({ wallet: MOCK_WALLET, network: 'base-sepolia' });
+
+    expect(mockSendTransaction).toHaveBeenCalledTimes(1);
+    const sendArgs = mockSendTransaction.mock.calls[0]?.[0] as { to: string; data: string };
+    expect(sendArgs.to).toBe(SEPOLIA_USDC);
+    expect(sendArgs.data).toBe('0xencodedapprovedata');
+    expect(mockWaitForTransactionReceipt).toHaveBeenCalledWith({ hash: MOCK_APPROVE_TX_HASH });
+    expect(result).toMatchObject({
+      network: 'eip155:84532',
+      token: SEPOLIA_USDC,
+      previousAllowance: 0n,
+      allowance: MAX_UINT256,
+      transaction: MOCK_APPROVE_TX_HASH,
+    });
+  });
+
+  it('defaults to nothing but the mainnet USDC contract', async () => {
+    mockReadContract.mockResolvedValueOnce(0n).mockResolvedValueOnce(MAX_UINT256);
+
+    await approvePermit2({ wallet: MOCK_WALLET, network: 'base' });
+
+    const sendArgs = mockSendTransaction.mock.calls[0]?.[0] as { to: string };
+    expect(sendArgs.to).toBe('0x833589fcd6edb6e08f4c7c32d4f71b54bda02913');
+  });
+
+  it('sends nothing when the allowance is already unlimited', async () => {
+    mockReadContract.mockResolvedValueOnce(MAX_UINT256);
+
+    const result = await approvePermit2({ wallet: MOCK_WALLET, network: 'eip155:84532' });
+
+    expect(mockSendTransaction).not.toHaveBeenCalled();
+    expect(result.transaction).toBeUndefined();
+    expect(result.allowance).toBe(MAX_UINT256);
+  });
+
+  it('sets a bounded allowance, and 0 revokes', async () => {
+    mockReadContract.mockResolvedValueOnce(MAX_UINT256).mockResolvedValueOnce(0n);
+
+    const result = await approvePermit2({
+      wallet: MOCK_WALLET,
+      network: 'base-sepolia',
+      allowance: 0n,
+    });
+
+    expect(mockSendTransaction).toHaveBeenCalledTimes(1);
+    expect(result.allowance).toBe(0n);
+  });
+
+  it('throws when the approve transaction reverts on-chain', async () => {
+    mockReadContract.mockResolvedValueOnce(0n);
+    mockWaitForTransactionReceipt.mockResolvedValueOnce({ status: 'reverted', blockNumber: 1n });
+
+    await expect(approvePermit2({ wallet: MOCK_WALLET, network: 'base-sepolia' })).rejects.toThrow(
+      'reverted on-chain'
+    );
+  });
+
+  it('rejects an unknown network', async () => {
+    await expect(approvePermit2({ wallet: MOCK_WALLET, network: 'solana' })).rejects.toThrow(
+      'Unknown network "solana". Supported: base, base-sepolia'
+    );
   });
 });

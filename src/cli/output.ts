@@ -37,6 +37,8 @@ import { getSession } from '../lib/sessions.js';
 import { getBridgeLogPath } from '../lib/log-reader.js';
 import { formatHostPort } from '../lib/utils.js';
 import { isModernProtocolVersion, SERVER_INFO_META_KEY } from '../core/protocol.js';
+import { resolveX402Limits } from '../lib/x402/limits.js';
+import type { X402Limits, X402SchemePreference } from '../lib/types.js';
 import {
   findMcpExtension,
   declaredExtensionSettings,
@@ -2149,12 +2151,33 @@ export function formatDiscoverResult(
 /**
  * Format server details for human-readable output
  */
+/** Limits and running total of an `--x402` session (`_mcpc.x402` in `--json`). */
+export interface X402SessionStatus extends X402Limits {
+  scheme: X402SchemePreference;
+  spentUsd: number;
+}
+
+/** The x402 status of a session record, or undefined when the session does not pay. */
+export function getX402SessionStatus(
+  session: SessionData | undefined
+): X402SessionStatus | undefined {
+  if (!session?.x402) {
+    return undefined;
+  }
+  return {
+    scheme: session.x402,
+    ...resolveX402Limits(session.x402Limits),
+    spentUsd: session.x402SpentUsd ?? 0,
+  };
+}
+
 export function formatServerDetails(
   details: ServerDetails,
   target: string,
   tools?: Tool[],
   resourceSubscriptions?: ResourceSubscriptionEntry[],
-  pinnedProtocolVersion?: string
+  pinnedProtocolVersion?: string,
+  x402?: X402SessionStatus
 ): string {
   const lines: string[] = [];
   const bullet = chalk.dim('*');
@@ -2200,6 +2223,16 @@ export function formatServerDetails(
     lines.push(chalk.gray('````'));
     lines.push(trimmed);
     lines.push(chalk.gray('````'));
+    lines.push('');
+  }
+
+  // What an --x402 session may pay, and how much of that it has signed away so far
+  if (x402) {
+    lines.push(chalk.bold('x402 payments:'));
+    lines.push(
+      `${bullet} up to $${x402.maxPaymentUsd} per payment, $${x402.spentUsd} of the ` +
+        `$${x402.budgetUsd} session budget authorized`
+    );
     lines.push('');
   }
 

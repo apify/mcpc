@@ -278,8 +278,13 @@ your user's say-so.
 (`--no-profile`, `--stdio`, `--proxy`, and `-H` are options of `connect`, not global flags.)
 
 `mcpc` also has experimental `--x402` auto-payment for paid MCP tools — see `mcpc help x402`.
-A paid tool result carries the server's settlement receipt at `_meta["x402/payment-response"]`;
-one receipt is held at a time, so run paid calls sequentially if you need every one of them.
+An `--x402` session spends real money on tool calls: only the user enables it, and it pays
+within limits set at connect (`--x402-max-payment`, default $1; `--x402-budget`, default $10
+per session; shown by `mcpc @session`). A call refused with `x402 payment refused` hit one of
+them — report it to the user instead of raising the limit yourself.
+A paid tool result carries what mcpc signed at `_meta["com.apify.mcpc/x402-payment"]` and the
+server's settlement receipt at `_meta["x402/payment-response"]`; one of each is held at a
+time, so run paid calls sequentially if you need every one of them.
 
 ## Debugging
 

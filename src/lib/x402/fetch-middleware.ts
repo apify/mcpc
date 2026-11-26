@@ -2,9 +2,13 @@
  * x402 fetch middleware for MCP transport
  *
  * Wraps the fetch function used by StreamableHTTPClientTransport to:
- * 1. Reuse a cached payment signature across calls to paid tools within a session
+ * 1. Reuse a cached payment signature across calls that ask for the same payment terms
  * 2. Sign a fresh payment on the first call (or after cache invalidation)
  * 3. Handle HTTP 402 responses by parsing PAYMENT-REQUIRED, signing, and retrying once
+ *
+ * Every amount, payee and token here is chosen by the server, so nothing is signed before
+ * the session's spending limits agree to it (`signSessionPayment`), and each signature is
+ * reported back to the caller on the tool result it paid for.
  *
  * Payment is injected in two places simultaneously (server decides which to use):
  * - HTTP header: PAYMENT-SIGNATURE (base64-encoded payment payload)
@@ -16,7 +20,7 @@
  *
  * The second one reaches the caller on its own (mcpc prints tool results verbatim), the
  * first is consumed by the transport and would otherwise be dropped. So this middleware
- * captures it and `withSettlementReceipt()` re-attaches it under the MCP key, giving code
+ * captures it and `withPaymentMeta()` re-attaches it under the MCP key, giving code
  * mode one place to look for the receipt whichever channel the server used.
  *
  * The cache is shared with the bridge layer, which invalidates it when the server
@@ -29,8 +33,9 @@ import type { FetchLike, Tool } from '@modelcontextprotocol/client';
 import {
   signPayment,
   parsePaymentRequired,
+  paymentTermsKey,
   selectAcceptEntry,
-  isSupportedNetwork,
+  isSupportedAsset,
   DEFAULT_PAYMENT_EXPIRY_SECONDS,
   type SignerWallet,
   type PaymentRequiredAccept,
@@ -39,6 +44,13 @@ import {
 } from './signer.js';
 import { createLogger } from '../logger.js';
 import type { DetachedToolCall } from '../types.js';
+import {
+  PaymentRefusedError,
+  atomicUnitsToUsd,
+  formatUsd,
+  parseAtomicAmount,
+  type X402SpendTracker,
+} from './limits.js';
 
 const logger = createLogger('x402-middleware');
 
@@ -47,6 +59,16 @@ const MCP_PAYMENT_META_KEY = 'x402/payment';
 
 /** MCP _meta key for the x402 settlement receipt (per x402 MCP spec) */
 export const MCP_PAYMENT_RESPONSE_META_KEY = 'x402/payment-response';
+
+/**
+ * `_meta` key under which mcpc reports a payment it signed for a tool call. Not part of
+ * x402: the protocol tells the caller what was settled (the receipt above), never what
+ * the client authorized, and that is the number an agent's operator has to be able to see.
+ */
+export const MCPC_PAYMENT_META_KEY = 'com.apify.mcpc/x402-payment';
+
+/** A cached signature is not reused this close to its expiry: the server could not settle it. */
+const REUSE_EXPIRY_MARGIN_MILLIS = 30_000;
 
 /**
  * Maximum size of a PAYMENT-RESPONSE header we will decode, in base64 characters.
@@ -87,26 +109,42 @@ interface JsonRpcRequest {
   [key: string]: unknown;
 }
 
+/** A payment mcpc signed, as reported at `_meta["com.apify.mcpc/x402-payment"]`. */
+export interface X402PaymentRecord {
+  scheme: string;
+  network: string;
+  asset: string;
+  payTo: string;
+  /** Authorized amount in USDC atomic units (for `upto`, the cap) */
+  amount: string;
+  amountUsd: number;
+  expiresAt: string;
+}
+
 /**
  * Shared mutable cache for payment signatures between the fetch middleware and the bridge.
- * The middleware reads and writes cached signatures; the bridge invalidates on JSON-RPC 402.
  */
 export interface X402PaymentCache {
-  /** Base64-encoded payment signature, or null if not yet signed / invalidated */
-  signature: string | null;
+  /**
+   * Signed payments that can still be reused, keyed by the terms they were signed for
+   * (`paymentTermsKey`). Reuse is deliberate — servers such as mcp.apify.com treat a
+   * signature as a prepaid token (#247) — but only for a request asking for the very same
+   * scheme, network, token, payee and amount, and only until the signature expires.
+   */
+  payments: Map<string, { signature: string; expiresAtMillis: number }>;
 
   /**
-   * Names of tools the server has charged for at runtime, via a payment-required tool
-   * result or an HTTP 402. Challenge-first servers omit `_meta.x402` from `tools/list`,
-   * so this is the only record that such a tool is paid at all — without it the cached
-   * signature would have to be attached to every tools/call in the session (including
-   * free ones) for the retry after a challenge to carry payment.
+   * The terms the server last demanded for a tool at runtime, via a payment-required tool
+   * result or an HTTP 402. Challenge-first servers omit `_meta.x402` from `tools/list`, so
+   * this is the only record that such a tool is paid at all — without it the retry after a
+   * challenge could not find its payment, and attaching one to every tools/call instead
+   * would hand a live authorization to calls that never asked for one.
    */
-  paymentRequiredTools?: Set<string>;
+  toolTerms: Map<string, string>;
 
   /**
    * The settlement receipt from the last paid response's `PAYMENT-RESPONSE` header, with
-   * the tool it paid for, until `withSettlementReceipt()` attaches it to that tool's
+   * the tool it paid for, until `withPaymentMeta()` attaches it to that tool's
    * result. Kept exactly as the server encoded it: mcpc does not validate or normalize
    * the spec's `success`/`transaction`/`network` fields, so a caller reconciles against
    * the server's receipt rather than our reading of it.
@@ -118,14 +156,112 @@ export interface X402PaymentCache {
    * wire, which is not worth sending to every server for this.
    */
   lastSettlement?: { toolName: string; receipt: Record<string, unknown> };
+
+  /**
+   * The payment last signed for a tool call, until `withPaymentMeta()` attaches it to that
+   * tool's result. Same single slot and same caveat as `lastSettlement`; every signature
+   * is also written to the bridge log, so an overwritten one is not lost.
+   */
+  lastPayment?: { toolName: string; payment: X402PaymentRecord };
+}
+
+export function createPaymentCache(): X402PaymentCache {
+  return { payments: new Map(), toolTerms: new Map() };
+}
+
+/** The cached signature for the given terms, unless it is missing or about to expire. */
+function getReusablePayment(cache: X402PaymentCache, termsKey: string): string | undefined {
+  const cached = cache.payments.get(termsKey);
+  if (!cached) {
+    return undefined;
+  }
+  if (cached.expiresAtMillis - REUSE_EXPIRY_MARGIN_MILLIS <= Date.now()) {
+    cache.payments.delete(termsKey);
+    return undefined;
+  }
+  return cached.signature;
+}
+
+/** What the middleware and the bridge need to sign a payment on the session's behalf. */
+export interface X402PaymentContext {
+  /** The wallet to sign payments with */
+  wallet: SignerWallet;
+
+  /** Shared mutable cache for reusing payment signatures across tool calls */
+  paymentCache: X402PaymentCache;
+
+  /** Payment scheme preference when multiple accepts are available (default: auto) */
+  schemePreference?: SchemePreference;
+
+  /** The session's spending limits; every signature is counted against them first */
+  spend: X402SpendTracker;
+
+  /** Called after each signature, before it is sent (the bridge persists the new total) */
+  onPayment?: (payment: X402PaymentRecord, toolName: string | undefined) => void | Promise<void>;
 }
 
 /**
- * Remember that the server charges for a tool, so later calls to it reuse the session's
- * payment signature even when the tool advertises no `_meta.x402`.
+ * Sign a payment for the session: the one place a server's payment terms turn into a
+ * signature. Refuses (`PaymentRefusedError`) before signing when the amount is over the
+ * session's per-payment limit or its remaining budget; on success caches the signature
+ * under its terms and records what was signed for the caller.
+ *
+ * @returns The base64-encoded PAYMENT-SIGNATURE value
  */
-export function recordPaymentRequiredTool(cache: X402PaymentCache, toolName: string): void {
-  (cache.paymentRequiredTools ??= new Set<string>()).add(toolName);
+export async function signSessionPayment(
+  context: X402PaymentContext,
+  accept: PaymentRequiredAccept,
+  options: { resource?: PaymentRequiredHeader['resource']; toolName?: string } = {}
+): Promise<string> {
+  const { paymentCache, spend } = context;
+  const { toolName } = options;
+  const amountAtomicUnits = parseAtomicAmount(accept.amount);
+
+  // Throws when over a limit. Reserved before the first await, so concurrent calls cannot
+  // both spend the last of the budget.
+  spend.reserve(amountAtomicUnits);
+
+  let signed;
+  try {
+    signed = await signPayment({
+      wallet: context.wallet,
+      accept,
+      ...(options.resource && { resource: options.resource }),
+    });
+  } catch (error) {
+    spend.release(amountAtomicUnits);
+    throw error;
+  }
+
+  const termsKey = paymentTermsKey(accept);
+  paymentCache.payments.set(termsKey, {
+    signature: signed.paymentSignatureBase64,
+    expiresAtMillis: signed.expiresAt.getTime(),
+  });
+
+  const payment: X402PaymentRecord = {
+    scheme: accept.scheme,
+    network: accept.network,
+    asset: accept.asset,
+    payTo: accept.payTo,
+    amount: amountAtomicUnits.toString(),
+    amountUsd: atomicUnitsToUsd(amountAtomicUnits),
+    expiresAt: signed.expiresAt.toISOString(),
+  };
+  if (toolName) {
+    paymentCache.toolTerms.set(toolName, termsKey);
+    paymentCache.lastPayment = { toolName, payment };
+  }
+
+  // info, not debug: money moving must be visible in the bridge log without --verbose
+  logger.info(
+    `x402 payment signed: ${accept.scheme === 'upto' ? 'up to ' : ''}${formatUsd(amountAtomicUnits)} ` +
+      `to ${accept.payTo} on ${signed.networkLabel} for ${toolName ? `tool "${toolName}"` : 'a non-tool request'} ` +
+      `(session total $${spend.spentUsd} of $${spend.limits.budgetUsd})`
+  );
+  await context.onPayment?.(payment, toolName);
+
+  return signed.paymentSignatureBase64;
 }
 
 /**
@@ -197,77 +333,77 @@ function captureSettlementReceipt(
 }
 
 /**
- * Attach the settlement receipt captured for `toolName`, if any, to a tool result.
+ * Attach what mcpc knows about the payment for a call to `toolName` to its tool result.
  *
- * Returns a copy of the result with the receipt at `_meta["x402/payment-response"]`, the
- * key the x402 MCP transport defines for it. A receipt the server already delivered
- * through that channel wins — mcpc never overwrites what the server itself reported. The
- * receipt is consumed either way, so it cannot leak onto a later call to the same tool.
+ * Returns a copy of the result with, when there is one:
+ * - the payment mcpc signed for this call at `_meta["com.apify.mcpc/x402-payment"]`
+ *   (absent when a signature from an earlier call was reused — nothing new was authorized);
+ * - the server's settlement receipt at `_meta["x402/payment-response"]`, the key the x402
+ *   MCP transport defines for it. A receipt the server already delivered through that
+ *   channel wins — mcpc never overwrites what the server itself reported.
+ *
+ * Both are consumed either way, so neither can leak onto a later call to the same tool.
  */
-export function withSettlementReceipt<T>(result: T, cache: X402PaymentCache, toolName: string): T {
-  if (cache.lastSettlement?.toolName !== toolName) {
-    return result;
-  }
-  const { receipt } = cache.lastSettlement;
-  delete cache.lastSettlement;
+export function withPaymentMeta<T>(result: T, cache: X402PaymentCache, toolName: string): T {
+  const additions: Record<string, unknown> = {};
+  const meta =
+    result && typeof result === 'object'
+      ? (result as { _meta?: Record<string, unknown> })._meta
+      : undefined;
 
-  if (!result || typeof result !== 'object') {
-    return result;
-  }
-
-  const meta = (result as { _meta?: Record<string, unknown> })._meta;
-  if (meta && MCP_PAYMENT_RESPONSE_META_KEY in meta) {
-    logger.debug(`Tool "${toolName}" reported its own settlement receipt, keeping it verbatim`);
-    return result;
+  if (cache.lastPayment?.toolName === toolName) {
+    additions[MCPC_PAYMENT_META_KEY] = cache.lastPayment.payment;
+    delete cache.lastPayment;
   }
 
-  return {
-    ...result,
-    _meta: { ...meta, [MCP_PAYMENT_RESPONSE_META_KEY]: receipt },
-  };
+  if (cache.lastSettlement?.toolName === toolName) {
+    const { receipt } = cache.lastSettlement;
+    delete cache.lastSettlement;
+    if (meta && MCP_PAYMENT_RESPONSE_META_KEY in meta) {
+      logger.debug(`Tool "${toolName}" reported its own settlement receipt, keeping it verbatim`);
+    } else {
+      additions[MCP_PAYMENT_RESPONSE_META_KEY] = receipt;
+    }
+  }
+
+  if (!result || typeof result !== 'object' || Object.keys(additions).length === 0) {
+    return result;
+  }
+  return { ...result, _meta: { ...meta, ...additions } };
 }
 
 /**
- * {@link withSettlementReceipt} for what a detached tool call (`tools-call --detach`)
- * produced: the receipt goes on the tool result when the server answered with one, and
- * otherwise on the task it created in its place — the paid request is the one that created
- * the task. An absent outcome (the call failed) still consumes the receipt, so it cannot
+ * {@link withPaymentMeta} for what a detached tool call (`tools-call --detach`)
+ * produced: the payment details go on the tool result when the server answered with one,
+ * and otherwise on the task it created in its place — the paid request is the one that
+ * created the task. An absent outcome (the call failed) still consumes them, so they cannot
  * surface on the next call to the same tool.
  */
-export function withSettlementReceiptOnDetachedCall(
+export function withPaymentMetaOnDetachedCall(
   outcome: DetachedToolCall | undefined,
   cache: X402PaymentCache,
   toolName: string
 ): DetachedToolCall | undefined {
   if (outcome?.result) {
-    return { ...outcome, result: withSettlementReceipt(outcome.result, cache, toolName) };
+    return { ...outcome, result: withPaymentMeta(outcome.result, cache, toolName) };
   }
   if (outcome?.task) {
-    return { ...outcome, task: withSettlementReceipt(outcome.task, cache, toolName) };
+    return { ...outcome, task: withPaymentMeta(outcome.task, cache, toolName) };
   }
-  withSettlementReceipt(outcome, cache, toolName);
+  withPaymentMeta(outcome, cache, toolName);
   return outcome;
 }
 
 /**
  * Options for creating the x402 fetch middleware
  */
-export interface X402FetchMiddlewareOptions {
-  /** The wallet to sign payments with */
-  wallet: SignerWallet;
-
+export interface X402FetchMiddlewareOptions extends X402PaymentContext {
   /**
    * Callback to look up a tool by name to check _meta.x402.
    * Returns the tool if found, undefined otherwise.
    * This is called per tools/call request for proactive signing.
    */
   getToolByName?: (name: string) => Tool | undefined;
-
-  /** Shared mutable cache for reusing payment signatures across tool calls */
-  paymentCache: X402PaymentCache;
-
-  /** Payment scheme preference when multiple accepts are available (default: auto) */
-  schemePreference?: SchemePreference;
 }
 
 /**
@@ -277,24 +413,22 @@ export interface X402FetchMiddlewareOptions {
  * - For tools/call POST requests: proactively sign if tool has _meta.x402
  * - For any request returning 402: parse, sign, retry once
  * - All other requests: pass through unchanged
+ *
+ * A payment mcpc will not make — over the session's limits, or on terms it does not sign
+ * for — rejects the request with a `PaymentRefusedError` instead of passing the 402
+ * through, so the caller learns why and which limit to raise.
  */
 export function createX402FetchMiddleware(
   baseFetch: FetchLike,
   options: X402FetchMiddlewareOptions
 ): FetchLike {
-  const { wallet, getToolByName, paymentCache, schemePreference } = options;
+  const { paymentCache } = options;
 
   return async (url: string | URL, init?: RequestInit): Promise<Response> => {
     // Try to get a payment signature (cached or freshly signed) for tools/call requests
-    const paymentSignature = await getOrSignPayment(
-      init,
-      wallet,
-      getToolByName,
-      paymentCache,
-      schemePreference
-    );
-    if (paymentSignature) {
-      const enhancedInit = injectPayment(init, paymentSignature);
+    const payment = await getOrSignPayment(init, options);
+    if (payment) {
+      const enhancedInit = injectPayment(init, payment.signature);
       const response = await baseFetch(url, enhancedInit);
 
       // If payment succeeded (not HTTP 402), return immediately
@@ -303,18 +437,10 @@ export function createX402FetchMiddleware(
         return response;
       }
 
-      // HTTP 402 — invalidate cache and fall through to fallback
+      // HTTP 402 — the server turned this signature down, so never offer it again
       logger.debug('Payment rejected (HTTP 402), invalidating cache');
-      paymentCache.signature = null;
-      return handle402Fallback(
-        url,
-        init,
-        response,
-        baseFetch,
-        wallet,
-        paymentCache,
-        schemePreference
-      );
+      paymentCache.payments.delete(payment.termsKey);
+      return handle402Fallback(url, init, response, baseFetch, options);
     }
 
     // No payment needed — make request normally
@@ -322,15 +448,7 @@ export function createX402FetchMiddleware(
 
     // Check for HTTP 402 fallback
     if (response.status === 402) {
-      return handle402Fallback(
-        url,
-        init,
-        response,
-        baseFetch,
-        wallet,
-        paymentCache,
-        schemePreference
-      );
+      return handle402Fallback(url, init, response, baseFetch, options);
     }
 
     return response;
@@ -339,16 +457,14 @@ export function createX402FetchMiddleware(
 
 /**
  * Get a cached payment signature or sign a fresh one for a tools/call request.
- * Returns the base64-encoded PAYMENT-SIGNATURE, or undefined if the request
- * is not a tools/call for a payment-required tool.
+ * Returns the base64-encoded PAYMENT-SIGNATURE with the terms it was signed for, or
+ * undefined if the request is not a tools/call for a payment-required tool.
  */
 async function getOrSignPayment(
   init: RequestInit | undefined,
-  wallet: SignerWallet,
-  getToolByName: ((name: string) => Tool | undefined) | undefined,
-  paymentCache: X402PaymentCache,
-  schemePreference?: SchemePreference
-): Promise<string | undefined> {
+  options: X402FetchMiddlewareOptions
+): Promise<{ signature: string; termsKey: string } | undefined> {
+  const { getToolByName, paymentCache, schemePreference } = options;
   if (!init?.body) {
     return undefined;
   }
@@ -372,46 +488,46 @@ async function getOrSignPayment(
   }
   const x402 = (tool as { _meta?: { x402?: ToolPaymentMeta } } | undefined)?._meta?.x402;
 
-  // Only tools the server charges for get a payment. The signature is deliberately reused
-  // across calls (servers such as mcp.apify.com treat it as a prepaid token, see #247), so
-  // this check is what keeps it off free tools — the alternative, attaching it to every
-  // tools/call, would hand a live authorization to calls that never asked for one.
-  const advertisesPayment = !!x402?.paymentRequired;
-  const chargedBefore = paymentCache.paymentRequiredTools?.has(toolName) ?? false;
-  if (!advertisesPayment && !chargedBefore) {
+  // Only tools the server charges for get a payment: ones that advertise a price, and ones
+  // it has challenged before. That is what keeps a live authorization off free tools.
+  const advertised = x402?.paymentRequired
+    ? selectAcceptFromToolMeta(x402, schemePreference)
+    : undefined;
+  const challengedTermsKey = paymentCache.toolTerms.get(toolName);
+  if (!x402?.paymentRequired && !challengedTermsKey) {
     return undefined;
   }
 
-  // Reuse the session's signature. The bridge stores one here after a payment-required
-  // CallToolResult, and the retry must find it even though the tool has no _meta.x402.
-  if (paymentCache.signature) {
-    logger.debug(`Using cached payment signature for tool "${toolName}"`);
-    return paymentCache.signature;
+  // Reuse a signature made for the same terms. What the server demanded at runtime is
+  // tried first: it is authoritative where it differs from the advertised price. The
+  // bridge stores a signature here after a payment-required CallToolResult, and the retry
+  // must find it even though the tool has no _meta.x402.
+  const candidates = [challengedTermsKey, advertised && paymentTermsKey(advertised)];
+  for (const termsKey of candidates) {
+    const signature = termsKey && getReusablePayment(paymentCache, termsKey);
+    if (termsKey && signature) {
+      logger.debug(`Using cached payment signature for tool "${toolName}"`);
+      return { signature, termsKey };
+    }
   }
 
   // Charged before, but the tool advertises no terms to sign from — defer to the challenge,
   // which carries the authoritative ones (a payment-required result handled by the bridge,
   // or an HTTP 402). Proactive signing still requires _meta.x402.
-  if (!x402 || !x402.paymentRequired) {
-    return undefined;
-  }
-
-  const accept = selectAcceptFromToolMeta(x402, schemePreference);
-  if (!accept) {
+  if (!advertised) {
     logger.debug(
-      `Tool "${toolName}" _meta.x402 does not advertise a usable accept for schemePreference=${schemePreference ?? 'auto'}, deferring to 402 fallback`
+      `Tool "${toolName}" advertises no usable accept for schemePreference=${schemePreference ?? 'auto'}, deferring to 402 fallback`
     );
     return undefined;
   }
 
   try {
-    const result = await signPayment({ wallet, accept });
-    logger.debug(
-      `Fresh payment signed: scheme=${accept.scheme} amount=$${result.amountUsd.toFixed(6)} to=${result.to} network=${result.networkLabel}`
-    );
-    paymentCache.signature = result.paymentSignatureBase64;
-    return result.paymentSignatureBase64;
+    const signature = await signSessionPayment(options, advertised, { toolName });
+    return { signature, termsKey: paymentTermsKey(advertised) };
   } catch (error) {
+    if (error instanceof PaymentRefusedError) {
+      throw error;
+    }
     logger.warn(`Payment signing failed for tool "${toolName}":`, error);
     return undefined;
   }
@@ -426,10 +542,10 @@ async function handle402Fallback(
   originalInit: RequestInit | undefined,
   response402: Response,
   baseFetch: FetchLike,
-  wallet: SignerWallet,
-  paymentCache: X402PaymentCache,
-  schemePreference?: SchemePreference
+  options: X402FetchMiddlewareOptions
 ): Promise<Response> {
+  const { paymentCache, schemePreference } = options;
+
   // Extract PAYMENT-REQUIRED header (case-insensitive)
   const paymentRequiredBase64 =
     response402.headers.get('PAYMENT-REQUIRED') || response402.headers.get('payment-required');
@@ -446,41 +562,48 @@ async function handle402Fallback(
   try {
     ({ header, accept } = parsePaymentRequired(paymentRequiredBase64, schemePreference));
   } catch (error) {
+    // Nothing in the challenge that mcpc would pay (another chain, another token, or not
+    // a challenge at all). Say so: the bare 402 would tell the caller nothing.
     logger.warn('Failed to parse PAYMENT-REQUIRED header:', error);
-    return response402;
+    throw new PaymentRefusedError(`x402 payment refused: ${(error as Error).message}`);
   }
 
-  // Sign the payment
+  // A 402 on a tools/call proves the server charges for that tool, even if it advertises
+  // no _meta.x402, so later calls to it can reuse the signature for these terms
+  const toolName = extractToolCallName(originalInit?.body);
+  const termsKey = paymentTermsKey(accept);
+
+  let signature: string;
   try {
-    const result = await signPayment({
-      wallet,
-      accept,
-      resource: header.resource,
-    });
-
-    logger.debug(
-      `402 fallback payment signed: scheme=${accept.scheme} amount=$${result.amountUsd.toFixed(6)} to=${result.to} network=${result.networkLabel}`
-    );
-
-    // Cache the freshly signed payment for subsequent calls
-    paymentCache.signature = result.paymentSignatureBase64;
-
-    // A 402 on a tools/call proves the server charges for that tool, even if it advertises
-    // no _meta.x402, so later calls to it can reuse this signature
-    const toolName = extractToolCallName(originalInit?.body);
-    if (toolName) {
-      recordPaymentRequiredTool(paymentCache, toolName);
+    // A signature already held for exactly these terms (and not just turned down — that
+    // one was dropped before getting here) pays for this request too.
+    const cached = getReusablePayment(paymentCache, termsKey);
+    if (cached && toolName) {
+      paymentCache.toolTerms.set(toolName, termsKey);
     }
-
-    // Retry with payment signature (once only)
-    const retryInit = injectPayment(originalInit, result.paymentSignatureBase64);
-    const retryResponse = await baseFetch(url, retryInit);
-    captureSettlementReceipt(paymentCache, originalInit, retryResponse);
-    return retryResponse;
+    signature =
+      cached ??
+      (await signSessionPayment(options, accept, {
+        ...(header.resource && { resource: header.resource }),
+        ...(toolName && { toolName }),
+      }));
   } catch (error) {
+    if (error instanceof PaymentRefusedError) {
+      throw error;
+    }
     logger.warn('402 fallback signing failed:', error);
     return response402;
   }
+
+  // Retry with payment signature (once only)
+  const retryInit = injectPayment(originalInit, signature);
+  const retryResponse = await baseFetch(url, retryInit);
+  if (retryResponse.status === 402) {
+    paymentCache.payments.delete(termsKey);
+  } else {
+    captureSettlementReceipt(paymentCache, originalInit, retryResponse);
+  }
+  return retryResponse;
 }
 
 /**
@@ -522,7 +645,7 @@ function extractToolCallName(body: RequestInit['body'] | undefined): string | un
  *
  * Prefers the spec-shaped `accepts[]` array when present; falls back to the flat fields
  * only when the preference matches the flat scheme (or the preference is `auto`) and the
- * flat network is one mcpc can sign for.
+ * flat network and token are ones mcpc signs for.
  * Returning undefined defers signing to the 402 fallback path, which re-runs the
  * selector against the authoritative PAYMENT-REQUIRED header.
  */
@@ -542,7 +665,7 @@ function selectAcceptFromToolMeta(
   if (preference !== 'auto' && preference !== x402.scheme) {
     return undefined;
   }
-  if (!isSupportedNetwork(x402.network)) {
+  if (!isSupportedAsset(x402.network, x402.asset)) {
     return undefined;
   }
 

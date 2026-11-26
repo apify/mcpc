@@ -94,6 +94,14 @@ export const TRIMMED_INSTRUCTIONS_NOTICE = '\n\n[... trimmed excessive length]';
 export const X402_SCHEME_PREFERENCES = ['auto', 'upto', 'exact'] as const;
 export type X402SchemePreference = (typeof X402_SCHEME_PREFERENCES)[number];
 
+/** Limits a session enforces on the x402 payments it signs, in USD. */
+export interface X402Limits {
+  /** Largest single payment the session signs. */
+  maxPaymentUsd: number;
+  /** Total the session signs before it stops paying. */
+  budgetUsd: number;
+}
+
 /**
  * Configuration for a connection to MCP server
  * Used both for config file format and internal representation
@@ -178,6 +186,13 @@ export interface SessionData {
    * Absent / undefined means x402 is disabled.
    */
   x402?: X402SchemePreference;
+  /** Spending limits for x402 auto-payment (from `connect --x402-max-payment/--x402-budget`). */
+  x402Limits?: X402Limits;
+  /**
+   * Total the session's wallet has signed away so far, in USD. Counts authorizations, not
+   * settlements, and lasts as long as the session: restarts and reconnects keep it.
+   */
+  x402SpentUsd?: number;
   insecure?: boolean; // Skip TLS certificate verification
   pid?: number; // Bridge process PID
   protocolVersion?: string; // Negotiated MCP version

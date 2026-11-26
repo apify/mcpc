@@ -83,8 +83,9 @@ import { ProxyServer } from './proxy-server.js';
 import type { ProxyConfig } from '../lib/types.js';
 // x402 modules pull in the bundled viem (~1 MB of crypto code) — import types
 // only here and load the implementations lazily at the x402-gated call sites.
-import type { X402PaymentCache } from '../lib/x402/fetch-middleware.js';
+import type { X402PaymentCache, X402PaymentContext } from '../lib/x402/fetch-middleware.js';
 import type { SignerWallet } from '../lib/x402/signer.js';
+import { PaymentRefusedError, X402SpendTracker, resolveX402Limits } from '../lib/x402/limits.js';
 import type { FetchLike } from '@modelcontextprotocol/client';
 import { IpcLineBuffer } from '../lib/ipc-line-buffer.js';
 
@@ -152,7 +153,10 @@ class BridgeProcess {
   private x402Wallet: SignerWallet | null = null;
 
   // Shared payment signature cache — middleware reads/writes, bridge invalidates on payment-required results
-  private x402PaymentCache: X402PaymentCache = { signature: null };
+  private x402PaymentCache: X402PaymentCache = { payments: new Map(), toolTerms: new Map() };
+
+  // Wallet, limits and cache for signing x402 payments; set once the transport is built
+  private x402Context: X402PaymentContext | null = null;
 
   // Resource→file sync for resources-subscribe (created once the MCP client connects)
   private resourceSync: ResourceSyncManager | null = null;
@@ -726,18 +730,13 @@ class BridgeProcess {
       // We use a closure that defers tool lookup to the connected client
       // The client may not have tools cached yet at this point, but will
       // after it connects and receives the auto-refreshed tools list
-      const wallet = this.x402Wallet;
       const getToolByName = (name: string): Tool | undefined => {
         // McpClient caches tools in-memory after the first listAllTools call
         return this.client?.getCachedTools()?.find((t: Tool) => t.name === name);
       };
+      this.x402Context = await this.createX402Context(this.x402Wallet, serverConfig.url);
       const { createX402FetchMiddleware } = await import('../lib/x402/fetch-middleware.js');
-      customFetch = createX402FetchMiddleware(proxyFetch, {
-        wallet,
-        getToolByName,
-        paymentCache: this.x402PaymentCache,
-        ...(this.options.x402 && { schemePreference: this.options.x402 }),
-      });
+      customFetch = createX402FetchMiddleware(proxyFetch, { ...this.x402Context, getToolByName });
     }
 
     const clientConfig: CreateMcpClientOptions = {
@@ -1412,23 +1411,64 @@ class BridgeProcess {
   }
 
   /**
+   * Build what x402 signing needs for this session: the wallet, the signature cache, and
+   * the spending limits with the total signed so far. Limits and total live in
+   * sessions.json, so neither a restart nor a crash-reconnect resets them; a session
+   * record without limits (created before they existed) gets the defaults.
+   */
+  private async createX402Context(
+    wallet: SignerWallet,
+    serverUrl: string
+  ): Promise<X402PaymentContext> {
+    const { sessionName, x402: schemePreference } = this.options;
+    const session = await getSession(sessionName);
+    const scheme = schemePreference && schemePreference !== 'auto' ? ` ${schemePreference}` : '';
+    const spend = new X402SpendTracker(
+      resolveX402Limits(session?.x402Limits),
+      session?.x402SpentUsd,
+      (flag) =>
+        `To raise the limit, run: mcpc connect ${serverUrl} ${sessionName} --x402${scheme} ${flag} <usd>`
+    );
+    logger.info(
+      `x402 limits: $${spend.limits.maxPaymentUsd} per payment, $${spend.spentUsd} of $${spend.limits.budgetUsd} budget authorized`
+    );
+    return {
+      wallet,
+      paymentCache: this.x402PaymentCache,
+      spend,
+      ...(schemePreference && { schemePreference }),
+      onPayment: async () => {
+        // Best effort: failing the paid call over a bookkeeping write would be worse
+        try {
+          await updateSession(sessionName, { x402SpentUsd: spend.spentUsd });
+        } catch (error) {
+          logger.warn('Failed to persist the x402 spending total:', error);
+        }
+      },
+    };
+  }
+
+  /**
    * Handle a tool result that contains x402 payment-required data.
    * Signs a fresh payment, caches it, and retries the tool call once.
    *
    * Returns { handled: true, result } if payment was signed and retry succeeded.
    * Returns { handled: false } if the result is not a payment-required response.
+   * Throws when the session's spending limits refuse the payment, so the caller is told
+   * which limit to raise instead of being handed the raw challenge.
    */
   private async handlePaymentRequiredRetry(
     toolName: string,
     toolResult: unknown,
     retryFn: () => Promise<unknown>
   ): Promise<{ handled: true; result: unknown } | { handled: false }> {
-    if (!this.x402Wallet) return { handled: false };
+    const context = this.x402Context;
+    if (!context) return { handled: false };
 
     const {
       extractPaymentRequiredFromResult,
       extractAcceptFromPaymentRequired,
-      recordPaymentRequiredTool,
+      signSessionPayment,
     } = await import('../lib/x402/fetch-middleware.js');
     const paymentRequired = extractPaymentRequiredFromResult(toolResult);
     if (!paymentRequired) return { handled: false };
@@ -1441,24 +1481,18 @@ class BridgeProcess {
 
     logger.debug('Payment-required tool result received, signing fresh payment and retrying...');
 
-    // The challenge is the only proof that this tool is paid on servers that advertise no
-    // _meta.x402 — without it the middleware would leave the retry unpaid (#365)
-    recordPaymentRequiredTool(this.x402PaymentCache, toolName);
-
-    // Invalidate cache and sign fresh
-    this.x402PaymentCache.signature = null;
+    // Always sign fresh: if a signature for these terms was attached to the call, the
+    // server has just turned it down. Signing records the tool's terms, which is the only
+    // way the middleware learns that a tool advertising no _meta.x402 is paid (#365).
     try {
-      const { signPayment } = await import('../lib/x402/signer.js');
-      const signed = await signPayment({
-        wallet: this.x402Wallet,
-        accept: parsed.accept,
-        resource: parsed.resource,
+      await signSessionPayment(context, parsed.accept, {
+        ...(parsed.resource && { resource: parsed.resource }),
+        toolName,
       });
-      this.x402PaymentCache.signature = signed.paymentSignatureBase64;
-      logger.debug(
-        `Fresh payment signed for retry: $${signed.amountUsd.toFixed(6)} to ${signed.to} on ${signed.networkLabel}`
-      );
     } catch (signError) {
+      if (signError instanceof PaymentRefusedError) {
+        throw signError;
+      }
       logger.warn('Failed to sign fresh payment for 402 retry:', signError);
       return { handled: false };
     }
@@ -1631,21 +1665,21 @@ class BridgeProcess {
               result = retry.result;
             }
           } finally {
-            // Hand the caller the x402 settlement receipt for this call. Runs on the error
+            // Hand the caller what was signed for this call and its settlement receipt. Runs on the error
             // path too: the assignment is then discarded with the exception, but consuming
             // the receipt is what keeps a call that failed after its payment settled from
             // handing its receipt to the next call to the same tool. The slot stays empty
             // without x402, so such a session never loads the (viem-backed) x402 module.
-            if (this.x402PaymentCache.lastSettlement) {
-              const { withSettlementReceipt, withSettlementReceiptOnDetachedCall } =
+            if (this.x402PaymentCache.lastSettlement || this.x402PaymentCache.lastPayment) {
+              const { withPaymentMeta, withPaymentMetaOnDetachedCall } =
                 await import('../lib/x402/fetch-middleware.js');
               result = detached
-                ? withSettlementReceiptOnDetachedCall(
+                ? withPaymentMetaOnDetachedCall(
                     result as DetachedToolCall | undefined,
                     this.x402PaymentCache,
                     params.name
                   )
-                : withSettlementReceipt(result, this.x402PaymentCache, params.name);
+                : withPaymentMeta(result, this.x402PaymentCache, params.name);
             }
           }
           break;

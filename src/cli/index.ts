@@ -36,7 +36,12 @@ import * as tasks from './commands/tasks.js';
 import * as grepCmd from './commands/grep.js';
 import { clean } from './commands/clean.js';
 import { MCPC_OAUTH_CALLBACK_HOSTS, MCPC_OAUTH_CALLBACK_PORTS } from '../lib/auth/oauth-utils.js';
-import type { OutputMode, X402SchemePreference } from '../lib/index.js';
+import type { OutputMode, X402Limits, X402SchemePreference } from '../lib/index.js';
+import {
+  DEFAULT_X402_BUDGET_USD,
+  DEFAULT_X402_MAX_PAYMENT_USD,
+  parseUsdOption,
+} from '../lib/x402/limits.js';
 import { X402_SCHEME_PREFERENCES } from '../lib/index.js';
 import {
   extractOptions,
@@ -92,6 +97,8 @@ interface HandlerOptions {
    * `--x402` (no value) resolves to `'auto'` (prefer upto, fall back to exact).
    */
   x402?: X402SchemePreference;
+  /** Spending limits for the x402 session, from --x402-max-payment / --x402-budget. */
+  x402Limits?: Partial<X402Limits>;
   insecure?: boolean;
   schema?: string;
   schemaMode?: 'strict' | 'compatible' | 'ignore';
@@ -148,6 +155,21 @@ function getOptionsFromCommand(command: Command): HandlerOptions {
       );
     }
     options.x402 = opts.x402 as X402SchemePreference;
+  }
+  if (opts.x402MaxPayment !== undefined || opts.x402Budget !== undefined) {
+    if (!options.x402) {
+      throw new ClientError(
+        '--x402-max-payment and --x402-budget set the limits of x402 auto-payment, so they need --x402.'
+      );
+    }
+    options.x402Limits = {
+      ...(opts.x402MaxPayment !== undefined && {
+        maxPaymentUsd: parseUsdOption(opts.x402MaxPayment as string, '--x402-max-payment'),
+      }),
+      ...(opts.x402Budget !== undefined && {
+        budgetUsd: parseUsdOption(opts.x402Budget as string, '--x402-budget'),
+      }),
+    };
   }
   if (opts.insecure) options.insecure = true;
   if (opts.schema) options.schema = opts.schema;
@@ -498,6 +520,8 @@ Full docs: ${docsUrl}`
     .option('--stdio', 'Launch all local stdio servers from selected config files')
     .option('--protocol-version <version>', 'Pin the MCP protocol version (see below)')
     .option('--x402 [scheme]', 'Enable x402 auto-payment (see below)')
+    .option('--x402-max-payment <usd>', 'Largest single x402 payment (see below)')
+    .option('--x402-budget <usd>', 'Total the session may pay with x402 (see below)')
     .addHelpText(
       'after',
       `
@@ -531,6 +555,12 @@ ${chalk.bold('Protocol version:')}
 ${chalk.bold('x402 payments (experimental):')}
   --x402 pays for paid tool calls from the wallet set up with: mcpc x402
   Schemes: auto (default, prefers upto), upto, exact.
+  The server sets the price, so the session enforces its own limits: a payment
+  above --x402-max-payment (default $${DEFAULT_X402_MAX_PAYMENT_USD}), or one that would take the session's
+  total past --x402-budget (default $${DEFAULT_X402_BUDGET_USD}), is refused. Both are in USD, kept
+  across restarts, and count what the wallet signed (the most the server can
+  collect). Only USDC on Base is paid, and --x402 is refused with
+  auto-discovery.
   For more info, run: mcpc help x402
 ${outputHelp([
   'For a single server, shows session, server info, capabilities, and tools.',
@@ -560,6 +590,7 @@ ${outputHelp([
           ...(opts.stdio && { stdio: true }),
           ...(opts.protocolVersion && { protocolVersion: opts.protocolVersion as string }),
           ...(globalOpts.x402 && { x402: globalOpts.x402 }),
+          ...(globalOpts.x402Limits && { x402Limits: globalOpts.x402Limits }),
           ...(globalOpts.insecure && { insecure: true }),
         });
         // Trailing blank line to match the spacing of other commands (human mode only).
@@ -592,6 +623,7 @@ ${outputHelp([
           ...(opts.stdio && { stdio: true }),
           ...(opts.protocolVersion && { protocolVersion: opts.protocolVersion as string }),
           ...(globalOpts.x402 && { x402: globalOpts.x402 }),
+          ...(globalOpts.x402Limits && { x402Limits: globalOpts.x402Limits }),
           ...(globalOpts.insecure && { insecure: true }),
         });
         return;
@@ -617,6 +649,7 @@ ${outputHelp([
           proxyBearerToken: opts.proxyBearerToken,
           ...(opts.protocolVersion && { protocolVersion: opts.protocolVersion as string }),
           ...(globalOpts.x402 && { x402: globalOpts.x402 }),
+          ...(globalOpts.x402Limits && { x402Limits: globalOpts.x402Limits }),
           ...(globalOpts.insecure && { insecure: true }),
         });
       } else {
@@ -627,6 +660,7 @@ ${outputHelp([
           proxyBearerToken: opts.proxyBearerToken,
           ...(opts.protocolVersion && { protocolVersion: opts.protocolVersion as string }),
           ...(globalOpts.x402 && { x402: globalOpts.x402 }),
+          ...(globalOpts.x402Limits && { x402Limits: globalOpts.x402Limits }),
           ...(globalOpts.insecure && { insecure: true }),
         });
       }
