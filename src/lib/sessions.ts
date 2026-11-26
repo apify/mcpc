@@ -461,6 +461,12 @@ export async function consolidateSessions(
       for (const [name, session] of Object.entries(storage.sessions)) {
         const isRetryableUnauthorized = session?.status === 'unauthorized' && !!session.profileName;
         if ((session?.status === 'crashed' || isRetryableUnauthorized) && !session.pid) {
+          // A stdio session created before mcpc recorded its working directory cannot be
+          // restarted in the background (see resolveSessionCwd); leave it 'crashed' so the
+          // listing shows the real state instead of flipping to 'reconnecting' every time.
+          if (session.server?.command !== undefined && !session.cwd) {
+            continue;
+          }
           // Skip if a connection was already attempted within the cooldown window
           const lastAttempt = session.lastConnectionAttemptAt
             ? new Date(session.lastConnectionAttemptAt).getTime()

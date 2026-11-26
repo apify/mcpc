@@ -412,8 +412,14 @@ export async function connectSession(
     ...(env && { env: redactHeaders(env) }),
   };
 
+  // A stdio server runs in the directory this `connect` was issued from, and is restarted
+  // there for the life of the session, whichever directory later commands run in. Cleared
+  // explicitly when an existing stdio session is reconnected to an HTTP target.
+  const cwd = serverConfig.command !== undefined ? process.cwd() : undefined;
+
   const sessionUpdate: Parameters<typeof updateSession>[1] = {
     server: sessionTransportConfig,
+    cwd,
     ...(profileName && { profileName }),
     ...(proxyConfig && { proxy: proxyConfig }),
     ...(options.x402 && { x402: options.x402 }),
@@ -448,6 +454,7 @@ export async function connectSession(
       ...(proxyConfig && { proxyConfig }),
       ...(options.x402 && { x402: options.x402 }),
       ...(options.insecure && { insecure: true }),
+      ...(cwd && { cwd }),
     };
 
     const { pid } = await startBridge(bridgeOptions);
