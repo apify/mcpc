@@ -12,6 +12,8 @@ import { existsSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { BridgeClient } from '../../../src/lib/bridge-client.js';
+import { ClientError, NetworkError, ServerError } from '../../../src/lib/errors.js';
+import { MAX_IPC_MESSAGE_CHARS } from '../../../src/lib/ipc-line-buffer.js';
 
 // Unix domain sockets only; Windows uses named pipes with different semantics.
 const onWindows = process.platform === 'win32';
@@ -117,5 +119,64 @@ describe.skipIf(onWindows)('BridgeClient.connect retry', () => {
     await client.connect();
 
     await expect(client.request('status')).resolves.toBe('ready 🚀');
+  });
+
+  // M7: an oversized frame must never look like a bridge crash (a NetworkError),
+  // which makes the caller stop and respawn a healthy bridge.
+  it('refuses to send a request over the IPC size limit', async () => {
+    const p = sockPath();
+    let received = 0;
+    const server = net.createServer((conn) => conn.on('data', (data) => (received += data.length)));
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(p, resolve));
+
+    const client = new BridgeClient(p);
+    clients.push(client);
+    await client.connect();
+
+    const params = { message: 'x'.repeat(MAX_IPC_MESSAGE_CHARS) };
+    await expect(client.request('callTool', params)).rejects.toThrow(ClientError);
+    await expect(client.request('callTool', params)).rejects.toThrow(/Request is too large/);
+    expect(received).toBe(0);
+  });
+
+  it('fails an oversized response with a non-network error', async () => {
+    const p = sockPath();
+    const server = net.createServer((conn) => {
+      conn.on('error', () => {});
+      conn.once('data', () => conn.write('x'.repeat(MAX_IPC_MESSAGE_CHARS + 1)));
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(p, resolve));
+
+    const client = new BridgeClient(p);
+    clients.push(client);
+    await client.connect();
+
+    const error = await client.request('readResource').catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ServerError);
+    expect(error).not.toBeInstanceOf(NetworkError);
+    expect((error as Error).message).toMatch(/too large/);
+  });
+
+  it('accepts several frames in one read that together exceed the limit', async () => {
+    const p = sockPath();
+    const filler = 'x'.repeat(Math.floor(MAX_IPC_MESSAGE_CHARS * 0.6));
+    const server = net.createServer((conn) => {
+      conn.once('data', (requestData) => {
+        const request = JSON.parse(requestData.toString().trim()) as { id: string };
+        const noise = `${JSON.stringify({ type: 'task-update', id: 'other', filler })}\n`;
+        const response = `${JSON.stringify({ type: 'response', id: request.id, result: filler })}\n`;
+        conn.write(noise + response);
+      });
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(p, resolve));
+
+    const client = new BridgeClient(p);
+    clients.push(client);
+    await client.connect();
+
+    await expect(client.request('status')).resolves.toBe(filler);
   });
 });

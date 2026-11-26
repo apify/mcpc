@@ -37,6 +37,7 @@ import {
   initFileLogger,
   closeFileLogger,
   formatHostPort,
+  MCP_SESSION_ID_ARG_PREFIX,
 } from '../lib/index.js';
 import {
   fileExists,
@@ -88,14 +89,15 @@ import type { ProxyConfig } from '../lib/types.js';
 import type { X402PaymentCache } from '../lib/x402/fetch-middleware.js';
 import type { SignerWallet } from '../lib/x402/signer.js';
 import type { FetchLike } from '@modelcontextprotocol/client';
-import { IpcLineBuffer } from '../lib/ipc-line-buffer.js';
+import {
+  IpcLineBuffer,
+  MAX_IPC_MESSAGE_CHARS,
+  ipcMessageTooLargeText,
+} from '../lib/ipc-line-buffer.js';
 
 // HTTP proxy and TLS settings are configured in main() after parsing --insecure flag
 
 // KEEPALIVE_INTERVAL_MILLIS imported from ../lib/types.js
-
-// Maximum IPC buffer size (10 MB) — destroy socket if exceeded
-const MAX_BUFFER_SIZE = 10 * 1024 * 1024;
 
 // How long a bridge waits before re-reading sessions.json to confirm that another
 // bridge has really taken over its session (see exitIfSuperseded).
@@ -1382,13 +1384,6 @@ class BridgeProcess {
     socket.on('data', (data) => {
       buffer.append(data);
 
-      if (buffer.length > MAX_BUFFER_SIZE) {
-        logger.error(`IPC buffer exceeded ${MAX_BUFFER_SIZE} bytes, destroying socket`);
-        socket.destroy();
-        this.connections.delete(socket);
-        return;
-      }
-
       // Process complete JSON messages (newline-delimited)
       for (const line of buffer.drainLines()) {
         if (line.trim()) {
@@ -1396,6 +1391,13 @@ class BridgeProcess {
             logger.error('Error handling message:', error);
           });
         }
+      }
+
+      // Memory backstop: the CLI refuses to send a frame this large
+      if (buffer.overflowed) {
+        logger.error(`IPC message exceeded ${MAX_IPC_MESSAGE_CHARS} chars, destroying socket`);
+        socket.destroy();
+        this.connections.delete(socket);
       }
     });
 
@@ -2040,7 +2042,27 @@ class BridgeProcess {
    * Send a response message to the CLI
    */
   private sendResponse(socket: Socket, message: IpcMessage): void {
-    const data = JSON.stringify(message) + '\n';
+    let data = JSON.stringify(message) + '\n';
+    if (data.length > MAX_IPC_MESSAGE_CHARS) {
+      // The CLI drops a connection that sends a frame this large and would then
+      // treat the bridge as crashed. Answer with an ordinary error instead: the
+      // bridge and the server session are fine, only this result is too big.
+      logger.error(`IPC ${message.type} of ${data.length} chars exceeds the limit, not sent`);
+      if (message.type !== 'response' || !message.id) {
+        return;
+      }
+      const tooLarge: IpcMessage = {
+        type: 'response',
+        id: message.id,
+        error: {
+          code: 2,
+          message:
+            ipcMessageTooLargeText('Server response', data.length) +
+            '; request less data (a narrower query or a smaller page)',
+        },
+      };
+      data = JSON.stringify(tooLarge) + '\n';
+    }
     socket.write(data);
   }
 
@@ -2186,7 +2208,7 @@ async function main(): Promise<void> {
 
   if (args.length < 2) {
     console.error(
-      'Usage: node dist/bridge/index.js <sessionName> <transportConfigJson> [--verbose] [--profile <name>] [--proxy-host <host>] [--proxy-port <port>] [--mcp-session-id <id>] [--protocol-version <version>] [--x402 <auto|upto|exact>] [--insecure]'
+      'Usage: node dist/bridge/index.js <sessionName> <transportConfigJson> [--verbose] [--profile <name>] [--proxy-host <host>] [--proxy-port <port>] [--mcp-session-id=<id>] [--protocol-version <version>] [--x402 <auto|upto|exact>] [--insecure]'
     );
     process.exit(1);
   }
@@ -2216,9 +2238,10 @@ async function main(): Promise<void> {
 
   // Parse --mcp-session-id argument (for session resumption)
   let mcpSessionId: string | undefined;
-  const mcpSessionIdIndex = args.indexOf('--mcp-session-id');
-  if (mcpSessionIdIndex !== -1 && args[mcpSessionIdIndex + 1]) {
-    mcpSessionId = args[mcpSessionIdIndex + 1];
+  // Server-chosen value: one `--mcp-session-id=<id>` token, see MCP_SESSION_ID_ARG_PREFIX
+  const mcpSessionIdArg = args.find((arg) => arg.startsWith(MCP_SESSION_ID_ARG_PREFIX));
+  if (mcpSessionIdArg && mcpSessionIdArg.length > MCP_SESSION_ID_ARG_PREFIX.length) {
+    mcpSessionId = mcpSessionIdArg.slice(MCP_SESSION_ID_ARG_PREFIX.length);
   }
 
   // Parse --protocol-version argument (protocol version negotiated by the resumed session)

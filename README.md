@@ -94,6 +94,12 @@ With [Homebrew](https://brew.sh) (macOS and Linux), which brings its own Node.js
 brew install mcpc
 ```
 
+With [Nix](https://search.nixos.org/packages?channel=unstable&query=mcpc&show=mcpc) (from nixpkgs unstable):
+
+```bash
+nix profile install nixpkgs#mcpc
+```
+
 Otherwise install the latest [Node.js](https://nodejs.org/en/download) or [Bun](https://bun.sh) first, then:
 
 ```bash

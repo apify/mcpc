@@ -11,7 +11,7 @@
 
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { mkdir, readFile, rm, stat } from 'fs/promises';
+import { mkdir, readdir, readFile, rm, stat } from 'fs/promises';
 
 // proper-lockfile registers signal handlers per module instance; raise the
 // limit to avoid spurious MaxListenersExceededWarning during tests.
@@ -468,6 +468,17 @@ describe('file fallback when OS keychain unavailable', () => {
 
     const { mode } = await stat(credFile());
     expect(mode & 0o777).toBe(0o600);
+  });
+
+  it('replaces credentials.json atomically, leaving no temp file', async () => {
+    const { storeKeychainSessionHeaders, readKeychainSessionHeaders } = await loadKeychain();
+    await storeKeychainSessionHeaders('@a', { 'X-A': '1' });
+    await storeKeychainSessionHeaders('@b', { 'X-B': '2' });
+
+    expect(await readKeychainSessionHeaders('@a')).toEqual({ 'X-A': '1' });
+    expect(await readKeychainSessionHeaders('@b')).toEqual({ 'X-B': '2' });
+    const leftovers = (await readdir(testHome)).filter((name) => name.endsWith('.tmp'));
+    expect(leftovers).toEqual([]);
   });
 
   it('returns undefined for missing key in credentials.json', async () => {

@@ -12,6 +12,7 @@ import {
   getServerHost,
   redactServerConfig,
   ClientError,
+  hasHeader,
 } from '../../lib/index.js';
 import { DISCONNECTED_THRESHOLD_MILLIS } from '../../lib/types.js';
 import type { ServerConfig, ConnectionMode } from '../../lib/types.js';
@@ -410,7 +411,7 @@ export async function restartSession(
   // Resolve auth profile: use stored profile, or auto-detect a "default" profile.
   // This handles the case where user creates a session without auth, then later runs
   // `mcpc login <server>` to create a default profile, and restarts the session.
-  const hasExplicitAuthHeader = headers?.Authorization !== undefined;
+  const hasExplicitAuthHeader = hasHeader(headers, 'Authorization');
   let profileName = session.profileName;
   if (!profileName && serverConfig.url && !hasExplicitAuthHeader && !session.x402) {
     profileName = await resolveAuthProfile(serverConfig.url, serverConfig.url, undefined, {

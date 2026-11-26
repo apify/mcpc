@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { IpcLineBuffer } from '../../../src/lib/ipc-line-buffer.js';
+import { IpcLineBuffer, MAX_IPC_MESSAGE_CHARS } from '../../../src/lib/ipc-line-buffer.js';
 
 describe('IpcLineBuffer', () => {
   it('preserves a multibyte UTF-8 character split across socket chunks', () => {
@@ -23,5 +23,21 @@ describe('IpcLineBuffer', () => {
 
     buffer.append(Buffer.from('2}\n'));
     expect(buffer.drainLines()).toEqual(['{"id":2}']);
+  });
+
+  it('reports overflow only for the frame still being assembled', () => {
+    const buffer = new IpcLineBuffer();
+    const half = 'x'.repeat(MAX_IPC_MESSAGE_CHARS / 2 + 1);
+
+    // Two complete frames that together exceed the cap are fine once drained
+    buffer.append(`${half}\n${half}\n`);
+    expect(buffer.drainLines()).toHaveLength(2);
+    expect(buffer.overflowed).toBe(false);
+
+    // One frame with no end in sight is not
+    buffer.append(half);
+    buffer.append(half);
+    expect(buffer.drainLines()).toEqual([]);
+    expect(buffer.overflowed).toBe(true);
   });
 });
