@@ -234,6 +234,9 @@ folded: >-
     ['s:\n  - |\n    text\n    more', { s: ['text\nmore\n'] }],
     ['s:\n  - >\n    text\n    more', { s: ['text more\n'] }],
     ['s:\n  - |', { s: [''] }],
+    ['s:\n  - | # note\n    text', { s: ['text\n'] }],
+    ['s:\n  - > # note\n    text', { s: ['text\n'] }],
+    ['s:\n  - |-  # c\n  - b', { s: ['', 'b'] }],
   ])('parses block scalars as sequence items', (yaml, expected) => {
     expect(parse(yaml)).toEqual(expected);
   });

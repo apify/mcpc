@@ -247,7 +247,7 @@ function parseSequence(
 
     const rest = line.text === '-' ? '' : line.text.slice(2).trim();
 
-    const blockScalar = matchBlockScalar(rest);
+    const blockScalar = matchBlockScalar(stripComment(rest).trim());
     if (blockScalar) {
       const { value, next } = readBlockScalar(
         lines,
