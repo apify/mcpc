@@ -7,6 +7,7 @@
  * (resource subscription sync) so both produce byte-identical files.
  */
 
+import { randomBytes } from 'crypto';
 import { stat, unlink, writeFile } from 'fs/promises';
 import { basename, dirname, isAbsolute, join } from 'path';
 import type { ReadResourceResult } from '@modelcontextprotocol/client';
@@ -103,10 +104,13 @@ export async function writeResourceFile(filePath: string, data: Buffer): Promise
   const dir = dirname(filePath);
   await ensureDir(dir, 0o777);
 
-  // Temp file in the same directory so rename never crosses filesystems
-  const tempFile = join(dir, `.${basename(filePath)}.${process.pid}.${Date.now()}.tmp`);
+  // Temp file in the same directory so rename never crosses filesystems. The name is
+  // unguessable and the file must not exist yet ('wx'): in a directory other users
+  // can write to, a symlink planted at a predictable name would send the server's
+  // content wherever it points.
+  const tempFile = join(dir, `.${basename(filePath)}.${randomBytes(8).toString('hex')}.tmp`);
   try {
-    await writeFile(tempFile, data);
+    await writeFile(tempFile, data, { flag: 'wx' });
     await atomicRename(tempFile, filePath);
   } catch (error) {
     await unlink(tempFile).catch(() => {});

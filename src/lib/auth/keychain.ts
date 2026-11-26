@@ -11,11 +11,12 @@
  * created (i.e. when credentials actually get stored outside the keychain).
  */
 
-import { readFile, writeFile } from 'fs/promises';
+import { readFile, unlink, writeFile } from 'fs/promises';
+import { randomBytes } from 'crypto';
 import { join } from 'path';
 import chalk from 'chalk';
 import { createLogger, getJsonMode } from '../logger.js';
-import { getServerHost, getMcpcHome, fileExists } from '../utils.js';
+import { getServerHost, getMcpcHome, fileExists, atomicRename } from '../utils.js';
 import { withFileLock } from '../file-lock.js';
 import { ClientError } from '../errors.js';
 import type { IdJagCredentials } from '../types.js';
@@ -56,8 +57,24 @@ async function fileSet(account: string, value: string): Promise<void> {
   await withFileLock(credentialsPath(), async () => {
     const raw = await readFile(credentialsPath(), 'utf8').catch(() => '{}');
     const data = { ...(JSON.parse(raw) as Record<string, string>), [account]: value };
-    await writeFile(credentialsPath(), JSON.stringify(data), { mode: 0o600 });
+    await writeCredentialsFile(data);
   });
+}
+
+/**
+ * Replace the fallback store atomically (temp file + rename). It holds every
+ * credential at once, so a crash halfway through an in-place write would log the
+ * user out of everything.
+ */
+async function writeCredentialsFile(data: Record<string, string>): Promise<void> {
+  const tempFile = `${credentialsPath()}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`;
+  try {
+    await writeFile(tempFile, JSON.stringify(data), { mode: 0o600, flag: 'wx' });
+    await atomicRename(tempFile, credentialsPath());
+  } catch (error) {
+    await unlink(tempFile).catch(() => {});
+    throw error;
+  }
 }
 
 async function fileDelete(account: string): Promise<boolean> {
@@ -66,7 +83,7 @@ async function fileDelete(account: string): Promise<boolean> {
     const data = JSON.parse(raw) as Record<string, string>;
     if (!(account in data)) return false;
     delete data[account];
-    await writeFile(credentialsPath(), JSON.stringify(data), { mode: 0o600 });
+    await writeCredentialsFile(data);
     return true;
   });
 }

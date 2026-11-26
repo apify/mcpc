@@ -2,7 +2,7 @@
  * Unit tests for resource content selection/decoding and file writing
  */
 
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'fs/promises';
+import { mkdtemp, mkdir, readdir, readFile, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import type { ReadResourceResult } from '@modelcontextprotocol/sdk/types.js';
@@ -90,6 +90,11 @@ describe('writeResourceFile', () => {
     const target = join(dir, 'out.txt');
     await writeResourceFile(target, Buffer.from('content'));
     expect(await readFile(target, 'utf-8')).toBe('content');
+  });
+
+  it('leaves no temp file behind', async () => {
+    await writeResourceFile(join(dir, 'out.txt'), Buffer.from('content'));
+    expect(await readdir(dir)).toEqual(['out.txt']);
   });
 
   it('writes binary data byte-exact', async () => {

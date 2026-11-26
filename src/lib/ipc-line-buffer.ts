@@ -1,6 +1,20 @@
 import { StringDecoder } from 'node:string_decoder';
 
 /**
+ * Largest single IPC message (one newline-delimited JSON frame) either end accepts,
+ * in UTF-16 code units as counted by `String.length`. Both ends refuse to *send* a
+ * larger frame and answer with an ordinary error instead, so the receive-side cap,
+ * which drops the connection, is only a memory backstop.
+ */
+export const MAX_IPC_MESSAGE_CHARS = 10 * 1024 * 1024;
+
+/** Human-readable "<what> is too large" text shared by both ends of the socket. */
+export function ipcMessageTooLargeText(what: string, chars: number): string {
+  const megabytes = (n: number): string => `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  return `${what} is too large for mcpc: ${megabytes(chars)}, limit ${megabytes(MAX_IPC_MESSAGE_CHARS)}`;
+}
+
+/**
  * Incrementally decodes UTF-8 IPC chunks and extracts newline-delimited frames.
  *
  * Buffer boundaries do not necessarily align with UTF-8 code points. Keeping one
@@ -15,8 +29,13 @@ export class IpcLineBuffer {
     this.buffer += typeof chunk === 'string' ? chunk : this.decoder.write(chunk);
   }
 
-  get length(): number {
-    return this.buffer.length;
+  /**
+   * True when the frame still being assembled (what is left after `drainLines()`)
+   * is already over the cap. Check it after draining: complete frames queued
+   * behind each other must not count against a single frame's limit.
+   */
+  get overflowed(): boolean {
+    return this.buffer.length > MAX_IPC_MESSAGE_CHARS;
   }
 
   drainLines(): string[] {

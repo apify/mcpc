@@ -9,12 +9,21 @@ Each version opens with a one-line summary, which also opens its GitHub release.
 
 ## [Unreleased]
 
-`close` and `restart` can no longer kill an unrelated process that reused a bridge's PID; repeated `connect -H` headers are all sent again, `connect` and `--proxy` handle `[::1]`, `--proxy` rejects malformed ports, user info no longer selects `http://`, `logs --since` rejects values that are not a duration or ISO timestamp, and `skills-get` reads YAML block scalars correctly.
+A server can no longer make mcpc restart a healthy session with one oversized response, `close` and `restart` never kill an unrelated process, several `connect` and `--proxy` argument fixes, and `skills-get` reads YAML block scalars correctly.
+
+### Security
+
+- A response over the 10 MB limit between mcpc and its background bridge is now an ordinary error that states the size and the limit. Before, any server could make mcpc stop a healthy session, start a new one and fetch the same oversized result again, and a tool call that did run was reported as "may or may not have executed". An oversized request is refused before it is sent.
+- A server-issued `MCP-Session-Id` that looks like a command-line flag (for example `--insecure`) can no longer change how the session's bridge starts when the session is resumed.
+- `resources-subscribe` and `resources-read -o` write through a temporary file with an unguessable name that must not already exist, so a symlink planted in a shared target directory cannot redirect the server's content.
+- `connect --profile` with a lowercase `authorization` header is now refused like `Authorization`, instead of attaching both credentials. Header names are also compared case-insensitively when matching an existing session.
 
 ### Fixed
 
 - A restart or `close` no longer kills an unrelated process that was given a dead bridge's PID (after a reboot, for example). The recorded PID is signalled only when the bridge itself still answers; otherwise the session simply gets a new bridge.
 - `close`, `restart` and crash recovery now give the old bridge up to 10 seconds to finish its own shutdown before force-killing it, instead of one second, so a stdio server that is slow to exit is no longer orphaned and the request that ends the server-side session is no longer cut short.
+- `tools-call --schema` now finds the tool on any page of a paginated tool list, instead of reporting "Tool not found" for tools past the first page.
+- The fallback credentials file (`~/.mcpc/credentials.json`, used when no OS keychain is available) is now replaced atomically, so a crash mid-write can no longer lose every stored credential.
 - `connect` with several `-H`/`--header` options now stores and sends every header, not just the last one. (#490)
 - `connect --proxy [::1]:8080` now binds the proxy to the IPv6 address in brackets instead of failing with a misleading "port already in use" error. (#497)
 - `connect [::1]:8080` without a scheme now defaults to `http://` like `localhost`, the session list shows IPv6 proxy addresses in brackets, and `--proxy` reports why it cannot bind instead of always saying the port is in use. (#497)

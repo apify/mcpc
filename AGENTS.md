@@ -299,7 +299,7 @@ Implements [MCP security best practices](https://modelcontextprotocol.io/specifi
 - `~/.mcpc/` and subdirectories created with mode `0700` (owner-only) via `ensureDir()`
 - File locking (`proper-lockfile`) for concurrent access safety
 - Atomic file writes (temp file + rename) to prevent corruption
-- IPC buffer size capped at 10 MB to prevent memory exhaustion
+- IPC messages capped at 10 MB to prevent memory exhaustion; either end answers an oversized message with an ordinary error instead of sending it, so the cap never looks like a bridge crash
 
 **Security development guidelines:**
 When making changes, follow these rules to maintain the security posture:
