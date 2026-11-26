@@ -22,6 +22,7 @@ import {
   ClientError,
   isAuthenticationError,
   createServerAuthError,
+  hasHeader,
 } from '../../lib/index.js';
 import type {
   ServerConfig,
@@ -328,7 +329,7 @@ export async function connectSession(
   assertSupportedProtocolVersion(serverConfig.protocolVersion);
 
   // Detect conflicting auth flags: --profile and --header "Authorization: ..." are mutually exclusive
-  const hasExplicitAuthHeader = serverConfig.headers?.Authorization !== undefined;
+  const hasExplicitAuthHeader = hasHeader(serverConfig.headers, 'Authorization');
   const hasExplicitProfile = options.profile !== undefined;
 
   if (hasExplicitAuthHeader && hasExplicitProfile) {
@@ -573,10 +574,13 @@ async function findMatchingSession(
     const sessionProfile = session.profileName ?? 'default';
     if (effectiveProfile !== sessionProfile) continue;
 
-    // Match header keys (values are redacted, so we only compare key sets)
-    const existingHeaderKeys = Object.keys(session.server.headers || {}).sort();
+    // Match header names (values are redacted, so we only compare name sets).
+    // Header names are case-insensitive.
+    const existingHeaderKeys = Object.keys(session.server.headers || {})
+      .map((key) => key.toLowerCase())
+      .sort();
     const newHeaderKeys = (options.headers || [])
-      .map((h) => h.split(':')[0]?.trim() || '')
+      .map((h) => h.split(':')[0]?.trim().toLowerCase() || '')
       .filter(Boolean)
       .sort();
     if (existingHeaderKeys.join(',') !== newHeaderKeys.join(',')) continue;

@@ -48,6 +48,15 @@ assert_contains "$STDERR" "--profile"
 assert_contains "$STDERR" "--header"
 test_pass
 
+# Header names are case-insensitive: a lowercase name is the same conflict
+test_case "combining --profile and a lowercase authorization header returns error"
+run_mcpc connect "$TEST_SERVER_URL" "$SESSION2" \
+  --header "authorization: Bearer test-token-456" \
+  --profile default
+assert_failure
+assert_contains "$STDERR" "Cannot combine"
+test_pass
+
 test_case "combining --profile and --header Authorization returns JSON error"
 SESSION3=$(session_name "auth-conflict-json")
 run_mcpc --json connect "$TEST_SERVER_URL" "$SESSION3" \
