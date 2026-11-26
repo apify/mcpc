@@ -28,23 +28,10 @@ export function loadConfig(configPath: string): McpConfig {
     logger.debug(`Loading config from: ${absolutePath}`);
     const content = readFileSync(absolutePath, 'utf-8');
 
-    // Parse JSON
-    const raw = JSON.parse(content) as Record<string, unknown>;
-
-    // Normalize VS Code format: "servers" → "mcpServers"
-    if (
-      !raw.mcpServers &&
-      raw.servers &&
-      typeof raw.servers === 'object' &&
-      !Array.isArray(raw.servers)
-    ) {
-      raw.mcpServers = raw.servers;
-    }
-
-    const config = raw as unknown as McpConfig;
-
-    // Validate structure
-    if (!config.mcpServers || typeof config.mcpServers !== 'object') {
+    // Recognize the servers object with the same function config discovery uses, so the entry
+    // a discovery check looked at is always the entry a connect would load.
+    const config = asMcpConfig(JSON.parse(content));
+    if (!config) {
       throw new ClientError(
         `Invalid config file format: missing or invalid "mcpServers" (or "servers") field.\n` +
           `Expected: { "mcpServers": { "server-name": {...} } }`
@@ -409,22 +396,29 @@ export function getStandardMcpConfigPaths(options?: {
   return deduped;
 }
 
+/** A JSON object — not `null`, not an array, not a primitive. */
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 /**
  * Recognize a parsed value as an MCP config: the standard `{ mcpServers }` shape or the
  * VS Code `{ servers }` variant (normalized to `mcpServers`). Returns `null` for anything
  * else, including a valid-JSON file that simply isn't an MCP config. The servers object may
  * be empty.
+ *
+ * This is the only place that decides which object in a file holds the server entries;
+ * `loadConfig` and config discovery both go through it. Two readers that disagreed here
+ * would let a file show one set of entries to the discovery trust check and connect another.
+ * So the rules are strict: `servers` is read only when `mcpServers` is absent, and a servers
+ * value that is not a JSON object (an array, a string) makes the whole file unusable rather
+ * than falling through to the other key.
  */
 function asMcpConfig(parsed: unknown): McpConfig | null {
-  if (!parsed || typeof parsed !== 'object') return null;
-  const obj = parsed as Record<string, unknown>;
-  if (obj.mcpServers && typeof obj.mcpServers === 'object' && !Array.isArray(obj.mcpServers)) {
-    return parsed as McpConfig;
-  }
-  if (obj.servers && typeof obj.servers === 'object' && !Array.isArray(obj.servers)) {
-    return { mcpServers: obj.servers as Record<string, ServerConfig> };
-  }
-  return null;
+  if (!isJsonObject(parsed)) return null;
+  const servers = parsed.mcpServers ?? parsed.servers;
+  if (!isJsonObject(servers)) return null;
+  return { mcpServers: servers as Record<string, ServerConfig> };
 }
 
 /**
@@ -510,7 +504,7 @@ export function scanMcpConfigFiles(options?: {
       // authored) this is a mistake worth flagging; global files are usually app state that
       // simply has no MCP servers (e.g. ~/.claude.json), so skip them silently.
       if (candidate.scope === 'project') {
-        errors.push({ ...candidate, error: 'No "mcpServers" or "servers" property.' });
+        errors.push({ ...candidate, error: 'No "mcpServers" or "servers" object.' });
       }
       continue;
     }

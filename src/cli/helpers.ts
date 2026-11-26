@@ -3,7 +3,7 @@
  * Provides target resolution and MCP client management
  */
 
-import type { OutputMode, ServerConfig } from '../lib/types.js';
+import type { McpConfig, OutputMode, ServerConfig } from '../lib/types.js';
 // Type-only import — the runtime module is still loaded lazily inside withMcpClient
 import type { SessionClient } from '../lib/session-client.js';
 import { ClientError } from '../lib/errors.js';
@@ -76,6 +76,8 @@ export async function resolveTarget(
   target: string,
   options: {
     config?: string;
+    /** Already-parsed content of `config`; when given, the file is not read again. */
+    mcpConfig?: McpConfig;
     headers?: string[];
     timeoutSecs?: number;
     verbose?: boolean;
@@ -94,8 +96,11 @@ export async function resolveTarget(
 
   // Config file entry - check this first to avoid treating config names as URLs
   if (options.config) {
-    logger.debug(`Loading config file: ${options.config}`);
-    const mcpConfig = loadConfig(options.config);
+    // Bulk connect passes the config it already parsed (and, for auto-discovery, checked), so
+    // the entry connected here is the very object those checks saw, not a second read of a
+    // file that may have changed or that a second parser could interpret differently.
+    logger.debug(`Using config file: ${options.config}`);
+    const mcpConfig = options.mcpConfig ?? loadConfig(options.config);
     const serverConfig = getServerConfig(mcpConfig, target);
     validateServerConfig(serverConfig);
 
