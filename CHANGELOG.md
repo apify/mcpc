@@ -9,7 +9,12 @@ Each version opens with a one-line summary, which also opens its GitHub release.
 
 ## [Unreleased]
 
-A bare `mcpc connect` connects only the config entries it checked, stdio servers always restart in the directory they were connected from, a session name stays bound to its server, x402 sessions get a spending budget, Linux hosts without a keyring keep credentials on disk again, OAuth profiles from 0.6 or earlier need a new login, a server can no longer make mcpc restart a healthy session with one oversized response, `close` and `restart` never kill an unrelated process, and several `connect` and `--proxy` argument fixes.
+Step-up authorization for OAuth scope challenges; a bare `mcpc connect` connects only the config entries it checked, stdio servers always restart in the directory they were connected from, a session name stays bound to its server, x402 sessions get a spending budget, Linux hosts without a keyring keep credentials on disk again, OAuth profiles from 0.6 or earlier need a new login, a server can no longer make mcpc restart a healthy session with one oversized response, `close` and `restart` never kill an unrelated process, and several `connect` and `--proxy` argument fixes.
+
+### Added
+
+- Step-up authorization ([MCP spec](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization#step-up-authorization-flow)): a command the server answers with `403 insufficient_scope` now fails with exit code 4, names the missing scope and prints the exact `mcpc login <server> --scope "<current scopes plus the missing one>"` to run, instead of a generic "Insufficient scope" server error. The session stays usable for everything else.
+- `login` without `--scope` now asks the server which scopes it wants (the `scope` of its 401 `WWW-Authenticate` challenge, which the spec puts ahead of `scopes_supported`) and adds the scopes the profile already holds, so a re-login never drops a permission. `--scope` still requests exactly what you pass.
 
 ### Security
 

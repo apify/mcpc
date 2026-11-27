@@ -110,6 +110,7 @@ export class OAuthProvider implements OAuthClientProvider {
   private profileName: string;
   private _redirectUrl: string;
   private _forceReauth: boolean;
+  private _requestedScope: string | undefined;
   private _clientCredentials?: { clientId: string; clientSecret?: string };
   private _clientName: string;
 
@@ -143,6 +144,16 @@ export class OAuthProvider implements OAuthClientProvider {
     if (options.clientMetadataUrl) {
       this.clientMetadataUrl = options.clientMetadataUrl;
     }
+  }
+
+  /**
+   * Record the `scope` the login requests. It is written to the profile when the
+   * token response omits `scope` (RFC 6749 §5.1 lets the server leave it out when it
+   * granted exactly what was requested), so a later step-up login knows what to
+   * union with.
+   */
+  setRequestedScope(scope: string): void {
+    this._requestedScope = scope;
   }
 
   get redirectUrl(): string {
@@ -353,8 +364,9 @@ export class OAuthProvider implements OAuthClientProvider {
       delete profile.oauthResource;
     }
 
-    if (tokens.scope) {
-      profile.scopes = tokens.scope.split(' ');
+    const grantedScope = tokens.scope || this._requestedScope;
+    if (grantedScope) {
+      profile.scopes = grantedScope.split(/\s+/).filter((s) => s !== '');
     }
 
     // Extract user info from OIDC id_token if present
