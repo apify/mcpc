@@ -9,7 +9,7 @@ Each version opens with a one-line summary, which also opens its GitHub release.
 
 ## [Unreleased]
 
-Step-up authorization for OAuth scope challenges; a bare `mcpc connect` connects only the config entries it checked, stdio servers always restart in the directory they were connected from, a session name stays bound to its server, x402 sessions get a spending budget, Linux hosts without a keyring keep credentials on disk again, a server can no longer make mcpc restart a healthy session with one oversized response, `close` and `restart` never kill an unrelated process, and several `connect` and `--proxy` argument fixes.
+Step-up authorization for OAuth scope challenges; a bare `mcpc connect` connects only the config entries it checked, stdio servers always restart in the directory they were connected from, a session name stays bound to its server, x402 sessions get a spending budget, Linux hosts without a keyring keep credentials on disk again, OAuth profiles from 0.6 or earlier need a new login, a server can no longer make mcpc restart a healthy session with one oversized response, `close` and `restart` never kill an unrelated process, and several `connect` and `--proxy` argument fixes.
 
 ### Added
 
@@ -26,6 +26,7 @@ Step-up authorization for OAuth scope challenges; a bare `mcpc connect` connects
 - x402: payments are made only for tool calls. A server answering the handshake, `tools/list` or the 30-second keepalive ping with HTTP 402 used to receive a signed payment for each, without any tool being called.
 - x402: only USDC is paid, an authorization is valid for at most 24 hours however long the server asks for, and `--x402` is refused for a bare `mcpc connect` (config auto-discovery).
 - On Linux without a Secret Service (headless servers, containers, CI), credentials and the x402 wallet are stored in the `0600` files under `~/.mcpc` again. In 0.8.0 they went to the kernel keyring, which is kept in memory only, so they were lost on reboot. On such a host, log in again after upgrading; an x402 wallet still in the kernel keyring is moved to `wallets.json` automatically.
+- OAuth profiles created by mcpc 0.6.0 or earlier are no longer refreshed: run `mcpc login <server>` once. Such a profile has no record of the authorization server that issued its tokens, so a refresh asked the MCP server where to send the refresh token, and a compromised server could name its own endpoint and collect it. Profiles created by 0.7.0 or later are unaffected.
 - A response over the 10 MB limit between mcpc and its background bridge is now an ordinary error that states the size and the limit. Before, any server could make mcpc stop a healthy session, start a new one and fetch the same oversized result again, and a tool call that did run was reported as "may or may not have executed". An oversized request is refused before it is sent.
 - A server-issued `MCP-Session-Id` that looks like a command-line flag (for example `--insecure`) can no longer change how the session's bridge starts when the session is resumed.
 - `resources-subscribe` and `resources-read -o` write through a temporary file with an unguessable name that must not already exist, so a symlink planted in a shared target directory cannot redirect the server's content.
