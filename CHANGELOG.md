@@ -9,10 +9,12 @@ Each version opens with a one-line summary, which also opens its GitHub release.
 
 ## [Unreleased]
 
-A server can no longer make mcpc restart a healthy session with one oversized response, `close` and `restart` never kill an unrelated process, several `connect` and `--proxy` argument fixes, and `skills-get` reads YAML block scalars correctly.
+A bare `mcpc connect` connects only the config entries it checked, stdio servers always restart in the directory they were connected from, a server can no longer make mcpc restart a healthy session with one oversized response, `close` and `restart` never kill an unrelated process, several `connect` and `--proxy` argument fixes, and `skills-get` reads YAML block scalars correctly.
 
 ### Security
 
+- A bare `mcpc connect` now connects exactly the config entries its safety checks looked at. A config file in the current directory whose `mcpServers` was an array next to a `servers` object had the checks read one and the connection use the other, so an entry could read `${VAR}` or start a local command without `--stdio`. A file with a malformed `mcpServers` or `servers` value is now rejected as a whole.
+- A stdio server is now always restarted in the directory its session was connected from. Before, a session whose bridge had stopped was restarted by whichever `mcpc` command ran next, in that command's directory, so `node server.js` or `npx <pkg>` could run another directory's code with the session's `env` values. A stdio session created by an earlier version has no recorded directory and is no longer restarted automatically: run `mcpc @session restart` once from the directory its server should run in.
 - A response over the 10 MB limit between mcpc and its background bridge is now an ordinary error that states the size and the limit. Before, any server could make mcpc stop a healthy session, start a new one and fetch the same oversized result again, and a tool call that did run was reported as "may or may not have executed". An oversized request is refused before it is sent.
 - A server-issued `MCP-Session-Id` that looks like a command-line flag (for example `--insecure`) can no longer change how the session's bridge starts when the session is resumed.
 - `resources-subscribe` and `resources-read -o` write through a temporary file with an unguessable name that must not already exist, so a symlink planted in a shared target directory cannot redirect the server's content.

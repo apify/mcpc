@@ -9,6 +9,7 @@ import { mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import {
+  consolidateSessions,
   getSession,
   modifySession,
   saveSession,
@@ -82,5 +83,47 @@ describe('modifySession', () => {
     await expect(modifySession('@missing', () => ({}))).rejects.toThrow(
       'Session not found: @missing'
     );
+  });
+});
+
+describe('consolidateSessions background restart', () => {
+  let homeDir: string;
+  let originalHome: string | undefined;
+
+  const crashed = {
+    status: 'crashed' as const,
+    createdAt: '2026-10-06T00:00:00.000Z',
+    lastSeenAt: '2026-10-06T00:00:00.000Z',
+  };
+
+  beforeEach(async () => {
+    homeDir = await mkdtemp(join(tmpdir(), 'mcpc-sessions-test-'));
+    originalHome = process.env.MCPC_HOME_DIR;
+    process.env.MCPC_HOME_DIR = homeDir;
+  });
+
+  afterEach(async () => {
+    if (originalHome === undefined) delete process.env.MCPC_HOME_DIR;
+    else process.env.MCPC_HOME_DIR = originalHome;
+    await rm(homeDir, { recursive: true, force: true });
+  });
+
+  it('restarts a crashed stdio session that recorded its working directory', async () => {
+    await saveSession('@stdio', { ...crashed, server: { command: 'node' }, cwd: homeDir });
+
+    const result = await consolidateSessions(false);
+
+    expect(result.sessionsToRestart).toEqual(['@stdio']);
+  });
+
+  // Restarting it would run its command in whatever directory this mcpc happens to be in.
+  it('leaves a crashed stdio session without a recorded working directory alone', async () => {
+    await saveSession('@legacy', { ...crashed, server: { command: 'node', args: ['server.js'] } });
+    await saveSession('@http', { ...crashed, server: { url: 'https://example.test/mcp' } });
+
+    const result = await consolidateSessions(false);
+
+    expect(result.sessionsToRestart).toEqual(['@http']);
+    expect((await getSession('@legacy'))?.status).toBe('crashed');
   });
 });

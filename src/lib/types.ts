@@ -179,6 +179,14 @@ export interface SessionData {
    */
   x402?: X402SchemePreference;
   insecure?: boolean; // Skip TLS certificate verification
+  /**
+   * Directory a stdio server runs in: the working directory of the `mcpc connect` that
+   * created the session. Every later start of the bridge uses it, so the server's command
+   * is never resolved against whatever directory some later `mcpc` command is run from.
+   * Absent for HTTP sessions and for stdio sessions created before mcpc recorded it.
+   * Explicitly clearable: reconnecting the session to an HTTP target must drop it.
+   */
+  cwd?: string | undefined;
   pid?: number; // Bridge process PID
   protocolVersion?: string; // Negotiated MCP version
   /**

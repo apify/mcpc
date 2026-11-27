@@ -1455,6 +1455,11 @@ For **stdio servers:**
 > tail is appended to the error message if `mcpc connect` fails, so you can see
 > why a stdio server failed to start.
 
+> **Note:** A stdio server runs in the directory `mcpc connect` was run from, and
+> is restarted there for the life of the session, whichever directory later `mcpc`
+> commands run in. Relative paths in `command` and `args` resolve against that
+> directory. If the directory is removed, close the session and connect again.
+
 **Environment variable substitution:**
 
 Config files support environment variable substitution using `${VAR_NAME}` syntax:

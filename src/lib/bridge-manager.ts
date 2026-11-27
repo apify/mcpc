@@ -13,10 +13,12 @@
  */
 
 import { spawn, type ChildProcess } from 'child_process';
+import { statSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import type {
   ServerConfig,
+  SessionData,
   AuthCredentials,
   ProxyConfig,
   X402WalletCredentials,
@@ -126,6 +128,12 @@ export interface StartBridgeOptions {
   /** x402 scheme preference; presence enables x402 auto-payment, absence disables. */
   x402?: X402SchemePreference;
   insecure?: boolean; // Skip TLS certificate verification
+  /**
+   * Working directory for the bridge, and so for the stdio server it spawns. Callers pass
+   * the directory recorded in the session (see `resolveSessionCwd`); when omitted the
+   * bridge inherits the caller's, which is only right for HTTP sessions.
+   */
+  cwd?: string;
 }
 
 export interface StartBridgeResult {
@@ -160,6 +168,7 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
     protocolVersion,
     x402,
     insecure,
+    cwd,
   } = options;
 
   logger.debug(`Launching bridge for session: ${sessionName}`);
@@ -281,6 +290,7 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
   const bridgeProcess: ChildProcess = spawn(process.execPath, [bridgeExecutable, ...args], {
     detached: true,
     stdio: 'ignore',
+    ...(cwd && { cwd }),
     ...(insecure && { env: { ...process.env, NODE_TLS_REJECT_UNAUTHORIZED: '0' } }),
   });
 
@@ -508,6 +518,55 @@ async function waitForProcessExit(pid: number, timeoutMillis: number): Promise<v
 }
 
 /**
+ * The directory a session's bridge must be started in, or `undefined` when it does not
+ * matter (HTTP sessions).
+ *
+ * A stdio server is a local command, and what a command runs depends on the directory it
+ * starts in: a relative script path, `npx` preferring `./node_modules/.bin`, a project
+ * `.npmrc`. The bridge is restarted by whichever `mcpc` command first notices it is gone —
+ * including a bare `mcpc` — so inheriting that command's directory would let any directory
+ * the user happens to be in decide what code runs, with the session's stored env secrets.
+ * The server therefore always starts in the directory recorded when the session was
+ * connected.
+ *
+ * Throws when that directory is unknown (a session created before mcpc recorded it) or no
+ * longer exists, rather than falling back to the current one.
+ */
+export function resolveSessionCwd(
+  sessionName: string,
+  session: Pick<SessionData, 'server' | 'cwd'>
+): string | undefined {
+  if (session.server.command === undefined) {
+    return undefined;
+  }
+
+  if (!session.cwd) {
+    throw new ClientError(
+      `Session ${sessionName} has no recorded working directory (it was created by an older ` +
+        `mcpc), so its stdio server is not restarted automatically: it would start in ` +
+        `whatever directory this command runs in.\n` +
+        `From the directory the server should run in, run: mcpc ${sessionName} restart`
+    );
+  }
+
+  let isDirectory = false;
+  try {
+    isDirectory = statSync(session.cwd).isDirectory();
+  } catch {
+    // Missing or unreadable — reported below
+  }
+  if (!isDirectory) {
+    throw new ClientError(
+      `The working directory of session ${sessionName} no longer exists: ${session.cwd}\n` +
+        `Its stdio server was started there and is always restarted there.\n` +
+        `To remove the session, run: mcpc ${sessionName} close`
+    );
+  }
+
+  return session.cwd;
+}
+
+/**
  * Restart a bridge process for a session
  * Used for automatic recovery when connection to bridge fails
  *
@@ -522,6 +581,10 @@ export async function restartBridge(sessionName: string): Promise<StartBridgeRes
   if (!session) {
     throw new ClientError(`Session not found: ${sessionName}`);
   }
+
+  // Decide where the new bridge runs before touching the old one, so a session that cannot
+  // be restarted here is left exactly as it was.
+  const cwd = resolveSessionCwd(sessionName, session);
 
   // Stop the old bridge (cleanup)
   try {
@@ -586,6 +649,9 @@ export async function restartBridge(sessionName: string): Promise<StartBridgeRes
   if (session.insecure) {
     bridgeOptions.insecure = session.insecure;
     logger.debug('Using saved insecure flag');
+  }
+  if (cwd) {
+    bridgeOptions.cwd = cwd;
   }
 
   const { pid } = await startBridge(bridgeOptions);
@@ -933,7 +999,10 @@ export async function ensureBridgeReady(
     logger.debug(`Bridge process not alive for ${sessionName}, will try to restart it`);
   }
 
-  // Bridge not healthy - restart it
+  // Bridge not healthy - restart it. Check first that it can be restarted from here, so a
+  // session that cannot is reported as such instead of being left marked 'reconnecting'.
+  resolveSessionCwd(sessionName, session);
+
   // Use 'connecting' if the session has never successfully connected (no lastSeenAt),
   // 'reconnecting' if it was previously active.
   // Set lastConnectionAttemptAt to prevent parallel CLI processes from

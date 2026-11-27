@@ -25,6 +25,7 @@ import {
   hasHeader,
 } from '../../lib/index.js';
 import type {
+  McpConfig,
   ServerConfig,
   ProxyConfig,
   ServerDetails,
@@ -147,6 +148,8 @@ type ConnectSessionOptions = {
   outputMode: OutputMode;
   verbose?: boolean;
   config?: string;
+  /** Already-parsed content of `config`, so the entry is not read from disk a second time. */
+  mcpConfig?: McpConfig;
   headers?: string[];
   timeoutSecs?: number;
   profile?: string;
@@ -409,8 +412,14 @@ export async function connectSession(
     ...(env && { env: redactHeaders(env) }),
   };
 
+  // A stdio server runs in the directory this `connect` was issued from, and is restarted
+  // there for the life of the session, whichever directory later commands run in. Cleared
+  // explicitly when an existing stdio session is reconnected to an HTTP target.
+  const cwd = serverConfig.command !== undefined ? process.cwd() : undefined;
+
   const sessionUpdate: Parameters<typeof updateSession>[1] = {
     server: sessionTransportConfig,
+    cwd,
     ...(profileName && { profileName }),
     ...(proxyConfig && { proxy: proxyConfig }),
     ...(options.x402 && { x402: options.x402 }),
@@ -445,6 +454,7 @@ export async function connectSession(
       ...(proxyConfig && { proxyConfig }),
       ...(options.x402 && { x402: options.x402 }),
       ...(options.insecure && { insecure: true }),
+      ...(cwd && { cwd }),
     };
 
     const { pid } = await startBridge(bridgeOptions);
@@ -670,6 +680,12 @@ type BulkConnectOptions = {
 type BulkConnectEntry = {
   /** Config file path that defines this entry. */
   configFile: string;
+  /**
+   * Parsed content of `configFile`, as read once by the caller. The connection is made from
+   * this object, so whatever the caller checked about the entry (stdio, `${VAR}` references)
+   * holds for the entry that is actually connected.
+   */
+  config: McpConfig;
   /** Entry name inside the config's `mcpServers` object. */
   entry: string;
   /** Resolved session name (with @ prefix). */
@@ -778,10 +794,11 @@ async function bulkConnectEntries(
 
   // Launch all connections in parallel (quiet mode — we display results below)
   const settled = await Promise.allSettled(
-    entries.map(async ({ entry, sessionName, configFile }) =>
+    entries.map(async ({ entry, sessionName, configFile, config }) =>
       connectSession(entry, sessionName, {
         ...options,
         config: configFile,
+        mcpConfig: config,
         skipDetails: true,
         quiet: true,
       })
@@ -980,6 +997,7 @@ export async function connectAllFromConfig(
   // "already active" path instead of creating @entry-2 duplicates.
   const entries: BulkConnectEntry[] = serverNames.map((entry) => ({
     configFile,
+    config,
     entry,
     sessionName: generateSessionName({ type: 'config', file: configFile, entry }),
   }));
@@ -1063,6 +1081,7 @@ function aggregateDiscoveredEntries(
       seenNames.add(sessionName);
       entries.push({
         configFile: d.path,
+        config: d.config,
         entry,
         sessionName,
       });
