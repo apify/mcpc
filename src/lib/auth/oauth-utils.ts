@@ -509,14 +509,12 @@ async function postRefreshRequest(
  * Discover the token endpoint and refresh an access token in one call.
  *
  * `issuer` is the authorization server login recorded in the profile
- * (`AuthProfile.oauthIssuer`). When set, its metadata is the only source for the
- * token endpoint: the refresh token and client secret then travel to the server
- * that issued them, instead of wherever the MCP server's metadata points today.
- * Profiles written before mcpc recorded the issuer have none, and fall back to
- * discovery — RFC 9728 protected resource metadata first, because the
- * authorization server often lives on another origin than the MCP server
- * (Asana: `mcp.asana.com` vs `app.asana.com`), and only then the MCP origin's own
- * well-known documents.
+ * (`AuthProfile.oauthIssuer`). Its metadata is the only source for the token
+ * endpoint: the refresh token and client secret travel to the server that issued
+ * them, never to wherever the MCP server's metadata points today. A profile
+ * without one (written by mcpc 0.6 or earlier) is not refreshed at all — finding
+ * the endpoint would mean asking the MCP server, which could then name its own
+ * and collect the refresh token. Logging in again records the issuer.
  *
  * `resource` is the RFC 8707 resource indicator the login sent
  * (`AuthProfile.oauthResource`). Profiles written before mcpc recorded it have
@@ -536,12 +534,16 @@ export async function discoverAndRefreshToken(
   refreshToken: string,
   client: RefreshClient & { issuer?: string }
 ): Promise<OAuthTokenResponse> {
-  // The protected resource metadata is needed to derive a missing resource
-  // indicator, and to find the authorization server when no issuer is pinned.
+  if (!client.issuer) {
+    throw new AuthError(
+      'This profile was created by an older mcpc that did not record which authorization ' +
+        'server issued its tokens, so they cannot be refreshed safely'
+    );
+  }
+
+  // The protected resource metadata is only needed to derive a missing resource indicator
   const prm =
-    client.resource === undefined || !client.issuer
-      ? await fetchProtectedResourceMetadata(serverUrl)
-      : undefined;
+    client.resource === undefined ? await fetchProtectedResourceMetadata(serverUrl) : undefined;
   const resource = client.resource ?? (await selectRefreshResource(serverUrl, prm));
   if (client.resource === undefined) {
     logger.debug(
@@ -551,20 +553,14 @@ export async function discoverAndRefreshToken(
     );
   }
 
-  const metadata = client.issuer
-    ? await fetchIssuerMetadata(client.issuer)
-    : ((prm && (await discoverAuthServerViaProtectedResource(serverUrl, prm))) ??
-      (await discoverAuthServerMetadata(serverUrl)));
+  const metadata = await fetchIssuerMetadata(client.issuer);
 
   const tokenEndpoint = metadata?.token_endpoint;
   if (!tokenEndpoint) {
-    if (client.issuer) {
-      throw new AuthError(
-        `Could not find OAuth metadata at ${client.issuer}, the authorization server ` +
-          `this profile logged in at`
-      );
-    }
-    throw new AuthError(`Could not find OAuth token endpoint for ${serverUrl}`);
+    throw new AuthError(
+      `Could not find OAuth metadata at ${client.issuer}, the authorization server ` +
+        `this profile logged in at`
+    );
   }
 
   return refreshAccessToken(tokenEndpoint, refreshToken, {

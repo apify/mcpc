@@ -2,6 +2,7 @@
  * Command-line argument parsing utilities
  * Pure functions with no external dependencies for easy testing
  */
+import { isIPv6 } from 'net';
 import { ClientError } from '../lib/index.js';
 import { setOwnProperty } from '../lib/own-property.js';
 import { X402_SCHEME_PREFERENCES } from '../lib/types.js';
@@ -99,6 +100,7 @@ const OPTIONS_WITH_VALUES = [
   '--header',
   '--proxy',
   '--proxy-bearer-token',
+  '--x402-budget',
   '--scope',
   '--grant',
   '-m',
@@ -758,9 +760,27 @@ export function parseHeaderFlags(headerFlags: string[] | undefined): Record<stri
  *   "8080" -> { host: "127.0.0.1", port: 8080 }
  *   "0.0.0.0:8080" -> { host: "0.0.0.0", port: 8080 }
  *   "localhost:3000" -> { host: "localhost", port: 3000 }
+ *   "[::1]:8080" -> { host: "::1", port: 8080 }
  */
 export function parseProxyArg(value: string): { host: string; port: number } {
   const DEFAULT_HOST = '127.0.0.1';
+
+  if (value.startsWith('[')) {
+    const match = /^\[([^\]]+)\]:(\d+)$/.exec(value);
+    const host = match?.[1];
+    if (!match || !host || !isIPv6(host)) {
+      throw new ClientError(
+        `Invalid --proxy format: "${value}". Use [HOST]:PORT for IPv6 addresses, e.g. [::1]:8080.`
+      );
+    }
+    const port = parseInt(match[2] ?? '', 10);
+    if (port <= 0 || port > 65535) {
+      throw new ClientError(
+        `Invalid --proxy port: "${match[2]}". Must be a number between 1 and 65535.`
+      );
+    }
+    return { host, port };
+  }
 
   // Check if value contains a colon (host:port format)
   const lastColonIndex = value.lastIndexOf(':');
@@ -768,7 +788,7 @@ export function parseProxyArg(value: string): { host: string; port: number } {
   if (lastColonIndex === -1) {
     // No colon - just port
     const port = parseInt(value, 10);
-    if (isNaN(port) || port <= 0 || port > 65535) {
+    if (!/^\d+$/.test(value) || port <= 0 || port > 65535) {
       throw new ClientError(
         `Invalid --proxy port: "${value}". Must be a number between 1 and 65535.`
       );
@@ -785,7 +805,7 @@ export function parseProxyArg(value: string): { host: string; port: number } {
     throw new ClientError(`Invalid --proxy format: "${value}". Host cannot be empty.`);
   }
 
-  if (isNaN(port) || port <= 0 || port > 65535) {
+  if (!/^\d+$/.test(portStr) || port <= 0 || port > 65535) {
     throw new ClientError(
       `Invalid --proxy port: "${portStr}". Must be a number between 1 and 65535.`
     );

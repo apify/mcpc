@@ -13,10 +13,12 @@
  */
 
 import { spawn, type ChildProcess } from 'child_process';
+import { statSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import type {
   ServerConfig,
+  SessionData,
   AuthCredentials,
   ProxyConfig,
   X402WalletCredentials,
@@ -30,6 +32,8 @@ import {
   isSessionExpiredError,
   enrichErrorMessage,
   REDACTED_HEADER_VALUE,
+  isValidMcpSessionId,
+  MCP_SESSION_ID_ARG_PREFIX,
 } from './utils.js';
 import { updateSession, getSession } from './sessions.js';
 import { createLogger } from './logger.js';
@@ -124,6 +128,12 @@ export interface StartBridgeOptions {
   /** x402 scheme preference; presence enables x402 auto-payment, absence disables. */
   x402?: X402SchemePreference;
   insecure?: boolean; // Skip TLS certificate verification
+  /**
+   * Working directory for the bridge, and so for the stdio server it spawns. Callers pass
+   * the directory recorded in the session (see `resolveSessionCwd`); when omitted the
+   * bridge inherits the caller's, which is only right for HTTP sessions.
+   */
+  cwd?: string;
 }
 
 export interface StartBridgeResult {
@@ -158,6 +168,7 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
     protocolVersion,
     x402,
     insecure,
+    cwd,
   } = options;
 
   logger.debug(`Launching bridge for session: ${sessionName}`);
@@ -226,8 +237,14 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
   // negotiated by the original session — the SDK skips the handshake on resumption, so
   // the bridge must seed the transport with the version to keep the required
   // MCP-Protocol-Version header on all requests
-  if (mcpSessionId) {
-    args.push('--mcp-session-id', mcpSessionId);
+  //
+  // The ID is chosen by the server, so it travels as a single `--mcp-session-id=<id>`
+  // token: passed as a separate argument, an ID such as `--insecure` would be read
+  // by the bridge as a flag of its own.
+  if (mcpSessionId && !isValidMcpSessionId(mcpSessionId)) {
+    logger.warn('Stored MCP session ID is malformed, starting a new session instead of resuming');
+  } else if (mcpSessionId) {
+    args.push(`${MCP_SESSION_ID_ARG_PREFIX}${mcpSessionId}`);
     logger.debug(`Passing MCP session ID for resumption: ${mcpSessionId}`);
     if (protocolVersion) {
       args.push('--protocol-version', protocolVersion);
@@ -273,6 +290,7 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
   const bridgeProcess: ChildProcess = spawn(process.execPath, [bridgeExecutable, ...args], {
     detached: true,
     stdio: 'ignore',
+    ...(cwd && { cwd }),
     ...(insecure && { env: { ...process.env, NODE_TLS_REJECT_UNAUTHORIZED: '0' } }),
   });
 
@@ -361,6 +379,36 @@ export async function startBridge(options: StartBridgeOptions): Promise<StartBri
 }
 
 /**
+ * How long stopBridge() lets a bridge finish its own shutdown before SIGKILL. The bridge
+ * needs up to 2 s for the HTTP DELETE that ends the server-side MCP session, then up to
+ * 6 s for the SDK to close a stdio server (see McpClient.close()); killing it earlier
+ * orphans that child. The wait polls, so a bridge that exits promptly costs nothing extra.
+ */
+const BRIDGE_SHUTDOWN_GRACE_MILLIS = 10_000;
+
+/**
+ * Whether a bridge is listening on the given IPC socket.
+ *
+ * This is the identity check to pass before signalling a PID taken from sessions.json.
+ * PIDs are recycled: after a reboot the recorded number may belong to any other process
+ * of the user. The socket path is derived from the session name and the PID, in a
+ * directory only this user can reach, so a listener there can only be the bridge spawned
+ * with that PID. A stale socket file refuses the connection, and a Windows named pipe
+ * disappears with its process.
+ */
+async function isBridgeListening(socketPath: string): Promise<boolean> {
+  const client = new BridgeClient(socketPath);
+  try {
+    await client.connect({ retryTimeoutMillis: 0 });
+    return true;
+  } catch {
+    return false;
+  } finally {
+    await client.close();
+  }
+}
+
+/**
  * Stop a bridge process (does NOT delete session or headers)
  * Use closeSession() for full session cleanup
  *
@@ -384,30 +432,29 @@ export async function stopBridge(
   // Kill the bridge process if it's still running
   if (session.pid) {
     const pid = session.pid;
+    const socketPath = getSocketPath(sessionName, pid);
+
+    // Never signal the recorded PID unless its bridge answers (see isBridgeListening).
+    // The check does not depend on isProcessAlive(), which can be wrong on Windows (a
+    // timed-out `tasklist` used to report every PID dead, #427).
+    if (!(await isBridgeListening(socketPath))) {
+      logger.debug(`No bridge listening for ${sessionName} (PID ${pid}), nothing to stop`);
+      return;
+    }
+
     try {
       if (process.platform === 'win32') {
         // On Windows, SIGTERM calls TerminateProcess (immediate kill, no cleanup).
         // For graceful shutdown (closeSession / explicit restart), send an IPC message
         // first so the bridge can send HTTP DELETE to terminate its MCP session before
         // exiting. Without it the server-side session (and its subscriptions) is orphaned.
-        //
-        // The IPC shutdown is attempted whenever a PID is recorded, not only when
-        // isProcessAlive() says the bridge is running: that check can be wrong (a timed-out
-        // `tasklist` used to report every PID dead, #427), and connecting to a dead pipe
-        // fails in milliseconds and does no harm.
-        if (options?.graceful) {
-          const socketPath = getSocketPath(sessionName, pid);
-          const shutdownOk = await sendBridgeShutdown(socketPath);
-          if (shutdownOk) {
-            await waitForProcessExit(pid, 2000);
-          }
+        if (options?.graceful && (await sendBridgeShutdown(socketPath))) {
+          await waitForProcessExit(pid, BRIDGE_SHUTDOWN_GRACE_MILLIS);
         }
-      } else if (isProcessAlive(pid)) {
+      } else {
         logger.debug(`Sending SIGTERM to bridge process: ${pid}`);
         process.kill(pid, 'SIGTERM');
-
-        // Wait for graceful shutdown (gives time for HTTP DELETE to be sent)
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+        await waitForProcessExit(pid, BRIDGE_SHUTDOWN_GRACE_MILLIS);
       }
 
       // Force kill if still alive
@@ -461,13 +508,62 @@ async function sendBridgeShutdown(socketPath: string): Promise<boolean> {
  */
 async function waitForProcessExit(pid: number, timeoutMillis: number): Promise<void> {
   const start = Date.now();
-  const interval = 500;
+  const pollIntervalMillis = 100;
   while (Date.now() - start < timeoutMillis) {
     if (!isProcessAlive(pid)) {
       return;
     }
-    await new Promise((resolve) => setTimeout(resolve, interval));
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMillis));
   }
+}
+
+/**
+ * The directory a session's bridge must be started in, or `undefined` when it does not
+ * matter (HTTP sessions).
+ *
+ * A stdio server is a local command, and what a command runs depends on the directory it
+ * starts in: a relative script path, `npx` preferring `./node_modules/.bin`, a project
+ * `.npmrc`. The bridge is restarted by whichever `mcpc` command first notices it is gone —
+ * including a bare `mcpc` — so inheriting that command's directory would let any directory
+ * the user happens to be in decide what code runs, with the session's stored env secrets.
+ * The server therefore always starts in the directory recorded when the session was
+ * connected.
+ *
+ * Throws when that directory is unknown (a session created before mcpc recorded it) or no
+ * longer exists, rather than falling back to the current one.
+ */
+export function resolveSessionCwd(
+  sessionName: string,
+  session: Pick<SessionData, 'server' | 'cwd'>
+): string | undefined {
+  if (session.server.command === undefined) {
+    return undefined;
+  }
+
+  if (!session.cwd) {
+    throw new ClientError(
+      `Session ${sessionName} has no recorded working directory (it was created by an older ` +
+        `mcpc), so its stdio server is not restarted automatically: it would start in ` +
+        `whatever directory this command runs in.\n` +
+        `From the directory the server should run in, run: mcpc ${sessionName} restart`
+    );
+  }
+
+  let isDirectory = false;
+  try {
+    isDirectory = statSync(session.cwd).isDirectory();
+  } catch {
+    // Missing or unreadable — reported below
+  }
+  if (!isDirectory) {
+    throw new ClientError(
+      `The working directory of session ${sessionName} no longer exists: ${session.cwd}\n` +
+        `Its stdio server was started there and is always restarted there.\n` +
+        `To remove the session, run: mcpc ${sessionName} close`
+    );
+  }
+
+  return session.cwd;
 }
 
 /**
@@ -485,6 +581,10 @@ export async function restartBridge(sessionName: string): Promise<StartBridgeRes
   if (!session) {
     throw new ClientError(`Session not found: ${sessionName}`);
   }
+
+  // Decide where the new bridge runs before touching the old one, so a session that cannot
+  // be restarted here is left exactly as it was.
+  const cwd = resolveSessionCwd(sessionName, session);
 
   // Stop the old bridge (cleanup)
   try {
@@ -549,6 +649,9 @@ export async function restartBridge(sessionName: string): Promise<StartBridgeRes
   if (session.insecure) {
     bridgeOptions.insecure = session.insecure;
     logger.debug('Using saved insecure flag');
+  }
+  if (cwd) {
+    bridgeOptions.cwd = cwd;
   }
 
   const { pid } = await startBridge(bridgeOptions);
@@ -896,7 +999,10 @@ export async function ensureBridgeReady(
     logger.debug(`Bridge process not alive for ${sessionName}, will try to restart it`);
   }
 
-  // Bridge not healthy - restart it
+  // Bridge not healthy - restart it. Check first that it can be restarted from here, so a
+  // session that cannot is reported as such instead of being left marked 'reconnecting'.
+  resolveSessionCwd(sessionName, session);
+
   // Use 'connecting' if the session has never successfully connected (no lastSeenAt),
   // 'reconnecting' if it was previously active.
   // Set lastConnectionAttemptAt to prevent parallel CLI processes from

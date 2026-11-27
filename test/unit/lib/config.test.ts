@@ -72,6 +72,36 @@ describe('loadConfig', () => {
     expect(() => loadConfig(configPath)).toThrow(ClientError);
     expect(() => loadConfig(configPath)).toThrow('missing or invalid "mcpServers"');
   });
+
+  it('should load a VS Code style file that uses "servers"', () => {
+    const configPath = join(TEST_DIR, 'vscode-servers.json');
+    writeFileSync(configPath, JSON.stringify({ servers: { a: { url: 'https://a.example.com' } } }));
+
+    expect(listServers(loadConfig(configPath))).toEqual(['a']);
+  });
+
+  it('should reject an array "mcpServers" instead of loading its elements as entries', () => {
+    const configPath = join(TEST_DIR, 'array-servers.json');
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        mcpServers: [{ command: 'sh', args: ['-c', 'echo spawned'] }],
+        servers: { '0': { url: 'https://docs.example.com/mcp' } },
+      })
+    );
+
+    expect(() => loadConfig(configPath)).toThrow('missing or invalid "mcpServers"');
+  });
+
+  it('should not fall back to "servers" when "mcpServers" is present but malformed', () => {
+    const configPath = join(TEST_DIR, 'malformed-servers.json');
+    writeFileSync(
+      configPath,
+      JSON.stringify({ mcpServers: 'nope', servers: { a: { url: 'https://a.example.com' } } })
+    );
+
+    expect(() => loadConfig(configPath)).toThrow('missing or invalid "mcpServers"');
+  });
 });
 
 describe('getServerConfig', () => {
@@ -805,6 +835,55 @@ describe('scanMcpConfigFiles', () => {
     expect(scan.errors).toHaveLength(1);
     expect(scan.errors[0]?.path).toContain('mcp.json');
     expect(scan.errors[0]?.error).toContain('mcpServers');
+  });
+
+  it('rejects a file whose "mcpServers" is an array, even next to a valid "servers"', () => {
+    const { home, cwd } = freshDirs('array-servers');
+    writeFileSync(
+      join(cwd, '.mcp.json'),
+      JSON.stringify({
+        mcpServers: [{ url: 'https://other.example.com/${SECRET}' }],
+        servers: { '0': { url: 'https://docs.example.com/mcp' } },
+      })
+    );
+
+    const scan = scanMcpConfigFiles({ homeDir: home, cwd, platform: 'linux' });
+    expect(scan.discovered).toEqual([]);
+    expect(scan.errors).toHaveLength(1);
+  });
+
+  // Discovery checks an entry (stdio? reads ${VAR}?) and a connect then loads it. If the two
+  // ever picked different objects out of one file, a config could show one entry to the check
+  // and connect another. Whatever the shape of the file, both readers must agree.
+  it.each([
+    ['mcpServers only', { mcpServers: { a: { url: 'https://a.example.com' } } }],
+    ['servers only', { servers: { a: { url: 'https://a.example.com' } } }],
+    [
+      'both keys',
+      { mcpServers: { a: { url: 'https://a.example.com' } }, servers: { b: { command: 'sh' } } },
+    ],
+    ['empty mcpServers next to servers', { mcpServers: {}, servers: { b: { command: 'sh' } } }],
+    ['null mcpServers next to servers', { mcpServers: null, servers: { b: { command: 'sh' } } }],
+    ['array mcpServers next to servers', { mcpServers: [{ command: 'sh' }], servers: { '0': {} } }],
+    ['string mcpServers next to servers', { mcpServers: 'x', servers: { a: {} } }],
+    ['array servers', { servers: [{ command: 'sh' }] }],
+    ['array at the top level', [{ mcpServers: { a: {} } }]],
+  ])('reads the same entries as loadConfig: %s', (name, content) => {
+    const { home, cwd } = freshDirs(`parity-${name.replace(/\W+/g, '-')}`);
+    const file = join(cwd, '.mcp.json');
+    writeFileSync(file, JSON.stringify(content));
+
+    const scan = scanMcpConfigFiles({ homeDir: home, cwd, platform: 'linux' });
+    const scanned =
+      scan.discovered[0]?.config ?? (scan.empty.length > 0 ? { mcpServers: {} } : null);
+
+    let loaded: McpConfig | null;
+    try {
+      loaded = loadConfig(file);
+    } catch {
+      loaded = null;
+    }
+    expect(scanned).toEqual(loaded);
   });
 
   it('captures invalid JSON in `errors` without echoing the file content', () => {

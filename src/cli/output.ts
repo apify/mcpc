@@ -35,6 +35,8 @@ import type { DecodedResourceContent } from '../lib/resource-content.js';
 import { extractAllTextContent } from './tool-result.js';
 import { getSession } from '../lib/sessions.js';
 import { getBridgeLogPath } from '../lib/log-reader.js';
+import { formatHostPort } from '../lib/utils.js';
+import { formatUsdc, usdToAtomic } from '../lib/x402/budget.js';
 import { isModernProtocolVersion, SERVER_INFO_META_KEY } from '../core/protocol.js';
 import {
   findMcpExtension,
@@ -1963,7 +1965,14 @@ export function formatSessionLine(session: SessionData): string {
   // x402 takes precedence when both happen to be present on the session record.
   let infoStr = '';
   if (session.x402) {
-    infoStr = theme.yellow('[x402]');
+    const spent = /^\d{1,78}$/.test(session.x402AuthorizedAtomic ?? '')
+      ? BigInt(session.x402AuthorizedAtomic as string)
+      : 0n;
+    const budget =
+      typeof session.x402BudgetUsd === 'number'
+        ? `: ${formatUsdc(spent)} of ${formatUsdc(usdToAtomic(session.x402BudgetUsd))} used`
+        : '';
+    infoStr = theme.yellow(`[x402${budget}]`);
   } else if (!session.server.command && session.profileName) {
     infoStr = chalk.dim('(OAuth: ') + theme.magenta(session.profileName) + chalk.dim(')');
   }
@@ -1974,7 +1983,7 @@ export function formatSessionLine(session: SessionData): string {
     proxyStr =
       ' ' +
       theme.green('[proxy: ') +
-      chalk.greenBright(`${session.proxy.host}:${session.proxy.port}`) +
+      chalk.greenBright(formatHostPort(session.proxy.host, session.proxy.port)) +
       theme.green(']');
   }
 

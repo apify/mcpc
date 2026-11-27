@@ -14,6 +14,7 @@ import {
   isValidSessionName,
   generateSessionName,
   normalizeServerUrl,
+  formatHostPort,
   validateProfileName,
   redactHeaders,
   redactServerConfig,
@@ -21,8 +22,10 @@ import {
   ClientError,
   isAuthenticationError,
   createServerAuthError,
+  hasHeader,
 } from '../../lib/index.js';
 import type {
+  McpConfig,
   ServerConfig,
   ProxyConfig,
   ServerDetails,
@@ -47,13 +50,22 @@ import {
   getSession,
   loadSessions,
 } from '../../lib/sessions.js';
-import { startBridge, StartBridgeOptions, stopBridge } from '../../lib/bridge-manager.js';
+import {
+  startBridge,
+  StartBridgeOptions,
+  stopBridge,
+  resolveSessionCwd,
+} from '../../lib/bridge-manager.js';
 import {
   storeKeychainSessionHeaders,
+  removeKeychainSessionHeaders,
+  removeKeychainSessionEnv,
+  removeKeychainProxyBearerToken,
   storeKeychainSessionEnv,
   storeKeychainProxyBearerToken,
 } from '../../lib/auth/keychain.js';
 import { getWallet } from '../../lib/wallets.js';
+import { DEFAULT_X402_BUDGET_USD } from '../../lib/x402/budget.js';
 import chalk from 'chalk';
 // ora is loaded lazily at the spinner call site — it is only needed for
 // human-mode bulk connects and costs ~50 ms at import.
@@ -76,23 +88,25 @@ const logger = createLogger('connect');
 /**
  * Check if a port is available for binding
  */
-async function checkPortAvailable(host: string, port: number): Promise<boolean> {
-  return new Promise((resolve) => {
+async function checkProxyBindable(host: string, port: number): Promise<void> {
+  const error = await new Promise<NodeJS.ErrnoException | null>((resolve) => {
     const server = createServer();
-
-    server.once('error', () => {
-      // EADDRINUSE, permission denied, etc. — treat as unavailable
-      resolve(false);
-    });
-
-    server.once('listening', () => {
-      server.close(() => {
-        resolve(true);
-      });
-    });
-
+    server.once('error', (err: NodeJS.ErrnoException) => resolve(err));
+    server.once('listening', () => server.close(() => resolve(null)));
     server.listen(port, host);
   });
+  if (!error) return;
+
+  const address = formatHostPort(host, port);
+  if (error.code === 'EADDRINUSE') {
+    throw new ClientError(
+      `Port ${port} is already in use on ${host}. Choose a different port with --proxy [host:]port`
+    );
+  }
+  throw new ClientError(
+    `Cannot start proxy on ${address}: ${error.code ?? error.message}. ` +
+      `Check the host is a local address (IPv6 in brackets, e.g. [::1]:8080)`
+  );
 }
 
 // =============================================================================
@@ -144,6 +158,8 @@ type ConnectSessionOptions = {
   outputMode: OutputMode;
   verbose?: boolean;
   config?: string;
+  /** Already-parsed content of `config`, so the entry is not read from disk a second time. */
+  mcpConfig?: McpConfig;
   headers?: string[];
   timeoutSecs?: number;
   profile?: string;
@@ -152,6 +168,8 @@ type ConnectSessionOptions = {
   proxyBearerToken?: string;
   protocolVersion?: string;
   x402?: X402SchemePreference;
+  /** Total the session may pay with x402, in USD (default: DEFAULT_X402_BUDGET_USD). */
+  x402BudgetUsd?: number;
   insecure?: boolean;
   skipDetails?: boolean;
   quiet?: boolean;
@@ -248,9 +266,38 @@ function assertSupportedProtocolVersion(version: string | undefined): void {
   }
 }
 
+/** How a session's server is named in messages: its URL, or its command line. */
+function describeServer(server: ServerConfig): string {
+  if (server.url) return server.url;
+  return [server.command ?? 'unknown', ...(server.args ?? [])].join(' ');
+}
+
+/**
+ * Whether two transport configs name the same MCP server: the same URL, or the same stdio
+ * command line. Headers, env and other per-connection settings are not part of the identity.
+ */
+export function isSameServer(a: ServerConfig, b: ServerConfig): boolean {
+  if (a.url !== undefined || b.url !== undefined) {
+    if (a.url === undefined || b.url === undefined) return false;
+    if (a.command !== undefined || b.command !== undefined) return false;
+    try {
+      return normalizeServerUrl(a.url) === normalizeServerUrl(b.url);
+    } catch {
+      return a.url === b.url;
+    }
+  }
+  return (
+    a.command !== undefined &&
+    a.command === b.command &&
+    JSON.stringify(a.args ?? []) === JSON.stringify(b.args ?? [])
+  );
+}
+
 /**
  * Creates a new session, starts a bridge process, and instructs it to connect an MCP server.
- * If session already exists with crashed bridge, reconnects it automatically
+ * If the session already exists for the same server with a crashed bridge, reconnects it.
+ * A session name stays bound to its server: connecting a different one under an existing
+ * name is refused (close the session first).
  */
 export async function connectSession(
   target: string,
@@ -274,16 +321,10 @@ export async function connectSession(
   let proxyConfig: ProxyConfig | undefined;
   if (options.proxy) {
     proxyConfig = parseProxyArg(options.proxy);
-    logger.debug(`Proxy config: ${proxyConfig.host}:${proxyConfig.port}`);
+    logger.debug(`Proxy config: ${formatHostPort(proxyConfig.host, proxyConfig.port)}`);
 
-    // Validate port is available before starting bridge
-    const portAvailable = await checkPortAvailable(proxyConfig.host, proxyConfig.port);
-    if (!portAvailable) {
-      throw new ClientError(
-        `Port ${proxyConfig.port} is already in use on ${proxyConfig.host}. ` +
-          `Choose a different port with --proxy [host:]port`
-      );
-    }
+    // Validate the proxy can bind before starting the bridge
+    await checkProxyBindable(proxyConfig.host, proxyConfig.port);
   }
 
   // Validate proxy-bearer-token is only used with --proxy
@@ -294,9 +335,26 @@ export async function connectSession(
   // Validate --protocol-version (if provided)
   assertSupportedProtocolVersion(options.protocolVersion);
 
+  // Resolve target to transport config
+  const serverConfig = await resolveTarget(target, options);
+
+  // Re-check the effective pin, which may come from a config entry's `protocolVersion`
+  assertSupportedProtocolVersion(serverConfig.protocolVersion);
+
   // Check if session already exists
   const existingSession = await getSession(name);
   if (existingSession) {
+    // A session carries state that belongs to its server: stored headers, payment and TLS
+    // settings, the server's session id, resource subscriptions that write local files.
+    // Re-pointing the name at another server would hand all of that over, and bulk connects
+    // take the name from a config entry, so a config file could pick which session to take.
+    if (!isSameServer(existingSession.server, serverConfig)) {
+      throw new ClientError(
+        `Session ${name} already exists for a different server (${describeServer(existingSession.server)}). ` +
+          `To connect another one, use a different session name or first run: mcpc ${name} close`
+      );
+    }
+
     const bridgeStatus = getBridgeStatus(existingSession);
 
     if (bridgeStatus === 'live') {
@@ -310,10 +368,22 @@ export async function connectSession(
       return;
     }
 
+    // A stdio session is revived where it has always run, not in the current directory
+    // (fails here, before the old bridge is touched, if that directory is gone).
+    if (existingSession.cwd) {
+      resolveSessionCwd(name, existingSession);
+    }
+
     // Bridge has crashed or expired - reconnect with warning
     if (options.outputMode === 'human' && !options.quiet) {
+      const elsewhere =
+        existingSession.cwd && existingSession.cwd !== process.cwd()
+          ? ` in ${existingSession.cwd}`
+          : '';
       console.log(
-        theme.yellow(`Session ${name} exists but bridge is ${bridgeStatus}, reconnecting...`)
+        theme.yellow(
+          `Session ${name} exists but bridge is ${bridgeStatus}, reconnecting${elsewhere}...`
+        )
       );
     }
 
@@ -325,14 +395,8 @@ export async function connectSession(
     }
   }
 
-  // Resolve target to transport config
-  const serverConfig = await resolveTarget(target, options);
-
-  // Re-check the effective pin, which may come from a config entry's `protocolVersion`
-  assertSupportedProtocolVersion(serverConfig.protocolVersion);
-
   // Detect conflicting auth flags: --profile and --header "Authorization: ..." are mutually exclusive
-  const hasExplicitAuthHeader = serverConfig.headers?.Authorization !== undefined;
+  const hasExplicitAuthHeader = hasHeader(serverConfig.headers, 'Authorization');
   const hasExplicitProfile = options.profile !== undefined;
 
   if (hasExplicitAuthHeader && hasExplicitProfile) {
@@ -368,12 +432,26 @@ export async function connectSession(
     }
   }
 
+  // Validate x402 wallet (if provided). Done before anything is written to the keychain, so
+  // a refused connect leaves the stored credentials of an existing session untouched.
+  if (options.x402) {
+    const wallet = await getWallet();
+    if (!wallet) {
+      throw new ClientError('x402 wallet not found. Create one with: mcpc x402 init');
+    }
+    logger.debug(`Using x402 wallet: ${wallet.address}`);
+  }
+
   // Store headers in OS keychain (secure storage) before starting bridge
   let headers: Record<string, string> | undefined;
   if (serverConfig.headers && Object.keys(serverConfig.headers).length > 0) {
     headers = { ...serverConfig.headers };
     logger.debug(`Storing ${Object.keys(headers).length} headers for session ${name} in keychain`);
     await storeKeychainSessionHeaders(name, headers);
+  } else if (existingSession) {
+    // This connect sends no headers, so the ones an earlier connect stored must not come
+    // back on a later restart.
+    await removeKeychainSessionHeaders(name);
   }
 
   // Store the stdio server's env in the OS keychain too: it is where config entries put
@@ -385,21 +463,16 @@ export async function connectSession(
       `Storing ${Object.keys(env).length} stdio env variable(s) for session ${name} in keychain`
     );
     await storeKeychainSessionEnv(name, env);
+  } else if (existingSession) {
+    await removeKeychainSessionEnv(name);
   }
 
   // Store proxy bearer token in keychain (if provided)
   if (options.proxyBearerToken) {
     logger.debug(`Storing proxy bearer token for session ${name} in keychain`);
     await storeKeychainProxyBearerToken(name, options.proxyBearerToken);
-  }
-
-  // Validate x402 wallet (if provided)
-  if (options.x402) {
-    const wallet = await getWallet();
-    if (!wallet) {
-      throw new ClientError('x402 wallet not found. Create one with: mcpc x402 init');
-    }
-    logger.debug(`Using x402 wallet: ${wallet.address}`);
+  } else if (existingSession) {
+    await removeKeychainProxyBearerToken(name);
   }
 
   // Create or update session record (without pid - that comes from startBridge)
@@ -412,12 +485,26 @@ export async function connectSession(
     ...(env && { env: redactHeaders(env) }),
   };
 
+  // A stdio server runs in the directory the `connect` that created the session was issued
+  // from, and is restarted there for the life of the session, whichever directory later
+  // commands (including a reconnect) run in. A session from before mcpc recorded the
+  // directory adopts the current one.
+  const cwd =
+    serverConfig.command !== undefined ? (existingSession?.cwd ?? process.cwd()) : undefined;
+
+  // Every connection setting is written, present or not: on a reconnect the record must
+  // describe the bridge started below, not keep --x402, --insecure, --proxy or a profile
+  // from an earlier connect that this one did not ask for.
   const sessionUpdate: Parameters<typeof updateSession>[1] = {
     server: sessionTransportConfig,
-    ...(profileName && { profileName }),
-    ...(proxyConfig && { proxy: proxyConfig }),
-    ...(options.x402 && { x402: options.x402 }),
-    ...(options.insecure && { insecure: true }),
+    cwd,
+    profileName,
+    proxy: proxyConfig,
+    x402: options.x402,
+    // A connect with --x402 starts a fresh budget; one without it clears any earlier one
+    x402BudgetUsd: options.x402 ? (options.x402BudgetUsd ?? DEFAULT_X402_BUDGET_USD) : undefined,
+    x402AuthorizedAtomic: undefined,
+    insecure: options.insecure ? true : undefined,
     // Clear any previous error status (unauthorized, expired) when reconnecting
     ...(isReconnect && { status: 'active' }),
   };
@@ -448,6 +535,7 @@ export async function connectSession(
       ...(proxyConfig && { proxyConfig }),
       ...(options.x402 && { x402: options.x402 }),
       ...(options.insecure && { insecure: true }),
+      ...(cwd && { cwd }),
     };
 
     const { pid } = await startBridge(bridgeOptions);
@@ -577,10 +665,13 @@ async function findMatchingSession(
     const sessionProfile = session.profileName ?? 'default';
     if (effectiveProfile !== sessionProfile) continue;
 
-    // Match header keys (values are redacted, so we only compare key sets)
-    const existingHeaderKeys = Object.keys(session.server.headers || {}).sort();
+    // Match header names (values are redacted, so we only compare name sets).
+    // Header names are case-insensitive.
+    const existingHeaderKeys = Object.keys(session.server.headers || {})
+      .map((key) => key.toLowerCase())
+      .sort();
     const newHeaderKeys = (options.headers || [])
-      .map((h) => h.split(':')[0]?.trim() || '')
+      .map((h) => h.split(':')[0]?.trim().toLowerCase() || '')
       .filter(Boolean)
       .sort();
     if (existingHeaderKeys.join(',') !== newHeaderKeys.join(',')) continue;
@@ -661,6 +752,8 @@ type BulkConnectOptions = {
   stdio?: boolean;
   protocolVersion?: string;
   x402?: X402SchemePreference;
+  /** Total the session may pay with x402, in USD (default: DEFAULT_X402_BUDGET_USD). */
+  x402BudgetUsd?: number;
   insecure?: boolean;
 };
 
@@ -670,6 +763,12 @@ type BulkConnectOptions = {
 type BulkConnectEntry = {
   /** Config file path that defines this entry. */
   configFile: string;
+  /**
+   * Parsed content of `configFile`, as read once by the caller. The connection is made from
+   * this object, so whatever the caller checked about the entry (stdio, `${VAR}` references)
+   * holds for the entry that is actually connected.
+   */
+  config: McpConfig;
   /** Entry name inside the config's `mcpServers` object. */
   entry: string;
   /** Resolved session name (with @ prefix). */
@@ -778,10 +877,11 @@ async function bulkConnectEntries(
 
   // Launch all connections in parallel (quiet mode — we display results below)
   const settled = await Promise.allSettled(
-    entries.map(async ({ entry, sessionName, configFile }) =>
+    entries.map(async ({ entry, sessionName, configFile, config }) =>
       connectSession(entry, sessionName, {
         ...options,
         config: configFile,
+        mcpConfig: config,
         skipDetails: true,
         quiet: true,
       })
@@ -980,6 +1080,7 @@ export async function connectAllFromConfig(
   // "already active" path instead of creating @entry-2 duplicates.
   const entries: BulkConnectEntry[] = serverNames.map((entry) => ({
     configFile,
+    config,
     entry,
     sessionName: generateSessionName({ type: 'config', file: configFile, entry }),
   }));
@@ -1063,6 +1164,7 @@ function aggregateDiscoveredEntries(
       seenNames.add(sessionName);
       entries.push({
         configFile: d.path,
+        config: d.config,
         entry,
         sessionName,
       });
@@ -1193,6 +1295,18 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
         `Pass it when connecting one server or one config file you chose:\n` +
         `  mcpc connect mcp.example.com @myserver -H "Authorization: Bearer ..."\n` +
         `  mcpc connect ./mcp.json -H "X-Custom: value"`
+    );
+  }
+
+  // Same reasoning for --x402: it would let every discovered server, including one named by
+  // a config file checked into the current directory, ask the wallet for payment.
+  if (options.x402) {
+    throw new ClientError(
+      `--x402 cannot be combined with config auto-discovery: every discovered server could ` +
+        `then request payments from your wallet.\n` +
+        `Pass it when connecting one server or one config file you chose:\n` +
+        `  mcpc connect mcp.example.com @myserver --x402\n` +
+        `  mcpc connect ./mcp.json --x402`
     );
   }
 

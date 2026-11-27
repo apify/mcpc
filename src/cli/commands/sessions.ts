@@ -12,6 +12,7 @@ import {
   getServerHost,
   redactServerConfig,
   ClientError,
+  hasHeader,
 } from '../../lib/index.js';
 import { DISCONNECTED_THRESHOLD_MILLIS } from '../../lib/types.js';
 import type { ServerConfig, ConnectionMode } from '../../lib/types.js';
@@ -39,6 +40,7 @@ import {
   stopBridge,
   reconnectCrashedSessions,
   loadSessionEnv,
+  resolveSessionCwd,
 } from '../../lib/bridge-manager.js';
 import chalk from 'chalk';
 import { createLogger } from '../../lib/logger.js';
@@ -386,6 +388,19 @@ export async function restartSession(
     console.log(theme.yellow(`Restarting session ${name}...`));
   }
 
+  // A stdio server restarts in the directory recorded at connect time, not in the one this
+  // command runs in. The one exception is a session created before mcpc recorded it: this
+  // explicit, by-name restart adopts the current directory and records it from now on
+  // (automatic restarts refuse such a session instead, see resolveSessionCwd).
+  let cwd: string | undefined;
+  if (session.server?.command !== undefined && !session.cwd) {
+    cwd = process.cwd();
+    await updateSession(name, { cwd });
+    logger.debug(`Recorded working directory for session ${name}: ${cwd}`);
+  } else if (session.server) {
+    cwd = resolveSessionCwd(name, session);
+  }
+
   // Stop the bridge (even if it's alive). Graceful so the old bridge sends an HTTP DELETE
   // to terminate its MCP session before exiting: an explicit restart starts a *fresh*
   // session (see the note below), so the previous server-side session must be released
@@ -411,7 +426,7 @@ export async function restartSession(
   // Resolve auth profile: use stored profile, or auto-detect a "default" profile.
   // This handles the case where user creates a session without auth, then later runs
   // `mcpc login <server>` to create a default profile, and restarts the session.
-  const hasExplicitAuthHeader = headers?.Authorization !== undefined;
+  const hasExplicitAuthHeader = hasHeader(headers, 'Authorization');
   let profileName = session.profileName;
   if (!profileName && serverConfig.url && !hasExplicitAuthHeader && !session.x402) {
     profileName = await resolveAuthProfile(serverConfig.url, serverConfig.url, undefined, {
@@ -439,6 +454,7 @@ export async function restartSession(
     ...(session.proxy && { proxyConfig: session.proxy }),
     ...(session.x402 && { x402: session.x402 }),
     ...(session.insecure && { insecure: session.insecure }),
+    ...(cwd && { cwd }),
   };
 
   const { pid } = await startBridge(bridgeOptions);

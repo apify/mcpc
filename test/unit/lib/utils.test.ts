@@ -6,6 +6,7 @@ import { homedir, tmpdir } from 'os';
 import { join, isAbsolute } from 'path';
 import {
   expandHome,
+  formatHostPort,
   resolvePath,
   getMcpcHome,
   getSessionsFilePath,
@@ -27,6 +28,8 @@ import {
   truncate,
   isProcessAlive,
   generateRequestId,
+  hasHeader,
+  isValidMcpSessionId,
   fetchAllPages,
   isProtocolMismatchError,
   redactHeaders,
@@ -267,6 +270,22 @@ describe('normalizeServerUrl', () => {
     expect(normalizeServerUrl('127.0.0.1')).toBe('http://127.0.0.1');
     expect(normalizeServerUrl('127.0.0.1:8080')).toBe('http://127.0.0.1:8080');
     expect(normalizeServerUrl('127.0.0.1/mcp')).toBe('http://127.0.0.1/mcp');
+    // and so does the IPv6 loopback in brackets
+    expect(normalizeServerUrl('[::1]')).toBe('http://[::1]');
+    expect(normalizeServerUrl('[::1]:8080')).toBe('http://[::1]:8080');
+    expect(normalizeServerUrl('[::1]/mcp')).toBe('http://[::1]/mcp');
+  });
+
+  it('should not default to http:// when only the userinfo looks local', () => {
+    expect(normalizeServerUrl('[::1]@evil.com')).toBe('https://evil.com');
+    expect(normalizeServerUrl('[::1]:8080@evil.com/mcp')).toBe('https://evil.com/mcp');
+    expect(normalizeServerUrl('localhost:x@evil.com')).toBe('https://evil.com');
+    expect(normalizeServerUrl('127.0.0.1:1@evil.com')).toBe('https://evil.com');
+    expect(() => normalizeServerUrl('[::1')).toThrow('Invalid MCP server URL: [::1');
+  });
+
+  it('should default other IPv6 addresses to https://', () => {
+    expect(normalizeServerUrl('[2001:db8::1]:8443')).toBe('https://[2001:db8::1]:8443');
   });
 
   it('should respect explicit scheme for localhost URLs', () => {
@@ -760,5 +779,43 @@ describe('redactServerConfig', () => {
     const redacted = redactServerConfig({ url: 'https://x.example' });
     expect(redacted).not.toHaveProperty('headers');
     expect(redacted).not.toHaveProperty('env');
+  });
+});
+
+describe('formatHostPort', () => {
+  it('brackets IPv6 hosts only', () => {
+    expect(formatHostPort('127.0.0.1', 8080)).toBe('127.0.0.1:8080');
+    expect(formatHostPort('localhost', 3000)).toBe('localhost:3000');
+    expect(formatHostPort('::1', 8080)).toBe('[::1]:8080');
+    expect(formatHostPort('2001:db8::1', 8443)).toBe('[2001:db8::1]:8443');
+  });
+});
+
+describe('hasHeader', () => {
+  it('matches header names case-insensitively', () => {
+    expect(hasHeader({ authorization: 'Bearer x' }, 'Authorization')).toBe(true);
+    expect(hasHeader({ AUTHORIZATION: 'Bearer x' }, 'Authorization')).toBe(true);
+    expect(hasHeader({ Authorization: 'Bearer x' }, 'authorization')).toBe(true);
+  });
+
+  it('is false for other headers and for no headers', () => {
+    expect(hasHeader({ 'X-Authorization': 'x' }, 'Authorization')).toBe(false);
+    expect(hasHeader({}, 'Authorization')).toBe(false);
+    expect(hasHeader(undefined, 'Authorization')).toBe(false);
+  });
+});
+
+describe('isValidMcpSessionId', () => {
+  it('accepts visible ASCII, including a leading dash', () => {
+    expect(isValidMcpSessionId('3f2c9a1e-7b1d-4c58-9f0e-1a2b3c4d5e6f')).toBe(true);
+    expect(isValidMcpSessionId('-base64url_id~')).toBe(true);
+  });
+
+  it('rejects empty, whitespace, control and non-ASCII characters', () => {
+    expect(isValidMcpSessionId('')).toBe(false);
+    expect(isValidMcpSessionId('a b')).toBe(false);
+    expect(isValidMcpSessionId('a\nb')).toBe(false);
+    expect(isValidMcpSessionId('a\x1b[2Jb')).toBe(false);
+    expect(isValidMcpSessionId('sessión')).toBe(false);
   });
 });

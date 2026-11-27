@@ -124,10 +124,12 @@ mcpc/
 - Separate process (`dist/bridge/index.js`, spawned by the CLI with the same Node.js binary) that maintains persistent MCP connections
 - Session persistence via `~/.mcpc/sessions.json` with file locking (`proper-lockfile` package)
 - Process lifecycle management for local package servers (stdio transport)
+- A stdio session records the working directory of the `mcpc connect` that created it (`cwd` in `sessions.json`), and every later bridge start for it runs there (`resolveSessionCwd()` in `src/lib/bridge-manager.ts`). The bridge is restarted by whichever `mcpc` command notices it is gone, so inheriting that command's directory would let any directory decide what `node server.js` or `npx <pkg>` runs. A session without a recorded directory (created by an older mcpc) is never restarted automatically; an explicit `mcpc @session restart` records the current one
 - Unix domain socket server for CLI-to-bridge IPC (named pipes on Windows)
 - Socket location: `~/.mcpc/bridges/<session-name>.<pid>.sock` (falls back to a short hashed path under the system temp dir when the path would exceed the OS socket limit)
 - Keepalive ping every 30 seconds, `lastSeenAt` recorded in `sessions.json`
 - Orphaned log and socket file cleanup; a bridge that finds a *different* PID registered for its session in `sessions.json` (checked on every keepalive tick) exits on its own without ending the server-side MCP session, so a replacement spawned by mistake never leaves the original running (#427)
+- `stopBridge()` signals the PID recorded in `sessions.json` only when the bridge answers on its PID-specific IPC socket: PIDs are recycled, so after a reboot that number may belong to an unrelated process. It then waits up to 10 s for the bridge's own teardown (HTTP DELETE, stdio child shutdown) before SIGKILL
 - Atomic writes for session file (write to temp, then rename)
 - File lock acquisition: up to 10 retries with randomized backoff (5s max per retry)
 
@@ -298,7 +300,7 @@ Implements [MCP security best practices](https://modelcontextprotocol.io/specifi
 - `~/.mcpc/` and subdirectories created with mode `0700` (owner-only) via `ensureDir()`
 - File locking (`proper-lockfile`) for concurrent access safety
 - Atomic file writes (temp file + rename) to prevent corruption
-- IPC buffer size capped at 10 MB to prevent memory exhaustion
+- IPC messages capped at 10 MB to prevent memory exhaustion; either end answers an oversized message with an ordinary error instead of sending it, so the cap never looks like a bridge crash
 
 **Security development guidelines:**
 When making changes, follow these rules to maintain the security posture:
@@ -309,6 +311,10 @@ When making changes, follow these rules to maintain the security posture:
 - Escape any user-controlled or server-controlled data before embedding in HTML responses
 - Send sensitive data (headers, tokens) via IPC socket, never via CLI arguments or environment variables
 - Read all keychain values needed to start a bridge in the CLI **before** `spawn()`. After spawn the bridge arms a short IPC-credential timeout; on macOS a Keychain password dialog can block longer than that timeout, so a post-spawn keychain read races the bridge timer and causes ENOENT (#55). The CLI is the only process attached to a TTY and can show the dialog without the user wondering why a background process is asking. Bridge-side keychain access is permitted only on the OAuth token refresh paths (the `oauth-token-manager` callbacks and the id-jag provider callbacks in `src/bridge/index.ts`), where it is needed to persist rotated refresh tokens for long-running sessions
+- Start a stdio session's bridge only with the `cwd` from `resolveSessionCwd()` (or, in `connect`, the current directory that is being recorded) — never let it inherit the directory of the command that happens to trigger a restart
+- A session name is bound to its server (the URL, or the stdio command line): `connectSession` refuses a different target for an existing name, live or not. Never merge a new target into an existing session record — its stored headers, `x402`/`insecure` settings, MCP session id and resource-to-file syncs belong to the old server, and bulk connects take the name from a config entry. On a same-server reconnect, write every connection setting from the command at hand (absent means cleared)
+- x402: the server names the amount, token, payee and validity of every payment, so every payment a session signs goes through `signSessionPayment()` (`src/lib/x402/fetch-middleware.ts`), which charges it against the session budget (`src/lib/x402/budget.ts`, persisted in `sessions.json`) — never call `signPayment()` directly from session code. Pay only for `tools/call`, never for a request mcpc issues on its own (handshake, ping, stream); sign only for USDC on a supported network; bound a server-chosen validity
+- Refresh an OAuth token only at the profile's recorded authorization server (`oauthIssuer`). Never look the token endpoint up through the MCP server at refresh time: it could name its own and collect the refresh token. A profile with no recorded issuer (mcpc 0.6 or earlier) is not refreshed; the user logs in again
 - Validate and sanitize all external input (URLs, session names, profile names) before use
 - Default to HTTPS; only allow HTTP for localhost/127.0.0.1
 - When adding HTTP servers (even localhost-only), validate the Host header against expected values
@@ -329,7 +335,7 @@ When making changes, follow these rules to maintain the security posture:
 2. Server responds with agreed version and server capabilities
 3. Client sends `initialized` notification to activate session
 
-**Era-dependent behavior in mcpc:** `ping` maps to `server/discover` on modern connections; `logging-set-level` is 2025-11-25-only; `resources-subscribe` uses `subscriptions/listen` on modern connections and `resources/subscribe` on legacy ones. The task commands speak the 2025-11-25 core tasks feature on legacy connections and the `io.modelcontextprotocol/tasks` extension on modern ones. SDK 2.3.1 has no client API for the extension; it lets `tasks/get` and `tasks/cancel` through its era gate when issued via `client.request()` with an explicit result schema and sets their `Mcp-Name` header, so mcpc issues them itself with the validators in `src/core/tasks-schema.ts`. The one thing the SDK still rejects, a `tools/call` answered with `resultType: "task"`, is rewritten before it decodes it by `src/core/tasks-result-shim.ts`, installed through the SDK client's `_onresponse` hook (read its header before touching task code; it is the one module to delete once the SDK ships `client/ext/tasks`). Under the extension task creation is the server's decision, so `tools-call` handles a task answer even without `--task`, `--detach` may return the tool result, and `tasks-list` shows the tasks the session created (there is no `tasks/list`).
+**Era-dependent behavior in mcpc:** `ping` maps to `server/discover` on modern connections; `logging-set-level` is 2025-11-25-only; `resources-subscribe` uses `subscriptions/listen` on modern connections and `resources/subscribe` on legacy ones. The task commands speak the 2025-11-25 core tasks feature on legacy connections and the `io.modelcontextprotocol/tasks` extension on modern ones. SDK 2.4.0 has no client API for the extension; it lets `tasks/get` and `tasks/cancel` through its era gate when issued via `client.request()` with an explicit result schema and sets their `Mcp-Name` header, so mcpc issues them itself with the validators in `src/core/tasks-schema.ts`. The one thing the SDK still rejects, a `tools/call` answered with `resultType: "task"`, is rewritten before it decodes it by `src/core/tasks-result-shim.ts`, installed through the SDK client's `_onresponse` hook (read its header before touching task code; it is the one module to delete once the SDK ships `client/ext/tasks`). Under the extension task creation is the server's decision, so `tools-call` handles a task answer even without `--task`, `--detach` may return the tool result, and `tasks-list` shows the tasks the session created (there is no `tasks/list`).
 
 **One server-details shape for both eras:** `ServerDetails` (`src/lib/types.ts`) reconciles `InitializeResult` and `DiscoverResult` — the fields both carry (`protocolVersion`, `capabilities`, `serverInfo`, `instructions`) plus the discover-only `supportedVersions` and `_meta`, which are absent on legacy connections. It is what `mcpc connect --json`, `mcpc @session --json` and `restart --json` print, and what the bridge persists in `sessions.json` (so a resumed session, which skips the handshake, can still report all of it). Never fabricate an era's missing field — a legacy connection has no `supportedVersions` because the server never advertised one.
 
@@ -446,7 +452,7 @@ Environment variable substitution supported: `${VAR_NAME}`
 - **Node.js:** ≥22.12.0
 - **Bun:** ≥1.0.0 (alternative runtime)
 - **OS support:** macOS, Linux, Windows
-- **Linux keychain:** a Secret Service provider (e.g. GNOME Keyring, KWallet) on the session D-Bus; `@napi-rs/keyring` talks D-Bus directly and does not need `libsecret`. Without one, credentials fall back to `~/.mcpc/credentials.json`
+- **Linux keychain:** a Secret Service provider (e.g. GNOME Keyring, KWallet) on the session D-Bus; `@napi-rs/keyring` talks D-Bus directly and does not need `libsecret`. Without one, credentials fall back to `~/.mcpc/credentials.json`. Keychain entries are opened with the Secret Service required (`getEntry()` in `src/lib/auth/keychain.ts`): left to itself the binding falls back to the kernel keyring, which is in-memory only and loses everything on reboot
 
 ## Authentication Architecture
 

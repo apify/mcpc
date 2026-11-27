@@ -291,7 +291,8 @@ export async function callTool(
     // Validate schema if provided (skip entirely in ignore mode)
     const schemaMode: SchemaMode = options.schemaMode || 'compatible';
     if (expectedSchema && schemaMode !== 'ignore') {
-      const result = await client.listTools();
+      // All pages: the tool may not be on the server's first page
+      const result = await client.listAllTools();
       const actualTool = result.tools.find((t) => t.name === name);
 
       if (!actualTool) {

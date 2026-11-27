@@ -79,4 +79,16 @@ prompt_count=$(echo "$STDOUT" | jq 'length')
 assert_eq "$prompt_count" "2" "should have all 2 prompts"
 test_pass
 
+# Test: --schema validation finds a tool beyond the first page
+# (write-file is on page 3 of 3; the check used to read only the first page)
+test_case "tools-call --schema validates a tool on a later page"
+run_mcpc --json "$SESSION" tools-get write-file
+assert_success
+echo "$STDOUT" > "$TEST_TMP/write-file-schema.json"
+run_mcpc "$SESSION" tools-call write-file path:=/tmp/x content:=y \
+  --schema "$TEST_TMP/write-file-schema.json"
+assert_success
+assert_not_contains "$STDERR" "Tool not found"
+test_pass
+
 test_done

@@ -262,8 +262,16 @@ export function isValidHttpUrl(str: string): boolean {
 }
 
 /**
+ * Join a host and port for display or a URL, bracketing IPv6 hosts
+ * (e.g. "127.0.0.1", 8080 -> "127.0.0.1:8080"; "::1", 8080 -> "[::1]:8080")
+ */
+export function formatHostPort(host: string, port: number): string {
+  return host.includes(':') ? `[${host}]:${port}` : `${host}:${port}`;
+}
+
+/**
  * Normalize an MCP server URL by adding a scheme if not present
- * - localhost/127.0.0.1 addresses default to http:// (common for local dev/proxy)
+ * - localhost/127.0.0.1/[::1] addresses default to http:// (common for local dev/proxy)
  * - All other addresses default to https://
  * Also converts hostname to lowercase and removes username, password, and hash
  * Returns the normalized URL or throws an error if invalid
@@ -273,9 +281,14 @@ export function normalizeServerUrl(str: string): string {
 
   // Add scheme if not present
   if (!str.includes('://')) {
-    // Extract hostname (before any port or path)
-    const hostPart = (str.split(/[:/]/)[0] || '').toLowerCase();
-    const isLocalhost = hostPart === 'localhost' || hostPart === '127.0.0.1';
+    let isLocalhost = false;
+    try {
+      // Use the parsed hostname so local-looking userinfo cannot select plain HTTP.
+      const hostname = new URL(`http://${str}`).hostname;
+      isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]';
+    } catch {
+      // Invalid targets fail the existing validation below.
+    }
     // Default to http:// for localhost, https:// for everything else
     urlString = isLocalhost ? `http://${str}` : `https://${str}`;
   }
@@ -800,3 +813,28 @@ export function enrichErrorMessage(errorMessage: string, serverUrl?: string): st
   // No enrichment possible
   return errorMessage;
 }
+
+/**
+ * Whether a header map carries the given header. HTTP header names are
+ * case-insensitive, so `authorization` and `Authorization` are the same header.
+ */
+export function hasHeader(headers: Record<string, string> | undefined, name: string): boolean {
+  const wanted = name.toLowerCase();
+  return Object.keys(headers ?? {}).some((key) => key.toLowerCase() === wanted);
+}
+
+/**
+ * Whether a server-issued `MCP-Session-Id` is well-formed: the specification
+ * allows visible ASCII only (0x21 to 0x7E). Anything else is not stored for
+ * resumption.
+ */
+export function isValidMcpSessionId(id: string): boolean {
+  return /^[\x21-\x7e]+$/.test(id);
+}
+
+/**
+ * Prefix of the bridge argument carrying the MCP session ID to resume. The ID is
+ * server-chosen, so flag and value form one argv token that can never be mistaken
+ * for another bridge flag.
+ */
+export const MCP_SESSION_ID_ARG_PREFIX = '--mcp-session-id=';

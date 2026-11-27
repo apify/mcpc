@@ -46,6 +46,7 @@ import { clean } from './commands/clean.js';
 import { MCPC_OAUTH_CALLBACK_HOSTS, MCPC_OAUTH_CALLBACK_PORTS } from '../lib/auth/oauth-utils.js';
 import type { OutputMode, X402SchemePreference } from '../lib/index.js';
 import { X402_SCHEME_PREFERENCES } from '../lib/index.js';
+import { parseX402BudgetUsd } from '../lib/x402/budget.js';
 import {
   extractOptions,
   preProcessSkillArgv,
@@ -100,6 +101,8 @@ interface HandlerOptions {
    * `--x402` (no value) resolves to `'auto'` (prefer upto, fall back to exact).
    */
   x402?: X402SchemePreference;
+  /** `connect --x402-budget <usd>`: total the session may pay with x402. */
+  x402BudgetUsd?: number;
   insecure?: boolean;
   schema?: string;
   schemaMode?: 'strict' | 'compatible' | 'ignore';
@@ -156,6 +159,12 @@ function getOptionsFromCommand(command: Command): HandlerOptions {
       );
     }
     options.x402 = opts.x402 as X402SchemePreference;
+  }
+  if (opts.x402Budget !== undefined) {
+    if (!options.x402) {
+      throw new ClientError('--x402-budget requires --x402 to be specified');
+    }
+    options.x402BudgetUsd = parseX402BudgetUsd(String(opts.x402Budget));
   }
   if (opts.insecure) options.insecure = true;
   if (opts.schema) options.schema = opts.schema;
@@ -502,7 +511,11 @@ Full docs: ${docsUrl}`
     .command('connect [server] [@session]')
     .usage('[<server>] [@session] [options]')
     .description('Connect to an MCP server and start a new named @session') // keep this short
-    .option('-H, --header <header>', 'HTTP header (can be repeated)')
+    .option(
+      '-H, --header <header>',
+      'HTTP header (can be repeated)',
+      (value: string, previous: string[] | undefined) => [...(previous ?? []), value]
+    )
     .option('--profile <name>', 'OAuth profile to use ("default" if skipped)')
     .option('--no-profile', 'Skip OAuth profile (connect anonymously)')
     .option('--proxy <[host:]port>', 'Start proxy MCP server for session')
@@ -510,6 +523,7 @@ Full docs: ${docsUrl}`
     .option('--stdio', 'Launch all local stdio servers from selected config files')
     .option('--protocol-version <version>', 'Pin the MCP protocol version (see below)')
     .option('--x402 [scheme]', 'Enable x402 auto-payment (see below)')
+    .option('--x402-budget <usd>', 'Most the session may pay with x402 (see below)')
     .addHelpText(
       'after',
       `
@@ -534,6 +548,8 @@ ${chalk.bold('Session name:')}
   Omit @session to auto-generate from the server (mcp.apify.com → @apify)
   or config entry. Matching sessions (same server, profile, header keys)
   are reused. Bulk connects don't accept @session.
+  A name stays bound to its server: to connect another server under an
+  existing name, close that session first (mcpc @session close).
 
 ${chalk.bold('Protocol version:')}
   mcpc negotiates the newest MCP version both sides support, from
@@ -543,6 +559,8 @@ ${chalk.bold('Protocol version:')}
 ${chalk.bold('x402 payments (experimental):')}
   --x402 pays for paid tool calls from the wallet set up with: ${commandExample('mcpc x402')}
   Schemes: auto (default, prefers upto), upto, exact.
+  The session pays at most --x402-budget in total (default: $10), in USDC
+  only, and only for tool calls. Not available with config auto-discovery.
   For more info, run: ${commandExample('mcpc help x402')}
 ${outputHelp([
   'For a single server, shows session, server info, capabilities, and tools.',
@@ -553,11 +571,8 @@ ${outputHelp([
       const globalOpts = getOptionsFromCommand(command);
 
       // Extract --header from connect-specific opts
-      const headers: string[] | undefined = opts.header
-        ? Array.isArray(opts.header)
-          ? (opts.header as string[])
-          : [opts.header as string]
-        : undefined;
+      // The collector above accumulates every -H into an array (#490)
+      const headers = opts.header as string[] | undefined;
 
       // No server argument — discover standard MCP config files and connect all
       if (!server) {

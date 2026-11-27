@@ -62,6 +62,9 @@ jobs:
   release:
     name: Publish ${{ inputs.type }}
     runs-on: ubuntu-latest
+    environment:
+      name: npm
+      deployment: false
     needs: [e2e-windows, e2e-macos, e2e-linux, conformance]
     outputs:
       version: ${{ steps.release.outputs.version }}
@@ -352,6 +355,9 @@ jobs:
     needs: release
     if: inputs.type == 'release' && needs.release.result == 'success'
     runs-on: ubuntu-latest
+    environment:
+      name: npm
+      deployment: false
     env:
       VERSION: ${{ needs.release.outputs.version }}
     steps:

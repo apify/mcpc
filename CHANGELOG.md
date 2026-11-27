@@ -9,6 +9,37 @@ Each version opens with a one-line summary, which also opens its GitHub release.
 
 ## [Unreleased]
 
+A bare `mcpc connect` connects only the config entries it checked, stdio servers always restart in the directory they were connected from, a session name stays bound to its server, x402 sessions get a spending budget, Linux hosts without a keyring keep credentials on disk again, OAuth profiles from 0.6 or earlier need a new login, a server can no longer make mcpc restart a healthy session with one oversized response, `close` and `restart` never kill an unrelated process, and several `connect` and `--proxy` argument fixes.
+
+### Security
+
+- A bare `mcpc connect` now connects exactly the config entries its safety checks looked at. A config file in the current directory whose `mcpServers` was an array next to a `servers` object had the checks read one and the connection use the other, so an entry could read `${VAR}` or start a local command without `--stdio`. A file with a malformed `mcpServers` or `servers` value is now rejected as a whole.
+- A stdio server is now always restarted in the directory its session was connected from. Before, a session whose bridge had stopped was restarted by whichever `mcpc` command ran next, in that command's directory, so `node server.js` or `npx <pkg>` could run another directory's code with the session's `env` values. A stdio session created by an earlier version has no recorded directory and is no longer restarted automatically: run `mcpc @session restart` once from the directory its server should run in.
+- `connect` no longer re-points an existing session at a different server. Before, a session whose bridge was down was silently re-targeted while keeping its `--x402` and `--insecure` settings, MCP session id and resource-to-file syncs, and a config entry named after a session could take it over in a bulk `connect`. It is now refused: close the session first or use another name.
+- Reconnecting a session with `connect` applies exactly the options of that command. `--x402`, `--insecure`, `--proxy`, the profile and stored headers from an earlier connect are no longer kept when the new one does not ask for them.
+- x402: a session now pays at most its budget in total, `$10` by default or `connect --x402-budget <usd>`. Before, the server named the amount of every payment with no upper bound. A payment over the budget is refused with an error, and `mcpc` shows how much each session has used.
+- x402: payments are made only for tool calls. A server answering the handshake, `tools/list` or the 30-second keepalive ping with HTTP 402 used to receive a signed payment for each, without any tool being called.
+- x402: only USDC is paid, an authorization is valid for at most 24 hours however long the server asks for, and `--x402` is refused for a bare `mcpc connect` (config auto-discovery).
+- On Linux without a Secret Service (headless servers, containers, CI), credentials and the x402 wallet are stored in the `0600` files under `~/.mcpc` again. In 0.8.0 they went to the kernel keyring, which is kept in memory only, so they were lost on reboot. On such a host, log in again after upgrading; an x402 wallet still in the kernel keyring is moved to `wallets.json` automatically.
+- OAuth profiles created by mcpc 0.6.0 or earlier are no longer refreshed: run `mcpc login <server>` once. Such a profile has no record of the authorization server that issued its tokens, so a refresh asked the MCP server where to send the refresh token, and a compromised server could name its own endpoint and collect it. Profiles created by 0.7.0 or later are unaffected.
+- A response over the 10 MB limit between mcpc and its background bridge is now an ordinary error that states the size and the limit. Before, any server could make mcpc stop a healthy session, start a new one and fetch the same oversized result again, and a tool call that did run was reported as "may or may not have executed". An oversized request is refused before it is sent.
+- A server-issued `MCP-Session-Id` that looks like a command-line flag (for example `--insecure`) can no longer change how the session's bridge starts when the session is resumed.
+- `resources-subscribe` and `resources-read -o` write through a temporary file with an unguessable name that must not already exist, so a symlink planted in a shared target directory cannot redirect the server's content.
+- `connect --profile` with a lowercase `authorization` header is now refused like `Authorization`, instead of attaching both credentials. Header names are also compared case-insensitively when matching an existing session.
+
+### Fixed
+
+- A restart or `close` no longer kills an unrelated process that was given a dead bridge's PID (after a reboot, for example). The recorded PID is signalled only when the bridge itself still answers; otherwise the session simply gets a new bridge.
+- `close`, `restart` and crash recovery now give the old bridge up to 10 seconds to finish its own shutdown before force-killing it, instead of one second, so a stdio server that is slow to exit is no longer orphaned and the request that ends the server-side session is no longer cut short.
+- `tools-call --schema` now finds the tool on any page of a paginated tool list, instead of reporting "Tool not found" for tools past the first page.
+- The fallback credentials file (`~/.mcpc/credentials.json`, used when no OS keychain is available) is now replaced atomically, so a crash mid-write can no longer lose every stored credential.
+- `connect` with several `-H`/`--header` options now stores and sends every header, not just the last one. (#490)
+- `connect --proxy [::1]:8080` now binds the proxy to the IPv6 address in brackets instead of failing with a misleading "port already in use" error. (#497)
+- `connect [::1]:8080` without a scheme now defaults to `http://` like `localhost`, the session list shows IPv6 proxy addresses in brackets, and `--proxy` reports why it cannot bind instead of always saying the port is in use. (#497)
+- A server target without a scheme whose user info looks local, like `localhost:x@example.com`, now defaults to `https://` instead of `http://`. (#500)
+- `connect --proxy 8080x` and other ports with extra characters (`1e3`, `80.5`) are now rejected instead of silently binding the leading digits. (#503)
+- `logs --since 5` and other values that are neither a duration nor an ISO 8601 timestamp are now rejected instead of being read as a date in 2001. (#506)
+
 ## [0.8.0] - 2026-11-04
 
 Argument completions for prompts and resource templates, tasks on MCP 2026-07-28 servers, MCP TypeScript SDK 2.3.1, stdio server secrets kept out of plaintext files, logs and `ps`, and no more duplicate bridges on Windows.

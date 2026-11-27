@@ -31,7 +31,14 @@ import {
   TRIMMED_INSTRUCTIONS_NOTICE,
   X402_SCHEME_PREFERENCES,
 } from '../lib/types.js';
-import { createLogger, setVerbose, initFileLogger, closeFileLogger } from '../lib/index.js';
+import {
+  createLogger,
+  setVerbose,
+  initFileLogger,
+  closeFileLogger,
+  formatHostPort,
+  MCP_SESSION_ID_ARG_PREFIX,
+} from '../lib/index.js';
 import {
   fileExists,
   getSocketPath,
@@ -78,16 +85,18 @@ import type { ProxyConfig } from '../lib/types.js';
 // x402 modules pull in the bundled viem (~1 MB of crypto code) — import types
 // only here and load the implementations lazily at the x402-gated call sites.
 import type { X402PaymentCache } from '../lib/x402/fetch-middleware.js';
+import type { X402Budget } from '../lib/x402/budget.js';
 import type { SignerWallet } from '../lib/x402/signer.js';
 import type { FetchLike } from '@modelcontextprotocol/client';
-import { IpcLineBuffer } from '../lib/ipc-line-buffer.js';
+import {
+  IpcLineBuffer,
+  MAX_IPC_MESSAGE_CHARS,
+  ipcMessageTooLargeText,
+} from '../lib/ipc-line-buffer.js';
 
 // HTTP proxy and TLS settings are configured in main() after parsing --insecure flag
 
 // KEEPALIVE_INTERVAL_MILLIS imported from ../lib/types.js
-
-// Maximum IPC buffer size (10 MB) — destroy socket if exceeded
-const MAX_BUFFER_SIZE = 10 * 1024 * 1024;
 
 // How long a bridge waits before re-reading sessions.json to confirm that another
 // bridge has really taken over its session (see exitIfSuperseded).
@@ -147,6 +156,9 @@ class BridgeProcess {
 
   // Shared payment signature cache — middleware reads/writes, bridge invalidates on payment-required results
   private x402PaymentCache: X402PaymentCache = { signature: null };
+
+  // The session's x402 spending budget; every payment the bridge signs is charged against it
+  private x402Budget: X402Budget | null = null;
 
   // Resource→file sync for resources-subscribe (created once the MCP client connects)
   private resourceSync: ResourceSyncManager | null = null;
@@ -730,6 +742,7 @@ class BridgeProcess {
         wallet,
         getToolByName,
         paymentCache: this.x402PaymentCache,
+        budget: await this.getX402Budget(),
         ...(this.options.x402 && { schemePreference: this.options.x402 }),
       });
     }
@@ -1023,7 +1036,7 @@ class BridgeProcess {
     // path only (see #55).
     const bearerToken = this.proxyBearerToken;
 
-    logger.info(`Starting proxy server on ${host}:${port}`);
+    logger.info(`Starting proxy server on ${formatHostPort(host, port)}`);
     if (bearerToken) {
       logger.debug('Proxy server will require bearer token authentication');
     }
@@ -1312,13 +1325,6 @@ class BridgeProcess {
     socket.on('data', (data) => {
       buffer.append(data);
 
-      if (buffer.length > MAX_BUFFER_SIZE) {
-        logger.error(`IPC buffer exceeded ${MAX_BUFFER_SIZE} bytes, destroying socket`);
-        socket.destroy();
-        this.connections.delete(socket);
-        return;
-      }
-
       // Process complete JSON messages (newline-delimited)
       for (const line of buffer.drainLines()) {
         if (line.trim()) {
@@ -1326,6 +1332,13 @@ class BridgeProcess {
             logger.error('Error handling message:', error);
           });
         }
+      }
+
+      // Memory backstop: the CLI refuses to send a frame this large
+      if (buffer.overflowed) {
+        logger.error(`IPC message exceeded ${MAX_IPC_MESSAGE_CHARS} chars, destroying socket`);
+        socket.destroy();
+        this.connections.delete(socket);
       }
     });
 
@@ -1406,6 +1419,42 @@ class BridgeProcess {
   }
 
   /**
+   * The session's x402 budget, restored from `sessions.json` on first use: the limit set at
+   * connect time and what earlier bridges of this session already authorized, so a restart
+   * does not hand the server a fresh allowance.
+   */
+  private async getX402Budget(): Promise<X402Budget> {
+    if (this.x402Budget) {
+      return this.x402Budget;
+    }
+    const { X402Budget, DEFAULT_X402_BUDGET_USD, usdToAtomic } =
+      await import('../lib/x402/budget.js');
+    const sessionName = this.options.sessionName;
+    const session = await getSession(sessionName);
+
+    const storedLimit = session?.x402BudgetUsd;
+    const limitUsd =
+      typeof storedLimit === 'number' && Number.isFinite(storedLimit) && storedLimit > 0
+        ? storedLimit
+        : DEFAULT_X402_BUDGET_USD;
+    const storedAuthorized = session?.x402AuthorizedAtomic;
+    const authorizedAtomic =
+      typeof storedAuthorized === 'string' && /^\d{1,78}$/.test(storedAuthorized)
+        ? BigInt(storedAuthorized)
+        : 0n;
+
+    this.x402Budget = new X402Budget({
+      sessionName,
+      limitAtomic: usdToAtomic(limitUsd),
+      authorizedAtomic,
+      persist: async (total) => {
+        await updateSession(sessionName, { x402AuthorizedAtomic: total.toString() });
+      },
+    });
+    return this.x402Budget;
+  }
+
+  /**
    * Handle a tool result that contains x402 payment-required data.
    * Signs a fresh payment, caches it, and retries the tool call once.
    *
@@ -1423,6 +1472,7 @@ class BridgeProcess {
       extractPaymentRequiredFromResult,
       extractAcceptFromPaymentRequired,
       recordPaymentRequiredTool,
+      signSessionPayment,
     } = await import('../lib/x402/fetch-middleware.js');
     const paymentRequired = extractPaymentRequiredFromResult(toolResult);
     if (!paymentRequired) return { handled: false };
@@ -1442,8 +1492,7 @@ class BridgeProcess {
     // Invalidate cache and sign fresh
     this.x402PaymentCache.signature = null;
     try {
-      const { signPayment } = await import('../lib/x402/signer.js');
-      const signed = await signPayment({
+      const signed = await signSessionPayment(await this.getX402Budget(), {
         wallet: this.x402Wallet,
         accept: parsed.accept,
         resource: parsed.resource,
@@ -1453,6 +1502,11 @@ class BridgeProcess {
         `Fresh payment signed for retry: $${signed.amountUsd.toFixed(6)} to ${signed.to} on ${signed.networkLabel}`
       );
     } catch (signError) {
+      // Out of budget: tell the caller, instead of handing back the server's payment request
+      const { X402BudgetError } = await import('../lib/x402/budget.js');
+      if (signError instanceof X402BudgetError) {
+        throw signError;
+      }
       logger.warn('Failed to sign fresh payment for 402 retry:', signError);
       return { handled: false };
     }
@@ -1962,7 +2016,27 @@ class BridgeProcess {
    * Send a response message to the CLI
    */
   private sendResponse(socket: Socket, message: IpcMessage): void {
-    const data = JSON.stringify(message) + '\n';
+    let data = JSON.stringify(message) + '\n';
+    if (data.length > MAX_IPC_MESSAGE_CHARS) {
+      // The CLI drops a connection that sends a frame this large and would then
+      // treat the bridge as crashed. Answer with an ordinary error instead: the
+      // bridge and the server session are fine, only this result is too big.
+      logger.error(`IPC ${message.type} of ${data.length} chars exceeds the limit, not sent`);
+      if (message.type !== 'response' || !message.id) {
+        return;
+      }
+      const tooLarge: IpcMessage = {
+        type: 'response',
+        id: message.id,
+        error: {
+          code: 2,
+          message:
+            ipcMessageTooLargeText('Server response', data.length) +
+            '; request less data (a narrower query or a smaller page)',
+        },
+      };
+      data = JSON.stringify(tooLarge) + '\n';
+    }
     socket.write(data);
   }
 
@@ -2108,7 +2182,7 @@ async function main(): Promise<void> {
 
   if (args.length < 2) {
     console.error(
-      'Usage: node dist/bridge/index.js <sessionName> <transportConfigJson> [--verbose] [--profile <name>] [--proxy-host <host>] [--proxy-port <port>] [--mcp-session-id <id>] [--protocol-version <version>] [--x402 <auto|upto|exact>] [--insecure]'
+      'Usage: node dist/bridge/index.js <sessionName> <transportConfigJson> [--verbose] [--profile <name>] [--proxy-host <host>] [--proxy-port <port>] [--mcp-session-id=<id>] [--protocol-version <version>] [--x402 <auto|upto|exact>] [--insecure]'
     );
     process.exit(1);
   }
@@ -2138,9 +2212,10 @@ async function main(): Promise<void> {
 
   // Parse --mcp-session-id argument (for session resumption)
   let mcpSessionId: string | undefined;
-  const mcpSessionIdIndex = args.indexOf('--mcp-session-id');
-  if (mcpSessionIdIndex !== -1 && args[mcpSessionIdIndex + 1]) {
-    mcpSessionId = args[mcpSessionIdIndex + 1];
+  // Server-chosen value: one `--mcp-session-id=<id>` token, see MCP_SESSION_ID_ARG_PREFIX
+  const mcpSessionIdArg = args.find((arg) => arg.startsWith(MCP_SESSION_ID_ARG_PREFIX));
+  if (mcpSessionIdArg && mcpSessionIdArg.length > MCP_SESSION_ID_ARG_PREFIX.length) {
+    mcpSessionId = mcpSessionIdArg.slice(MCP_SESSION_ID_ARG_PREFIX.length);
   }
 
   // Parse --protocol-version argument (protocol version negotiated by the resumed session)

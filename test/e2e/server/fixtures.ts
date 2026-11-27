@@ -586,6 +586,14 @@ export function readTestResource(
     };
   }
 
+  // Unlisted: a text resource of the requested size, for response-size limits
+  const large = /^test:\/\/large\/(\d+)mb$/.exec(uri);
+  if (large) {
+    return {
+      contents: [{ uri, mimeType: 'text/plain', text: 'x'.repeat(Number(large[1]) * 1024 * 1024) }],
+    };
+  }
+
   if (uri === 'test://static/binary') {
     return {
       contents: [

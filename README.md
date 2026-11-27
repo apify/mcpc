@@ -8,29 +8,30 @@
 [![License](https://img.shields.io/npm/l/@apify/mcpc.svg)](https://github.com/apify/mcpc/blob/main/LICENSE)
 
 `mcpc` is a command-line client for the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)
-that maps every MCP operation to an intuitive shell command.
+that maps MCP operations to intuitive shell commands.
 
-Use it to manually inspect and debug MCP servers, to script repeatable MCP workflows in plain shell, or to
-give AI agents the full MCP protocol through a single `Bash()` tool call, so they can interact with any MCP
-server and its latest capabilities using the most universal programming interface there is: the UNIX shell.
+Use it to inspect and debug MCP servers and to script repeatable MCP workflows in plain shell.
+`mcpc` gives AI agents access to most capabilities of the MCP protocol through a single `Bash()` tool call,
+so they can interact with any MCP server and its latest capabilities using the most
+universal programming interface there is: the UNIX shell.
 
 **Key features:**
 
-- 🔧 [**Full MCP support**](#mcp-support) - Tools, prompts, resources, async tasks, skills, notifications, and logging over stdio and Streamable HTTP.
+- 🔧 [**Full MCP support**](#mcp-support) - Tools, Resources, Prompts, Tasks, Skills, Completions, Notifications, over both stdio and Streamable HTTP.
 - 🔄 **Persistent sessions** - Keep connections to multiple servers alive in parallel, whether the server protocol is stateful or stateless.
 - 🗺️ **Progressive tool discovery** - Find relevant MCP tools on the fly to save tokens and increase accuracy.
 - 🔌 **Code mode** - JSON output composes with `jq`, `xargs`, and shell pipelines for MCP workflows as shell scripts.
-- 🔒 **Secure** - Full OAuth 2.1 support with CIMD and DCR, uses OS keychain for credentials storage.
-- 🤖 **AI sandboxing** - Proxy MCP server connections to protect credentials from AI-generated code.
+- 🔒 **Secure** - Full OAuth 2.1 support with CIMD, DCR, client credentials, and enterprise-managed auth, uses OS keychain for credentials storage.
+- 🤖 **AI sandboxing** - Proxy MCP server connections to protect credentials from untrusted code.
 - 🪶 **Lightweight** - Minimal dependencies, works on Mac/Win/Linux, doesn't use LLMs on its own.
 - 💸 **Agentic payments** - Experimental support for the [x402](https://www.x402.org/) protocol on [Base](https://www.base.org/).
 
-`mcpc` is the most [MCP specification](https://modelcontextprotocol.io/specification/latest)-compliant CLI client available:
-the only one that covers tools, resources, prompts, async tasks, and skills, plus the OAuth client-credentials and
-enterprise-managed authorization extensions, on the latest protocol version. Here's how it compares to other MCP CLI
-clients (see [Related work](#related-work) for the full table, legend, and notes):
+`mcpc` is the most [MCP specification](https://modelcontextprotocol.io/specification/latest)-compliant CLI client available.
+Here's how it compares to other MCP CLI clients (see [Related work](#related-work) for the full table, legend, and notes):
 
 [![Comparison of MCP CLI clients](https://raw.githubusercontent.com/apify/mcpc/main/docs/images/related-work.svg)](#related-work)
+
+**Demo:**
 
 ![mcpc screenshot](https://raw.githubusercontent.com/apify/mcpc/main/docs/images/mcpc-demo.gif?v=3)
 
@@ -62,9 +63,9 @@ clients (see [Related work](#related-work) for the full table, legend, and notes
 
 Many AI agents misuse MCP. They treat tools as prompt-time function calls, repeatedly injecting
 tool definitions and results into the context. Tokens get wasted, context rots, the
-agent gets slower and less reliable — hence the popular conclusion: _"MCP sucks, CLIs are better"_.
+agent gets slower and less reliable, leading to the popular conclusion: _"MCP sucks, CLIs are better"_.
 
-`mcpc` challenges that narrative. It maps every MCP operation to an intuitive CLI command that
+`mcpc` challenges that narrative. It maps (almost) every MCP operation to an intuitive CLI command that
 agents pick up from `--help` alone. Any agent with shell access gets full MCP support without
 wiring up dozens of MCP functions. Just one `Bash()` tool, and `mcpc` handles the rest:
 
@@ -79,8 +80,8 @@ wiring up dozens of MCP functions. Just one `Bash()` tool, and `mcpc` handles th
 ```
 
 CLI is the perfect _local_ interface between agents and MCP, while MCP remains the
-standard _remote_ interface for server discovery, authentication, payments, and access control.
-The two aren't exclusive – they're complementary.
+standard _remote_ interface for server discovery, authentication, and access control.
+The two aren't exclusive, they're complementary.
 
 As a bonus, the same `mcpc` configuration, OAuth profiles, and live sessions can be shared across
 many AI agents on the same machine. Authenticate once, reuse everywhere.
@@ -91,6 +92,12 @@ With [Homebrew](https://brew.sh) (macOS and Linux), which brings its own Node.js
 
 ```bash
 brew install mcpc
+```
+
+With [Nix](https://search.nixos.org/packages?channel=unstable&query=mcpc&show=mcpc) (from nixpkgs unstable):
+
+```bash
+nix profile install nixpkgs#mcpc
 ```
 
 Otherwise install the latest [Node.js](https://nodejs.org/en/download) or [Bun](https://bun.sh) first, then:
@@ -403,6 +410,10 @@ mcpc @apify close      # or: mcpc close @apify
 # ...now the session name "@apify" is forgotten and available for future use
 ```
 
+A session name stays bound to the server it was created for. Running `connect` again with the
+same name and server revives the session if its bridge is down, using the options of that
+command; with a different server it is refused, so close the session first or pick another name.
+
 ### Session lifecycle
 
 Session metadata is saved in `~/.mcpc/sessions.json`, [authentication tokens](#authentication)
@@ -635,7 +646,7 @@ mcpc connect mcp.apify.com @open-relay --proxy 8080
 
 # Now any MCP client can connect to proxy like to a regular MCP server
 # The client has NO access to the original OAuth tokens or HTTP headers
-# Note: localhost/127.0.0.1 URLs default to http:// (no scheme needed)
+# Note: localhost/127.0.0.1/[::1] URLs default to http:// (no scheme needed)
 mcpc connect localhost:8080 @sandboxed
 mcpc @sandboxed tools-call search-actors keywords:="web scraper"
 
@@ -670,6 +681,9 @@ mcpc connect mcp.apify.com @relay --proxy 0.0.0.0:8080
 
 # Bind to specific interface
 mcpc connect mcp.apify.com @relay --proxy 192.168.1.100:8080
+
+# IPv6 loopback (brackets around the address)
+mcpc connect mcp.apify.com @relay --proxy '[::1]:8080'
 ```
 
 When listing sessions, proxy info is displayed prominently:
@@ -914,8 +928,33 @@ mcpc @paid tools-call expensive-tool query:="hello"
 mcpc @paid restart
 ```
 
-When `--x402` is active, a fetch middleware wraps all HTTP requests to the MCP server.
-If any request returns HTTP 402, the middleware transparently signs and retries. Your scheme preference is persisted in `sessions.json` and reused on every reconnect or restart.
+When `--x402` is active, a tool call that the server answers with a payment request (HTTP 402,
+or a payment-required tool result) is signed for and retried. Your scheme preference is persisted
+in `sessions.json` and reused on every restart.
+
+### Spending limits
+
+The server names the amount of every payment, so `mcpc` bounds what a session can pay:
+
+- **A budget per session.** A session pays at most its budget in total: `$10` by default, or
+  whatever you pass as `--x402-budget <usd>`. Every amount the session authorizes counts in
+  full, including an `upto` cap the server may only partly use, so real spending is usually
+  lower. A payment that does not fit is refused with an error. `mcpc` shows how much each
+  session has used; to raise a budget, close the session and connect again.
+- **Tool calls only.** `mcpc` never pays for the requests it makes on its own (the handshake,
+  `tools/list`, keepalive pings), only for a tool you or your agent called.
+- **USDC only.** A request for payment in any other token is not signed.
+- **A day at most.** An authorization is valid for as long as the server asks, up to 24 hours.
+- **No auto-discovery.** `--x402` is refused for a bare `mcpc connect`, which would enable
+  payments to every server found in config files.
+
+```bash
+# Allow this session to pay up to $2 in total
+mcpc connect mcp.example.com @paid --x402 --x402-budget 2
+
+mcpc
+#   @paid → https://mcp.example.com [x402: $0.30 of $2.00 used] ● live
+```
 
 ### Supported networks
 
@@ -973,8 +1012,8 @@ a first-class command with consistent human-readable and `--json` output.
 
 Where `mcpc` stands on each part of the MCP specification:
 
-| **Feature**                                          | **Status**                                                       |
-|:-----------------------------------------------------|:-----------------------------------------------------------------|
+| **Feature**                                          | **Status**                                                        |
+|:-----------------------------------------------------|:------------------------------------------------------------------|
 | 📜 **Protocol version**                              | ✅ 2026-07-28 (auto-negotiated), falls back to 2025-11-25 or older |
 | 🔌 **Transport**                                     | ✅ stdio and Streamable HTTP                                      |
 | 🔑 [**Authorization**](#authentication)              | ✅ Bearer + OAuth 2.1 (client credentials, DCR, CIMD, auth code)  |
@@ -986,9 +1025,9 @@ Where `mcpc` stands on each part of the MCP specification:
 | 📦 [**Resources**](#resources)                       | ✅ Supported (incl. subscriptions and list changed notifications) |
 | 🧠 [**Skills**](#skills)                             | ✅ Supported (skills extension, 2026-07-28 servers)              |
 | 📝 [**Logging**](#server-logs)                       | ⚠️ Deprecated (removed by MCP 2026-07-28)                         |
-| 🔔 [**Notifications**](#list-change-notifications)   | ✅ Supported                                                      |
-| 📄 [**Pagination**](#pagination)                     | ✅ Supported                                                      |
-| 🏓 [**Ping**](#ping)                                 | ✅ Supported                                                      |
+| 🔔 [**Notifications**](#list-change-notifications)   | ✅ Supported                                                       |
+| 📄 [**Pagination**](#pagination)                     | ✅ Supported                                                       |
+| 🏓 [**Ping**](#ping)                                 | ✅ Supported                                                       |
 | 🔍 [**Server discovery**](#server-discovery)          | ✅ Supported (`server/discover`, 2026-07-28 servers)               |
 | 📁 **Roots**                                         | ❌ Not planned (deprecated by MCP)                                |
 | ❓ **Elicitation**                                   | 🚧 Planned                                                       |
@@ -1444,6 +1483,11 @@ For **stdio servers:**
 > `~/.mcpc/logs/bridge-<session>.log` with a `[server stderr]` prefix, and the
 > tail is appended to the error message if `mcpc connect` fails, so you can see
 > why a stdio server failed to start.
+
+> **Note:** A stdio server runs in the directory `mcpc connect` was run from, and
+> is restarted there for the life of the session, whichever directory later `mcpc`
+> commands run in. Relative paths in `command` and `args` resolve against that
+> directory. If the directory is removed, close the session and connect again.
 
 **Environment variable substitution:**
 

@@ -11,11 +11,12 @@
  * created (i.e. when credentials actually get stored outside the keychain).
  */
 
-import { readFile, writeFile } from 'fs/promises';
+import { readFile, unlink, writeFile } from 'fs/promises';
+import { randomBytes } from 'crypto';
 import { join } from 'path';
 import chalk from 'chalk';
 import { createLogger, getJsonMode } from '../logger.js';
-import { getServerHost, getMcpcHome, fileExists } from '../utils.js';
+import { getServerHost, getMcpcHome, fileExists, atomicRename } from '../utils.js';
 import { withFileLock } from '../file-lock.js';
 import { ClientError } from '../errors.js';
 import type { IdJagCredentials } from '../types.js';
@@ -56,8 +57,24 @@ async function fileSet(account: string, value: string): Promise<void> {
   await withFileLock(credentialsPath(), async () => {
     const raw = await readFile(credentialsPath(), 'utf8').catch(() => '{}');
     const data = { ...(JSON.parse(raw) as Record<string, string>), [account]: value };
-    await writeFile(credentialsPath(), JSON.stringify(data), { mode: 0o600 });
+    await writeCredentialsFile(data);
   });
+}
+
+/**
+ * Replace the fallback store atomically (temp file + rename). It holds every
+ * credential at once, so a crash halfway through an in-place write would log the
+ * user out of everything.
+ */
+async function writeCredentialsFile(data: Record<string, string>): Promise<void> {
+  const tempFile = `${credentialsPath()}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`;
+  try {
+    await writeFile(tempFile, JSON.stringify(data), { mode: 0o600, flag: 'wx' });
+    await atomicRename(tempFile, credentialsPath());
+  } catch (error) {
+    await unlink(tempFile).catch(() => {});
+    throw error;
+  }
 }
 
 async function fileDelete(account: string): Promise<boolean> {
@@ -66,7 +83,7 @@ async function fileDelete(account: string): Promise<boolean> {
     const data = JSON.parse(raw) as Record<string, string>;
     if (!(account in data)) return false;
     delete data[account];
-    await writeFile(credentialsPath(), JSON.stringify(data), { mode: 0o600 });
+    await writeCredentialsFile(data);
     return true;
   });
 }
@@ -82,6 +99,12 @@ type EntryLike = {
   deletePassword(): boolean;
 };
 type EntryConstructor = new (service: string, account: string) => EntryLike;
+type LinuxStore = 'secret-service' | 'keyutils';
+type NativeEntryConstructor = new (
+  service: string,
+  account: string,
+  options?: { linux?: { store?: LinuxStore } }
+) => EntryLike;
 
 let keychainAvailable: boolean | null = null; // null = untested
 
@@ -89,12 +112,30 @@ let keychainAvailable: boolean | null = null; // null = untested
 // module instance. Using a promise (not top-level await) avoids forcing every
 // consumer (including test runners) into top-level-await territory.
 // Rejects if the native addon cannot be loaded.
+let _nativeEntryPromise: Promise<NativeEntryConstructor> | null = null;
 let _entryPromise: Promise<EntryConstructor> | null = null;
 
+function getNativeEntry(): Promise<NativeEntryConstructor> {
+  _nativeEntryPromise ??= import('@napi-rs/keyring').then(
+    (m) => m.Entry as unknown as NativeEntryConstructor
+  );
+  return _nativeEntryPromise;
+}
+
+/**
+ * The entry class every credential goes through. On Linux it requires a Secret Service
+ * (GNOME Keyring, KWallet, ...): left to itself the binding falls back to the kernel
+ * keyring when there is none, and that store is in memory only, so everything in it is gone
+ * after a reboot. Requiring the Secret Service makes the constructor throw on such a host,
+ * the probe then fails, and credentials go to the 0600 file. Ignored on other platforms.
+ */
 function getEntry(): Promise<EntryConstructor> {
-  if (_entryPromise === null) {
-    _entryPromise = import('@napi-rs/keyring').then((m) => m.Entry as unknown as EntryConstructor);
-  }
+  _entryPromise ??= getNativeEntry().then((NativeEntry) => {
+    function SecretServiceEntry(service: string, account: string): EntryLike {
+      return new NativeEntry(service, account, { linux: { store: 'secret-service' } });
+    }
+    return SecretServiceEntry as unknown as EntryConstructor;
+  });
   return _entryPromise;
 }
 
@@ -603,6 +644,37 @@ export async function readKeychainX402Wallet<T>(): Promise<T | undefined> {
     logger.error(`Failed to parse x402 wallet: ${(error as Error).message}`);
     return undefined;
   }
+}
+
+/**
+ * Read (or, with `remove`, delete) an x402 wallet left in the Linux kernel keyring.
+ *
+ * mcpc 0.8.0 stored the wallet there on hosts without a Secret Service (see `getEntry`).
+ * Its private key has no other copy, so the wallet store looks here once and moves it to
+ * wallets.json. A process without a session keyring (cron, many agent harnesses) gets a
+ * failure or "absent" from its first keyring call or two, hence the repeated attempts.
+ */
+export async function recoverKernelKeyringX402Wallet<T>(
+  options: { remove?: boolean } = {}
+): Promise<T | undefined> {
+  if (process.platform !== 'linux') return undefined;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const NativeEntry = await getNativeEntry();
+      const entry = new NativeEntry(SERVICE_NAME, x402WalletAccount(), {
+        linux: { store: 'keyutils' },
+      });
+      if (options.remove) {
+        if (entry.deletePassword()) return undefined;
+      } else {
+        const raw = entry.getPassword();
+        if (raw) return JSON.parse(raw) as T;
+      }
+    } catch {
+      // Ask again
+    }
+  }
+  return undefined;
 }
 
 /** Delete the x402 wallet data. */

@@ -44,6 +44,10 @@ export interface ReadLogsOptions {
 const LINE_RE =
   /^\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)\] \[([A-Z]+)\](?: \[([^\]]+)\])?\s?(.*)$/;
 
+// Matches only the supported ISO calendar-date shapes; Date.parse validates their values.
+const ISO_DATE_RE =
+  /^\d{4}-\d{2}(?:-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?)?$/i;
+
 /**
  * A line starts a new log entry when it begins with an `[ISO-timestamp]`.
  * Lines that don't (e.g. stack-trace frames) are continuations of the entry above.
@@ -246,6 +250,8 @@ export function resolveSince(input: string): Date | null {
   if (millis !== null) {
     return new Date(Date.now() - millis);
   }
+  // Date.parse also accepts non-ISO values, e.g. "5" as May 2001.
+  if (!ISO_DATE_RE.test(input)) return null;
   const t = Date.parse(input);
   if (!isNaN(t)) {
     return new Date(t);
