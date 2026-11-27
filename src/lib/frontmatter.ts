@@ -35,6 +35,7 @@ interface Line {
   indent: number;
   text: string;
   number: number;
+  error: string | undefined;
 }
 
 const FRONTMATTER_FENCE = /^---\s*$/;
@@ -82,7 +83,7 @@ export function parseSkillDocument(text: string): ParsedFrontmatter {
 export function parseYamlMapping(rawLines: string[]): Record<string, unknown> {
   const lines = toLines(rawLines);
   if (lines.length === 0) return {};
-  const { value, next } = parseBlock(lines, 0, lines[0]!.indent, 0);
+  const { value, next } = parseBlock(lines, rawLines, 0, lines[0]!.indent, 0);
   if (next < lines.length) {
     // A line indented less than the first field ends the block early; YAML calls
     // that a bad indentation, and silently dropping the rest would let a document
@@ -100,24 +101,26 @@ export function parseYamlMapping(rawLines: string[]): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-/** Drop blank and comment-only lines, and reject syntax the parser will not guess at. */
+/** Drop blank and comment-only lines, and record syntax the parser will not guess at. */
 function toLines(rawLines: string[]): Line[] {
   const lines: Line[] = [];
   rawLines.forEach((raw, index) => {
     const number = index + 1;
-    if (raw.includes('\t') && raw.trim().length > 0 && /^\s*\t/.test(raw)) {
-      throw new FrontmatterParseError(`line ${number}: YAML does not allow tabs for indentation`);
-    }
     const trimmed = raw.trim();
     if (trimmed.length === 0 || trimmed.startsWith('#')) return;
-    if (FRONTMATTER_FENCE.test(trimmed) || DOCUMENT_END.test(trimmed)) {
-      throw new FrontmatterParseError(
-        `line ${number}: multiple YAML documents are not supported in frontmatter`
-      );
+    let error: string | undefined;
+    if (raw.includes('\t') && /^\s*\t/.test(raw)) {
+      error = `line ${number}: YAML does not allow tabs for indentation`;
+    } else if (FRONTMATTER_FENCE.test(trimmed) || DOCUMENT_END.test(trimmed)) {
+      error = `line ${number}: multiple YAML documents are not supported in frontmatter`;
     }
-    lines.push({ indent: raw.length - raw.trimStart().length, text: trimmed, number });
+    lines.push({ indent: raw.length - raw.trimStart().length, text: trimmed, number, error });
   });
   return lines;
+}
+
+function assertValidLine(line: Line): void {
+  if (line.error) throw new FrontmatterParseError(line.error);
 }
 
 /**
@@ -126,6 +129,7 @@ function toLines(rawLines: string[]): Line[] {
  */
 function parseBlock(
   lines: Line[],
+  rawLines: string[],
   start: number,
   indent: number,
   depth: number
@@ -133,8 +137,8 @@ function parseBlock(
   const first = lines[start];
   if (!first) return { value: null, next: start };
   return first.text.startsWith('- ') || first.text === '-'
-    ? parseSequence(lines, start, indent, depth)
-    : parseMapping(lines, start, indent, depth);
+    ? parseSequence(lines, rawLines, start, indent, depth)
+    : parseMapping(lines, rawLines, start, indent, depth);
 }
 
 function assertDepth(depth: number, lineNumber: number): void {
@@ -147,6 +151,7 @@ function assertDepth(depth: number, lineNumber: number): void {
 
 function parseMapping(
   lines: Line[],
+  rawLines: string[],
   start: number,
   indent: number,
   depth: number
@@ -162,6 +167,7 @@ function parseMapping(
 
   while (index < lines.length) {
     const line = lines[index]!;
+    assertValidLine(line);
     if (line.indent < indent) break;
     if (line.indent > indent) {
       throw new FrontmatterParseError(`line ${line.number}: unexpected indentation`);
@@ -174,7 +180,14 @@ function parseMapping(
 
     const blockScalar = matchBlockScalar(rest);
     if (blockScalar) {
-      const { value, next } = readBlockScalar(lines, index + 1, indent, blockScalar);
+      const { value, next } = readBlockScalar(
+        lines,
+        rawLines,
+        index + 1,
+        line.number,
+        indent,
+        blockScalar
+      );
       setOwnProperty(result, key, value);
       index = next;
       continue;
@@ -190,7 +203,7 @@ function parseMapping(
     // dashes sit at the key's own indentation, which YAML also allows.
     const child = lines[index + 1];
     if (child && child.indent > indent) {
-      const { value, next } = parseBlock(lines, index + 1, child.indent, depth + 1);
+      const { value, next } = parseBlock(lines, rawLines, index + 1, child.indent, depth + 1);
       setOwnProperty(result, key, value);
       index = next;
     } else if (
@@ -198,7 +211,7 @@ function parseMapping(
       child.indent === indent &&
       (child.text.startsWith('- ') || child.text === '-')
     ) {
-      const { value, next } = parseSequence(lines, index + 1, indent, depth + 1);
+      const { value, next } = parseSequence(lines, rawLines, index + 1, indent, depth + 1);
       setOwnProperty(result, key, value);
       index = next;
     } else {
@@ -212,6 +225,7 @@ function parseMapping(
 
 function parseSequence(
   lines: Line[],
+  rawLines: string[],
   start: number,
   indent: number,
   depth: number
@@ -223,6 +237,7 @@ function parseSequence(
 
   while (index < lines.length) {
     const line = lines[index]!;
+    assertValidLine(line);
     if (line.indent < indent) break;
     if (line.indent > indent) {
       throw new FrontmatterParseError(`line ${line.number}: unexpected indentation in list`);
@@ -231,10 +246,25 @@ function parseSequence(
 
     const rest = line.text === '-' ? '' : line.text.slice(2).trim();
 
+    const blockScalar = matchBlockScalar(stripComment(rest).trim());
+    if (blockScalar) {
+      const { value, next } = readBlockScalar(
+        lines,
+        rawLines,
+        index + 1,
+        line.number,
+        indent,
+        blockScalar
+      );
+      result.push(value);
+      index = next;
+      continue;
+    }
+
     if (rest.length === 0) {
       const child = lines[index + 1];
       if (child && child.indent > indent) {
-        const { value, next } = parseBlock(lines, index + 1, child.indent, depth + 1);
+        const { value, next } = parseBlock(lines, rawLines, index + 1, child.indent, depth + 1);
         result.push(value);
         index = next;
       } else {
@@ -246,14 +276,16 @@ function parseSequence(
 
     // `- key: value` starts a mapping whose keys line up after the dash.
     if (isMappingEntry(rest)) {
-      const dashOffset = line.text.indexOf('- ') + 2;
-      const nested: Line[] = [{ indent: indent + dashOffset, text: rest, number: line.number }];
+      const dashOffset = line.text.length - line.text.slice(1).trimStart().length;
+      const nested: Line[] = [
+        { indent: indent + dashOffset, text: rest, number: line.number, error: undefined },
+      ];
       let scan = index + 1;
       while (scan < lines.length && lines[scan]!.indent > indent) {
         nested.push(lines[scan]!);
         scan += 1;
       }
-      const { value, next } = parseMapping(nested, 0, nested[0]!.indent, depth + 1);
+      const { value, next } = parseMapping(nested, rawLines, 0, nested[0]!.indent, depth + 1);
       if (next < nested.length) {
         // A later field of this item sits left of its first field: bad indentation,
         // not a line to drop.
@@ -332,29 +364,114 @@ function isSpace(char: string): boolean {
   return char === ' ' || char === '\t';
 }
 
-/** Block scalar header: `|`, `>`, with optional chomping/indentation indicators. */
-function matchBlockScalar(rest: string): { fold: boolean; chomp: string } | undefined {
-  const match = /^([|>])([+-]?)\s*$/.exec(rest);
-  if (!match) return undefined;
-  return { fold: match[1] === '>', chomp: match[2] ?? '' };
+interface BlockScalarHeader {
+  fold: boolean;
+  chomp: string;
+  indent: number | undefined;
 }
 
-/** Read the more-indented lines belonging to a `|` or `>` block scalar. */
+/** Block scalar header: `|`, `>`, with optional chomping/indentation indicators. */
+function matchBlockScalar(rest: string): BlockScalarHeader | undefined {
+  const match = /^([|>])([+-]?[1-9]?|[1-9][+-]?)\s*$/.exec(rest);
+  if (!match) return undefined;
+  const indicators = match[2] ?? '';
+  const indentationIndicator = /[1-9]/.exec(indicators);
+  return {
+    fold: match[1] === '>',
+    chomp: indicators.includes('+') ? '+' : indicators.includes('-') ? '-' : '',
+    indent: indentationIndicator ? Number(indentationIndicator[0]) : undefined,
+  };
+}
+
+/** Read the raw, more-indented lines belonging to a `|` or `>` block scalar. */
 function readBlockScalar(
   lines: Line[],
+  rawLines: string[],
   start: number,
+  headerLineNumber: number,
   indent: number,
-  header: { fold: boolean; chomp: string }
+  header: BlockScalarHeader
 ): { value: string; next: number } {
-  const collected: string[] = [];
-  let index = start;
-  while (index < lines.length && lines[index]!.indent > indent) {
-    collected.push(lines[index]!.text);
-    index += 1;
+  const rawBlock: string[] = [];
+  let contentIndent = header.indent === undefined ? undefined : indent + header.indent;
+  let rawIndex = headerLineNumber;
+  let lastConsumedLineNumber = headerLineNumber;
+
+  while (rawIndex < rawLines.length) {
+    const raw = rawLines[rawIndex];
+    if (raw === undefined) break;
+    const blank = /^ *$/.test(raw);
+    const lineIndent = /^ */.exec(raw)?.[0].length ?? 0;
+
+    if (!blank) {
+      if (lineIndent <= indent || (contentIndent !== undefined && lineIndent < contentIndent)) {
+        break;
+      }
+      contentIndent ??= lineIndent;
+    }
+
+    rawBlock.push(raw);
+    rawIndex += 1;
+    lastConsumedLineNumber = rawIndex;
   }
-  const joined = header.fold ? collected.join(' ') : collected.join('\n');
-  const value = header.chomp === '-' || joined.length === 0 ? joined : `${joined}\n`;
-  return { value, next: index };
+
+  if (header.indent === undefined && contentIndent !== undefined) {
+    for (let i = 0; i < rawBlock.length; i += 1) {
+      const raw = rawBlock[i];
+      if (raw === undefined || !/^ *$/.test(raw)) break;
+      if (raw.length > contentIndent) {
+        throw new FrontmatterParseError(
+          `line ${headerLineNumber + i + 1}: empty line is indented more than the block scalar's content`
+        );
+      }
+    }
+  }
+
+  const collected =
+    contentIndent === undefined
+      ? rawBlock.map(() => '')
+      : rawBlock.map((raw) => {
+          if (/^ *$/.test(raw) && raw.length <= contentIndent) return '';
+          return raw.slice(contentIndent);
+        });
+  const joined = header.fold ? foldBlockLines(collected) : blockLinesLiteral(collected);
+  const hasContent = collected.some((line) => line.length > 0);
+  let value = joined;
+  if (header.chomp !== '+') {
+    while (value.endsWith('\n')) value = value.slice(0, -1);
+    if (header.chomp !== '-' && hasContent) value += '\n';
+  }
+
+  let next = start;
+  while (next < lines.length) {
+    const candidate = lines[next];
+    if (!candidate || candidate.number > lastConsumedLineNumber) break;
+    next += 1;
+  }
+  return { value, next };
+}
+
+function blockLinesLiteral(lines: string[]): string {
+  return lines.length === 0 ? '' : `${lines.join('\n')}\n`;
+}
+
+function foldBlockLines(lines: string[]): string {
+  const [first, ...rest] = lines.flatMap((line, index) =>
+    line.length > 0 ? [{ index, line }] : []
+  );
+  if (!first) return '\n'.repeat(lines.length);
+
+  let previous = first;
+  let value = '\n'.repeat(first.index) + first.line;
+  for (const current of rest) {
+    const blankLines = current.index - previous.index - 1;
+    const spaced = /^[ \t]/.test(previous.line) || /^[ \t]/.test(current.line);
+    value += blankLines === 0 && !spaced ? ' ' : '\n'.repeat(blankLines + (spaced ? 1 : 0));
+    value += current.line;
+    previous = current;
+  }
+
+  return value + '\n'.repeat(lines.length - previous.index);
 }
 
 /** Strip a trailing `#` comment, which YAML requires to be preceded by whitespace. */

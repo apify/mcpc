@@ -9,7 +9,7 @@ Each version opens with a one-line summary, which also opens its GitHub release.
 
 ## [Unreleased]
 
-A bare `mcpc connect` connects only the config entries it checked, stdio servers always restart in the directory they were connected from, a session name stays bound to its server, x402 sessions get a spending budget, Linux hosts without a keyring keep credentials on disk again, OAuth profiles from 0.6 or earlier need a new login, a server can no longer make mcpc restart a healthy session with one oversized response, `close` and `restart` never kill an unrelated process, and several `connect` and `--proxy` argument fixes.
+A bare `mcpc connect` connects only the config entries it checked, stdio servers always restart in the directory they were connected from, a session name stays bound to its server, x402 sessions get a spending budget, Linux hosts without a keyring keep credentials on disk again, OAuth profiles from 0.6 or earlier need a new login, a server can no longer make mcpc restart a healthy session with one oversized response, `close` and `restart` never kill an unrelated process, several `connect` and `--proxy` argument fixes, and `skills-get` reads YAML block scalars correctly.
 
 ### Security
 
@@ -39,6 +39,7 @@ A bare `mcpc connect` connects only the config entries it checked, stdio servers
 - A server target without a scheme whose user info looks local, like `localhost:x@example.com`, now defaults to `https://` instead of `http://`. (#500)
 - `connect --proxy 8080x` and other ports with extra characters (`1e3`, `80.5`) are now rejected instead of silently binding the leading digits. (#503)
 - `logs --since 5` and other values that are neither a duration nor an ISO 8601 timestamp are now rejected instead of being read as a date in 2001. (#506)
+- `skills-get` no longer rejects a skill whose frontmatter has a `|` or `>` block with blank lines, `#` lines, extra indentation or tabs: block scalars, also as list items and with indentation indicators, now read as YAML defines them. (#508)
 
 ## [0.8.0] - 2026-11-04
 
