@@ -4,6 +4,7 @@
 
 import { ClientError } from '../../../../src/lib/errors.js';
 import {
+  MAX_SERVER_PAYMENT_EXPIRY_SECONDS,
   parsePaymentRequired,
   selectAcceptEntry,
   signPayment,
@@ -384,6 +385,118 @@ describe('signPayment', () => {
     const invalid = { ...VALID_EXACT_ACCEPT, network: 'eip155:99999' };
     await expect(signPayment({ wallet: MOCK_WALLET, accept: invalid })).rejects.toThrow(
       'Unknown network'
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // What the server may not choose: the token, an unbounded validity, a bogus amount
+  // -------------------------------------------------------------------------
+
+  describe('limits on server-chosen terms', () => {
+    // WETH on Base: a real token that is not USDC
+    const OTHER_TOKEN = '0x4200000000000000000000000000000000000006';
+
+    it('exact scheme: refuses a token other than USDC', async () => {
+      const accept = { ...VALID_EXACT_ACCEPT, asset: OTHER_TOKEN };
+
+      await expect(signPayment({ wallet: MOCK_WALLET, accept })).rejects.toThrow(
+        'Unsupported asset'
+      );
+      expect(mockSignTypedData).not.toHaveBeenCalled();
+    });
+
+    it('upto scheme: refuses a token other than USDC before any on-chain approval', async () => {
+      mockReadContract.mockResolvedValue(0n);
+      const accept = { ...VALID_UPTO_ACCEPT, asset: OTHER_TOKEN };
+
+      await expect(signPayment({ wallet: MOCK_WALLET, accept })).rejects.toThrow(
+        'Unsupported asset'
+      );
+      expect(mockSendTransaction).not.toHaveBeenCalled();
+      expect(mockSignTypedData).not.toHaveBeenCalled();
+    });
+
+    it("refuses another network's USDC address", async () => {
+      // Base mainnet USDC named on Base Sepolia
+      const accept = {
+        ...VALID_EXACT_ACCEPT,
+        asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+      };
+
+      await expect(signPayment({ wallet: MOCK_WALLET, accept })).rejects.toThrow(
+        'Unsupported asset'
+      );
+    });
+
+    it('accepts the USDC address in any letter case', async () => {
+      const accept = { ...VALID_EXACT_ACCEPT, asset: VALID_EXACT_ACCEPT.asset.toUpperCase() };
+      accept.asset = `0x${accept.asset.slice(2)}`;
+
+      await expect(signPayment({ wallet: MOCK_WALLET, accept })).resolves.toBeDefined();
+    });
+
+    it('selectAcceptEntry skips an entry in another token', () => {
+      const other = { ...VALID_EXACT_ACCEPT, asset: OTHER_TOKEN };
+
+      expect(selectAcceptEntry([other, VALID_EXACT_ACCEPT], 'exact')).toBe(VALID_EXACT_ACCEPT);
+      expect(selectAcceptEntry([other], 'auto')).toBeUndefined();
+    });
+
+    it('bounds a server-chosen validity to one day', async () => {
+      const accept = { ...VALID_EXACT_ACCEPT, maxTimeoutSeconds: 100 * 365 * 24 * 3600 };
+
+      const result = await signPayment({ wallet: MOCK_WALLET, accept });
+
+      const validForSecs = (result.expiresAt.getTime() - Date.now()) / 1000;
+      expect(validForSecs).toBeGreaterThan(MAX_SERVER_PAYMENT_EXPIRY_SECONDS - 60);
+      expect(validForSecs).toBeLessThanOrEqual(MAX_SERVER_PAYMENT_EXPIRY_SECONDS);
+    });
+
+    it('leaves a validity under the bound as the server asked', async () => {
+      const result = await signPayment({ wallet: MOCK_WALLET, accept: VALID_UPTO_ACCEPT });
+
+      const validForSecs = (result.expiresAt.getTime() - Date.now()) / 1000;
+      expect(validForSecs).toBeGreaterThan(3600 - 60);
+      expect(validForSecs).toBeLessThanOrEqual(3600);
+    });
+
+    it('does not bound an explicit expiry override', async () => {
+      const result = await signPayment({
+        wallet: MOCK_WALLET,
+        accept: VALID_EXACT_ACCEPT,
+        expiryOverrideSecs: 3 * MAX_SERVER_PAYMENT_EXPIRY_SECONDS,
+      });
+
+      const validForSecs = (result.expiresAt.getTime() - Date.now()) / 1000;
+      expect(validForSecs).toBeGreaterThan(2 * MAX_SERVER_PAYMENT_EXPIRY_SECONDS);
+    });
+
+    // A string used to be concatenated to the timestamp, giving a validity of millennia.
+    it.each([
+      ['"999" as a string', '999'],
+      ['zero', 0],
+      ['a negative', -5],
+      ['missing', undefined],
+    ])('falls back to the default validity when maxTimeoutSeconds is %s', async (_label, value) => {
+      const accept = { ...VALID_EXACT_ACCEPT, maxTimeoutSeconds: value as unknown as number };
+
+      const result = await signPayment({ wallet: MOCK_WALLET, accept });
+
+      const validForSecs = (result.expiresAt.getTime() - Date.now()) / 1000;
+      expect(validForSecs).toBeGreaterThan(3600 - 60);
+      expect(validForSecs).toBeLessThanOrEqual(3600);
+    });
+
+    it.each(['-5', '1.5', '1e6', 'abc', '', '0', 1_000_000 as unknown as string])(
+      'refuses the amount %j',
+      async (amount) => {
+        const accept = { ...VALID_EXACT_ACCEPT, amount };
+
+        await expect(signPayment({ wallet: MOCK_WALLET, accept })).rejects.toThrow(
+          'Invalid amount'
+        );
+        expect(mockSignTypedData).not.toHaveBeenCalled();
+      }
     );
   });
 

@@ -312,6 +312,9 @@ When making changes, follow these rules to maintain the security posture:
 - Send sensitive data (headers, tokens) via IPC socket, never via CLI arguments or environment variables
 - Read all keychain values needed to start a bridge in the CLI **before** `spawn()`. After spawn the bridge arms a short IPC-credential timeout; on macOS a Keychain password dialog can block longer than that timeout, so a post-spawn keychain read races the bridge timer and causes ENOENT (#55). The CLI is the only process attached to a TTY and can show the dialog without the user wondering why a background process is asking. Bridge-side keychain access is permitted only on the OAuth token refresh paths (the `oauth-token-manager` callbacks and the id-jag provider callbacks in `src/bridge/index.ts`), where it is needed to persist rotated refresh tokens for long-running sessions
 - Start a stdio session's bridge only with the `cwd` from `resolveSessionCwd()` (or, in `connect`, the current directory that is being recorded) — never let it inherit the directory of the command that happens to trigger a restart
+- A session name is bound to its server (the URL, or the stdio command line): `connectSession` refuses a different target for an existing name, live or not. Never merge a new target into an existing session record — its stored headers, `x402`/`insecure` settings, MCP session id and resource-to-file syncs belong to the old server, and bulk connects take the name from a config entry. On a same-server reconnect, write every connection setting from the command at hand (absent means cleared)
+- x402: the server names the amount, token, payee and validity of every payment, so every payment a session signs goes through `signSessionPayment()` (`src/lib/x402/fetch-middleware.ts`), which charges it against the session budget (`src/lib/x402/budget.ts`, persisted in `sessions.json`) — never call `signPayment()` directly from session code. Pay only for `tools/call`, never for a request mcpc issues on its own (handshake, ping, stream); sign only for USDC on a supported network; bound a server-chosen validity
+- Refresh an OAuth token only at the profile's recorded authorization server (`oauthIssuer`). Never look the token endpoint up through the MCP server at refresh time: it could name its own and collect the refresh token. A profile with no recorded issuer (mcpc 0.6 or earlier) is not refreshed; the user logs in again
 - Validate and sanitize all external input (URLs, session names, profile names) before use
 - Default to HTTPS; only allow HTTP for localhost/127.0.0.1
 - When adding HTTP servers (even localhost-only), validate the Host header against expected values
@@ -449,7 +452,7 @@ Environment variable substitution supported: `${VAR_NAME}`
 - **Node.js:** ≥22.12.0
 - **Bun:** ≥1.0.0 (alternative runtime)
 - **OS support:** macOS, Linux, Windows
-- **Linux keychain:** a Secret Service provider (e.g. GNOME Keyring, KWallet) on the session D-Bus; `@napi-rs/keyring` talks D-Bus directly and does not need `libsecret`. Without one, credentials fall back to `~/.mcpc/credentials.json`
+- **Linux keychain:** a Secret Service provider (e.g. GNOME Keyring, KWallet) on the session D-Bus; `@napi-rs/keyring` talks D-Bus directly and does not need `libsecret`. Without one, credentials fall back to `~/.mcpc/credentials.json`. Keychain entries are opened with the Secret Service required (`getEntry()` in `src/lib/auth/keychain.ts`): left to itself the binding falls back to the kernel keyring, which is in-memory only and loses everything on reboot
 
 ## Authentication Architecture
 

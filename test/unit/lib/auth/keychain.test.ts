@@ -44,8 +44,35 @@ const MAX_UTF16_UNITS = 1280;
 /** Keychain calls the code under test made, so tests can assert it stays cheap. */
 const keychainCalls = { set: 0, get: 0, delete: 0 };
 
+/** The Linux store each entry was opened with (`options.linux.store`). */
+const entryStores: unknown[] = [];
+/** Stand-in for the Linux kernel keyring, reached with `{ linux: { store: 'keyutils' } }` */
+const kernelKeyringStore = new Map<string, string>();
+/** How many of the next kernel-keyring calls fail, as in a process with no session keyring */
+let kernelKeyringFailingCalls = 0;
+
 vi.mock('@napi-rs/keyring', () => ({
-  Entry: vi.fn(function (_service: string, account: string) {
+  Entry: vi.fn(function (
+    _service: string,
+    account: string,
+    options?: { linux?: { store?: string } }
+  ) {
+    entryStores.push(options?.linux?.store);
+    if (options?.linux?.store === 'keyutils') {
+      const failIfFlaky = () => {
+        if (kernelKeyringFailingCalls-- > 0) throw new Error('AccessDenied');
+      };
+      return {
+        getPassword(): string | null {
+          failIfFlaky();
+          return kernelKeyringStore.get(account) ?? null;
+        },
+        deletePassword(): boolean {
+          failIfFlaky();
+          return kernelKeyringStore.delete(account);
+        },
+      };
+    }
     return {
       setPassword(value: string) {
         keychainCalls.set++;
@@ -117,6 +144,9 @@ beforeEach(async () => {
   keychainThrows = false;
   failNextSetWith = null;
   resetKeychainCalls();
+  entryStores.length = 0;
+  kernelKeyringStore.clear();
+  kernelKeyringFailingCalls = 0;
   await rm(credFile(), { force: true });
 });
 
@@ -595,5 +625,54 @@ describe('file fallback when OS keychain unavailable', () => {
     keychainStore.set('session:sess:headers', JSON.stringify({ token: 'keychain-value' }));
 
     expect(await readKeychainSessionHeaders('sess')).toEqual({ token: 'file-value' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests: which store is used on Linux
+// ---------------------------------------------------------------------------
+
+describe('Linux credential store', () => {
+  const realPlatform = process.platform;
+  const setPlatform = (platform: NodeJS.Platform): void => {
+    Object.defineProperty(process, 'platform', { value: platform, configurable: true });
+  };
+  afterEach(() => setPlatform(realPlatform));
+
+  // Without the option the binding falls back to the kernel keyring by itself when there is
+  // no Secret Service, and that store is lost on reboot.
+  it('opens every entry with the Secret Service required', async () => {
+    const keychain = await loadKeychain();
+
+    await keychain.storeKeychainSessionHeaders('sess', { token: 'a' });
+    await keychain.readKeychainSessionHeaders('sess');
+    await keychain.removeKeychainSessionHeaders('sess');
+
+    expect(entryStores.length).toBeGreaterThan(3);
+    expect(new Set(entryStores)).toEqual(new Set(['secret-service']));
+  });
+
+  it('recovers and removes an x402 wallet left in the kernel keyring', async () => {
+    setPlatform('linux');
+    const wallet = { address: '0xabc', privateKey: '0x01' };
+    kernelKeyringStore.set('x402-wallet', JSON.stringify(wallet));
+    // The first call of a process without a session keyring fails
+    kernelKeyringFailingCalls = 1;
+    const keychain = await loadKeychain();
+
+    expect(await keychain.recoverKernelKeyringX402Wallet()).toEqual(wallet);
+    await keychain.recoverKernelKeyringX402Wallet({ remove: true });
+
+    expect(kernelKeyringStore.size).toBe(0);
+    expect(await keychain.recoverKernelKeyringX402Wallet()).toBeUndefined();
+  });
+
+  it('does not look in the kernel keyring on other platforms', async () => {
+    setPlatform('darwin');
+    kernelKeyringStore.set('x402-wallet', JSON.stringify({ address: '0xabc' }));
+    const keychain = await loadKeychain();
+
+    expect(await keychain.recoverKernelKeyringX402Wallet()).toBeUndefined();
+    expect(entryStores).not.toContain('keyutils');
   });
 });

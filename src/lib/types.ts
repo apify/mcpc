@@ -171,14 +171,29 @@ export interface SessionNotifications {
 export interface SessionData {
   name: string;
   server: ServerConfig; // Transport configuration (header and stdio env values redacted to "<redacted>")
-  profileName?: string; // Name of auth profile (for OAuth servers)
+  // The four connection settings below are explicitly clearable: reconnecting a session
+  // writes each of them from the `connect` command at hand, so the record always describes
+  // the bridge that command started rather than keeping a setting from an earlier one.
+  profileName?: string | undefined; // Name of auth profile (for OAuth servers)
   /**
    * x402 auto-payment scheme preference. Presence enables x402 for the session;
    * the value is the preference (`auto` = prefer upto, fall back to exact).
    * Absent / undefined means x402 is disabled.
    */
-  x402?: X402SchemePreference;
-  insecure?: boolean; // Skip TLS certificate verification
+  x402?: X402SchemePreference | undefined;
+  /**
+   * Total USDC (in USD) the session may authorize in x402 payments over its lifetime, set
+   * by `connect --x402-budget`. The server names the amount of every payment; this is the
+   * bound it cannot move. Absent on a session that predates budgets: the default applies.
+   */
+  x402BudgetUsd?: number | undefined;
+  /**
+   * Sum of the x402 payments the session has authorized so far, in atomic USDC units
+   * (decimal string). Written by the bridge before a signed payment is used, so the
+   * budget survives bridge restarts; reset only by a new `connect`.
+   */
+  x402AuthorizedAtomic?: string | undefined;
+  insecure?: boolean | undefined; // Skip TLS certificate verification
   /**
    * Directory a stdio server runs in: the working directory of the `mcpc connect` that
    * created the session. Every later start of the bridge uses it, so the server's command
@@ -222,7 +237,7 @@ export interface SessionData {
    */
   _meta?: Record<string, unknown>;
   status?: SessionStatus; // Session health status (default: active)
-  proxy?: ProxyConfig; // Proxy server configuration (if enabled)
+  proxy?: ProxyConfig | undefined; // Proxy server configuration (if enabled)
   notifications?: SessionNotifications; // Last list change notification timestamps
   activeTasks?: Record<string, ActiveTaskEntry>; // Active async tasks for crash recovery
   resourceSubscriptions?: Record<string, ResourceSubscriptionEntry>; // Resource→file syncs, keyed by URI

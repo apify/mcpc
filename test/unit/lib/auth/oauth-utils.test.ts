@@ -566,36 +566,6 @@ describe('discoverAndRefreshToken authorization server resolution (#387)', () =>
     expect(posted).toEqual([]);
   });
 
-  it('fetches the protected resource metadata once when it also resolves the authorization server', async () => {
-    const posted: { url: string; params: URLSearchParams }[] = [];
-    const requested: string[] = [];
-    fetchSpy.mockImplementation((url: string, init?: RequestInit) => {
-      if (init?.method === 'POST') {
-        posted.push({ url, params: new URLSearchParams(init.body as string) });
-        return Promise.resolve(mockResponse({ access_token: 'fresh', token_type: 'Bearer' }));
-      }
-      requested.push(url);
-      if (url === 'https://mcp.example.com/.well-known/oauth-protected-resource/mcp') {
-        return Promise.resolve(
-          mockResponse({
-            resource: 'https://mcp.example.com/mcp',
-            authorization_servers: ['https://auth.example.com'],
-          })
-        );
-      }
-      if (url === 'https://auth.example.com/.well-known/oauth-authorization-server') {
-        return Promise.resolve(mockResponse({ token_endpoint: 'https://auth.example.com/token' }));
-      }
-      return Promise.resolve(mockResponse(null, false));
-    });
-
-    await discoverAndRefreshToken('https://mcp.example.com/mcp', 'refresh-1', { clientId: 'c' });
-
-    expect(requested.filter((u) => u.includes('oauth-protected-resource'))).toHaveLength(1);
-    expect(posted.map((p) => p.url)).toEqual(['https://auth.example.com/token']);
-    expect(posted[0]!.params.get('resource')).toBe('https://mcp.example.com/mcp');
-  });
-
   it('fails with a re-authentication hint when the recorded issuer has no metadata', async () => {
     // Falling back to discovery here would defeat the pin, so this is a hard stop.
     const posted: string[] = [];
@@ -610,39 +580,26 @@ describe('discoverAndRefreshToken authorization server resolution (#387)', () =>
     expect(posted).toEqual([]);
   });
 
-  it('falls back to protected resource metadata when the profile has no issuer', async () => {
-    // Asana: mcp.asana.com serves its own (legacy) authorization-server metadata,
-    // but the MCP server's RFC 9728 document delegates to app.asana.com, which is
-    // where login registered the client. Refreshing at the wrong server yields
-    // invalid_client.
-    const posted: string[] = [];
-    mockAsanaShapedServer(posted);
+  // Finding the token endpoint for such a profile would mean asking the MCP server, which
+  // could name its own and collect the refresh token.
+  it.each([undefined, ''])(
+    'does not refresh a profile with no recorded issuer (%j), and contacts nobody',
+    async (issuer) => {
+      const posted: string[] = [];
+      mockAsanaShapedServer(posted);
 
-    const tokens = await discoverAndRefreshToken('https://mcp.example.com/mcp', 'refresh-1', {
-      clientId: 'c',
-    });
+      await expect(
+        discoverAndRefreshToken('https://mcp.example.com/mcp', 'refresh-1', {
+          clientId: 'c',
+          clientSecret: 'secret-xyz',
+          ...(issuer !== undefined && { issuer }),
+        })
+      ).rejects.toThrow('did not record which authorization server issued its tokens');
 
-    expect(tokens.access_token).toBe('fresh');
-    expect(posted).toEqual(['https://auth.example.com/token']);
-  });
-
-  it('falls back to well-known probes on the MCP origin without protected resource metadata', async () => {
-    const posted: string[] = [];
-    fetchSpy.mockImplementation((url: string, init?: RequestInit) => {
-      if (init?.method === 'POST') {
-        posted.push(url);
-        return Promise.resolve(mockResponse({ access_token: 'fresh', token_type: 'Bearer' }));
-      }
-      if (url === 'https://mcp.example.com/.well-known/oauth-authorization-server') {
-        return Promise.resolve(mockResponse({ token_endpoint: 'https://mcp.example.com/token' }));
-      }
-      return Promise.resolve(mockResponse(null, false));
-    });
-
-    await discoverAndRefreshToken('https://mcp.example.com/mcp', 'refresh-1', { clientId: 'c' });
-
-    expect(posted).toEqual(['https://mcp.example.com/token']);
-  });
+      expect(posted).toEqual([]);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    }
+  );
 
   it('picks the client authentication method the authorization server advertises', async () => {
     // The server declares client_secret_post only, so Basic is never attempted.
@@ -666,6 +623,7 @@ describe('discoverAndRefreshToken authorization server resolution (#387)', () =>
     await discoverAndRefreshToken('https://mcp.example.com/mcp', 'refresh-1', {
       clientId: 'c',
       clientSecret: 'secret-xyz',
+      issuer: 'https://mcp.example.com',
     });
 
     expect(bodies).toHaveLength(1);

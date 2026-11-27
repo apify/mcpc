@@ -410,6 +410,10 @@ mcpc @apify close      # or: mcpc close @apify
 # ...now the session name "@apify" is forgotten and available for future use
 ```
 
+A session name stays bound to the server it was created for. Running `connect` again with the
+same name and server revives the session if its bridge is down, using the options of that
+command; with a different server it is refused, so close the session first or pick another name.
+
 ### Session lifecycle
 
 Session metadata is saved in `~/.mcpc/sessions.json`, [authentication tokens](#authentication)
@@ -924,8 +928,33 @@ mcpc @paid tools-call expensive-tool query:="hello"
 mcpc @paid restart
 ```
 
-When `--x402` is active, a fetch middleware wraps all HTTP requests to the MCP server.
-If any request returns HTTP 402, the middleware transparently signs and retries. Your scheme preference is persisted in `sessions.json` and reused on every reconnect or restart.
+When `--x402` is active, a tool call that the server answers with a payment request (HTTP 402,
+or a payment-required tool result) is signed for and retried. Your scheme preference is persisted
+in `sessions.json` and reused on every restart.
+
+### Spending limits
+
+The server names the amount of every payment, so `mcpc` bounds what a session can pay:
+
+- **A budget per session.** A session pays at most its budget in total: `$10` by default, or
+  whatever you pass as `--x402-budget <usd>`. Every amount the session authorizes counts in
+  full, including an `upto` cap the server may only partly use, so real spending is usually
+  lower. A payment that does not fit is refused with an error. `mcpc` shows how much each
+  session has used; to raise a budget, close the session and connect again.
+- **Tool calls only.** `mcpc` never pays for the requests it makes on its own (the handshake,
+  `tools/list`, keepalive pings), only for a tool you or your agent called.
+- **USDC only.** A request for payment in any other token is not signed.
+- **A day at most.** An authorization is valid for as long as the server asks, up to 24 hours.
+- **No auto-discovery.** `--x402` is refused for a bare `mcpc connect`, which would enable
+  payments to every server found in config files.
+
+```bash
+# Allow this session to pay up to $2 in total
+mcpc connect mcp.example.com @paid --x402 --x402-budget 2
+
+mcpc
+#   @paid → https://mcp.example.com [x402: $0.30 of $2.00 used] ● live
+```
 
 ### Supported networks
 

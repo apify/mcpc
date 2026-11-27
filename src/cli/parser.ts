@@ -100,6 +100,7 @@ const OPTIONS_WITH_VALUES = [
   '--header',
   '--proxy',
   '--proxy-bearer-token',
+  '--x402-budget',
   '--scope',
   '--grant',
   '-m',
