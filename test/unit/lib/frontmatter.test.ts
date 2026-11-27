@@ -367,6 +367,15 @@ name: example`)
     expect(() => parse('k: |\n\t a')).toThrow(/tabs for indentation/);
   });
 
+  it.each(['\t...', '\t---'])(
+    'reports tab indentation before an indented document marker: %s',
+    (marker) => {
+      expect(() => parse(`metadata:\n${marker}`)).toThrow(
+        'line 2: YAML does not allow tabs for indentation'
+      );
+    }
+  );
+
   it('rejects a more-indented line after a tab-only line ends a block scalar', () => {
     expect(() => parse('k: |\n  a\n\t\n  b')).toThrow(/unexpected indentation/);
   });

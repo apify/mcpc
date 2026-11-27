@@ -111,8 +111,7 @@ function toLines(rawLines: string[]): Line[] {
     let error: string | undefined;
     if (raw.includes('\t') && /^\s*\t/.test(raw)) {
       error = `line ${number}: YAML does not allow tabs for indentation`;
-    }
-    if (FRONTMATTER_FENCE.test(trimmed) || DOCUMENT_END.test(trimmed)) {
+    } else if (FRONTMATTER_FENCE.test(trimmed) || DOCUMENT_END.test(trimmed)) {
       error = `line ${number}: multiple YAML documents are not supported in frontmatter`;
     }
     lines.push({ indent: raw.length - raw.trimStart().length, text: trimmed, number, error });
