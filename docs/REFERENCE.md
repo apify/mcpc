@@ -124,6 +124,7 @@ Options:
   --stdio                       Launch all local stdio servers from selected config files
   --protocol-version <version>  Pin the MCP protocol version (see below)
   --x402 [scheme]               Enable x402 auto-payment (see below)
+  --x402-budget <usd>           Most the session may pay with x402 (see below)
   --json                        Output in JSON format
 
 Server formats:
@@ -158,6 +159,8 @@ Protocol version:
 x402 payments (experimental):
   --x402 pays for paid tool calls from the wallet set up with: mcpc x402
   Schemes: auto (default, prefers upto), upto, exact.
+  The session pays at most --x402-budget in total (default: $10), in USDC
+  only, and only for tool calls. Not available with config auto-discovery.
   For more info, run: mcpc help x402
 
 Output:
@@ -389,6 +392,12 @@ sign options:
   --expiry <seconds>     Override expiry in seconds
   --scheme <preference>  Payment scheme: auto (default), upto, or exact
   --no-approve           Skip the upto Permit2 allowance check & auto-approval
+
+Payments from a session (mcpc connect <server> --x402):
+  A session pays in USDC on Base only, and only when a tool is called.
+  It pays at most its budget in total, set with --x402-budget <usd>
+  (default: $10). The budget counts every amount the session authorized;
+  "mcpc" shows how much is used. To raise it, close and connect again.
 
 JSON output (--json):
   `{ address, createdAt, balances: { eth, usdc } | null }` (null if no wallet)

@@ -280,6 +280,8 @@ your user's say-so.
 (`--no-profile`, `--stdio`, `--proxy`, and `-H` are options of `connect`, not global flags.)
 
 `mcpc` also has experimental `--x402` auto-payment for paid MCP tools — see `mcpc help x402`.
+A session pays at most its budget in total (`connect --x402-budget <usd>`, default $10). When a
+call is refused as over budget, tell the user rather than reconnecting with a higher one yourself.
 A paid tool result carries the server's settlement receipt at `_meta["x402/payment-response"]`;
 one receipt is held at a time, so run paid calls sequentially if you need every one of them.
 
