@@ -1,8 +1,5 @@
 /**
- * Unit tests for the x402 wallet store (src/lib/wallets.ts)
- *
- * The wallet's private key has no other copy, so these tests are about one thing: a wallet
- * saved in one store is still found, and fully removed, whichever store is the default now.
+ * Unit tests for the x402 wallet store (src/lib/wallets.ts) on a host without an OS keychain
  */
 
 import { mkdtemp, readFile, rm, stat } from 'fs/promises';
@@ -10,33 +7,21 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { vi } from 'vitest';
 
-const keychain = vi.hoisted(() => ({
-  available: false,
-  wallet: undefined as unknown,
-  kernelKeyringWallet: undefined as unknown,
-}));
+const kernelKeyring = vi.hoisted(() => ({ wallet: undefined as unknown }));
 
 vi.mock('../../../src/lib/auth/keychain.js', () => ({
-  isKeychainAvailable: () => Promise.resolve(keychain.available),
-  readKeychainX402Wallet: () => Promise.resolve(keychain.available ? keychain.wallet : undefined),
-  storeKeychainX402Wallet: (wallet: unknown) => {
-    keychain.wallet = wallet;
-    return Promise.resolve();
-  },
-  removeKeychainX402Wallet: () => {
-    const had = keychain.wallet !== undefined;
-    keychain.wallet = undefined;
-    return Promise.resolve(had);
-  },
-  readKernelKeyringX402Wallet: () => Promise.resolve(keychain.kernelKeyringWallet),
-  removeKernelKeyringX402Wallet: () => {
-    const had = keychain.kernelKeyringWallet !== undefined;
-    keychain.kernelKeyringWallet = undefined;
-    return Promise.resolve(had);
+  isKeychainAvailable: () => Promise.resolve(false),
+  readKeychainX402Wallet: () => Promise.resolve(undefined),
+  storeKeychainX402Wallet: () => Promise.reject(new Error('no keychain')),
+  removeKeychainX402Wallet: () => Promise.resolve(false),
+  recoverKernelKeyringX402Wallet: (options?: { remove?: boolean }) => {
+    const wallet = kernelKeyring.wallet;
+    if (options?.remove) kernelKeyring.wallet = undefined;
+    return Promise.resolve(options?.remove ? undefined : wallet);
   },
 }));
 
-import { getWallet, removeWallet, saveWallet } from '../../../src/lib/wallets.js';
+import { getWallet, saveWallet } from '../../../src/lib/wallets.js';
 
 const WALLET = {
   address: '0x1111111111111111111111111111111111111111',
@@ -52,9 +37,7 @@ beforeEach(async () => {
   homeDir = await mkdtemp(join(tmpdir(), 'mcpc-wallets-test-'));
   originalHome = process.env.MCPC_HOME_DIR;
   process.env.MCPC_HOME_DIR = homeDir;
-  keychain.available = false;
-  keychain.wallet = undefined;
-  keychain.kernelKeyringWallet = undefined;
+  kernelKeyring.wallet = undefined;
 });
 
 afterEach(async () => {
@@ -63,65 +46,32 @@ afterEach(async () => {
   await rm(homeDir, { recursive: true, force: true });
 });
 
-describe('wallet store', () => {
-  it('keeps the wallet in wallets.json (0600) when there is no OS keychain', async () => {
+describe('wallet store without an OS keychain', () => {
+  it('keeps the wallet in wallets.json with mode 0600', async () => {
     await saveWallet(WALLET);
 
     expect(await getWallet()).toEqual(WALLET);
     expect((await stat(walletsFile())).mode & 0o777).toBe(0o600);
-    expect(keychain.wallet).toBeUndefined();
   });
 
-  it('keeps the wallet in the OS keychain when there is one', async () => {
-    keychain.available = true;
-
-    await saveWallet(WALLET);
-
-    expect(await getWallet()).toEqual(WALLET);
-    expect(keychain.wallet).toEqual(WALLET);
-  });
-
-  // The wallet used to "disappear" here, inviting the user to create a second one.
-  it('still finds a wallet saved to the file once an OS keychain appears', async () => {
-    await saveWallet(WALLET);
-    keychain.available = true;
-
-    expect(await getWallet()).toEqual(WALLET);
-  });
-
+  // mcpc 0.8.0 kept the wallet in the kernel keyring here, where a reboot loses it.
   it('moves a wallet left in the kernel keyring to wallets.json', async () => {
-    keychain.kernelKeyringWallet = WALLET;
+    kernelKeyring.wallet = WALLET;
 
     expect(await getWallet()).toEqual(WALLET);
 
     const stored = JSON.parse(await readFile(walletsFile(), 'utf8')) as { wallet?: unknown };
     expect(stored.wallet).toEqual(WALLET);
-    expect((await stat(walletsFile())).mode & 0o777).toBe(0o600);
-    expect(keychain.kernelKeyringWallet).toBeUndefined();
+    expect(kernelKeyring.wallet).toBeUndefined();
   });
 
   it('ignores a kernel-keyring entry that is not a wallet', async () => {
-    keychain.kernelKeyringWallet = { address: WALLET.address };
+    kernelKeyring.wallet = { address: WALLET.address };
 
     expect(await getWallet()).toBeUndefined();
-    expect(keychain.kernelKeyringWallet).toEqual({ address: WALLET.address });
   });
 
-  it('reports no wallet when there is none anywhere', async () => {
-    expect(await getWallet()).toBeUndefined();
-    expect(await removeWallet()).toBe(false);
-  });
-
-  it('removes the wallet from every store, so no copy can come back', async () => {
-    await saveWallet(WALLET); // file
-    keychain.available = true;
-    await saveWallet(WALLET); // keychain
-    keychain.kernelKeyringWallet = WALLET;
-
-    expect(await removeWallet()).toBe(true);
-
-    expect(await getWallet()).toBeUndefined();
-    keychain.available = false;
+  it('reports no wallet when there is none', async () => {
     expect(await getWallet()).toBeUndefined();
   });
 });

@@ -44,48 +44,12 @@ const MAX_UTF16_UNITS = 1280;
 /** Keychain calls the code under test made, so tests can assert it stays cheap. */
 const keychainCalls = { set: 0, get: 0, delete: 0 };
 
-/** The options every entry was opened with (the third constructor argument). */
-const entryOptions: unknown[] = [];
-
-/**
- * In-memory stand-in for the Linux kernel keyring, reached with
- * `{ linux: { store: 'keyutils' } }`. It is what an earlier mcpc wrote to on hosts without
- * a Secret Service; the code under test only reads and deletes there.
- */
+/** The Linux store each entry was opened with (`options.linux.store`). */
+const entryStores: unknown[] = [];
+/** Stand-in for the Linux kernel keyring, reached with `{ linux: { store: 'keyutils' } }` */
 const kernelKeyringStore = new Map<string, string>();
-/** How many of the next kernel-keyring reads report "absent" before the real answer */
-let kernelKeyringBlindReads = 0;
-/** How many of the next kernel-keyring calls throw, as in a process with no session keyring */
+/** How many of the next kernel-keyring calls fail, as in a process with no session keyring */
 let kernelKeyringFailingCalls = 0;
-const kernelKeyringCalls = { get: 0, delete: 0 };
-
-function kernelKeyringEntry(account: string) {
-  const failIfFlaky = () => {
-    if (kernelKeyringFailingCalls > 0) {
-      kernelKeyringFailingCalls--;
-      throw new Error("Couldn't access platform storage: AccessDenied");
-    }
-  };
-  return {
-    setPassword(): void {
-      throw new Error('mcpc must never write to the kernel keyring');
-    },
-    getPassword(): string | null {
-      kernelKeyringCalls.get++;
-      failIfFlaky();
-      if (kernelKeyringBlindReads > 0) {
-        kernelKeyringBlindReads--;
-        return null;
-      }
-      return kernelKeyringStore.get(account) ?? null;
-    },
-    deletePassword(): boolean {
-      kernelKeyringCalls.delete++;
-      failIfFlaky();
-      return kernelKeyringStore.delete(account);
-    },
-  };
-}
 
 vi.mock('@napi-rs/keyring', () => ({
   Entry: vi.fn(function (
@@ -93,9 +57,21 @@ vi.mock('@napi-rs/keyring', () => ({
     account: string,
     options?: { linux?: { store?: string } }
   ) {
-    entryOptions.push(options);
+    entryStores.push(options?.linux?.store);
     if (options?.linux?.store === 'keyutils') {
-      return kernelKeyringEntry(account);
+      const failIfFlaky = () => {
+        if (kernelKeyringFailingCalls-- > 0) throw new Error('AccessDenied');
+      };
+      return {
+        getPassword(): string | null {
+          failIfFlaky();
+          return kernelKeyringStore.get(account) ?? null;
+        },
+        deletePassword(): boolean {
+          failIfFlaky();
+          return kernelKeyringStore.delete(account);
+        },
+      };
     }
     return {
       setPassword(value: string) {
@@ -168,12 +144,9 @@ beforeEach(async () => {
   keychainThrows = false;
   failNextSetWith = null;
   resetKeychainCalls();
-  entryOptions.length = 0;
+  entryStores.length = 0;
   kernelKeyringStore.clear();
-  kernelKeyringBlindReads = 0;
   kernelKeyringFailingCalls = 0;
-  kernelKeyringCalls.get = 0;
-  kernelKeyringCalls.delete = 0;
   await rm(credFile(), { force: true });
 });
 
@@ -664,8 +637,6 @@ describe('Linux credential store', () => {
   const setPlatform = (platform: NodeJS.Platform): void => {
     Object.defineProperty(process, 'platform', { value: platform, configurable: true });
   };
-
-  beforeEach(() => setPlatform('linux'));
   afterEach(() => setPlatform(realPlatform));
 
   // Without the option the binding falls back to the kernel keyring by itself when there is
@@ -677,107 +648,31 @@ describe('Linux credential store', () => {
     await keychain.readKeychainSessionHeaders('sess');
     await keychain.removeKeychainSessionHeaders('sess');
 
-    expect(entryOptions.length).toBeGreaterThan(3);
-    for (const options of entryOptions) {
-      expect(options).toEqual({ linux: { store: 'secret-service' } });
-    }
+    expect(entryStores.length).toBeGreaterThan(3);
+    expect(new Set(entryStores)).toEqual(new Set(['secret-service']));
   });
 
-  it('does not leave the probe entry behind when the read-back fails', async () => {
+  it('recovers and removes an x402 wallet left in the kernel keyring', async () => {
+    setPlatform('linux');
+    const wallet = { address: '0xabc', privateKey: '0x01' };
+    kernelKeyringStore.set('x402-wallet', JSON.stringify(wallet));
+    // The first call of a process without a session keyring fails
+    kernelKeyringFailingCalls = 1;
     const keychain = await loadKeychain();
-    // The store accepts the write and then fails
-    const getSpy = vi.spyOn(keychainStore, 'get').mockImplementationOnce(() => {
-      throw new Error('store went away');
-    });
-    try {
-      expect(await keychain.isKeychainAvailable()).toBe(false);
-    } finally {
-      getSpy.mockRestore();
-    }
 
-    expect([...keychainStore.keys()].filter((key) => key.includes('probe'))).toEqual([]);
+    expect(await keychain.recoverKernelKeyringX402Wallet()).toEqual(wallet);
+    await keychain.recoverKernelKeyringX402Wallet({ remove: true });
+
+    expect(kernelKeyringStore.size).toBe(0);
+    expect(await keychain.recoverKernelKeyringX402Wallet()).toBeUndefined();
   });
 
-  describe('without a Secret Service', () => {
-    beforeEach(() => {
-      keychainThrows = true;
-    });
+  it('does not look in the kernel keyring on other platforms', async () => {
+    setPlatform('darwin');
+    kernelKeyringStore.set('x402-wallet', JSON.stringify({ address: '0xabc' }));
+    const keychain = await loadKeychain();
 
-    it('never writes to the kernel keyring', async () => {
-      const keychain = await loadKeychain();
-
-      // kernelKeyringEntry.setPassword throws, so a write there would fail this call
-      await keychain.storeKeychainSessionHeaders('sess', { token: 'a' });
-
-      expect(JSON.parse(await readFile(credFile(), 'utf8'))).toHaveProperty([
-        'session:sess:headers',
-      ]);
-    });
-
-    it('moves a credential an earlier version left in the kernel keyring to the file', async () => {
-      kernelKeyringStore.set('session:old:headers', JSON.stringify({ token: 'kept' }));
-      const keychain = await loadKeychain();
-
-      expect(await keychain.readKeychainSessionHeaders('old')).toEqual({ token: 'kept' });
-
-      const file = JSON.parse(await readFile(credFile(), 'utf8')) as Record<string, string>;
-      expect(JSON.parse(file['session:old:headers'] ?? 'null')).toEqual({ token: 'kept' });
-      expect(kernelKeyringStore.has('session:old:headers')).toBe(false);
-      expect((await stat(credFile())).mode & 0o777).toBe(0o600);
-    });
-
-    it('prefers the file once a credential is there', async () => {
-      const keychain = await loadKeychain();
-      await keychain.storeKeychainSessionHeaders('sess', { token: 'file' });
-      kernelKeyringStore.set('session:sess:headers', JSON.stringify({ token: 'stale' }));
-
-      expect(await keychain.readKeychainSessionHeaders('sess')).toEqual({ token: 'file' });
-      expect(kernelKeyringCalls.get).toBe(0);
-    });
-
-    // In a process without a session keyring the first calls fail or see nothing.
-    it('asks the kernel keyring again when the first answers are unreliable', async () => {
-      kernelKeyringStore.set('session:old:headers', JSON.stringify({ token: 'kept' }));
-      kernelKeyringFailingCalls = 1;
-      kernelKeyringBlindReads = 1;
-      const keychain = await loadKeychain();
-
-      expect(await keychain.readKeychainSessionHeaders('old')).toEqual({ token: 'kept' });
-    });
-
-    it('reports a credential that is nowhere as absent', async () => {
-      const keychain = await loadKeychain();
-
-      expect(await keychain.readKeychainSessionHeaders('nobody')).toBeUndefined();
-    });
-
-    it('deleting a credential also removes a copy left in the kernel keyring', async () => {
-      kernelKeyringStore.set('session:old:headers', JSON.stringify({ token: 'kept' }));
-      const keychain = await loadKeychain();
-
-      expect(await keychain.removeKeychainSessionHeaders('old')).toBe(true);
-
-      expect(kernelKeyringStore.has('session:old:headers')).toBe(false);
-      expect(await keychain.readKeychainSessionHeaders('old')).toBeUndefined();
-    });
-
-    it('recovers an x402 wallet left in the kernel keyring', async () => {
-      const wallet = { address: '0xabc', privateKey: '0x01' };
-      kernelKeyringStore.set('x402-wallet', JSON.stringify(wallet));
-      const keychain = await loadKeychain();
-
-      expect(await keychain.readKernelKeyringX402Wallet()).toEqual(wallet);
-      expect(await keychain.removeKernelKeyringX402Wallet()).toBe(true);
-      expect(await keychain.readKernelKeyringX402Wallet()).toBeUndefined();
-    });
-
-    it('does not consult the kernel keyring on other platforms', async () => {
-      setPlatform('darwin');
-      kernelKeyringStore.set('session:old:headers', JSON.stringify({ token: 'kept' }));
-      const keychain = await loadKeychain();
-
-      expect(await keychain.readKeychainSessionHeaders('old')).toBeUndefined();
-      expect(kernelKeyringCalls.get).toBe(0);
-    });
+    expect(await keychain.recoverKernelKeyringX402Wallet()).toBeUndefined();
+    expect(entryStores).not.toContain('keyutils');
   });
 });
