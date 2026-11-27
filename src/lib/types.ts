@@ -181,6 +181,18 @@ export interface SessionData {
    * Absent / undefined means x402 is disabled.
    */
   x402?: X402SchemePreference | undefined;
+  /**
+   * Total USDC (in USD) the session may authorize in x402 payments over its lifetime, set
+   * by `connect --x402-budget`. The server names the amount of every payment; this is the
+   * bound it cannot move. Absent on a session that predates budgets: the default applies.
+   */
+  x402BudgetUsd?: number | undefined;
+  /**
+   * Sum of the x402 payments the session has authorized so far, in atomic USDC units
+   * (decimal string). Written by the bridge before a signed payment is used, so the
+   * budget survives bridge restarts; reset only by a new `connect`.
+   */
+  x402AuthorizedAtomic?: string | undefined;
   insecure?: boolean | undefined; // Skip TLS certificate verification
   /**
    * Directory a stdio server runs in: the working directory of the `mcpc connect` that
