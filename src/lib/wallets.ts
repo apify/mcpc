@@ -14,7 +14,11 @@ import {
   readKeychainX402Wallet,
   storeKeychainX402Wallet,
   removeKeychainX402Wallet,
+  recoverKernelKeyringX402Wallet,
 } from './auth/keychain.js';
+import { createLogger } from './logger.js';
+
+const logger = createLogger('wallets');
 
 const WALLETS_DEFAULT_CONTENT = JSON.stringify({ version: 1 }, null, 2);
 
@@ -68,7 +72,7 @@ export async function getWallet(): Promise<WalletData | undefined> {
     return readKeychainX402Wallet<WalletData>();
   }
 
-  return withFileLock(
+  const wallet = await withFileLock(
     getWalletsFilePath(),
     async () => {
       const storage = await loadStorageInternal();
@@ -76,6 +80,20 @@ export async function getWallet(): Promise<WalletData | undefined> {
     },
     WALLETS_DEFAULT_CONTENT
   );
+  if (wallet) return wallet;
+
+  // mcpc 0.8.0 kept the wallet in the kernel keyring on a host like this one, where it is
+  // lost on reboot. It is the only copy of the private key, so move it here once.
+  const stranded = await recoverKernelKeyringX402Wallet<WalletData>();
+  if (!stranded?.privateKey || !stranded.address) return undefined;
+
+  await saveWallet(stranded);
+  await recoverKernelKeyringX402Wallet({ remove: true });
+  logger.warn(
+    `Moved the x402 wallet ${stranded.address} from the kernel keyring, which does not ` +
+      `survive a reboot, to ${getWalletsFilePath()}`
+  );
+  return stranded;
 }
 
 export async function saveWallet(wallet: WalletData): Promise<void> {
