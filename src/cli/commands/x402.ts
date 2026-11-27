@@ -25,7 +25,7 @@ import {
   jsonHelp,
   theme,
 } from '../output.js';
-import { getWallet, saveWallet, removeWallet } from '../../lib/wallets.js';
+import { getWallet, saveWallet, removeWallet, describeWalletStore } from '../../lib/wallets.js';
 import { ClientError, isMcpError } from '../../lib/errors.js';
 import { getJsonFromEnv } from '../parser.js';
 import type { OutputMode } from '../../lib/types.js';
@@ -106,6 +106,7 @@ async function initWallet(options: { outputMode: OutputMode }): Promise<void> {
     console.log('');
     console.log(formatSuccess('Wallet created'));
     console.log(formatInfo(`Address: ${theme.cyan(account.address)}`));
+    console.log(formatInfo(await describeWalletStore()));
     console.log(formatInfo('Fund this address with USDC on Base to use x402 payments.'));
     await printAddressQrCode(account.address);
   }
@@ -155,6 +156,7 @@ async function importWallet(options: {
     console.log('');
     console.log(formatSuccess('Wallet imported'));
     console.log(formatInfo(`Address: ${theme.cyan(account.address)}`));
+    console.log(formatInfo(await describeWalletStore()));
     console.log(formatInfo('Fund this address with USDC on Base to use x402 payments.'));
     await printAddressQrCode(account.address);
   }

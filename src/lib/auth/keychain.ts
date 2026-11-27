@@ -4,6 +4,12 @@
  * Falls back to ~/.mcpc/credentials.json (mode 0600) when the OS keychain
  * is unavailable (e.g. headless servers, containers, no Secret Service on D-Bus).
  *
+ * On Linux "the OS keychain" means a Secret Service and nothing else. The binding would
+ * otherwise fall back by itself to the kernel keyring, which lives in memory only: what is
+ * stored there is gone after a reboot (or when the login session's keyring is revoked),
+ * with no warning. Credentials an earlier mcpc put there are moved to the file store the
+ * first time they are read.
+ *
  * The @napi-rs/keyring native addon is loaded lazily on first use via a
  * cached import() promise.  If the addon cannot be loaded or the keychain
  * cannot be reached, file-based fallback is used for the
@@ -98,7 +104,19 @@ type EntryLike = {
   getPassword(): string | null;
   deletePassword(): boolean;
 };
-type EntryConstructor = new (service: string, account: string) => EntryLike;
+type EntryOptions = { linux?: { store?: 'secret-service' | 'keyutils' } };
+type EntryConstructor = new (service: string, account: string, options?: EntryOptions) => EntryLike;
+
+/**
+ * Where entries live. The option only matters on Linux: require a Secret Service (GNOME
+ * Keyring, KWallet, ...) instead of letting the binding fall back to the kernel keyring
+ * when there is none. Requiring it makes the constructor throw on such a host, the probe
+ * then fails, and credentials go to the 0600 file — which survives a reboot.
+ */
+const ENTRY_OPTIONS: EntryOptions = { linux: { store: 'secret-service' } };
+
+/** The kernel keyring, read only to recover what an earlier mcpc stored there. */
+const KERNEL_KEYRING_OPTIONS: EntryOptions = { linux: { store: 'keyutils' } };
 
 let keychainAvailable: boolean | null = null; // null = untested
 
@@ -168,10 +186,16 @@ function splitIntoChunks(value: string): string[] {
 }
 
 /** Delete parts from `from` onwards; they are contiguous, so stop at the first missing one. */
-function deleteChunksFrom(EntryClass: EntryConstructor, account: string, from: number): void {
+function deleteChunksFrom(
+  EntryClass: EntryConstructor,
+  account: string,
+  from: number,
+  options: EntryOptions = ENTRY_OPTIONS
+): void {
   for (let i = from; ; i++) {
     try {
-      if (!new EntryClass(SERVICE_NAME, chunkAccount(account, i)).deletePassword()) return;
+      const part = new EntryClass(SERVICE_NAME, chunkAccount(account, i), options);
+      if (!part.deletePassword()) return;
     } catch {
       return;
     }
@@ -182,7 +206,7 @@ function entrySet(EntryClass: EntryConstructor, account: string, value: string):
   // A value that would read back as a header is stored in parts however short it is.
   if (parseChunkHeader(value) === null) {
     try {
-      new EntryClass(SERVICE_NAME, account).setPassword(value);
+      new EntryClass(SERVICE_NAME, account, ENTRY_OPTIONS).setPassword(value);
       return;
     } catch (error) {
       // Only a value the platform can have refused for its size is worth splitting.
@@ -191,21 +215,28 @@ function entrySet(EntryClass: EntryConstructor, account: string, value: string):
   }
   const chunks = splitIntoChunks(value);
   chunks.forEach((chunk, i) =>
-    new EntryClass(SERVICE_NAME, chunkAccount(account, i)).setPassword(chunk)
+    new EntryClass(SERVICE_NAME, chunkAccount(account, i), ENTRY_OPTIONS).setPassword(chunk)
   );
   // The header goes last: it is what makes the parts readable.
-  new EntryClass(SERVICE_NAME, account).setPassword(`${CHUNK_HEADER_PREFIX}${chunks.length}`);
+  new EntryClass(SERVICE_NAME, account, ENTRY_OPTIONS).setPassword(
+    `${CHUNK_HEADER_PREFIX}${chunks.length}`
+  );
   deleteChunksFrom(EntryClass, account, chunks.length); // leftovers of a longer previous value
 }
 
-function entryGet(EntryClass: EntryConstructor, account: string): string | null {
-  const raw = new EntryClass(SERVICE_NAME, account).getPassword() ?? null;
+function entryGet(
+  EntryClass: EntryConstructor,
+  account: string,
+  options: EntryOptions = ENTRY_OPTIONS
+): string | null {
+  const raw = new EntryClass(SERVICE_NAME, account, options).getPassword() ?? null;
   const count = parseChunkHeader(raw);
   if (count === null) return raw;
 
   const parts: string[] = [];
   for (let i = 0; i < count; i++) {
-    const part = new EntryClass(SERVICE_NAME, chunkAccount(account, i)).getPassword() ?? null;
+    const part =
+      new EntryClass(SERVICE_NAME, chunkAccount(account, i), options).getPassword() ?? null;
     if (part === null) {
       logger.warn(
         `Credential '${account}' is incomplete in the OS keychain ` +
@@ -218,24 +249,113 @@ function entryGet(EntryClass: EntryConstructor, account: string): string | null 
   return parts.join('');
 }
 
-function entryDelete(EntryClass: EntryConstructor, account: string): boolean {
-  deleteChunksFrom(EntryClass, account, 0);
-  return new EntryClass(SERVICE_NAME, account).deletePassword();
+function entryDelete(
+  EntryClass: EntryConstructor,
+  account: string,
+  options: EntryOptions = ENTRY_OPTIONS
+): boolean {
+  deleteChunksFrom(EntryClass, account, 0, options);
+  return new EntryClass(SERVICE_NAME, account, options).deletePassword();
 }
 
 /** Probe the OS keychain by performing a write, read-back, and delete. */
 async function probeKeychain(EntryClass: EntryConstructor): Promise<boolean> {
   const probeAccount = `__mcpc_probe_${Date.now()}_${Math.random().toString(36).slice(2)}__`;
+  let entry: EntryLike | undefined;
   try {
-    const entry = new EntryClass(SERVICE_NAME, probeAccount);
+    entry = new EntryClass(SERVICE_NAME, probeAccount, ENTRY_OPTIONS);
     const probeValue = `probe-${Date.now()}`;
     entry.setPassword(probeValue);
-    const readBack = entry.getPassword();
-    entry.deletePassword();
-    return readBack === probeValue;
+    return entry.getPassword() === probeValue;
   } catch {
     return false;
+  } finally {
+    // Whatever happened after the write, do not leave the probe entry behind
+    try {
+      entry?.deletePassword();
+    } catch {
+      // Nothing was stored, or the store is gone
+    }
   }
+}
+
+// -----------------------------------------------------------------------------
+// Credentials an earlier mcpc left in the Linux kernel keyring
+//
+// @napi-rs/keyring 2.1 started falling back to the kernel keyring on hosts without a
+// Secret Service, and mcpc's probe took that for a working OS keychain. Such a host now
+// uses the file store again, so anything still in the kernel keyring is read from there
+// once and moved over — most importantly an x402 wallet, whose only copy it may be.
+// -----------------------------------------------------------------------------
+
+/**
+ * Run a kernel-keyring operation, or return `nothing` when there is no kernel keyring to
+ * ask (another platform, the native addon missing, no usable keyring for this process).
+ *
+ * In a process without a session keyring (cron, `setsid`, many agent harnesses) the first
+ * keyring call or two fail, or report an existing key as absent, before the keyring is set
+ * up and later calls work. An answer of `nothing` is therefore asked for again before it
+ * is believed.
+ */
+const KERNEL_KEYRING_ATTEMPTS = 3;
+
+async function withKernelKeyring<T>(
+  operation: (EntryClass: EntryConstructor) => T,
+  nothing: T
+): Promise<T> {
+  if (process.platform !== 'linux') return nothing;
+  let EntryClass: EntryConstructor;
+  try {
+    EntryClass = await getEntry();
+  } catch {
+    return nothing;
+  }
+  for (let attempt = 0; attempt < KERNEL_KEYRING_ATTEMPTS; attempt++) {
+    try {
+      const result = operation(EntryClass);
+      if (result !== nothing) return result;
+    } catch {
+      // Ask again
+    }
+  }
+  return nothing;
+}
+
+/** Read a credential left in the kernel keyring, or null. */
+function readKernelKeyring(account: string): Promise<string | null> {
+  return withKernelKeyring(
+    (EntryClass) => entryGet(EntryClass, account, KERNEL_KEYRING_OPTIONS),
+    null
+  );
+}
+
+/** Remove a credential left in the kernel keyring. */
+function deleteKernelKeyring(account: string): Promise<boolean> {
+  return withKernelKeyring(
+    (EntryClass) => entryDelete(EntryClass, account, KERNEL_KEYRING_OPTIONS),
+    false
+  );
+}
+
+/** Read from the file store, moving the credential over from the kernel keyring if needed. */
+async function fileGetOrMigrate(account: string): Promise<string | null> {
+  const stored = await fileGet(account);
+  if (stored !== null) return stored;
+
+  const legacy = await readKernelKeyring(account);
+  if (legacy === null) return null;
+
+  await fileSet(account, legacy);
+  await deleteKernelKeyring(account);
+  logger.debug(`Moved credential '${account}' from the kernel keyring to the file store`);
+  return legacy;
+}
+
+/** Delete from the file store, and any copy still in the kernel keyring. */
+async function fileDeleteEverywhere(account: string): Promise<boolean> {
+  const fromFile = await fileDelete(account);
+  const fromKernelKeyring = await deleteKernelKeyring(account);
+  return fromFile || fromKernelKeyring;
 }
 
 // Serialise the one-time probe so concurrent callers don't race.
@@ -285,14 +405,14 @@ function keychainSet(account: string, value: string): Promise<void> {
 function keychainGet(account: string): Promise<string | null> {
   return withKeychain(
     (EntryClass) => entryGet(EntryClass, account),
-    () => fileGet(account)
+    () => fileGetOrMigrate(account)
   );
 }
 
 function keychainDelete(account: string): Promise<boolean> {
   return withKeychain(
     (EntryClass) => entryDelete(EntryClass, account),
-    () => fileDelete(account)
+    () => fileDeleteEverywhere(account)
   );
 }
 
@@ -620,6 +740,26 @@ export async function readKeychainX402Wallet<T>(): Promise<T | undefined> {
     logger.error(`Failed to parse x402 wallet: ${(error as Error).message}`);
     return undefined;
   }
+}
+
+/**
+ * Read an x402 wallet an earlier mcpc left in the Linux kernel keyring (see the note on
+ * that store above). The wallet has its own file store (`wallets.json`), so the caller
+ * moves it there and then calls `removeKernelKeyringX402Wallet()`.
+ */
+export async function readKernelKeyringX402Wallet<T>(): Promise<T | undefined> {
+  const raw = await readKernelKeyring(x402WalletAccount());
+  if (!raw) return undefined;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Remove the x402 wallet copy from the Linux kernel keyring. */
+export function removeKernelKeyringX402Wallet(): Promise<boolean> {
+  return deleteKernelKeyring(x402WalletAccount());
 }
 
 /** Delete the x402 wallet data. */

@@ -314,6 +314,7 @@ When making changes, follow these rules to maintain the security posture:
 - Start a stdio session's bridge only with the `cwd` from `resolveSessionCwd()` (or, in `connect`, the current directory that is being recorded) — never let it inherit the directory of the command that happens to trigger a restart
 - A session name is bound to its server (the URL, or the stdio command line): `connectSession` refuses a different target for an existing name, live or not. Never merge a new target into an existing session record — its stored headers, `x402`/`insecure` settings, MCP session id and resource-to-file syncs belong to the old server, and bulk connects take the name from a config entry. On a same-server reconnect, write every connection setting from the command at hand (absent means cleared)
 - x402: the server names the amount, token, payee and validity of every payment, so every payment a session signs goes through `signSessionPayment()` (`src/lib/x402/fetch-middleware.ts`), which charges it against the session budget (`src/lib/x402/budget.ts`, persisted in `sessions.json`) — never call `signPayment()` directly from session code. Pay only for `tools/call`, never for a request mcpc issues on its own (handshake, ping, stream); sign only for USDC on a supported network; bound a server-chosen validity
+- Never store a credential where it can be lost without warning, least of all the x402 wallet key (there is no other copy): open keychain entries only through the helpers in `src/lib/auth/keychain.ts`, which require a Secret Service on Linux, and keep the wallet findable and removable in every store it may be in (`src/lib/wallets.ts`)
 - Validate and sanitize all external input (URLs, session names, profile names) before use
 - Default to HTTPS; only allow HTTP for localhost/127.0.0.1
 - When adding HTTP servers (even localhost-only), validate the Host header against expected values
@@ -451,7 +452,7 @@ Environment variable substitution supported: `${VAR_NAME}`
 - **Node.js:** ≥22.12.0
 - **Bun:** ≥1.0.0 (alternative runtime)
 - **OS support:** macOS, Linux, Windows
-- **Linux keychain:** a Secret Service provider (e.g. GNOME Keyring, KWallet) on the session D-Bus; `@napi-rs/keyring` talks D-Bus directly and does not need `libsecret`. Without one, credentials fall back to `~/.mcpc/credentials.json`
+- **Linux keychain:** a Secret Service provider (e.g. GNOME Keyring, KWallet) on the session D-Bus; `@napi-rs/keyring` talks D-Bus directly and does not need `libsecret`. Without one, credentials fall back to `~/.mcpc/credentials.json` and the x402 wallet to `~/.mcpc/wallets.json`. Every keychain entry is opened with `{ linux: { store: 'secret-service' } }`: left to itself the binding falls back to the kernel keyring, which is in-memory only and loses everything on reboot. Credentials that mcpc 0.8 left there are moved to the file store the first time they are read
 
 ## Authentication Architecture
 

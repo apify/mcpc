@@ -111,7 +111,8 @@ bun install -g @apify/mcpc
 
 **Linux:** credentials use the OS keychain via the [Secret Service API](https://specifications.freedesktop.org/secret-service/).
 GNOME/KDE desktops work out of the box. On headless/CI systems, `mcpc` falls back to a
-file-based store (`~/.mcpc/credentials.json`, mode `0600`).
+file-based store (`~/.mcpc/credentials.json`, mode `0600`). The kernel keyring is never used:
+it lives in memory only and would lose everything on reboot.
 
 To force the keychain on headless systems, install `gnome-keyring`
 (via `apt-get`, `dnf`, or `pacman`) and run:
@@ -848,7 +849,9 @@ dropped (and recorded in the bridge log).
 
 ### Wallet setup
 
-`mcpc` stores a single wallet in `~/.mcpc/wallets.json` (file permissions `0600`).
+`mcpc` stores a single wallet in the OS keychain, or in `~/.mcpc/wallets.json` (file
+permissions `0600`) when no keychain is available; `mcpc x402 init` tells you which. The
+private key exists nowhere else, so on a machine without a keychain keep that file backed up.
 You need to create or import a wallet before using x402 payments.
 
 ```bash
@@ -1513,7 +1516,7 @@ Config files support environment variable substitution using `${VAR_NAME}` synta
 
 - `~/.mcpc/sessions.json` - Active sessions with references to authentication profiles (file-locked for concurrent access)
 - `~/.mcpc/profiles.json` - Authentication profiles (OAuth metadata, scopes, expiry)
-- `~/.mcpc/wallets.json` - x402 wallet data (file permissions `0600`)
+- `~/.mcpc/wallets.json` - x402 wallet data when no OS keychain is available (file permissions `0600`)
 - `~/.mcpc/bridges/` - Unix domain socket files for each bridge process
 - `~/.mcpc/logs/bridge-*.log` - Log files for each bridge process
 - OS keychain - Sensitive credentials (OAuth tokens, bearer tokens, client secrets)
