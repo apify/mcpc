@@ -4,6 +4,7 @@
 
 import chalk from 'chalk';
 import {
+  commandHint,
   formatOutput,
   formatSuccess,
   formatWarning,
@@ -204,10 +205,10 @@ export async function subscribeResource(
       console.log(formatSuccess(`Subscribed to resource: ${uri}`));
       console.log(`Synced to ${result.file} (${result.bytes} bytes${mimeSuffix})`);
       console.log(chalk.dim('The file is updated automatically while the session is connected.'));
-      console.log(chalk.dim(`To check sync status, run: mcpc ${target}`));
+      console.log(chalk.dim(`To check sync status, run: ${commandHint(`mcpc ${target}`)}`));
       console.log(
         chalk.dim(
-          `To stop syncing (keeps the file), run: mcpc ${target} resources-unsubscribe ${uri}`
+          `To stop syncing (keeps the file), run: ${commandHint(`mcpc ${target} resources-unsubscribe ${uri}`)}`
         )
       );
     } else {
