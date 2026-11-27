@@ -64,6 +64,7 @@ import {
   storeKeychainProxyBearerToken,
 } from '../../lib/auth/keychain.js';
 import { getWallet } from '../../lib/wallets.js';
+import { DEFAULT_X402_BUDGET_USD } from '../../lib/x402/budget.js';
 import chalk from 'chalk';
 // ora is loaded lazily at the spinner call site — it is only needed for
 // human-mode bulk connects and costs ~50 ms at import.
@@ -166,6 +167,8 @@ type ConnectSessionOptions = {
   proxyBearerToken?: string;
   protocolVersion?: string;
   x402?: X402SchemePreference;
+  /** Total the session may pay with x402, in USD (default: DEFAULT_X402_BUDGET_USD). */
+  x402BudgetUsd?: number;
   insecure?: boolean;
   skipDetails?: boolean;
   quiet?: boolean;
@@ -497,6 +500,9 @@ export async function connectSession(
     profileName,
     proxy: proxyConfig,
     x402: options.x402,
+    // A connect with --x402 starts a fresh budget; one without it clears any earlier one
+    x402BudgetUsd: options.x402 ? (options.x402BudgetUsd ?? DEFAULT_X402_BUDGET_USD) : undefined,
+    x402AuthorizedAtomic: undefined,
     insecure: options.insecure ? true : undefined,
     // Clear any previous error status (unauthorized, expired) when reconnecting
     ...(isReconnect && { status: 'active' }),
@@ -745,6 +751,8 @@ type BulkConnectOptions = {
   stdio?: boolean;
   protocolVersion?: string;
   x402?: X402SchemePreference;
+  /** Total the session may pay with x402, in USD (default: DEFAULT_X402_BUDGET_USD). */
+  x402BudgetUsd?: number;
   insecure?: boolean;
 };
 
@@ -1286,6 +1294,18 @@ export async function connectAllFromStandardConfigs(options: BulkConnectOptions)
         `Pass it when connecting one server or one config file you chose:\n` +
         `  mcpc connect mcp.example.com @myserver -H "Authorization: Bearer ..."\n` +
         `  mcpc connect ./mcp.json -H "X-Custom: value"`
+    );
+  }
+
+  // Same reasoning for --x402: it would let every discovered server, including one named by
+  // a config file checked into the current directory, ask the wallet for payment.
+  if (options.x402) {
+    throw new ClientError(
+      `--x402 cannot be combined with config auto-discovery: every discovered server could ` +
+        `then request payments from your wallet.\n` +
+        `Pass it when connecting one server or one config file you chose:\n` +
+        `  mcpc connect mcp.example.com @myserver --x402\n` +
+        `  mcpc connect ./mcp.json --x402`
     );
   }
 

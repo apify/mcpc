@@ -9,7 +9,7 @@ Each version opens with a one-line summary, which also opens its GitHub release.
 
 ## [Unreleased]
 
-Step-up authorization for OAuth scope challenges; a bare `mcpc connect` connects only the config entries it checked, stdio servers always restart in the directory they were connected from, a session name stays bound to its server, a server can no longer make mcpc restart a healthy session with one oversized response, `close` and `restart` never kill an unrelated process, and several `connect` and `--proxy` argument fixes.
+Step-up authorization for OAuth scope challenges; a bare `mcpc connect` connects only the config entries it checked, stdio servers always restart in the directory they were connected from, a session name stays bound to its server, x402 sessions get a spending budget, a server can no longer make mcpc restart a healthy session with one oversized response, `close` and `restart` never kill an unrelated process, and several `connect` and `--proxy` argument fixes.
 
 ### Added
 
@@ -22,6 +22,9 @@ Step-up authorization for OAuth scope challenges; a bare `mcpc connect` connects
 - A stdio server is now always restarted in the directory its session was connected from. Before, a session whose bridge had stopped was restarted by whichever `mcpc` command ran next, in that command's directory, so `node server.js` or `npx <pkg>` could run another directory's code with the session's `env` values. A stdio session created by an earlier version has no recorded directory and is no longer restarted automatically: run `mcpc @session restart` once from the directory its server should run in.
 - `connect` no longer re-points an existing session at a different server. Before, a session whose bridge was down was silently re-targeted while keeping its `--x402` and `--insecure` settings, MCP session id and resource-to-file syncs, and a config entry named after a session could take it over in a bulk `connect`. It is now refused: close the session first or use another name.
 - Reconnecting a session with `connect` applies exactly the options of that command. `--x402`, `--insecure`, `--proxy`, the profile and stored headers from an earlier connect are no longer kept when the new one does not ask for them.
+- x402: a session now pays at most its budget in total, `$10` by default or `connect --x402-budget <usd>`. Before, the server named the amount of every payment with no upper bound. A payment over the budget is refused with an error, and `mcpc` shows how much each session has used.
+- x402: payments are made only for tool calls. A server answering the handshake, `tools/list` or the 30-second keepalive ping with HTTP 402 used to receive a signed payment for each, without any tool being called.
+- x402: only USDC is paid, an authorization is valid for at most 24 hours however long the server asks for, and `--x402` is refused for a bare `mcpc connect` (config auto-discovery).
 - A response over the 10 MB limit between mcpc and its background bridge is now an ordinary error that states the size and the limit. Before, any server could make mcpc stop a healthy session, start a new one and fetch the same oversized result again, and a tool call that did run was reported as "may or may not have executed". An oversized request is refused before it is sent.
 - A server-issued `MCP-Session-Id` that looks like a command-line flag (for example `--insecure`) can no longer change how the session's bridge starts when the session is resumed.
 - `resources-subscribe` and `resources-read -o` write through a temporary file with an unguessable name that must not already exist, so a symlink planted in a shared target directory cannot redirect the server's content.

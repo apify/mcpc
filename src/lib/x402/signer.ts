@@ -32,6 +32,14 @@ const USDC_DECIMALS = 6;
 /** Fallback expiry when neither the caller nor the `accept` advertise one. */
 export const DEFAULT_PAYMENT_EXPIRY_SECONDS = 3600;
 
+/**
+ * Longest validity a server can ask for. `maxTimeoutSeconds` is the server's own number,
+ * and an authorization stays redeemable until it expires, so without a bound a server
+ * could collect one that is good for decades. A day covers prepaid-style `upto`
+ * authorizations that are reused for hours; an explicit `--expiry` is not bound by it.
+ */
+export const MAX_SERVER_PAYMENT_EXPIRY_SECONDS = 24 * 3600;
+
 /** Canonical Permit2 contract address (CREATE2, same on all EVM chains). */
 const PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
 
@@ -110,6 +118,12 @@ interface NetworkConfig {
   networkId: string;
   rpcUrl: string;
   label: string;
+  /**
+   * The USDC contract on this network — the only asset mcpc pays with. The server names the
+   * asset in its payment request; signing for whatever token it names would let it reach
+   * any other token the wallet holds (and, for `upto`, get it approved to Permit2).
+   */
+  usdcAddress: string;
 }
 
 const NETWORKS: Record<string, NetworkConfig> = {
@@ -118,12 +132,14 @@ const NETWORKS: Record<string, NetworkConfig> = {
     networkId: `eip155:${base.id}`,
     rpcUrl: 'https://mainnet.base.org',
     label: 'Base Mainnet',
+    usdcAddress: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
   },
   [`eip155:${baseSepolia.id}`]: {
     chain: baseSepolia,
     networkId: `eip155:${baseSepolia.id}`,
     rpcUrl: 'https://sepolia.base.org',
     label: 'Base Sepolia (testnet)',
+    usdcAddress: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
   },
 };
 
@@ -134,6 +150,60 @@ const NETWORKS: Record<string, NetworkConfig> = {
  */
 export function isSupportedNetwork(network: string): boolean {
   return Object.hasOwn(NETWORKS, network);
+}
+
+/**
+ * Whether `asset` is the token mcpc pays with on `network`: USDC, and nothing else.
+ * Addresses are compared case-insensitively (checksummed or not).
+ */
+export function isSupportedAsset(network: string, asset: unknown): boolean {
+  return (
+    isSupportedNetwork(network) &&
+    typeof asset === 'string' &&
+    asset.toLowerCase() === NETWORKS[network]?.usdcAddress.toLowerCase()
+  );
+}
+
+/**
+ * The amount a payment request asks for, in atomic units. The server's `amount` must be a
+ * positive integer string; anything else (a decimal, a negative, a number) is refused
+ * rather than coerced.
+ */
+export function paymentAmountAtomic(accept: PaymentRequiredAccept): bigint {
+  const amount: unknown = accept.amount;
+  if (typeof amount !== 'string' || !/^\d{1,78}$/.test(amount) || BigInt(amount) <= 0n) {
+    throw new ClientError(
+      `Invalid amount in payment requirements: ${JSON.stringify(amount)?.slice(0, 80)}`
+    );
+  }
+  return BigInt(amount);
+}
+
+/**
+ * How long a signed payment stays valid, in seconds: the caller's override as given, or the
+ * server's `maxTimeoutSeconds` bounded by `MAX_SERVER_PAYMENT_EXPIRY_SECONDS`. A missing or
+ * non-numeric server value (a string would otherwise be concatenated to the timestamp)
+ * falls back to the default.
+ */
+function resolveExpirySeconds(input: SignPaymentInput): number {
+  if (input.expiryOverrideSecs) {
+    return input.expiryOverrideSecs;
+  }
+  const requested: unknown = input.accept.maxTimeoutSeconds;
+  if (typeof requested !== 'number' || !Number.isFinite(requested) || requested <= 0) {
+    return DEFAULT_PAYMENT_EXPIRY_SECONDS;
+  }
+  return Math.min(Math.floor(requested), MAX_SERVER_PAYMENT_EXPIRY_SECONDS);
+}
+
+/** Refuse to sign for anything but USDC on a supported network. */
+function assertSupportedAsset(accept: PaymentRequiredAccept): void {
+  if (!isSupportedAsset(accept.network, accept.asset)) {
+    throw new ClientError(
+      `Unsupported asset in payment requirements: ${String(accept.asset).slice(0, 80)} on ${accept.network}. ` +
+        `mcpc pays only in USDC (${NETWORKS[accept.network]?.usdcAddress ?? 'unsupported network'}).`
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -233,7 +303,7 @@ function isValidExactAccept(a: PaymentRequiredAccept): boolean {
   return (
     a.scheme === 'exact' &&
     Boolean(a.payTo && a.amount && a.network && a.asset) &&
-    isSupportedNetwork(a.network)
+    isSupportedAsset(a.network, a.asset)
   );
 }
 
@@ -242,7 +312,7 @@ function isValidUptoAccept(a: PaymentRequiredAccept): boolean {
     a.scheme === 'upto' &&
     Boolean(a.payTo && a.amount && a.network && a.asset) &&
     Boolean(a.extra?.facilitatorAddress) &&
-    isSupportedNetwork(a.network)
+    isSupportedAsset(a.network, a.asset)
   );
 }
 
@@ -253,8 +323,9 @@ function isValidUptoAccept(a: PaymentRequiredAccept): boolean {
  * - `upto`   → require valid `upto`; undefined if none
  * - `exact`  → require valid `exact`; undefined if none
  *
- * Entries on networks mcpc cannot sign for (see `isSupportedNetwork`) are skipped, so a
- * server that lists a Solana option before the Base one still gets a Base payment.
+ * Entries on networks mcpc cannot sign for (see `isSupportedNetwork`) or in a token other
+ * than USDC (see `isSupportedAsset`) are skipped, so a server that lists a Solana option
+ * before the Base one still gets a Base payment.
  */
 export function selectAcceptEntry(
   accepts: PaymentRequiredAccept[],
@@ -311,7 +382,7 @@ export function parsePaymentRequired(
     const offered = header.accepts.map((a) => `${a.scheme} on ${a.network}`).join(', ');
     throw new ClientError(
       `No valid "${requested}" scheme on a supported network found in PAYMENT-REQUIRED accepts. ` +
-        `Offered: ${offered}. Supported networks: ${Object.keys(NETWORKS).join(', ')}`
+        `Offered: ${offered}. Supported networks: ${Object.keys(NETWORKS).join(', ')} (USDC only)`
     );
   }
 
@@ -360,13 +431,14 @@ async function signExactPayment(input: SignPaymentInput): Promise<SignPaymentRes
     );
   }
 
+  assertSupportedAsset(accept);
+
   // Resolve amount
-  const amountAtomicUnits = input.amountOverride ?? BigInt(accept.amount);
+  const amountAtomicUnits = input.amountOverride ?? paymentAmountAtomic(accept);
   const amountUsd = Number(amountAtomicUnits) / 10 ** USDC_DECIMALS;
 
   // Resolve expiry
-  const expirySeconds =
-    (input.expiryOverrideSecs ?? accept.maxTimeoutSeconds) || DEFAULT_PAYMENT_EXPIRY_SECONDS;
+  const expirySeconds = resolveExpirySeconds(input);
 
   // EIP-3009 domain
   const eip3009Name = accept.extra?.name ?? 'USDC';
@@ -549,13 +621,14 @@ async function signUptoPayment(input: SignPaymentInput): Promise<SignPaymentResu
     );
   }
 
+  assertSupportedAsset(accept);
+
   // Resolve amount (max authorization cap)
-  const amountAtomicUnits = input.amountOverride ?? BigInt(accept.amount);
+  const amountAtomicUnits = input.amountOverride ?? paymentAmountAtomic(accept);
   const amountUsd = Number(amountAtomicUnits) / 10 ** USDC_DECIMALS;
 
   // Resolve expiry
-  const expirySeconds =
-    (input.expiryOverrideSecs ?? accept.maxTimeoutSeconds) || DEFAULT_PAYMENT_EXPIRY_SECONDS;
+  const expirySeconds = resolveExpirySeconds(input);
 
   // Validate facilitator address (required by upto scheme for witness binding)
   const facilitatorAddress = accept.extra?.facilitatorAddress;
