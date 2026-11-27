@@ -410,6 +410,10 @@ mcpc @apify close      # or: mcpc close @apify
 # ...now the session name "@apify" is forgotten and available for future use
 ```
 
+A session name stays bound to the server it was created for. Running `connect` again with the
+same name and server revives the session if its bridge is down, using the options of that
+command; with a different server it is refused, so close the session first or pick another name.
+
 ### Session lifecycle
 
 Session metadata is saved in `~/.mcpc/sessions.json`, [authentication tokens](#authentication)
